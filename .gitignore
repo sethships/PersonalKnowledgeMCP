@@ -1,0 +1,204 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+.venv
+env.bak/
+venv.bak/
+pythonenv*
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+*.tsbuildinfo
+.yarn/cache
+.yarn/unplugged
+.yarn/install-state.gz
+
+# Docker
+*.log
+.dockerignore
+
+# Kubernetes
+*.kubeconfig
+*.kubeconfig.backup
+secrets.yaml
+secrets-*.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+*.secret
+config/secrets.yml
+config/credentials.yml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Vector DB specific (Qdrant)
+qdrant_storage/
+qdrant_data/
+storage/qdrant/
+
+# Graph DB specific (Neo4j)
+neo4j_data/
+neo4j_logs/
+storage/neo4j/
+graph.db/
+
+# PostgreSQL
+postgres_data/
+postgresql_data/
+storage/postgres/
+
+# Logs
+logs/
+*.log
+log/
+*.log.*
+pip-log.txt
+pip-delete-this-directory.txt
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.cache
+
+# Data directories (exclude actual data from version control)
+data/
+volumes/
+storage/
+backups/
+cloned_repos/
+ingestion_cache/
+embeddings_cache/
+
+# MCP specific
+mcp_cache/
+mcp_sessions/
+*.mcp.log
+
+# Repository clones (for ingestion)
+repos/
+repositories/
+cloned_repositories/
+
+# Ingestion pipelines
+ingestion_temp/
+processing_queue/
+failed_ingestions/
+
+# Testing
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+nosetests.xml
+coverage.xml
+*.cover
+.cache
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.whl
+*.tar.gz
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# profiling
+.prof
+
+# Documentation builds
+docs/_build/
+docs/.doctrees/
+site/
+
+# Local development overrides
+docker-compose.override.yml
+local_settings.py
+local_config.yml
