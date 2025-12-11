@@ -94,9 +94,10 @@ postgresql_data/
 storage/postgres/
 
 # Repository clones (for ingestion)
-repos/
-repositories/
-cloned_repositories/
+/repos/
+/data/repos/
+/data/repositories/
+/cloned_repositories/
 
 # MCP specific
 mcp_cache/
