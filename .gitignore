@@ -1,66 +1,28 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-venv/
-env/
-ENV/
-.venv
-env.bak/
-venv.bak/
-pythonenv*
-
-# Node
+# Bun
 node_modules/
+dist/
+build/
+*.tsbuildinfo
+bun.lockb
+.bun-cache/
+
+# Legacy Node package managers
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 .npm
-.eslintcache
-*.tsbuildinfo
 .yarn/cache
 .yarn/unplugged
 .yarn/install-state.gz
 
-# Docker
-*.log
-.dockerignore
+# Testing
+coverage/
+.coverage
+*.lcov
 
-# Kubernetes
-*.kubeconfig
-*.kubeconfig.backup
-secrets.yaml
-secrets-*.yaml
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-*.sublime-project
-*.sublime-workspace
+# Linting
+.eslintcache
 
 # Environment variables and secrets
 .env
@@ -80,37 +42,25 @@ credentials/
 config/secrets.yml
 config/credentials.yml
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-*.db-journal
-*.db-shm
-*.db-wal
-
-# Vector DB specific (Qdrant)
-qdrant_storage/
-qdrant_data/
-storage/qdrant/
-
-# Graph DB specific (Neo4j)
-neo4j_data/
-neo4j_logs/
-storage/neo4j/
-graph.db/
-
-# PostgreSQL
-postgres_data/
-postgresql_data/
-storage/postgres/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
 
 # Logs
 logs/
 *.log
 log/
 *.log.*
-pip-log.txt
-pip-delete-this-directory.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # OS
 Thumbs.db
@@ -122,6 +72,37 @@ Desktop.ini
 .Spotlight-V100
 .Trashes
 
+# Data directories (exclude actual data from version control)
+data/
+volumes/
+backups/
+
+# Vector DB specific (ChromaDB)
+chromadb_data/
+chromadb_storage/
+storage/chromadb/
+
+# Graph DB specific (Neo4j) - Phase 4
+neo4j_data/
+neo4j_logs/
+storage/neo4j/
+graph.db/
+
+# PostgreSQL - Phase 2
+postgres_data/
+postgresql_data/
+storage/postgres/
+
+# Repository clones (for ingestion)
+repos/
+repositories/
+cloned_repositories/
+
+# MCP specific
+mcp_cache/
+mcp_sessions/
+*.mcp.log
+
 # Temporary files
 tmp/
 temp/
@@ -129,69 +110,13 @@ temp/
 *.temp
 *.cache
 
-# Data directories (exclude actual data from version control)
-data/
-volumes/
-storage/
-backups/
-cloned_repos/
-ingestion_cache/
-embeddings_cache/
-
-# MCP specific
-mcp_cache/
-mcp_sessions/
-*.mcp.log
-
-# Repository clones (for ingestion)
-repos/
-repositories/
-cloned_repositories/
-
-# Ingestion pipelines
-ingestion_temp/
-processing_queue/
-failed_ingestions/
-
-# Testing
-.coverage
-.coverage.*
-coverage/
-htmlcov/
-.pytest_cache/
-.tox/
-.nox/
-.hypothesis/
-nosetests.xml
-coverage.xml
-*.cover
-.cache
-
-# Build artifacts
-*.exe
-*.dll
-*.so
-*.dylib
-*.whl
-*.tar.gz
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
-
-# pyenv
-.python-version
-
-# Mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre
-.pyre/
-
-# profiling
-.prof
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
 
 # Documentation builds
 docs/_build/
@@ -200,5 +125,19 @@ site/
 
 # Local development overrides
 docker-compose.override.yml
-local_settings.py
 local_config.yml
+
+# Python (legacy, may be removed in future)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb

@@ -11,16 +11,15 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 2. **Educational Material Organization**: Semantic search and cross-referencing of structured college notes and educational content
 
 **Technology Stack:**
-- **Language**: Python (primary for MCP service implementation)
-- **Framework**: FastAPI for core service
-- **MCP SDK**: Official Anthropic MCP Python SDK
-- **Containers**: Docker for containerization
-- **Orchestration**: Kubernetes for production deployment, Docker Compose for MVP
-- **Storage Backends**:
-  - Vector DB (Qdrant) for semantic search
-  - Graph DB (Neo4j Community) for relationships
-  - Document Store (PostgreSQL with JSON) for artifacts
-- **Platform**: Cross-platform with Windows development environment (PowerShell 7)
+- **Runtime**: Bun 1.0+ (fast all-in-one JavaScript runtime)
+- **Language**: TypeScript 5.3+ (strict type safety)
+- **MCP SDK**: Official Anthropic MCP SDK (@modelcontextprotocol/sdk)
+- **Containers**: Docker for ChromaDB containerization
+- **Storage Backends** (Phase-dependent):
+  - Vector DB (ChromaDB) for semantic search - Phase 1
+  - Graph DB (Neo4j Community) for relationships - Phase 4
+  - Document Store (PostgreSQL with JSON) for artifacts - Phase 2
+- **Platform**: Cross-platform with Windows development environment (PowerShell 7, Bun)
 
 ## Development Guidelines
 
@@ -47,7 +46,7 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
   - API layers (MCP interface, admin endpoints)
   - Ingestion pipelines (repository cloners, file analyzers, metadata extractors)
 - Document architectural decisions in `docs/architecture/` as ADRs
-- Use type hints throughout Python codebase (strict typing preferred)
+- Use TypeScript strict mode with comprehensive type annotations
 
 ### Storage Backend Guidelines
 - Each storage backend must have a clean adapter interface
@@ -70,13 +69,14 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - Include code-level docstrings for all public APIs
 
 ### Testing Requirements
-- **Minimum 90% test coverage** (per global standards)
+- **Minimum 90% test coverage** (per global standards, enforced in bunfig.toml)
+- Use Bun's built-in test runner (`bun test`)
 - Write tests for all MCP server endpoints
 - Include integration tests for storage adapters
-- Test multi-instance isolation thoroughly
+- Test multi-instance isolation thoroughly (Phase 3+)
 - Performance tests for query latency targets (<500ms p95)
-- Test containerized deployments locally before pushing
-- Run full test suite before declaring any task complete
+- Test ChromaDB integration with real containers
+- Run full test suite before declaring any task complete (`bun test --coverage`)
 
 ### Performance Targets (MVP)
 - MCP query response: <500ms for 95th percentile
@@ -95,23 +95,26 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ### Development Workflow
 1. Create feature branch from main
-2. Implement feature with tests
-3. Run full test suite locally
-4. Create PR with descriptive title and detailed description
-5. Ensure CI/CD checks pass
-6. Get at least one reviewer approval
-7. Merge to main
-8. Automated deployment to test environment
+2. Install dependencies: `bun install`
+3. Implement feature with tests
+4. Run full test suite locally: `bun test --coverage`
+5. Build project: `bun run build`
+6. Create PR with descriptive title and detailed description
+7. Ensure CI/CD checks pass
+8. Get at least one reviewer approval
+9. Merge to main
+10. Automated deployment to test environment
 
 ## Phased Implementation Plan
 
 ### Phase 1: Core MCP + Vector Search (Current Phase)
 **Goal**: Get Claude Code querying indexed code semantically
-- Basic MCP service implementation (read-only queries)
-- Single vector database (Qdrant)
+- Basic MCP service implementation (stdio transport)
+- Single vector database (ChromaDB)
 - GitHub repository cloner and basic file ingestion
-- Simple code text extraction
+- File chunking and text extraction
 - OpenAI embeddings API integration
+- CLI commands for repository management
 
 ### Phase 2: Code Intelligence + Local Files
 **Goal**: Add code-aware indexing and educational material support
@@ -150,35 +153,49 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ### Source Code
 - `src/`: Main source code directory
-- `src/mcp_service/`: MCP server implementation
-- `src/storage/`: Storage adapter implementations
-- `src/ingestion/`: Repository and file ingestion pipelines
-- `src/retrieval/`: Semantic search and retrieval logic
-- `tests/`: Test suite (unit, integration, performance)
+- `src/index.ts`: MCP server entry point
+- `src/cli.ts`: CLI entry point
+- `src/mcp/`: MCP server implementation and tool handlers
+- `src/services/`: Business logic (search, ingestion, repository services)
+- `src/providers/`: Embedding providers (OpenAI)
+- `src/storage/`: Storage adapter implementations (ChromaDB client)
+- `src/ingestion/`: Repository cloning, file scanning, chunking
+- `src/config/`: Configuration loading
+- `src/logging/`: Logging setup
+- `src/types/`: Shared type definitions
+- `tests/`: Test suite (unit, integration, e2e)
 
 ## Language and Framework Specifics
 
-### Python Standards
-- Use Python 3.11+ features
-- Type hints required for all function signatures
-- Async/await for I/O operations
-- Follow PEP 8 style guide (enforced by Black formatter)
-- Use dataclasses or Pydantic models for structured data
-- Prefer composition over inheritance
+### TypeScript Standards
+- Use strict mode with comprehensive type checking
+- Explicit return types for all functions
+- No `any` types - use proper typing or `unknown`
+- Use interfaces for object shapes, types for unions/intersections
+- Prefer `const` over `let`, avoid `var`
+- Use async/await for asynchronous operations
+- Follow functional programming patterns where appropriate
 
-### FastAPI Patterns
-- Use dependency injection for database connections
-- Implement proper error handling with custom exception handlers
-- Use background tasks for long-running operations
-- Expose OpenAPI documentation for admin endpoints
-- Implement health check and readiness endpoints
+### Bun-Specific Patterns
+- Use Bun's native APIs when available (file I/O, env, etc.)
+- Leverage Bun's fast bundler for builds: `bun build`
+- Use Bun's built-in test runner with coverage tracking
+- Take advantage of Bun's speed for development (`bun --watch`)
+- Use `bunfig.toml` for project-specific Bun configuration
+
+### MCP SDK Usage
+- Use stdio transport for Claude Code integration
+- Implement proper error handling with MCP error codes
+- Follow MCP tool definition schemas exactly
+- Return structured JSON responses from tool handlers
+- Test MCP integration with real Claude Code early
 
 ### Docker Best Practices
-- Multi-stage builds for smaller images
-- Non-root user execution
-- Proper signal handling for graceful shutdown
-- Health checks in Dockerfile
-- Pin all dependency versions
+- ChromaDB runs in Docker (host MCP service for stdio)
+- Use Docker Compose for local development
+- Persist ChromaDB data with named volumes
+- Health checks for all containerized services
+- Pin all dependency and image versions
 
 ## Common Pitfalls to Avoid
 
@@ -190,8 +207,37 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Phase**: Initial setup and planning
-- This project is in early stages - expect significant architecture evolution
+- **Current Phase**: Phase 1 - Core MCP + Vector Search
+- Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
+- All Phase 1 GitHub issues created and ready for implementation
 - Prioritize demonstrable value over perfection (MVP mindset)
 - Keep deployment simple initially; complexity can be added as needed
 - Test early and often with real codebases (small, medium, large repositories)
+
+## Quick Reference
+
+### Common Commands
+```bash
+# Development
+bun install              # Install dependencies
+bun run dev             # Run in watch mode
+bun run build           # Build for production
+bun test --coverage     # Run tests with coverage
+
+# Docker
+docker-compose up -d    # Start ChromaDB
+docker-compose down     # Stop ChromaDB
+docker-compose logs -f  # View logs
+
+# CLI
+bun run cli index <url>      # Index a repository
+bun run cli search "query"   # Search indexed repos
+bun run cli status           # List repositories
+```
+
+### Key Configuration Files
+- `bunfig.toml`: Bun configuration
+- `tsconfig.json`: TypeScript configuration
+- `.env`: Environment variables (not committed)
+- `config/default.json`: Application defaults
+- `docker-compose.yml`: ChromaDB setup
