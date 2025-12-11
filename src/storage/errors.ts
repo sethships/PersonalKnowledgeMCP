@@ -20,7 +20,7 @@ export class StorageError extends Error {
   /**
    * Original error that caused this error (if any)
    */
-  public readonly cause?: Error;
+  public override readonly cause?: Error;
 
   /**
    * Create a new StorageError

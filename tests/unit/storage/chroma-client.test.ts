@@ -9,10 +9,8 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { ChromaStorageClientImpl } from "../../../src/storage/chroma-client.js";
 import {
   StorageConnectionError,
-  CollectionNotFoundError,
   InvalidParametersError,
   DocumentOperationError,
-  SearchOperationError,
 } from "../../../src/storage/errors.js";
 import type { ChromaConfig, DocumentInput, SimilarityQuery } from "../../../src/storage/types.js";
 import { MockChromaClient } from "../../helpers/chroma-mock.js";

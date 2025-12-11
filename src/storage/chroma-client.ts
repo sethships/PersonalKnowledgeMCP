@@ -16,6 +16,7 @@ import type {
   CollectionInfo,
   CollectionStats,
   DocumentInput,
+  DocumentMetadata,
   SimilarityQuery,
   SimilarityResult,
 } from "./types.js";
@@ -217,9 +218,9 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const collections = await this.client!.listCollections();
 
       return collections.map((collection) => ({
-        name: collection.name,
+        name: typeof collection === "string" ? collection : collection.name,
         count: 0, // ChromaDB doesn't return count in list, would need to query each
-        metadata: collection.metadata,
+        metadata: typeof collection === "string" ? {} : (collection.metadata ?? {}),
       }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -291,7 +292,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       await collection.add({
         ids,
         embeddings,
-        metadatas,
+        metadatas: metadatas as unknown as Record<string, unknown>[],
         documents: docsContent,
       });
     } catch (error) {
@@ -374,9 +375,9 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
               const similarity = this.convertDistanceToSimilarity(distance);
 
               // Filter by threshold
-              if (similarity >= query.threshold) {
+              if (similarity >= query.threshold && ids[i]) {
                 allResults.push({
-                  id: ids[i],
+                  id: ids[i]!,
                   content: documents[i] || "",
                   metadata: metadatas[i] as DocumentMetadata,
                   distance,
