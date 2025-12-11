@@ -33,7 +33,7 @@ jobs:
         run: bun run format:check
 
       - name: Start ChromaDB
-        run: docker-compose up -d chromadb
+        run: docker compose up -d chromadb
 
       - name: Wait for ChromaDB
         run: |
@@ -64,4 +64,4 @@ jobs:
 
       - name: Stop ChromaDB
         if: always()
-        run: docker-compose down
+        run: docker compose down
