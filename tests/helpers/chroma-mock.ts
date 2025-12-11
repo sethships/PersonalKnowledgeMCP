@@ -5,14 +5,14 @@
  * that can be used to test storage client logic without a real ChromaDB instance.
  */
 
-import type { Collection } from "chromadb";
+/* eslint-disable @typescript-eslint/require-await */
 
 /**
  * Mock ChromaDB Collection implementation
  *
  * Simulates a ChromaDB collection with in-memory storage for testing.
  */
-export class MockCollection implements Partial<Collection> {
+export class MockCollection {
   public name: string;
   public metadata: Record<string, unknown>;
   private documents: Map<string, {
@@ -54,11 +54,11 @@ export class MockCollection implements Partial<Collection> {
     }
 
     for (let i = 0; i < params.ids.length; i++) {
-      this.documents.set(params.ids[i], {
-        id: params.ids[i],
-        embedding: params.embeddings[i],
-        metadata: params.metadatas[i],
-        document: params.documents[i],
+      this.documents.set(params.ids[i]!, {
+        id: params.ids[i]!,
+        embedding: params.embeddings[i]!,
+        metadata: params.metadatas[i]!,
+        document: params.documents[i]!,
       });
     }
   }
@@ -77,7 +77,7 @@ export class MockCollection implements Partial<Collection> {
     }
 
     // Simple mock: return documents with calculated cosine distance
-    const queryEmbedding = params.queryEmbeddings[0];
+    const queryEmbedding = params.queryEmbeddings[0]!;
     const results = Array.from(this.documents.values())
       .map((doc) => ({
         ...doc,
@@ -140,9 +140,11 @@ export class MockCollection implements Partial<Collection> {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const aVal = a[i] ?? 0;
+      const bVal = b[i] ?? 0;
+      dotProduct += aVal * bVal;
+      normA += aVal * aVal;
+      normB += bVal * bVal;
     }
 
     normA = Math.sqrt(normA);

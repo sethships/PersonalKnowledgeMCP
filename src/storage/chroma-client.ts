@@ -217,11 +217,15 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
     try {
       const collections = await this.client!.listCollections();
 
-      return collections.map((collection) => ({
-        name: typeof collection === "string" ? collection : collection.name,
-        count: 0, // ChromaDB doesn't return count in list, would need to query each
-        metadata: typeof collection === "string" ? {} : (collection.metadata ?? {}),
-      }));
+      return collections.map((collection) => {
+        // ChromaDB returns Collection objects with name and metadata
+        const col = collection as unknown as { name: string; metadata?: Record<string, unknown> };
+        return {
+          name: col.name,
+          count: 0, // ChromaDB doesn't return count in list, would need to query each
+          metadata: col.metadata ?? {},
+        };
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new StorageError(
@@ -289,10 +293,23 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const docsContent = documents.map((doc) => doc.content);
 
       // Add documents in batch
+      // Convert DocumentMetadata to ChromaDB's Metadata type (string | number | boolean values)
+      const chromaMetadatas = metadatas.map((meta) => {
+        const chromaMeta: Record<string, string | number | boolean> = {};
+        for (const [key, value] of Object.entries(meta)) {
+          if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            chromaMeta[key] = value;
+          } else {
+            chromaMeta[key] = String(value);
+          }
+        }
+        return chromaMeta;
+      });
+
       await collection.add({
         ids,
         embeddings,
-        metadatas: metadatas as unknown as Record<string, unknown>[],
+        metadatas: chromaMetadatas,
         documents: docsContent,
       });
     } catch (error) {
@@ -379,7 +396,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
                 allResults.push({
                   id: ids[i]!,
                   content: documents[i] || "",
-                  metadata: metadatas[i] as DocumentMetadata,
+                  metadata: metadatas[i] as unknown as DocumentMetadata,
                   distance,
                   similarity,
                 });

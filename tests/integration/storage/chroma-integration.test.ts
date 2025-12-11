@@ -96,7 +96,7 @@ describe("ChromaDB Integration Tests", () => {
 
       const newClient = new ChromaStorageClientImpl(badConfig);
 
-      await expect(async () => {
+      expect(async () => {
         await newClient.connect();
       }).toThrow();
     });
@@ -222,8 +222,8 @@ describe("ChromaDB Integration Tests", () => {
 
       // Verify descending order
       for (let i = 1; i < results.length; i++) {
-        expect(results[i - 1].similarity).toBeGreaterThanOrEqual(
-          results[i].similarity
+        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(
+          results[i]!.similarity
         );
       }
     });
@@ -347,7 +347,7 @@ describe("ChromaDB Integration Tests", () => {
 
     test("should handle multiple repositories independently", async () => {
       const repo1Docs = sampleDocuments.slice(0, 2);
-      const repo2Docs = [sampleDocuments[2]];
+      const repo2Docs = [sampleDocuments[2]!];
 
       // Add documents to separate collections
       await client.addDocuments(testCollectionName, repo1Docs);
@@ -390,6 +390,7 @@ describe("ChromaDB Integration Tests", () => {
       await client.addDocuments(testCollectionName, largeBatch);
       const addDuration = Date.now() - startAdd;
 
+      // eslint-disable-next-line no-console
       console.log(`Added 1000 documents in ${addDuration}ms`);
 
       // Should complete reasonably fast (under 10 seconds)
@@ -409,6 +410,7 @@ describe("ChromaDB Integration Tests", () => {
       });
       const searchDuration = Date.now() - startSearch;
 
+      // eslint-disable-next-line no-console
       console.log(`Searched 1000 documents in ${searchDuration}ms`);
 
       // Search should be fast (under 1 second)

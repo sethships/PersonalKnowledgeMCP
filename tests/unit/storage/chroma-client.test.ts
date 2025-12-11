@@ -321,8 +321,8 @@ describe("ChromaStorageClientImpl", () => {
 
       // Verify sorted in descending order
       for (let i = 1; i < results.length; i++) {
-        expect(results[i - 1].similarity).toBeGreaterThanOrEqual(
-          results[i].similarity
+        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(
+          results[i]!.similarity
         );
       }
     });
@@ -524,7 +524,7 @@ describe("ChromaStorageClientImpl", () => {
         await client.healthCheck();
       } catch (error) {
         // Health check returns false instead of throwing, so test connection error
-        await expect(async () => {
+        expect(async () => {
           await client.connect();
         }).toThrow();
       }
