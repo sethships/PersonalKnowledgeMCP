@@ -19,6 +19,7 @@ import {
   createRepositoryWithStatus,
 } from "../../fixtures/repository-fixtures.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+import { InvalidMetadataFormatError } from "../../../src/repositories/errors.js";
 
 describe("RepositoryMetadataStore Integration Tests", () => {
   let tempDir: string;
@@ -98,6 +99,20 @@ describe("RepositoryMetadataStore Integration Tests", () => {
       expect(content).toContain("  "); // Should have indentation
       expect(content).toContain('"version": "1.0"');
       expect(content).toContain('"repositories"');
+    });
+
+    test("should handle corrupted JSON file", async () => {
+      const filePath = join(tempDir, "repositories.json");
+
+      // Write corrupted JSON to the file
+      await Bun.write(filePath, "{ invalid json }");
+
+      // Reset and create new instance
+      RepositoryMetadataStoreImpl.resetInstance();
+      const newStore = RepositoryMetadataStoreImpl.getInstance(tempDir);
+
+      // Should throw InvalidMetadataFormatError when trying to load
+      expect(newStore.listRepositories()).rejects.toThrow(InvalidMetadataFormatError);
     });
   });
 

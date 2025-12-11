@@ -118,6 +118,13 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
     if (!RepositoryMetadataStoreImpl.instance) {
       const path = dataPath || process.env["DATA_PATH"] || "./data";
       RepositoryMetadataStoreImpl.instance = new RepositoryMetadataStoreImpl(path);
+    } else if (dataPath !== undefined) {
+      // Log warning if a different path is requested after initialization
+      const logger = getComponentLogger("repositories:metadata");
+      logger.warn(
+        { requestedPath: dataPath },
+        "getInstance called with dataPath after singleton already initialized - ignoring new path"
+      );
     }
     return RepositoryMetadataStoreImpl.instance;
   }
@@ -132,6 +139,47 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
    */
   public static resetInstance(): void {
     RepositoryMetadataStoreImpl.instance = null;
+  }
+
+  /**
+   * Validate repository info fields at runtime
+   *
+   * Performs runtime validation to ensure required fields are present and valid.
+   * TypeScript provides compile-time type safety, but this ensures data integrity
+   * at runtime when persisting to disk.
+   *
+   * @param info - Repository metadata to validate
+   * @throws {RepositoryMetadataError} If validation fails
+   * @private
+   */
+  private validateRepositoryInfo(info: RepositoryInfo): void {
+    if (!info.name || typeof info.name !== "string" || info.name.trim() === "") {
+      throw new RepositoryMetadataError(
+        "Repository name is required and must be non-empty",
+        "VALIDATION_ERROR"
+      );
+    }
+    if (!info.url || typeof info.url !== "string") {
+      throw new RepositoryMetadataError("Repository URL is required", "VALIDATION_ERROR");
+    }
+    if (!info.collectionName || typeof info.collectionName !== "string") {
+      throw new RepositoryMetadataError("Collection name is required", "VALIDATION_ERROR");
+    }
+    if (!["ready", "indexing", "error"].includes(info.status)) {
+      throw new RepositoryMetadataError(`Invalid status: ${info.status}`, "VALIDATION_ERROR");
+    }
+    if (typeof info.fileCount !== "number" || info.fileCount < 0) {
+      throw new RepositoryMetadataError(
+        "File count must be a non-negative number",
+        "VALIDATION_ERROR"
+      );
+    }
+    if (typeof info.chunkCount !== "number" || info.chunkCount < 0) {
+      throw new RepositoryMetadataError(
+        "Chunk count must be a non-negative number",
+        "VALIDATION_ERROR"
+      );
+    }
   }
 
   /**
@@ -230,13 +278,23 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
    * Uses atomic writes to ensure data consistency even if the operation
    * is interrupted.
    *
+   * **Concurrency Note:** This implementation uses atomic file writes to prevent
+   * data corruption, but does not protect against race conditions in multi-process
+   * environments. If two processes call this method simultaneously, the last write
+   * wins and one update may be lost. For MVP, this is acceptable as single-process
+   * usage is expected. Future enhancement: implement file locking for multi-process safety.
+   *
    * @param info - Complete repository metadata
    * @throws {FileOperationError} If metadata file cannot be written
+   * @throws {RepositoryMetadataError} If validation fails
    */
   async updateRepository(info: RepositoryInfo): Promise<void> {
     const startTime = Date.now();
 
     try {
+      // Validate input before persisting
+      this.validateRepositoryInfo(info);
+
       const metadata = await this.loadMetadata();
       const isUpdate = info.name in metadata.repositories;
 
@@ -477,7 +535,12 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
  * - Collapsing multiple consecutive underscores
  * - Removing leading/trailing underscores
  * - Prefixing with "repo_"
- * - Truncating to 63 characters (ChromaDB limit)
+ * - Truncating to 63 characters (ChromaDB limit) with hash suffix for uniqueness
+ *
+ * For names that exceed 63 characters after prefixing, an 8-character hash of the
+ * original name is appended to ensure uniqueness. This prevents collisions when
+ * two different repository names would otherwise produce identical collection names
+ * after truncation.
  *
  * @param name - Repository name to sanitize
  * @returns Sanitized collection name suitable for ChromaDB
@@ -487,6 +550,8 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
  * sanitizeCollectionName("My-API")       // "repo_my_api"
  * sanitizeCollectionName("frontend.app") // "repo_frontend_app"
  * sanitizeCollectionName("Test___Name")  // "repo_test_name"
+ * // Long names get hash suffix:
+ * sanitizeCollectionName("very-long-name...")  // "repo_very_long_name..._a1b2c3d4"
  * ```
  */
 export function sanitizeCollectionName(name: string): string {
@@ -501,5 +566,10 @@ export function sanitizeCollectionName(name: string): string {
   const prefixed = `repo_${sanitized}`;
 
   // Truncate to ChromaDB's 63 character limit
-  return prefixed.length > 63 ? prefixed.substring(0, 63) : prefixed;
+  if (prefixed.length > 63) {
+    // Use hash suffix to ensure uniqueness for truncated names
+    const hash = Bun.hash(name).toString(16).substring(0, 8);
+    return `${prefixed.substring(0, 54)}_${hash}`;
+  }
+  return prefixed;
 }
