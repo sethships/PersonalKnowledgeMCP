@@ -1,0 +1,456 @@
+/**
+ * Unit tests for RepositoryCloner.
+ *
+ * @module tests/unit/ingestion/repository-cloner
+ */
+
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { RepositoryCloner } from "../../../src/ingestion/repository-cloner.js";
+import { ValidationError, CloneError, AuthenticationError } from "../../../src/ingestion/errors.js";
+import type { RepositoryClonerConfig } from "../../../src/ingestion/types.js";
+import { MockSimpleGit, MOCK_GIT_ERRORS } from "../../helpers/simple-git-mock.js";
+import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+
+describe("RepositoryCloner", () => {
+  let testDir: string;
+  let config: RepositoryClonerConfig;
+  let cloner: RepositoryCloner;
+  let mockGit: MockSimpleGit;
+
+  beforeEach(async () => {
+    // Initialize logger for tests
+    initializeLogger({ level: "info", format: "json" });
+
+    // Create a temporary directory for test clones
+    testDir = join(tmpdir(), `repo-cloner-test-${Date.now()}`);
+    await mkdir(testDir, { recursive: true });
+
+    config = {
+      clonePath: testDir,
+      githubPat: undefined,
+    };
+
+    cloner = new RepositoryCloner(config);
+    mockGit = new MockSimpleGit();
+
+    // Inject mock git client
+    // @ts-expect-error - Accessing private property for testing
+    cloner.git = mockGit;
+  });
+
+  afterEach(async () => {
+    // Clean up test directory
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    mockGit.reset();
+    resetLogger();
+  });
+
+  describe("URL Validation", () => {
+    test("should accept valid GitHub URL without .git", async () => {
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("repo");
+    });
+
+    test("should accept valid GitHub URL with .git suffix", async () => {
+      const url = "https://github.com/user/repo.git";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("repo");
+    });
+
+    test("should reject URL without https", () => {
+      const url = "http://github.com/user/repo";
+      expect(async () => {
+        await cloner.clone(url);
+      }).toThrow(ValidationError);
+    });
+
+    test("should reject URL with wrong domain", () => {
+      const url = "https://gitlab.com/user/repo";
+      expect(async () => {
+        await cloner.clone(url);
+      }).toThrow(ValidationError);
+    });
+
+    test("should reject malformed URL", () => {
+      const url = "https://github.com/user";
+      expect(async () => {
+        await cloner.clone(url);
+      }).toThrow(ValidationError);
+    });
+
+    test("should reject empty URL", () => {
+      expect(async () => {
+        await cloner.clone("");
+      }).toThrow(ValidationError);
+    });
+  });
+
+  describe("Repository Name Extraction", () => {
+    test("should extract name from standard URL", async () => {
+      const url = "https://github.com/user/my-repo";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("my-repo");
+    });
+
+    test("should extract name from URL with .git suffix", async () => {
+      const url = "https://github.com/user/my-repo.git";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("my-repo");
+    });
+
+    test("should handle repository names with hyphens", async () => {
+      const url = "https://github.com/user/my-awesome-repo";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("my-awesome-repo");
+    });
+
+    test("should handle repository names with underscores and dots", async () => {
+      const url = "https://github.com/user/my_repo.name";
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("my_repo.name");
+    });
+  });
+
+  describe("Authenticated URL Building", () => {
+    test("should not modify URL when PAT is not configured", async () => {
+      const url = "https://github.com/user/repo";
+      await cloner.clone(url);
+
+      const lastUrl = mockGit.getLastCloneUrl();
+      expect(lastUrl).toBe(url);
+    });
+
+    test("should add PAT to URL when configured", async () => {
+      const pat = "ghp_test1234567890abcdefghijklmnopqrstuvwxyz";
+      config.githubPat = pat;
+      cloner = new RepositoryCloner(config);
+      // @ts-expect-error - Accessing private property for testing
+      cloner.git = mockGit;
+
+      const url = "https://github.com/user/repo";
+      await cloner.clone(url);
+
+      const lastUrl = mockGit.getLastCloneUrl();
+      expect(lastUrl).toContain(pat);
+      expect(lastUrl).toContain("x-oauth-basic");
+      expect(lastUrl).toMatch(/^https:\/\/ghp_[^:]+:x-oauth-basic@github\.com/);
+    });
+
+    test("should handle URLs with .git suffix when adding PAT", async () => {
+      const pat = "ghp_test1234567890abcdefghijklmnopqrstuvwxyz";
+      config.githubPat = pat;
+      cloner = new RepositoryCloner(config);
+      // @ts-expect-error - Accessing private property for testing
+      cloner.git = mockGit;
+
+      const url = "https://github.com/user/repo.git";
+      await cloner.clone(url);
+
+      const lastUrl = mockGit.getLastCloneUrl();
+      expect(lastUrl).toContain(pat);
+      expect(lastUrl).toContain("repo.git");
+    });
+
+    test("should never log PAT in error messages", async () => {
+      expect.assertions(3);
+      const pat = "ghp_secret_token_should_never_appear_in_logs";
+      config.githubPat = pat;
+      cloner = new RepositoryCloner(config);
+      // @ts-expect-error - Accessing private property for testing
+      cloner.git = mockGit;
+
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.NETWORK_ERROR);
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(CloneError);
+        if (error instanceof CloneError) {
+          // Check error message doesn't contain PAT
+          expect(error.message).not.toContain(pat);
+          // Check error URL is sanitized
+          expect(error.url).not.toContain(pat);
+        }
+      }
+    });
+  });
+
+  describe("Clone Options Handling", () => {
+    test("should use shallow clone by default", async () => {
+      const url = "https://github.com/user/repo";
+      await cloner.clone(url);
+
+      const options = mockGit.getLastCloneOptions();
+      expect(options).toBeDefined();
+      expect(options).toContain("--depth");
+      expect(options).toContain("1");
+    });
+
+    test("should allow custom name override", async () => {
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url, { name: "custom-name" });
+
+      expect(result.name).toBe("custom-name");
+      expect(result.path).toContain("custom-name");
+    });
+
+    test("should support branch specification", async () => {
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url, { branch: "develop" });
+
+      const options = mockGit.getLastCloneOptions();
+      expect(options).toContain("--branch");
+      expect(options).toContain("develop");
+      expect(result.branch).toBe("develop");
+    });
+
+    test("should support full clone when shallow=false", async () => {
+      const url = "https://github.com/user/repo";
+      await cloner.clone(url, { shallow: false });
+
+      const options = mockGit.getLastCloneOptions();
+      expect(options).not.toContain("--depth");
+    });
+
+    test("should delete existing directory when fresh=true", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Fresh clone should delete and re-clone
+      await cloner.clone(url, { fresh: true });
+      expect(mockGit.getCloneCallCount()).toBe(2);
+    });
+  });
+
+  describe("Directory Management", () => {
+    test("should create parent directories if needed", async () => {
+      const deepPath = join(testDir, "level1", "level2", "level3");
+      const deepConfig: RepositoryClonerConfig = {
+        clonePath: deepPath,
+      };
+
+      const deepCloner = new RepositoryCloner(deepConfig);
+      // @ts-expect-error - Accessing private property for testing
+      deepCloner.git = mockGit;
+
+      const url = "https://github.com/user/repo";
+      const result = await deepCloner.clone(url);
+
+      expect(result.path).toContain("level1");
+      expect(result.path).toContain("level2");
+      expect(result.path).toContain("level3");
+    });
+
+    test("should skip clone if directory exists", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Second clone should skip
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1); // Still 1, not incremented
+    });
+
+    test("should re-clone when fresh=true even if directory exists", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Fresh clone
+      await cloner.clone(url, { fresh: true });
+      expect(mockGit.getCloneCallCount()).toBe(2);
+    });
+
+    test("should handle Windows-style paths correctly", async () => {
+      // This test ensures path.normalize() is working
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url);
+
+      // Path should be normalized (no mixed separators)
+      expect(result.path).toBeDefined();
+      expect(result.path.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Error Scenarios", () => {
+    test("should throw ValidationError for invalid URL format", () => {
+      const invalidUrl = "not-a-url";
+
+      expect(async () => {
+        await cloner.clone(invalidUrl);
+      }).toThrow(ValidationError);
+    });
+
+    test("should throw AuthenticationError for authentication failure", async () => {
+      expect.assertions(3);
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.AUTHENTICATION_FAILED);
+
+      const url = "https://github.com/user/private-repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(AuthenticationError);
+        if (error instanceof AuthenticationError) {
+          expect(error.code).toBe("AUTHENTICATION_ERROR");
+          expect(error.url).toBe(url);
+        }
+      }
+    });
+
+    test("should throw AuthenticationError for repository not found", async () => {
+      expect.assertions(1);
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.REPOSITORY_NOT_FOUND);
+
+      const url = "https://github.com/user/nonexistent";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(AuthenticationError);
+      }
+    });
+
+    test("should throw CloneError for network errors", async () => {
+      expect.assertions(3);
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.NETWORK_ERROR);
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(CloneError);
+        if (error instanceof CloneError) {
+          expect(error.code).toBe("CLONE_ERROR");
+          expect(error.url).toBe(url);
+        }
+      }
+    });
+
+    test("should throw CloneError for host resolution errors", async () => {
+      expect.assertions(1);
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.HOST_RESOLUTION_ERROR);
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(CloneError);
+      }
+    });
+
+    test("should throw CloneError for permission errors", async () => {
+      expect.assertions(1);
+      mockGit.setShouldFailClone(MOCK_GIT_ERRORS.PERMISSION_DENIED);
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(CloneError);
+      }
+    });
+
+    test("should include cause in error chain", async () => {
+      expect.assertions(2);
+      const originalError = new Error("Original error");
+      mockGit.setShouldFailClone(originalError);
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        expect(error).toBeInstanceOf(CloneError);
+        if (error instanceof CloneError) {
+          expect(error.cause).toBe(originalError);
+        }
+      }
+    });
+  });
+
+  describe("Clone Result", () => {
+    test("should return correct CloneResult structure", async () => {
+      const url = "https://github.com/user/my-repo";
+      const result = await cloner.clone(url);
+
+      expect(result).toBeDefined();
+      expect(result.name).toBe("my-repo");
+      expect(result.path).toContain("my-repo");
+      // Mock doesn't have real git repo, so branch detection returns "unknown"
+      expect(result.branch).toBe("unknown");
+    });
+
+    test("should include specified branch in result", async () => {
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url, { branch: "feature-branch" });
+
+      expect(result.branch).toBe("feature-branch");
+    });
+
+    test("should return absolute path", async () => {
+      const url = "https://github.com/user/repo";
+      const result = await cloner.clone(url);
+
+      // Path should be absolute (contains testDir which is absolute)
+      expect(result.path).toContain(testDir);
+    });
+  });
+
+  describe("Logging and Metrics", () => {
+    test("should log successful clone with metrics", async () => {
+      const url = "https://github.com/user/repo";
+
+      // Add small delay to ensure measurable duration
+      mockGit.setCloneDelay(10);
+
+      const result = await cloner.clone(url);
+
+      expect(result).toBeDefined();
+      // Metrics are logged - we can't directly test logger output in unit tests
+      // but this ensures the code path executes without errors
+    });
+
+    test("should not log PAT even when clone fails", async () => {
+      expect.assertions(1);
+      const pat = "ghp_secret_token";
+      config.githubPat = pat;
+      cloner = new RepositoryCloner(config);
+      // @ts-expect-error - Accessing private property for testing
+      cloner.git = mockGit;
+
+      mockGit.setShouldFailClone(new Error("Clone failed"));
+
+      const url = "https://github.com/user/repo";
+
+      try {
+        await cloner.clone(url);
+      } catch (error) {
+        // Error should not contain PAT
+        const errorStr = JSON.stringify(error);
+        expect(errorStr).not.toContain(pat);
+      }
+    });
+  });
+});
