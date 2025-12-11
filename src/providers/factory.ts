@@ -68,7 +68,7 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
  */
 function createOpenAIProvider(config: EmbeddingProviderConfig): OpenAIEmbeddingProvider {
   // Read API key from environment
-  const apiKey = Bun.env.OPENAI_API_KEY;
+  const apiKey = Bun.env["OPENAI_API_KEY"];
 
   if (!apiKey) {
     throw new EmbeddingValidationError(
@@ -81,8 +81,8 @@ function createOpenAIProvider(config: EmbeddingProviderConfig): OpenAIEmbeddingP
   const openaiConfig: OpenAIProviderConfig = {
     ...config,
     apiKey,
-    organization: Bun.env.OPENAI_ORGANIZATION,
-    baseURL: Bun.env.OPENAI_BASE_URL,
+    organization: Bun.env["OPENAI_ORGANIZATION"],
+    baseURL: Bun.env["OPENAI_BASE_URL"],
   };
 
   return new OpenAIEmbeddingProvider(openaiConfig);

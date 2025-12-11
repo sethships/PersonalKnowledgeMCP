@@ -162,9 +162,9 @@ describe("OpenAIEmbeddingProvider", () => {
       const embeddings = await provider.generateEmbeddings(texts);
 
       expect(embeddings.length).toBe(3);
-      expect(embeddings[0].length).toBe(1536);
-      expect(embeddings[1].length).toBe(1536);
-      expect(embeddings[2].length).toBe(1536);
+      expect(embeddings[0]!.length).toBe(1536);
+      expect(embeddings[1]!.length).toBe(1536);
+      expect(embeddings[2]!.length).toBe(1536);
       expect(mockClient.getCallCount()).toBe(1);
     });
 

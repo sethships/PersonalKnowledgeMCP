@@ -17,7 +17,7 @@ describe("createEmbeddingProvider", () => {
 
   beforeEach(() => {
     // Set up test environment
-    Bun.env.OPENAI_API_KEY = "sk-test1234567890abcdefghijklmnop";
+    Bun.env["OPENAI_API_KEY"] = "sk-test1234567890abcdefghijklmnop";
   });
 
   afterEach(() => {
@@ -76,7 +76,7 @@ describe("createEmbeddingProvider", () => {
 
   test("reads API key from OPENAI_API_KEY environment variable", () => {
     const testApiKey = "sk-custom-key-1234567890abcdefgh";
-    Bun.env.OPENAI_API_KEY = testApiKey;
+    Bun.env["OPENAI_API_KEY"] = testApiKey;
 
     const config: EmbeddingProviderConfig = {
       provider: "openai",
@@ -94,7 +94,7 @@ describe("createEmbeddingProvider", () => {
   });
 
   test("reads organization from OPENAI_ORGANIZATION environment variable", () => {
-    Bun.env.OPENAI_ORGANIZATION = "org-test123";
+    Bun.env["OPENAI_ORGANIZATION"] = "org-test123";
 
     const config: EmbeddingProviderConfig = {
       provider: "openai",
@@ -110,7 +110,7 @@ describe("createEmbeddingProvider", () => {
   });
 
   test("reads base URL from OPENAI_BASE_URL environment variable", () => {
-    Bun.env.OPENAI_BASE_URL = "https://custom-api.example.com/v1";
+    Bun.env["OPENAI_BASE_URL"] = "https://custom-api.example.com/v1";
 
     const config: EmbeddingProviderConfig = {
       provider: "openai",
@@ -126,7 +126,7 @@ describe("createEmbeddingProvider", () => {
   });
 
   test("throws when OPENAI_API_KEY environment variable is missing", () => {
-    delete Bun.env.OPENAI_API_KEY;
+    delete Bun.env["OPENAI_API_KEY"];
 
     const config: EmbeddingProviderConfig = {
       provider: "openai",
@@ -144,7 +144,7 @@ describe("createEmbeddingProvider", () => {
   });
 
   test("throws when OPENAI_API_KEY is empty string", () => {
-    Bun.env.OPENAI_API_KEY = "";
+    Bun.env["OPENAI_API_KEY"] = "";
 
     const config: EmbeddingProviderConfig = {
       provider: "openai",

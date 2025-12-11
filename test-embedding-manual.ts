@@ -18,7 +18,7 @@ async function main() {
   console.log("=== Manual Embedding Provider Test ===\n");
 
   // Check for API key
-  const apiKey = Bun.env.OPENAI_API_KEY;
+  const apiKey = Bun.env["OPENAI_API_KEY"];
   if (!apiKey) {
     console.error("ERROR: OPENAI_API_KEY environment variable not set");
     console.error("Please set it in your .env file or export it:");
@@ -79,7 +79,7 @@ async function main() {
   console.log(`   Input: ${texts.length} texts`);
   const embeddings = await provider.generateEmbeddings(texts);
   console.log(`   ✓ Generated ${embeddings.length} embeddings`);
-  console.log(`   Each embedding has ${embeddings[0].length} dimensions`);
+  console.log(`   Each embedding has ${embeddings[0]!.length} dimensions`);
 
   // Test 4: Verify API key sanitization (trigger an error with invalid API key)
   console.log("\n5. Testing API key sanitization...");
@@ -95,13 +95,13 @@ async function main() {
     };
 
     // Set a fake API key temporarily
-    const originalKey = Bun.env.OPENAI_API_KEY;
-    Bun.env.OPENAI_API_KEY = "sk-fake1234567890abcdefghijklmnop";
+    const originalKey = Bun.env["OPENAI_API_KEY"];
+    Bun.env["OPENAI_API_KEY"] = "sk-fake1234567890abcdefghijklmnop";
 
     const badProvider = createEmbeddingProvider(badConfig);
 
     // Restore original key
-    Bun.env.OPENAI_API_KEY = originalKey;
+    Bun.env["OPENAI_API_KEY"] = originalKey;
 
     await badProvider.generateEmbedding("test");
     console.error("   ✗ Should have thrown an error!");

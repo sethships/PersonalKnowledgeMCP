@@ -96,7 +96,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     const embeddings = await this.generateEmbeddings([text]);
-    return embeddings[0];
+    return embeddings[0]!;
   }
 
   /**
@@ -312,7 +312,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     if (error && typeof error === "object" && "status" in error) {
       const status = (error as { status: number }).status;
       const message = (error as { message?: string }).message || "Unknown error";
-      const cause = error as Error;
+      const cause = error as unknown as Error;
 
       switch (status) {
         case 401:
