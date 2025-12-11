@@ -67,6 +67,7 @@ function createRootLogger(config: LoggerConfig): pino.Logger {
           translateTime: "SYS:standard",
           ignore: "pid,hostname",
           singleLine: false,
+          destination: 2, // Ensure stderr output (critical for MCP compatibility)
         },
       },
     });
@@ -102,10 +103,41 @@ export function initializeLogger(config: LoggerConfig): void {
     throw new Error("Logger already initialized. initializeLogger() should only be called once.");
   }
 
-  rootLogger = createRootLogger(config);
+  try {
+    rootLogger = createRootLogger(config);
 
-  // Log initialization (helps verify logger is working)
-  rootLogger.debug({ config }, "Logger initialized");
+    // Log initialization (helps verify logger is working)
+    rootLogger.debug({ config }, "Logger initialized");
+  } catch (error) {
+    // Graceful degradation: If logger creation fails (e.g., pino-pretty not installed),
+    // fall back to basic JSON logger without transport
+    const fallbackConfig: LoggerConfig = {
+      level: config.level,
+      format: "json", // Always use JSON for fallback (no dependencies)
+    };
+
+    // Create simple JSON logger without transport (but with redaction)
+    rootLogger = pino({
+      level: fallbackConfig.level,
+      redact: REDACT_OPTIONS, // Maintain secret redaction even in fallback
+      timestamp: pino.stdTimeFunctions.isoTime,
+      formatters: {
+        level: (label) => ({ level: label }),
+      },
+      // @ts-expect-error - Pino types don't include destination but it works
+      destination: 2, // stderr
+    });
+
+    // Log fallback warning
+    rootLogger.warn(
+      {
+        requestedFormat: config.format,
+        fallbackFormat: "json",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Logger initialization failed, using fallback JSON logger"
+    );
+  }
 }
 
 /**

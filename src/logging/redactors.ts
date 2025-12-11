@@ -22,6 +22,9 @@ export const REDACT_PATHS = [
   // Environment variables
   "env.OPENAI_API_KEY",
   "env.GITHUB_PAT",
+  "env.DATABASE_URL",
+  "env.AWS_SECRET_ACCESS_KEY",
+  "env.AZURE_CLIENT_SECRET",
 
   // HTTP headers
   "headers.authorization",
@@ -42,6 +45,9 @@ export const REDACT_PATHS = [
   "*.refresh_token",
   "*.privateKey",
   "*.private_key",
+  "*.credentials",
+  "*.connectionString",
+  "*.secretKey",
 
   // Query parameters that might contain secrets
   "query.token",
@@ -137,15 +143,28 @@ export function looksLikeSecret(value: string): boolean {
  *
  * Redacts common secret fields while preserving error structure.
  *
+ * **IMPORTANT LIMITATION**: This function does NOT scan error messages or stack
+ * traces for embedded secrets. If secrets are included in error message strings
+ * (e.g., `new Error("Failed with key sk-proj-...")`), they will NOT be redacted.
+ *
+ * Best practice: Never include secrets in error messages. Use structured error
+ * properties instead, which will be caught by path-based redaction.
+ *
  * @param error - Error object to sanitize
  * @returns Sanitized error object safe for logging
  *
  * @example
  * ```typescript
  * const err = new Error("Connection failed");
- * err.cause = new Error("Auth failed: sk-proj-abc123...");
+ * err.cause = new Error("Auth failed");
  * const safe = sanitizeError(err);
- * // Secrets in error messages are preserved but should be redacted by path patterns
+ *
+ * // ❌ BAD: Secret in message - will NOT be redacted
+ * const bad = new Error("Failed with key sk-proj-abc123...");
+ *
+ * // ✅ GOOD: Secret in property - will be redacted by path patterns
+ * const good = new Error("Failed to authenticate");
+ * (good as any).apiKey = "sk-proj-abc123..."; // Redacted by *.apiKey pattern
  * ```
  */
 export function sanitizeError(error: Error): Record<string, unknown> {
