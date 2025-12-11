@@ -32,21 +32,23 @@ jobs:
       - name: Run format check
         run: bun run format:check
 
-      - name: Start ChromaDB
-        run: docker compose up -d chromadb
-
-      - name: Wait for ChromaDB
-        run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:8000/api/v1/heartbeat 2>/dev/null; then
-              echo "ChromaDB is ready"
-              exit 0
-            fi
-            echo "Waiting for ChromaDB... ($i/30)"
-            sleep 2
-          done
-          echo "ChromaDB failed to start"
-          exit 1
+      # ChromaDB integration tests will be added in future PRs
+      # For now, only running unit tests that don't require external services
+      # - name: Start ChromaDB
+      #   run: docker compose up -d chromadb
+      #
+      # - name: Wait for ChromaDB
+      #   run: |
+      #     for i in {1..30}; do
+      #       if curl -f http://localhost:8000/api/v1/heartbeat 2>/dev/null; then
+      #         echo "ChromaDB is ready"
+      #         exit 0
+      #       fi
+      #       echo "Waiting for ChromaDB... ($i/30)"
+      #       sleep 2
+      #     done
+      #     echo "ChromaDB failed to start"
+      #     exit 1
 
       - name: Run tests with coverage
         run: bun test --coverage
@@ -62,6 +64,7 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-      - name: Stop ChromaDB
-        if: always()
-        run: docker compose down
+      # Cleanup ChromaDB (disabled until integration tests are added)
+      # - name: Stop ChromaDB
+      #   if: always()
+      #   run: docker compose down
