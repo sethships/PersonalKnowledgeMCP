@@ -203,8 +203,11 @@ docker exec pk-mcp-chromadb ps aux
 # Last 100 lines
 docker-compose logs --tail=100 chromadb
 
-# Since specific time
-docker-compose logs --since="2024-12-10T18:00:00"
+# Since relative time (last hour)
+docker-compose logs --since="1h"
+
+# Since specific time (if needed)
+docker-compose logs --since="2024-01-01T00:00:00"
 
 # Follow logs from now
 docker-compose logs -f chromadb
@@ -264,6 +267,17 @@ docker volume inspect personalknowledgemcp_chromadb-data
 
 **Create Backup:**
 
+**PowerShell (Windows):**
+```powershell
+# Backup to compressed archive
+docker run --rm `
+  -v personalknowledgemcp_chromadb-data:/data:ro `
+  -v "${PWD}:/backup" `
+  alpine `
+  sh -c "tar czf /backup/chromadb-backup-`$(date +%Y%m%d-%H%M%S).tar.gz -C /data ."
+```
+
+**Bash (WSL/Git Bash):**
 ```bash
 # Backup to compressed archive
 docker run --rm \
@@ -293,6 +307,29 @@ chromadb-backup-20241210-183000.tar.gz
 
 **Restore Process:**
 
+**PowerShell (Windows):**
+```powershell
+# 1. Stop container
+docker-compose stop chromadb
+
+# 2. Clear existing data (OPTIONAL - DESTRUCTIVE)
+docker run --rm `
+  -v personalknowledgemcp_chromadb-data:/data `
+  alpine `
+  sh -c "rm -rf /data/*"
+
+# 3. Restore from backup (replace filename with your backup)
+docker run --rm `
+  -v personalknowledgemcp_chromadb-data:/data `
+  -v "${PWD}:/backup:ro" `
+  alpine `
+  tar xzf /backup/chromadb-backup-20241210-183000.tar.gz -C /data
+
+# 4. Restart container
+docker-compose up -d chromadb
+```
+
+**Bash (WSL/Git Bash):**
 ```bash
 # 1. Stop container
 docker-compose stop chromadb
@@ -303,7 +340,7 @@ docker run --rm \
   alpine \
   sh -c "rm -rf /data/*"
 
-# 3. Restore from backup
+# 3. Restore from backup (replace filename with your backup)
 docker run --rm \
   -v personalknowledgemcp_chromadb-data:/data \
   -v "$(pwd)":/backup:ro \
