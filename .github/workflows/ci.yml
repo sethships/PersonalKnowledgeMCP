@@ -18,7 +18,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned to 1.1.38 for stability during Phase 1 development
+          # Bun is rapidly evolving and unpinned 'latest' could introduce breaking changes
+          # TODO: Re-evaluate version pinning after Phase 1 completion and project stabilization
+          # Dependabot: This is intentionally pinned - please create PR for version updates
+          bun-version: 1.1.38
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -60,6 +64,9 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          # Note: Bun's test runner outputs coverage to console by default
+          # To generate coverage files, run: bun test --coverage --coverage-reporter=lcov
+          # This step will fail until coverage file generation is configured
           files: ./coverage/coverage-final.json
           fail_ci_if_error: false
         continue-on-error: true

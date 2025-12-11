@@ -477,6 +477,14 @@ Questions to help answer:
 **Q30:** Should we build a community around this project, and if so, what would that look like?
 **A:** Not right now. I might consider switching to public later and then we'd want to discuss community building.
 
+**Q31:** What open-source license should be selected for this project?
+**A:** License selection is deferred until project stabilization and before any public release. When selecting:
+- Must be a permissive open-source license (non-copyleft preferred)
+- Consider MIT or Apache 2.0 for maximum adoption and compatibility
+- Verify compatibility with all project dependencies
+- Document license choice and rationale in repository before public release
+- Currently marked as "TBD" in README.md pending this decision
+
 ---
 
 ## Follow-Up Questions for MVP Scoping
