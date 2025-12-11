@@ -2,224 +2,366 @@
 
 An AI-first knowledge management service built on the Model Context Protocol (MCP) that enables Claude Code and other AI assistants to efficiently access, retrieve, and utilize knowledge from software development projects and educational materials.
 
-[![Project Status](https://img.shields.io/badge/status-planning-blue)]() [![Python](https://img.shields.io/badge/python-3.11+-blue)]() [![License](https://img.shields.io/badge/license-TBD-lightgrey)]()
+[![Project Status](https://img.shields.io/badge/status-phase1-blue)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-TBD-lightgrey)]()
 
 ## Overview
 
 Personal Knowledge MCP is a purpose-built MCP service that creates a semantic bridge between AI development workflows and diverse knowledge sources. Unlike traditional knowledge management systems retrofitted for AI access, this project is designed from the ground up for AI assistant integration.
 
+**Current Phase**: Phase 1 - Core MCP + Vector Search
+
 ### Key Features
 
 - **MCP-Native Architecture**: Purpose-built for AI assistant integration via the Model Context Protocol
-- **Multi-Instance Security Model**: Separate knowledge instances for different privacy/security levels (Private, Work, Public)
-- **Software Project Focus**: Optimized for code repositories, documentation, and technical artifacts
-- **Intelligent Storage Routing**: Automatic selection of optimal storage type (vector, graph, document) per knowledge domain
-- **Local-First with Cloud Flexibility**: Home lab deployment with optional cloud scaling
 - **Semantic Code Search**: AI assistants can find relevant code and documentation without full codebase scans
+- **Private Repository Support**: Secure indexing of private GitHub repositories via PAT
+- **Vector-Based Retrieval**: Fast, accurate semantic search using ChromaDB
+- **OpenAI Embeddings**: High-quality semantic understanding with text-embedding-3-small
+- **Local-First Deployment**: Runs entirely on localhost with Docker Compose
 
 ## Use Cases
 
-### 1. Software Project Knowledge Management (Primary)
+### Software Project Knowledge Management
 
-Manage knowledge for multiple active coding projects with intelligent semantic indexing:
+Manage knowledge for active coding projects with intelligent semantic indexing:
 
-- Index GitHub and Azure DevOps repositories
-- Semantic search across code, documentation, ADRs, and reference materials
+- Index GitHub repositories (private and public)
+- Semantic search across code, documentation, and reference materials
 - Efficient context retrieval for AI assistants (reduces token waste)
-- Multi-project context switching during development
-- Scales from small microservices to large monolithic codebases
+- Query response times under 500ms (95th percentile)
 
-### 2. Educational Material Organization
-
-Organize and semantically search structured educational content:
-
-- Index college notes and educational materials from local folders
-- Cross-reference concepts across different courses/domains
-- Semantic search across hierarchical folder structures
-- Support for Markdown, PDF, DOCX, and other document formats
+**Example Query**: *"Find authentication middleware that validates JWT tokens"*
 
 ## Technology Stack
 
-### Core Service
+### Phase 1 Stack
 
-- **Language**: Python 3.11+
-- **Framework**: FastAPI with async/await
-- **MCP SDK**: Official Anthropic MCP Python SDK
-- **Deployment**: Docker containers, Kubernetes orchestration
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Runtime | Bun 1.0+ | Fast all-in-one JavaScript runtime |
+| Language | TypeScript 5.3+ | Type-safe development |
+| MCP SDK | @modelcontextprotocol/sdk | Official MCP implementation |
+| Vector DB | ChromaDB | Semantic search and similarity |
+| Embeddings | OpenAI text-embedding-3-small | Embedding generation |
+| Deployment | Docker Compose | ChromaDB containerization |
+| Testing | Bun Test | Built-in test runner with coverage |
 
-### Storage Backends
+### Future Phases
 
-- **Vector Database**: Qdrant (semantic search and similarity)
-- **Graph Database**: Neo4j Community Edition (relationships and dependencies)
-- **Document Store**: PostgreSQL with JSON (artifacts and full documents)
-
-### Ingestion & Analysis
-
-- **Code Parsing**: tree-sitter (AST generation for multiple languages)
-- **Document Extraction**: pypdf, python-docx, markdown-it-py
-- **Embeddings**: OpenAI API (with future Ollama support for local embeddings)
-
-## Project Status
-
-**Current Phase**: Initial setup and planning (Phase 1 preparation)
-
-This project is in early stages. See the [Product Requirements Document](docs/High-level-Personal-Knowledge-MCP-PRD.md) for detailed vision, goals, and requirements.
-
-### Roadmap
-
-#### Phase 1: Core MCP + Vector Search (Current)
-
-Get Claude Code querying indexed code semantically
-
-- Basic MCP service implementation (read-only queries)
-- Single vector database (Qdrant)
-- GitHub repository cloner and basic file ingestion
-- Simple code text extraction
-- OpenAI embeddings API integration
-
-#### Phase 2: Code Intelligence + Local Files
-
-Add code-aware indexing and educational material support
-
-- AST parsing with tree-sitter (functions, classes, imports)
-- Document store (PostgreSQL) for full file artifacts
-- Local folder ingestion with file watcher
-- Markdown/PDF extraction for college notes
-
-#### Phase 3: Multi-Instance + Azure DevOps
-
-Security model and work integration
-
-- Multi-instance configuration and deployment templates
-- Authentication layer (token-based initially)
-- Azure DevOps repository integration
-- Instance-specific routing in MCP service
-
-#### Phase 4: Graph Relationships + Automation
-
-Deeper insights and operational automation
-
-- Graph database (Neo4j) for relationships
-- Code dependency extraction and graph population
-- GitHub webhook handler (or polling alternative)
-- Automated update pipelines
-
-## Documentation
-
-- [Product Requirements Document](docs/High-level-Personal-Knowledge-MCP-PRD.md) - High-level product vision, goals, and requirements
-- [Project Configuration](.claude/CLAUDE.md) - Development guidelines for Claude Code
-- Architecture Documentation - *(Coming in Phase 1)*
-- Architecture Decision Records (ADRs) - *(Coming as decisions are made)*
+- **Phase 2**: Tree-sitter (AST parsing), PostgreSQL (document store), local file ingestion
+- **Phase 3**: Multi-instance architecture, Azure DevOps integration, authentication layer
+- **Phase 4**: Neo4j (graph relationships), automated update pipelines
 
 ## Architecture
 
-The system follows a modular, microservices-oriented architecture with clear separation of concerns:
+```mermaid
+graph TB
+    subgraph HOST["HOST SYSTEM (Windows)"]
+        CC[Claude Code<br/>Client]
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    MCP Service Layer                     │
-│            (FastAPI + Anthropic MCP SDK)                │
-└─────────────────────────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-┌───────▼────────┐ ┌──────▼──────┐ ┌────────▼────────┐
-│ Vector DB      │ │  Graph DB   │ │  Document Store │
-│   (Qdrant)     │ │   (Neo4j)   │ │  (PostgreSQL)   │
-└────────────────┘ └─────────────┘ └─────────────────┘
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-┌───────▼────────┐ ┌──────▼──────┐ ┌────────▼────────┐
-│ Code Ingestion │ │  File Watch │ │  Repo Cloner    │
-│   Pipelines    │ │   Service   │ │   (Git/Azure)   │
-└────────────────┘ └─────────────┘ └─────────────────┘
-```
+        subgraph MCP_SVC["MCP Service (Node.js/TS)"]
+            TH[Tool Handlers]
+            SS[semantic_search]
+            LR[list_indexed_repositories]
+            SL[Service Layer]
+            SRCH[Search Service]
+            REPO[Repository Service]
 
-Detailed architecture documentation will be added as the system evolves.
+            TH --> SS
+            TH --> LR
+            SS --> SL
+            LR --> SL
+            SL --> SRCH
+            SL --> REPO
+        end
+
+        subgraph DOCKER["Docker Container"]
+            CDB[ChromaDB<br/>Vector Database<br/>Port: 8000]
+            VOL[Volume: ./data/chromadb]
+            CDB -.->|persists to| VOL
+        end
+
+        FS[Local File System<br/>./data/repos/]
+
+        CC <-->|stdio| MCP_SVC
+        MCP_SVC -->|HTTP| CDB
+        MCP_SVC -->|clone/read| FS
+    end
+
+    OAI[OpenAI API Cloud<br/>text-embedding-3-small]
+
+    MCP_SVC -->|HTTPS| OAI
+
+    classDef client fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#000
+    classDef service fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    classDef storage fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px,color:#000
+    classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+
+    class CC client
+    class MCP_SVC,TH,SS,LR,SL,SRCH,REPO service
+    class CDB,VOL,FS storage
+    class OAI external
+```
 
 ## Getting Started
 
-*(Coming in Phase 1)*
+### Prerequisites
 
-The initial setup will include:
+- **Bun**: 1.0 or later ([install](https://bun.sh/))
+- **Docker Desktop**: For running ChromaDB
+- **Git**: For repository cloning
+- **OpenAI API Key**: For embedding generation
+- **GitHub PAT** (optional): For private repository access
 
-1. Deploy pre-built containers using Docker Compose
-2. Configure storage backends (vector, graph, document)
-3. Create knowledge instances for different security tiers
-4. Connect GitHub/Azure DevOps repositories
-5. Configure Claude Code to use the MCP service
+### Quick Start
 
-Target: <30 minutes from download to functional MCP service
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sethb75/PersonalKnowledgeMCP.git
+   cd PersonalKnowledgeMCP
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   bun install
+   ```
+
+3. **Configure environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your OPENAI_API_KEY
+   ```
+
+4. **Start ChromaDB**:
+   ```bash
+   docker-compose up -d
+   ```
+
+5. **Build the project**:
+   ```bash
+   bun run build
+   ```
+
+6. **Index a repository** (CLI):
+   ```bash
+   bun run cli index https://github.com/user/repo.git
+   ```
+
+7. **Configure Claude Code**:
+   Add to your Claude Code MCP configuration (`~/.config/claude-code/mcp.json`):
+   ```json
+   {
+     "mcpServers": {
+       "personal-knowledge": {
+         "command": "bun",
+         "args": ["run", "C:/src/PersonalKnowledgeMCP/dist/index.js"],
+         "env": {
+           "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+           "GITHUB_PAT": "${GITHUB_PAT}"
+         }
+       }
+     }
+   }
+   ```
+
+8. **Query from Claude Code**:
+   ```
+   Use the semantic_search tool to find authentication middleware
+   ```
+
+## MCP Tools
+
+### semantic_search
+
+Search indexed repositories using natural language queries.
+
+**Parameters**:
+- `query` (string, required): Natural language search query
+- `limit` (number, optional): Maximum results to return (default: 10, max: 50)
+- `threshold` (number, optional): Minimum similarity score 0.0-1.0 (default: 0.7)
+- `repository` (string, optional): Filter to specific repository
+
+**Example**:
+```json
+{
+  "query": "error handling middleware",
+  "limit": 5,
+  "threshold": 0.75
+}
+```
+
+### list_indexed_repositories
+
+List all indexed repositories with status and statistics.
+
+**Returns**:
+- Repository name and URL
+- File count and chunk count
+- Last indexed timestamp
+- Indexing status (ready, indexing, error)
 
 ## Development
 
-### Prerequisites
+### Project Structure
 
-- **Python**: 3.11 or later
-- **Docker**: For containerized deployments
-- **Kubernetes**: Local cluster (minikube/kind) or cloud provider (optional, post-MVP)
-- **PowerShell**: 7+ (Windows development environment)
-- **Git**: For repository management
+```
+PersonalKnowledgeMCP/
+├── src/                          # Source code
+│   ├── index.ts                  # MCP server entry point
+│   ├── cli.ts                    # CLI entry point
+│   ├── mcp/                      # MCP server implementation
+│   ├── services/                 # Business logic
+│   ├── providers/                # Embedding providers
+│   ├── storage/                  # ChromaDB client
+│   └── ingestion/                # File processing
+├── tests/                        # Test suite
+│   ├── unit/                     # Unit tests
+│   ├── integration/              # Integration tests
+│   └── e2e/                      # End-to-end tests
+├── docs/                         # Documentation
+│   ├── Phase1-Core-MCP-Vector-Search-PRD.md
+│   ├── architecture/             # Technical design docs
+│   └── pm/                       # Project management
+├── config/                       # Configuration files
+├── docker-compose.yml            # ChromaDB deployment
+└── package.json                  # Dependencies
+```
 
-### Development Setup
+### Available Scripts
 
-*(Coming in Phase 1)*
+```bash
+bun run build         # Compile TypeScript with Bun
+bun run dev           # Development mode with watch
+bun test              # Run test suite with Bun's built-in runner
+bun test --watch      # Run tests in watch mode
+bun test --coverage   # Run tests with coverage report (90% minimum)
+bun run lint          # Run ESLint
+bun run format        # Format code with Prettier
+bun run cli           # Run CLI commands
+```
 
-Will include instructions for:
+### Running Tests
 
-- Setting up Python virtual environment
-- Installing dependencies
-- Configuring local storage backends
-- Running tests
-- Building Docker containers
+```bash
+# Run all tests
+bun test
 
-### Testing
+# Run with coverage (minimum 90% required)
+bun test --coverage
 
-The project maintains 90% test coverage minimum with:
+# Run specific test file
+bun test tests/unit/search-service.test.ts
 
-- Unit tests for all components
-- Integration tests for storage adapters
-- MCP endpoint tests
-- Performance tests for query latency targets (<500ms p95)
+# Run in watch mode
+bun test --watch
+```
 
-### Contributing
+### CLI Commands
 
-This is currently a personal project. The repository may be opened for contributions in the future.
+```bash
+# Index a repository
+bun run cli index <repository-url> [--name <custom-name>]
 
-Guidelines for contributions (when opened):
+# Search indexed code
+bun run cli search "query text" [--limit 10] [--threshold 0.7]
 
-- Follow the development workflow in [.claude/CLAUDE.md](.claude/CLAUDE.md)
-- Always work in feature branches
-- Create PRs for all changes
-- Ensure tests pass and coverage remains above 90%
-- Follow conventional commit message format
+# List indexed repositories
+bun run cli status
+
+# Remove a repository
+bun run cli remove <repository-name>
+
+# Health check
+bun run cli health
+```
+
+## Documentation
+
+- **[Phase 1 PRD](docs/Phase1-Core-MCP-Vector-Search-PRD.md)** - Product requirements for Phase 1
+- **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
+- **[Project Configuration](.claude/CLAUDE.md)** - Development guidelines for Claude Code
+- **[Review Summary](docs/pm/phase1-review-summary.md)** - Document review and issue creation strategy
 
 ## Performance Targets
 
-### Query Performance (MVP)
+### Query Performance (Phase 1)
 
-- MCP query response: <500ms (95th percentile)
-- Semantic search: <200ms for vector similarity lookup
-- Graph traversal: <100ms for relationship queries
-- Context assembly: <300ms for complete RAG response
+- MCP query response: **<500ms** (95th percentile)
+- MCP query response: **<200ms** (50th percentile)
+- Vector similarity search: **<200ms**
 
-### Ingestion Performance (MVP)
+### Ingestion Performance (Phase 1)
 
-- Small repository (<1K files): <5 minutes to full indexing
-- Medium repository (1K-10K files): <30 minutes to full indexing
-- Large repository (10K-100K files): <4 hours to full indexing
-- Incremental updates: <1 minute for typical PR changes
+- Small repository (<500 files): **<5 minutes**
+- Medium repository (500-2000 files): **<15 minutes**
+- Batch embedding generation: **>100 files/min**
+
+## Testing
+
+The project maintains **90% minimum test coverage** across all components.
+
+**Test Priorities**:
+- MCP tool handlers: 95% coverage (P0)
+- Search service: 95% coverage (P0)
+- Embedding provider: 90% coverage (P0)
+- ChromaDB client: 90% coverage (P0)
+- File processing: 85-95% coverage (P1)
 
 ## Security
 
-- **Multi-Instance Isolation**: Separate deployments for different security/privacy tiers
-- **No Internet Exposure**: Default to local deployment; remote access via VPN/Tailscale
-- **Secret Management**: All secrets in .env files, never in version control
-- **Authentication Required**: MCP endpoints require authentication
-- **Input Validation**: All external inputs (repository URLs, file paths) validated
+- **Localhost Only**: No network exposure by default
+- **Secret Management**: All secrets in `.env` files (never committed)
+- **Input Validation**: All MCP tool inputs validated with Zod schemas
+- **GitHub PAT**: Secure private repository access
+- **No Credential Logging**: API keys and tokens never logged or exposed in errors
+
+## Roadmap
+
+### ✅ Phase 0: Planning and Design (Complete)
+- Product requirements and system design
+- Technology decisions and architecture
+- GitHub issues and project planning
+
+### 🚧 Phase 1: Core MCP + Vector Search (In Progress)
+**Target**: January 14, 2025
+
+**Must Have**:
+- MCP service with semantic_search and list_indexed_repositories tools
+- ChromaDB vector storage
+- OpenAI embedding generation
+- GitHub repository cloning and indexing
+- Private repository support via PAT
+- CLI commands (index, search, status, remove)
+- 90% test coverage
+- Query response <500ms (p95)
+
+### 📋 Phase 2: Code Intelligence + Local Files
+- AST parsing with tree-sitter
+- PostgreSQL document store
+- Local folder ingestion with file watcher
+- Markdown/PDF extraction
+
+### 📋 Phase 3: Multi-Instance + Azure DevOps
+- Multi-instance architecture
+- Authentication layer
+- Azure DevOps integration
+- Instance-specific routing
+
+### 📋 Phase 4: Graph Relationships + Automation
+- Neo4j graph database
+- Code dependency extraction
+- Automated update pipelines
+- GitHub webhook handler
+
+## Contributing
+
+This is currently a personal project in active development. Contributions will be opened in future phases.
+
+Development workflow:
+- Follow guidelines in [.claude/CLAUDE.md](.claude/CLAUDE.md)
+- Work in feature branches
+- Create PRs for all changes
+- Ensure tests pass and coverage ≥90%
 
 ## License
 
@@ -228,9 +370,9 @@ Guidelines for contributions (when opened):
 ## Acknowledgments
 
 Built using:
-
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
-- [Qdrant](https://qdrant.tech/) vector database
-- [Neo4j](https://neo4j.com/) graph database
-- [FastAPI](https://fastapi.tiangolo.com/) Python framework
-- [tree-sitter](https://tree-sitter.github.io/) code parsing library
+- [Bun](https://bun.sh/) - Fast all-in-one JavaScript runtime
+- [ChromaDB](https://www.trychroma.com/) vector database
+- [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
+- [simple-git](https://github.com/steveukx/git-js) for Git operations
+- [TypeScript](https://www.typescriptlang.org/)

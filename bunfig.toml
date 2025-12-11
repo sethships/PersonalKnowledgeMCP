@@ -1,0 +1,35 @@
+# Bun configuration file
+# Documentation: https://bun.sh/docs/runtime/bunfig
+
+[install]
+# Use exact versions for better reproducibility
+exact = true
+
+# Automatically install peer dependencies
+auto = true
+
+# Use faster production mode for CI/CD
+production = false
+
+# Disable telemetry
+telemetry = false
+
+[install.cache]
+# Cache directory for faster installs
+dir = ".bun-cache"
+
+[test]
+# Test file patterns
+preload = []
+coverage = true
+coverageThreshold = 0.9  # 90% coverage minimum
+
+# Test output
+verbose = true
+
+[run]
+# Automatically restart on file changes in dev mode
+watch = []
+
+# Environment
+silent = false
