@@ -42,7 +42,8 @@
   },
   "include": [
     "src/**/*",
-    "tests/**/*"
+    "tests/**/*",
+    "test-embedding-manual.ts"
   ],
   "exclude": [
     "node_modules",
