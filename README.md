@@ -2,7 +2,7 @@
 
 An AI-first knowledge management service built on the Model Context Protocol (MCP) that enables Claude Code and other AI assistants to efficiently access, retrieve, and utilize knowledge from software development projects and educational materials.
 
-[![Project Status](https://img.shields.io/badge/status-phase1-blue)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-TBD-lightgrey)]()
+[![CI/CD](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml) [![Project Status](https://img.shields.io/badge/status-phase1-blue)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-TBD-lightgrey)]()
 
 ## Overview
 
@@ -142,12 +142,18 @@ graph TB
    bun run build
    ```
 
-6. **Index a repository** (CLI):
+6. **Set up Git hooks** (optional but recommended):
+   ```bash
+   # Pre-commit hooks are automatically set up during install
+   # They will run linting and formatting before each commit
+   ```
+
+7. **Index a repository** (CLI):
    ```bash
    bun run cli index https://github.com/user/repo.git
    ```
 
-7. **Configure Claude Code**:
+8. **Configure Claude Code**:
    Add to your Claude Code MCP configuration (`~/.config/claude-code/mcp.json`):
    ```json
    {
@@ -164,7 +170,7 @@ graph TB
    }
    ```
 
-8. **Query from Claude Code**:
+9. **Query from Claude Code**:
    ```
    Use the semantic_search tool to find authentication middleware
    ```
@@ -355,13 +361,29 @@ The project maintains **90% minimum test coverage** across all components.
 
 ## Contributing
 
-This is currently a personal project in active development. Contributions will be opened in future phases.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+- Setting up your development environment
+- Code standards and conventions
+- Testing requirements
+- Pull request process
+
+**Quick Start for Contributors**:
+```bash
+git clone https://github.com/YOUR_USERNAME/PersonalKnowledgeMCP.git
+cd PersonalKnowledgeMCP
+bun install
+cp .env.example .env
+# Edit .env with your API keys
+docker-compose up -d
+bun test --coverage
+```
 
 Development workflow:
 - Follow guidelines in [.claude/CLAUDE.md](.claude/CLAUDE.md)
-- Work in feature branches
+- Work in feature branches (`feature/`, `fix/`, `docs/`)
 - Create PRs for all changes
 - Ensure tests pass and coverage ≥90%
+- Pre-commit hooks will auto-format and lint your code
 
 ## License
 

@@ -19,8 +19,7 @@ telemetry = false
 dir = ".bun-cache"
 
 [test]
-# Test file patterns
-preload = []
+# Test configuration
 coverage = true
 coverageThreshold = 0.9  # 90% coverage minimum
 
