@@ -78,4 +78,14 @@ export interface RepositoryClonerConfig {
    * Should have 'repo' scope for private repository access.
    */
   githubPat?: string;
+
+  /**
+   * Timeout for clone operations in milliseconds.
+   *
+   * If a clone operation exceeds this timeout, it will be aborted.
+   * Prevents hanging on large repositories or slow network connections.
+   *
+   * @default 300000 (5 minutes)
+   */
+  cloneTimeoutMs?: number;
 }

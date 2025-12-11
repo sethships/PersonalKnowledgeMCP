@@ -68,7 +68,8 @@ describe("RepositoryCloner Integration Tests", () => {
       expect(result).toBeDefined();
       expect(result.name).toBe(TEST_REPO_NAME);
       expect(result.path).toContain(TEST_REPO_NAME);
-      expect(result.branch).toBe("default");
+      // The octocat/Hello-World repository's default branch is "master"
+      expect(result.branch).toBe("master");
 
       // Verify directory exists (access should not throw)
       await access(result.path); // Throws if doesn't exist

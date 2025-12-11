@@ -13,6 +13,15 @@ import type { CloneOptions, CloneResult, RepositoryClonerConfig } from "./types.
 import { ValidationError, CloneError, AuthenticationError } from "./errors.js";
 
 /**
+ * Git clone option flags and defaults.
+ */
+const CLONE_OPTIONS = {
+  DEPTH_FLAG: "--depth",
+  SHALLOW_DEPTH: "1",
+  BRANCH_FLAG: "--branch",
+} as const;
+
+/**
  * Clones GitHub repositories for indexing into the knowledge base.
  *
  * Supports both public and private repositories with PAT authentication.
@@ -106,13 +115,21 @@ export class RepositoryCloner {
     );
 
     // Step 4: Check if directory exists
+    // NOTE: TOCTOU (Time-of-Check-Time-of-Use) - There is a small race window between
+    // checking directory existence and creating/deleting it. This is acceptable for MVP
+    // single-user scenarios but should be addressed with file locking in Phase 3 for
+    // multi-instance deployments. See code review finding #1.
     const exists = await this.directoryExists(targetPath);
 
     if (exists && !fresh) {
+      // Repository already exists - detect current branch
+      const actualBranch = branch || (await this.detectCurrentBranch(targetPath));
+
       this.logger.info(
         {
           targetPath,
           repoName,
+          branch: actualBranch,
         },
         "Repository already cloned, skipping"
       );
@@ -120,7 +137,7 @@ export class RepositoryCloner {
       return {
         path: targetPath,
         name: repoName,
-        branch: branch || "default",
+        branch: actualBranch,
       };
     }
 
@@ -141,11 +158,11 @@ export class RepositoryCloner {
       const cloneOptions: string[] = [];
 
       if (shallow) {
-        cloneOptions.push("--depth", "1");
+        cloneOptions.push(CLONE_OPTIONS.DEPTH_FLAG, CLONE_OPTIONS.SHALLOW_DEPTH);
       }
 
       if (branch) {
-        cloneOptions.push("--branch", branch);
+        cloneOptions.push(CLONE_OPTIONS.BRANCH_FLAG, branch);
       }
 
       this.logger.debug(
@@ -160,7 +177,10 @@ export class RepositoryCloner {
 
       await this.git.clone(cloneUrl, targetPath, cloneOptions);
 
-      // Step 9: Log success with metrics
+      // Step 9: Detect actual branch name if not specified
+      const actualBranch = branch || (await this.detectCurrentBranch(targetPath));
+
+      // Step 10: Log success with metrics
       const durationMs = Date.now() - startTime;
 
       this.logger.info(
@@ -170,7 +190,7 @@ export class RepositoryCloner {
           repoName,
           targetPath,
           shallow,
-          branch: branch || "default",
+          branch: actualBranch,
         },
         "Repository cloned successfully"
       );
@@ -178,7 +198,7 @@ export class RepositoryCloner {
       return {
         path: targetPath,
         name: repoName,
-        branch: branch || "default",
+        branch: actualBranch,
       };
     } catch (error) {
       const durationMs = Date.now() - startTime;
@@ -218,8 +238,10 @@ export class RepositoryCloner {
           errorMessage.includes("failed to connect") ||
           errorMessage.includes("network")
         ) {
+          // Sanitize error message to prevent URL leakage
+          const sanitizedMessage = this.sanitizeErrorMessage(error.message);
           throw new CloneError(
-            `Network error while cloning repository: ${error.message}`,
+            `Network error while cloning repository: ${sanitizedMessage}`,
             this.sanitizeUrl(url),
             targetPath,
             error
@@ -227,9 +249,11 @@ export class RepositoryCloner {
         }
       }
 
-      // Generic clone error
+      // Generic clone error - sanitize message to prevent URL leakage
+      const sanitizedMessage =
+        error instanceof Error ? this.sanitizeErrorMessage(error.message) : String(error);
       throw new CloneError(
-        `Failed to clone repository: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to clone repository: ${sanitizedMessage}`,
         this.sanitizeUrl(url),
         targetPath,
         error instanceof Error ? error : undefined
@@ -255,7 +279,8 @@ export class RepositoryCloner {
     }
 
     // Pattern: https://github.com/{owner}/{repo}(.git)?
-    const pattern = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\.git)?$/;
+    // Owner/repo must start and end with alphanumeric, can contain .-_ in middle
+    const pattern = /^https:\/\/github\.com\/[\w][\w.-]*[\w]\/[\w][\w.-]*[\w](\.git)?$/;
 
     if (!pattern.test(trimmedUrl)) {
       throw new ValidationError(
@@ -340,6 +365,46 @@ export class RepositoryCloner {
     } catch {
       // If URL parsing fails, return as-is (likely already sanitized)
       return url;
+    }
+  }
+
+  /**
+   * Remove credentials from error messages.
+   *
+   * Git error messages may contain authenticated URLs. This method removes
+   * credentials using regex replacement for additional defense in depth.
+   *
+   * @param message - Error message that may contain URLs with credentials
+   * @returns Error message with credentials removed
+   */
+  private sanitizeErrorMessage(message: string): string {
+    // Replace patterns like https://token:x-oauth-basic@github.com with https://***@github.com
+    return message.replace(/https:\/\/[^:]+:[^@]+@/g, "https://***@");
+  }
+
+  /**
+   * Detect the current branch of a cloned repository.
+   *
+   * Uses git to detect the actual branch name of the cloned repository.
+   * Falls back to "unknown" if detection fails.
+   *
+   * @param repoPath - Path to the cloned repository
+   * @returns Current branch name or "unknown" if detection fails
+   */
+  private async detectCurrentBranch(repoPath: string): Promise<string> {
+    try {
+      const git = simpleGit(repoPath);
+      const currentBranch = await git.revparse(["--abbrev-ref", "HEAD"]);
+      return currentBranch.trim();
+    } catch (error) {
+      this.logger.debug(
+        {
+          err: error,
+          repoPath,
+        },
+        "Failed to detect current branch, using 'unknown'"
+      );
+      return "unknown";
     }
   }
 
