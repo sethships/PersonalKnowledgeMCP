@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Personal Knowledge MCP - Docker Compose Configuration (Phase 1)
 # Phase 1: ChromaDB only
 # MCP service runs on host (not containerized) due to stdio transport requirement
@@ -13,7 +11,7 @@ services:
     image: chromadb/chroma:latest
     container_name: pk-mcp-chromadb
     ports:
-      - "8000:8000"  # HTTP API
+      - "8000:8000" # HTTP API
     volumes:
       - chromadb-data:/chroma/chroma
     environment:
@@ -23,12 +21,9 @@ services:
     networks:
       - pk-mcp-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # Health check removed: ChromaDB container doesn't include curl/wget
+    # To monitor health, check http://localhost:8000/api/v2/heartbeat from host
+    # Or use: docker ps to verify container is running
 
   # ============================================================================
   # Graph Database (Neo4j Community) - Phase 4
