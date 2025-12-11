@@ -28,6 +28,7 @@ import {
   DocumentOperationError,
   SearchOperationError,
 } from "./errors.js";
+import { getComponentLogger } from "../logging/index.js";
 
 /**
  * Implementation of the ChromaStorageClient interface
@@ -68,6 +69,7 @@ import {
 export class ChromaStorageClientImpl implements ChromaStorageClient {
   private client: ChromaClient | null = null;
   private config: ChromaConfig;
+  private logger = getComponentLogger("storage:chromadb");
 
   /**
    * In-memory cache of collection handles
@@ -95,14 +97,39 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * @throws {StorageConnectionError} If connection initialization fails
    */
   async connect(): Promise<void> {
+    const startTime = Date.now();
+    this.logger.info({ host: this.config.host, port: this.config.port }, "Connecting to ChromaDB");
+
     try {
       const path = `http://${this.config.host}:${this.config.port}`;
       this.client = new ChromaClient({ path });
 
       // Verify connection by making a test call
       await this.healthCheck();
+
+      const durationMs = Date.now() - startTime;
+      this.logger.info(
+        {
+          metric: "chromadb.connection_ms",
+          value: durationMs,
+          host: this.config.host,
+          port: this.config.port,
+        },
+        "Connected to ChromaDB"
+      );
     } catch (error) {
+      const durationMs = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        {
+          metric: "chromadb.connection_ms",
+          value: durationMs,
+          host: this.config.host,
+          port: this.config.port,
+          err: error,
+        },
+        "Failed to connect to ChromaDB"
+      );
       throw new StorageConnectionError(
         `Failed to connect to ChromaDB at ${this.config.host}:${this.config.port}: ${errorMessage}`,
         error instanceof Error ? error : undefined
@@ -119,15 +146,18 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    */
   async healthCheck(): Promise<boolean> {
     if (!this.client) {
+      this.logger.warn("Health check failed: Client not connected");
       return false;
     }
 
     try {
       // ChromaDB heartbeat() returns timestamp if healthy
       await this.client.heartbeat();
+      this.logger.debug("ChromaDB health check passed");
       return true;
-    } catch {
+    } catch (error) {
       // Heartbeat failed - server not healthy
+      this.logger.warn({ err: error }, "ChromaDB health check failed");
       return false;
     }
   }
@@ -297,6 +327,15 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       throw new InvalidParametersError("Documents array cannot be empty", "documents");
     }
 
+    const startTime = Date.now();
+    this.logger.info(
+      {
+        collection: collectionName,
+        batchSize: documents.length,
+      },
+      "Adding documents to collection"
+    );
+
     // Validate document format
     for (const doc of documents) {
       if (!doc.id || doc.id.trim() === "") {
@@ -355,9 +394,32 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         metadatas: chromaMetadatas,
         documents: docsContent,
       });
+
+      const durationMs = Date.now() - startTime;
+      this.logger.info(
+        {
+          metric: "chromadb.add_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          batchSize: documents.length,
+        },
+        "Documents added successfully"
+      );
     } catch (error) {
+      const durationMs = Date.now() - startTime;
       const documentIds = documents.map((doc) => doc.id);
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        {
+          metric: "chromadb.add_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          batchSize: documents.length,
+          err: error,
+        },
+        "Failed to add documents"
+      );
 
       throw new DocumentOperationError(
         "add",
@@ -409,6 +471,17 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       throw new InvalidParametersError("Threshold must be between 0 and 1", "query.threshold");
     }
 
+    const startTime = Date.now();
+    this.logger.info(
+      {
+        collections: query.collections,
+        limit: query.limit,
+        threshold: query.threshold,
+        embeddingDim: query.embedding.length,
+      },
+      "Performing similarity search"
+    );
+
     try {
       const allResults: SimilarityResult[] = [];
 
@@ -418,7 +491,10 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
           // Use getCollectionIfExists() to avoid auto-creating during search
           const collection = await this.getCollectionIfExists(collectionName);
           if (!collection) {
-            console.warn(`Collection ${collectionName} not found during search, skipping`);
+            this.logger.warn(
+              { collection: collectionName },
+              "Collection not found during search, skipping"
+            );
             continue;
           }
 
@@ -453,15 +529,45 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
           }
         } catch (error) {
           // Log collection-specific error but continue with other collections
-          console.error(`Error querying collection ${collectionName}:`, error);
+          this.logger.error(
+            { collection: collectionName, err: error },
+            "Error querying collection"
+          );
         }
       }
 
       // Sort by similarity (descending) and limit results
       allResults.sort((a, b) => b.similarity - a.similarity);
-      return allResults.slice(0, query.limit);
+      const finalResults = allResults.slice(0, query.limit);
+
+      const durationMs = Date.now() - startTime;
+      this.logger.info(
+        {
+          metric: "search.duration_ms",
+          value: durationMs,
+          collections: query.collections,
+          resultsCount: finalResults.length,
+          limit: query.limit,
+          threshold: query.threshold,
+        },
+        "Search completed"
+      );
+
+      return finalResults;
     } catch (error) {
+      const durationMs = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        {
+          metric: "search.duration_ms",
+          value: durationMs,
+          collections: query.collections,
+          err: error,
+        },
+        "Search failed"
+      );
+
       throw new SearchOperationError(
         `Similarity search failed: ${errorMessage}`,
         query.collections,
