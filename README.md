@@ -175,6 +175,44 @@ graph TB
    Use the semantic_search tool to find authentication middleware
    ```
 
+### Docker Troubleshooting
+
+If you encounter issues with Docker Compose:
+
+**ChromaDB won't start:**
+
+```bash
+# Check if Docker Desktop is running
+docker --version
+
+# Check if port 8000 is in use
+netstat -an | findstr :8000
+
+# View detailed logs
+docker-compose logs chromadb
+```
+
+**API not responding:**
+
+```bash
+# Wait up to 30 seconds for initialization
+# Then test the API endpoint
+curl http://localhost:8000/api/v2/heartbeat
+
+# Check container status
+docker ps | grep pk-mcp-chromadb
+```
+
+**Need to reset data:**
+
+```bash
+# WARNING: This deletes all data
+docker-compose down -v
+docker-compose up -d
+```
+
+For detailed Docker operations guide, see [docs/docker-operations.md](docs/docker-operations.md).
+
 ## MCP Tools
 
 ### semantic_search
@@ -225,6 +263,7 @@ PersonalKnowledgeMCP/
 │   ├── integration/              # Integration tests
 │   └── e2e/                      # End-to-end tests
 ├── docs/                         # Documentation
+│   ├── docker-operations.md      # Docker operations guide
 │   ├── Phase1-Core-MCP-Vector-Search-PRD.md
 │   ├── architecture/             # Technical design docs
 │   └── pm/                       # Project management
