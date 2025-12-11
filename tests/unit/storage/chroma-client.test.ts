@@ -358,7 +358,7 @@ describe("ChromaStorageClientImpl", () => {
 
     test("should search across multiple collections", async () => {
       const collection2Name = "repo_test2";
-      await client.addDocuments(collection2Name, [sampleDocuments[0]]);
+      await client.addDocuments(collection2Name, [sampleDocuments[0]!]);
 
       const query: SimilarityQuery = {
         embedding: queryEmbeddingSimilarToAuth,
@@ -525,7 +525,6 @@ describe("ChromaStorageClientImpl", () => {
       } catch (error) {
         // Health check returns false instead of throwing, so test connection error
         await expect(async () => {
-          // @ts-expect-error - Testing private method behavior
           await client.connect();
         }).toThrow();
       }

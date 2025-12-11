@@ -23,8 +23,8 @@ import {
 describe("ChromaDB Integration Tests", () => {
   let client: ChromaStorageClientImpl;
   const testConfig: ChromaConfig = {
-    host: process.env.CHROMADB_HOST || "localhost",
-    port: parseInt(process.env.CHROMADB_PORT || "8000"),
+    host: process.env["CHROMADB_HOST"] || "localhost",
+    port: parseInt(process.env["CHROMADB_PORT"] || "8000"),
   };
 
   const testCollectionName = "repo_integration_test";
@@ -194,7 +194,7 @@ describe("ChromaDB Integration Tests", () => {
       expect(results.length).toBeGreaterThan(0);
 
       // Should return auth-related documents as most similar
-      const topResult = results[0];
+      const topResult = results[0]!;
       expect(topResult.id).toContain("auth");
     });
 
@@ -241,7 +241,7 @@ describe("ChromaDB Integration Tests", () => {
 
     test("should search across multiple collections", async () => {
       // Add documents to second collection
-      await client.addDocuments(testCollectionName2, [sampleDocuments[0]]);
+      await client.addDocuments(testCollectionName2, [sampleDocuments[0]!]);
 
       const results = await client.similaritySearch({
         embedding: queryEmbeddingSimilarToAuth,
@@ -288,7 +288,7 @@ describe("ChromaDB Integration Tests", () => {
       });
 
       // Different queries should return different top results
-      expect(authResults[0].id).not.toBe(routesResults[0].id);
+      expect(authResults[0]!.id).not.toBe(routesResults[0]!.id);
     });
 
     test("should include complete document metadata in results", async () => {
@@ -301,7 +301,7 @@ describe("ChromaDB Integration Tests", () => {
 
       expect(results.length).toBeGreaterThan(0);
 
-      const result = results[0];
+      const result = results[0]!;
       expect(result.id).toBeDefined();
       expect(result.content).toBeDefined();
       expect(result.metadata).toBeDefined();
