@@ -16,10 +16,7 @@ import type { DocumentInput, DocumentMetadata } from "../../src/storage/types.js
  * @param seed - Seed value to generate different but reproducible vectors
  * @param dimensions - Number of dimensions (default: 384)
  */
-export function createTestEmbedding(
-  seed: number,
-  dimensions: number = 384
-): number[] {
+export function createTestEmbedding(seed: number, dimensions: number = 384): number[] {
   const embedding: number[] = [];
   for (let i = 0; i < dimensions; i++) {
     // Create predictable but varied values
@@ -73,7 +70,8 @@ export const sampleDocuments: DocumentInput[] = [
   },
   {
     id: "test-repo:src/auth/login.ts:1",
-    content: "function validateCredentials(username: string, password: string) { /* validation logic */ }",
+    content:
+      "function validateCredentials(username: string, password: string) { /* validation logic */ }",
     embedding: createTestEmbedding(1.1), // Similar to document 1
     metadata: createTestMetadata({
       file_path: "src/auth/login.ts",

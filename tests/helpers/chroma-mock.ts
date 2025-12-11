@@ -15,12 +15,15 @@
 export class MockCollection {
   public name: string;
   public metadata: Record<string, unknown>;
-  private documents: Map<string, {
-    id: string;
-    embedding: number[];
-    metadata: Record<string, unknown>;
-    document: string;
-  }> = new Map();
+  private documents: Map<
+    string,
+    {
+      id: string;
+      embedding: number[];
+      metadata: Record<string, unknown>;
+      document: string;
+    }
+  > = new Map();
   private shouldFailAdd: boolean = false;
   private shouldFailQuery: boolean = false;
 
@@ -63,10 +66,7 @@ export class MockCollection {
     }
   }
 
-  async query(params: {
-    queryEmbeddings: number[][];
-    nResults: number;
-  }): Promise<{
+  async query(params: { queryEmbeddings: number[][]; nResults: number }): Promise<{
     ids: string[][];
     distances: number[][];
     documents: string[][];
@@ -105,16 +105,14 @@ export class MockCollection {
     documents: string[];
   }> {
     const docs = params?.ids
-      ? params.ids
-          .map((id) => this.documents.get(id))
-          .filter((doc) => doc !== undefined)
+      ? params.ids.map((id) => this.documents.get(id)).filter((doc) => doc !== undefined)
       : Array.from(this.documents.values());
 
     return {
-      ids: docs.map((doc) => doc!.id),
-      embeddings: docs.map((doc) => doc!.embedding),
-      metadatas: docs.map((doc) => doc!.metadata),
-      documents: docs.map((doc) => doc!.document),
+      ids: docs.map((doc) => doc.id),
+      embeddings: docs.map((doc) => doc.embedding),
+      metadatas: docs.map((doc) => doc.metadata),
+      documents: docs.map((doc) => doc.document),
     };
   }
 
@@ -188,10 +186,7 @@ export class MockChromaClient {
     metadata?: Record<string, unknown>;
   }): Promise<MockCollection> {
     if (!this.collections.has(params.name)) {
-      this.collections.set(
-        params.name,
-        new MockCollection(params.name, params.metadata || {})
-      );
+      this.collections.set(params.name, new MockCollection(params.name, params.metadata || {}));
     }
     return this.collections.get(params.name)!;
   }

@@ -297,7 +297,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const chromaMetadatas = metadatas.map((meta) => {
         const chromaMeta: Record<string, string | number | boolean> = {};
         for (const [key, value] of Object.entries(meta)) {
-          if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+          if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean"
+          ) {
             chromaMeta[key] = value;
           } else {
             chromaMeta[key] = String(value);

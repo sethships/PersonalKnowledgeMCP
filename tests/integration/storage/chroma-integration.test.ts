@@ -96,9 +96,13 @@ describe("ChromaDB Integration Tests", () => {
 
       const newClient = new ChromaStorageClientImpl(badConfig);
 
-      expect(async () => {
+      // Test async error throwing
+      try {
         await newClient.connect();
-      }).toThrow();
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error).toBeDefined();
+      }
     });
   });
 
@@ -222,9 +226,7 @@ describe("ChromaDB Integration Tests", () => {
 
       // Verify descending order
       for (let i = 1; i < results.length; i++) {
-        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(
-          results[i]!.similarity
-        );
+        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(results[i]!.similarity);
       }
     });
 

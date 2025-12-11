@@ -321,9 +321,7 @@ describe("ChromaStorageClientImpl", () => {
 
       // Verify sorted in descending order
       for (let i = 1; i < results.length; i++) {
-        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(
-          results[i]!.similarity
-        );
+        expect(results[i - 1]!.similarity).toBeGreaterThanOrEqual(results[i]!.similarity);
       }
     });
 
@@ -472,7 +470,6 @@ describe("ChromaStorageClientImpl", () => {
         await newClient.similaritySearch(query);
       }).toThrow(StorageConnectionError);
     });
-
   });
 
   describe("getCollectionStats()", () => {
