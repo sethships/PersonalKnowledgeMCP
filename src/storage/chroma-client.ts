@@ -133,6 +133,46 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   }
 
   /**
+   * Get existing collection without creating it if it doesn't exist
+   *
+   * Checks cache first, then verifies collection exists in ChromaDB.
+   * Returns null if collection doesn't exist rather than creating it.
+   * Useful for search operations where we don't want side effects.
+   *
+   * @param name - Collection name
+   * @returns ChromaDB collection handle or null if not found
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async getCollectionIfExists(name: string): Promise<ChromaCollection | null> {
+    this.ensureConnected();
+
+    // Check cache first
+    if (this.collections.has(name)) {
+      return this.collections.get(name)!;
+    }
+
+    try {
+      // Check if collection exists by listing all collections
+      const collections = await this.client!.listCollectionsAndMetadata();
+      const exists = collections.some((col) => col.name === name);
+
+      if (!exists) {
+        return null;
+      }
+
+      // Collection exists, get it (will add to cache)
+      return await this.getOrCreateCollection(name);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new StorageError(
+        `Failed to check collection existence '${name}': ${errorMessage}`,
+        "COLLECTION_OPERATION_ERROR",
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
    * Get existing collection or create if it doesn't exist
    *
    * Collections use cosine similarity metric for vector search.
@@ -375,10 +415,8 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       // Query each collection
       for (const collectionName of query.collections) {
         try {
-          // Use getCollection() to avoid auto-creating during search
-          const collection = await this.client!.getCollection({
-            name: collectionName,
-          });
+          // Use getCollectionIfExists() to avoid auto-creating during search
+          const collection = await this.getCollectionIfExists(collectionName);
           if (!collection) {
             console.warn(`Collection ${collectionName} not found during search, skipping`);
             continue;

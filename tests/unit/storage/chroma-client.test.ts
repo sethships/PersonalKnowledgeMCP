@@ -134,7 +134,7 @@ describe("ChromaStorageClientImpl", () => {
 
       // Verify it's deleted
       const collections = await mockChromaClient.listCollections();
-      expect(collections.find((c) => c.name === collectionName)).toBeUndefined();
+      expect(collections.includes(collectionName)).toBe(false);
     });
 
     test("should remove collection from cache", async () => {
