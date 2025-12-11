@@ -15,6 +15,7 @@ import {
   EmbeddingTimeoutError,
   EmbeddingValidationError,
 } from "./errors.js";
+import { withRetry } from "../utils/retry.js";
 
 /**
  * Configuration specific to OpenAI embedding provider
@@ -119,7 +120,12 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
     // Process batches sequentially to maintain order and avoid overwhelming API
     for (const batch of batches) {
-      const embeddings = await this.processBatchWithRetry(batch);
+      const embeddings = await withRetry(() => this.processBatch(batch), {
+        maxRetries: this.config.maxRetries,
+        shouldRetry: (error) => error instanceof EmbeddingError && error.retryable,
+        calculateBackoff: (attempt, error) =>
+          this.calculateBackoff(attempt, error as EmbeddingError),
+      });
       allEmbeddings.push(...embeddings);
     }
 
@@ -219,46 +225,6 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       batches.push(texts.slice(i, i + this.config.batchSize));
     }
     return batches;
-  }
-
-  /**
-   * Process a batch with retry logic
-   *
-   * Implements exponential backoff for retryable errors:
-   * - Attempt 0: Immediate
-   * - Attempt 1: Wait 1s
-   * - Attempt 2: Wait 2s
-   * - Attempt 3: Wait 4s
-   *
-   * @param batch - Batch of texts to process
-   * @returns Array of embeddings
-   * @throws {EmbeddingError} If all retries exhausted or non-retryable error
-   */
-  private async processBatchWithRetry(batch: string[]): Promise<number[][]> {
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
-      try {
-        return await this.processBatch(batch);
-      } catch (error) {
-        lastError = error as Error;
-
-        // If it's not an EmbeddingError or not retryable, fail immediately
-        if (!(error instanceof EmbeddingError) || !error.retryable) {
-          throw error;
-        }
-
-        // If we have more retries left, wait and try again
-        if (attempt < this.config.maxRetries) {
-          const delayMs = this.calculateBackoff(attempt, error);
-          await this.sleep(delayMs);
-          // Continue to next attempt
-        }
-      }
-    }
-
-    // All retries exhausted
-    throw lastError;
   }
 
   /**
@@ -396,12 +362,23 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   /**
    * Calculate backoff delay for retry attempt
    *
-   * Uses exponential backoff: 1s → 2s → 4s
-   * Respects retry-after header from rate limit errors if available.
+   * Implements exponential backoff strategy with base 2:
+   * - Attempt 0 (first retry): 2^0 * 1000ms = 1 second
+   * - Attempt 1 (second retry): 2^1 * 1000ms = 2 seconds
+   * - Attempt 2 (third retry): 2^2 * 1000ms = 4 seconds
+   * - Attempt 3 (fourth retry): 2^3 * 1000ms = 8 seconds
    *
-   * @param attempt - Retry attempt number (0-based)
-   * @param error - Error that triggered retry
-   * @returns Delay in milliseconds
+   * This exponential backoff strategy provides:
+   * - Quick recovery for transient failures (1s first retry)
+   * - Reduced load on failing services (increasing delays)
+   * - Time for rate limits or service issues to resolve
+   *
+   * Rate limit errors with retry-after headers take precedence over
+   * the exponential backoff calculation.
+   *
+   * @param attempt - Retry attempt number (0-based: 0 = first retry)
+   * @param error - Error that triggered retry (may contain retry-after hint)
+   * @returns Delay in milliseconds before next retry attempt
    */
   private calculateBackoff(attempt: number, error: EmbeddingError): number {
     // Use retry-after if provided in rate limit error
@@ -412,15 +389,5 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     // Exponential backoff: 2^attempt * 1000ms
     // attempt 0: 1s, attempt 1: 2s, attempt 2: 4s
     return Math.pow(2, attempt) * 1000;
-  }
-
-  /**
-   * Sleep for specified milliseconds
-   *
-   * @param ms - Milliseconds to sleep
-   * @returns Promise that resolves after delay
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

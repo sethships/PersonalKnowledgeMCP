@@ -1,14 +1,30 @@
+# Manual Embedding Provider Testing
+
+This guide explains how to manually test the OpenAI embedding provider with a real API key to verify functionality outside of automated tests.
+
+## Prerequisites
+
+- Valid OpenAI API key with access to embeddings API
+- Environment variable `OPENAI_API_KEY` set in your `.env` file
+- Bun runtime installed
+
+## What This Test Verifies
+
+1. **Successful embedding generation** - Provider can generate embeddings for text
+2. **API key sanitization** - Sensitive API keys are redacted from error messages
+3. **Health check functionality** - Provider can verify connectivity
+4. **Batch processing** - Multiple texts can be embedded efficiently
+
+## Running the Test
+
+### Setup
+
+Create a test file `test-embedding-manual.ts` in your project root:
+
+```typescript
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /**
  * Manual test script for embedding provider
- *
- * Tests the OpenAI embedding provider with a real API key to verify:
- * 1. Successful embedding generation
- * 2. API key sanitization in error messages
- * 3. Health check functionality
- * 4. Batch processing
- *
- * Run with: bun run test-embedding-manual.ts
  */
 
 import { createEmbeddingProvider } from "./src/providers/index.js";
@@ -127,3 +143,109 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+```
+
+### Execute the Test
+
+```bash
+# Ensure your .env file has OPENAI_API_KEY set
+bun run test-embedding-manual.ts
+```
+
+## Expected Output
+
+```
+=== Manual Embedding Provider Test ===
+
+✓ API key found in environment
+  Key prefix: sk-proj-...
+
+1. Creating embedding provider...
+   Provider: openai
+   Model: text-embedding-3-small
+   Dimensions: 1536
+
+2. Testing health check...
+   ✓ Health check passed
+
+3. Testing single embedding...
+   Input: "Hello world! This is a test of the OpenAI embedding provider."
+   ✓ Generated embedding with 1536 dimensions
+   First 5 values: [0.0123, -0.0456, 0.0789, -0.0234, 0.0567]
+
+4. Testing batch embeddings...
+   Input: 5 texts
+   ✓ Generated 5 embeddings
+   Each embedding has 1536 dimensions
+
+5. Testing API key sanitization...
+   Creating provider with invalid API key to test error handling...
+   Error message: "Invalid API key or insufficient permissions"
+   ✓ API key properly sanitized in error message
+
+=== All tests passed! ===
+```
+
+## Troubleshooting
+
+### "OPENAI_API_KEY environment variable not set"
+
+**Solution:** Create a `.env` file in the project root:
+
+```bash
+OPENAI_API_KEY=sk-proj-your-actual-key-here
+```
+
+### Health Check Failed
+
+**Possible causes:**
+- Invalid or expired API key
+- Network connectivity issues
+- OpenAI API service disruption
+- Rate limiting
+
+**Solution:**
+1. Verify your API key is valid in OpenAI dashboard
+2. Check network connectivity
+3. Review OpenAI status page
+
+### "Invalid API key" Error
+
+**Solution:** Double-check your API key:
+- Must start with `sk-proj-` or `sk-`
+- No extra spaces or quotes
+- Key must have embeddings API access enabled
+
+### Rate Limit Errors
+
+If you see 429 errors:
+- Wait a moment and retry
+- Check your OpenAI account rate limits
+- Consider upgrading your OpenAI plan for higher limits
+
+## Cost Considerations
+
+The manual test uses minimal tokens:
+- Health check: ~1 token (~$0.000001)
+- Single embedding: ~10 tokens (~$0.000002)
+- Batch of 5: ~50 tokens (~$0.00001)
+
+**Total cost per test run: < $0.00002 (two cents per 1000 runs)**
+
+## Security Notes
+
+- **Never commit API keys** to version control
+- The provider automatically sanitizes API keys in error messages
+- Test output intentionally truncates the API key display
+- Error messages will show `sk-***REDACTED***` instead of actual keys
+
+## Integration with Automated Tests
+
+This manual test complements automated unit tests but provides:
+- **Real API verification** - Confirms actual OpenAI connectivity
+- **End-to-end validation** - Tests the complete provider setup
+- **Troubleshooting** - Helps diagnose issues in development
+
+For automated testing without API calls, see:
+- `tests/unit/providers/openai-embedding.test.ts` - Mocked unit tests
+- `tests/integration/providers/` - Integration tests (if enabled)
