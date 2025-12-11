@@ -23,6 +23,9 @@ dir = ".bun-cache"
 coverage = true
 coverageThreshold = 0.9  # 90% coverage minimum
 
+# Exclude test files from coverage calculations
+coverageSkipTestFiles = true
+
 # Test output
 verbose = true
 
