@@ -22,6 +22,7 @@ import {
   createTestMetadata,
   similarityThresholds,
 } from "../../fixtures/sample-embeddings.js";
+import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 describe("ChromaStorageClientImpl", () => {
   let client: ChromaStorageClientImpl;
@@ -32,6 +33,12 @@ describe("ChromaStorageClientImpl", () => {
   };
 
   beforeEach(() => {
+    // Initialize logger before creating client
+    initializeLogger({
+      level: "info",
+      format: "json",
+    });
+
     client = new ChromaStorageClientImpl(testConfig);
     mockChromaClient = new MockChromaClient();
 
@@ -42,9 +49,15 @@ describe("ChromaStorageClientImpl", () => {
 
   afterEach(() => {
     mockChromaClient.clear();
+    // Reset logger after each test to allow re-initialization
+    resetLogger();
   });
 
   describe("Constructor", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should create instance with provided config", () => {
       const newClient = new ChromaStorageClientImpl(testConfig);
       expect(newClient).toBeDefined();
@@ -52,6 +65,9 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("connect()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
     test("should connect successfully and verify health", async () => {
       // This test verifies that the client connection works
       // We already have a connected client in beforeEach
@@ -69,6 +85,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("healthCheck()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should return true when ChromaDB is healthy", async () => {
       const result = await client.healthCheck();
       expect(result).toBe(true);
@@ -88,6 +108,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("getOrCreateCollection()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should create new collection with cosine similarity", async () => {
       const collectionName = "repo_test";
       const collection = await client.getOrCreateCollection(collectionName);
@@ -123,6 +147,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("deleteCollection()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should delete collection successfully", async () => {
       const collectionName = "repo_test";
 
@@ -161,6 +189,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("listCollections()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should return empty array when no collections exist", async () => {
       const collections = await client.listCollections();
       expect(collections).toEqual([]);
@@ -187,6 +219,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("addDocuments()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     const collectionName = "repo_test";
 
     test("should add documents successfully", async () => {
@@ -286,6 +322,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("similaritySearch()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     const collectionName = "repo_test";
 
     beforeEach(async () => {
@@ -475,6 +515,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("getCollectionStats()", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     const collectionName = "repo_test";
 
     test("should return stats for existing collection", async () => {
@@ -505,6 +549,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("Error Handling", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("should preserve error stack traces", async () => {
       const newClient = new ChromaStorageClientImpl(testConfig);
 
@@ -531,6 +579,10 @@ describe("ChromaStorageClientImpl", () => {
   });
 
   describe("Error Classes", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
     test("CollectionNotFoundError should be created with collection name", () => {
       const error = new CollectionNotFoundError("test_collection");
       expect(error.name).toBe("CollectionNotFoundError");

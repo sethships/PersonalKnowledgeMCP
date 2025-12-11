@@ -19,6 +19,7 @@ import {
   similarityThresholds,
   createTestDocumentBatch,
 } from "../../fixtures/sample-embeddings.js";
+import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 describe("ChromaDB Integration Tests", () => {
   let client: ChromaStorageClientImpl;
@@ -31,6 +32,12 @@ describe("ChromaDB Integration Tests", () => {
   const testCollectionName2 = "repo_integration_test2";
 
   beforeAll(async () => {
+    // Initialize logger before creating client
+    initializeLogger({
+      level: "info",
+      format: "json",
+    });
+
     // Create and connect client
     client = new ChromaStorageClientImpl(testConfig);
 
@@ -62,6 +69,9 @@ describe("ChromaDB Integration Tests", () => {
     } catch (error) {
       // Collection might not exist, ignore
     }
+
+    // Reset logger after all tests
+    resetLogger();
   });
 
   beforeEach(async () => {
