@@ -11,6 +11,8 @@ import {
   StorageConnectionError,
   InvalidParametersError,
   DocumentOperationError,
+  CollectionNotFoundError,
+  SearchOperationError,
 } from "../../../src/storage/errors.js";
 import type { ChromaConfig, DocumentInput, SimilarityQuery } from "../../../src/storage/types.js";
 import { MockChromaClient } from "../../helpers/chroma-mock.js";
@@ -525,6 +527,22 @@ describe("ChromaStorageClientImpl", () => {
           await client.connect();
         }).toThrow();
       }
+    });
+  });
+
+  describe("Error Classes", () => {
+    test("CollectionNotFoundError should be created with collection name", () => {
+      const error = new CollectionNotFoundError("test_collection");
+      expect(error.name).toBe("CollectionNotFoundError");
+      expect(error.collectionName).toBe("test_collection");
+      expect(error.message).toContain("test_collection");
+    });
+
+    test("SearchOperationError should be created with collections", () => {
+      const error = new SearchOperationError("Search failed", ["collection1", "collection2"]);
+      expect(error.name).toBe("SearchOperationError");
+      expect(error.collections).toEqual(["collection1", "collection2"]);
+      expect(error.message).toBe("Search failed");
     });
   });
 });
