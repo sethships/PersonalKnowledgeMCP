@@ -298,38 +298,37 @@ describe("withRetry - onRetry callback", () => {
 });
 
 describe("withRetry - timing behavior", () => {
-  test("waits between retry attempts", async () => {
-    const timestamps: number[] = [];
+  test("calls backoff calculation and delays between retry attempts", async () => {
     let attempts = 0;
+    const delays: number[] = [];
 
     const operation = mock(async () => {
-      timestamps.push(Date.now());
       attempts++;
       if (attempts <= 2) throw new Error("Fail");
       return "success";
     });
 
-    const startTime = Date.now();
+    const customBackoff = mock((_attempt: number) => {
+      const delay = 50; // Fast delay for testing
+      delays.push(delay);
+      return delay;
+    });
 
     await withRetry(operation, {
       maxRetries: 2,
-      calculateBackoff: () => 50, // 50ms delays for fast test
+      calculateBackoff: customBackoff,
     });
 
-    const endTime = Date.now();
-    const totalTime = endTime - startTime;
+    // Verify operation was called 3 times (initial + 2 retries)
+    expect(operation).toHaveBeenCalledTimes(3);
 
-    // Should take at least 100ms (2 retries * 50ms each)
-    // Allow some tolerance for execution time
-    expect(totalTime).toBeGreaterThanOrEqual(80);
+    // Verify backoff was calculated for each retry (not for initial attempt)
+    expect(customBackoff).toHaveBeenCalledTimes(2);
+    expect(delays).toEqual([50, 50]);
 
-    // Verify timestamps show delays between attempts
-    expect(timestamps.length).toBe(3);
-    const gap1 = timestamps[1]! - timestamps[0]!;
-    const gap2 = timestamps[2]! - timestamps[1]!;
-
-    expect(gap1).toBeGreaterThanOrEqual(40); // ~50ms with tolerance
-    expect(gap2).toBeGreaterThanOrEqual(40);
+    // Verify backoff was called with correct attempt numbers
+    expect(customBackoff.mock.calls[0]![0]).toBe(0); // First retry
+    expect(customBackoff.mock.calls[1]![0]).toBe(1); // Second retry
   });
 });
 

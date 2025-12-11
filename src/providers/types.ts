@@ -35,36 +35,6 @@ export interface EmbeddingProviderConfig {
 }
 
 /**
- * Metadata about an embedding operation
- *
- * Provides information about resource consumption and performance
- * for monitoring and cost tracking purposes.
- */
-export interface EmbeddingMetadata {
-  /** Total tokens consumed by the operation */
-  tokensUsed: number;
-
-  /** Processing time in milliseconds */
-  processingTimeMs: number;
-
-  /** Model that generated the embeddings */
-  modelId: string;
-}
-
-/**
- * Result of a batch embedding operation
- *
- * Combines the generated embeddings with metadata about the operation.
- */
-export interface EmbeddingBatchResult {
-  /** Generated embeddings in input order */
-  embeddings: number[][];
-
-  /** Operation metadata */
-  metadata: EmbeddingMetadata;
-}
-
-/**
  * Core interface for embedding providers
  *
  * This interface abstracts the details of specific embedding providers,

@@ -374,20 +374,24 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
    * - Time for rate limits or service issues to resolve
    *
    * Rate limit errors with retry-after headers take precedence over
-   * the exponential backoff calculation.
+   * the exponential backoff calculation, but all delays are capped
+   * at 60 seconds to prevent unbounded waits.
    *
    * @param attempt - Retry attempt number (0-based: 0 = first retry)
    * @param error - Error that triggered retry (may contain retry-after hint)
-   * @returns Delay in milliseconds before next retry attempt
+   * @returns Delay in milliseconds before next retry attempt (max 60000ms)
    */
   private calculateBackoff(attempt: number, error: EmbeddingError): number {
-    // Use retry-after if provided in rate limit error
+    const MAX_BACKOFF_MS = 60000; // 60 seconds maximum
+
+    // Use retry-after if provided in rate limit error, capped at maximum
     if (error instanceof EmbeddingRateLimitError && error.retryAfterMs) {
-      return error.retryAfterMs;
+      return Math.min(error.retryAfterMs, MAX_BACKOFF_MS);
     }
 
-    // Exponential backoff: 2^attempt * 1000ms
-    // attempt 0: 1s, attempt 1: 2s, attempt 2: 4s
-    return Math.pow(2, attempt) * 1000;
+    // Exponential backoff: 2^attempt * 1000ms, capped at maximum
+    // attempt 0: 1s, attempt 1: 2s, attempt 2: 4s, etc.
+    const exponentialDelay = Math.pow(2, attempt) * 1000;
+    return Math.min(exponentialDelay, MAX_BACKOFF_MS);
   }
 }
