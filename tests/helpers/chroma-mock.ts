@@ -199,6 +199,16 @@ export class MockChromaClient {
     return Array.from(this.collections.values());
   }
 
+  async listCollectionsAndMetadata(): Promise<
+    Array<{ name: string; id: string; metadata?: Record<string, unknown> }>
+  > {
+    return Array.from(this.collections.values()).map((collection) => ({
+      name: collection.name,
+      id: collection.name, // Mock uses name as id
+      metadata: collection.metadata,
+    }));
+  }
+
   /**
    * Get a collection (for testing purposes)
    */

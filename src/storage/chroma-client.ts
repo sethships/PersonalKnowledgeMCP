@@ -215,18 +215,14 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
     this.ensureConnected();
 
     try {
-      const collections = await this.client!.listCollections();
+      // Use listCollectionsAndMetadata() to get name, id, and metadata
+      const collections = await this.client!.listCollectionsAndMetadata();
 
       return collections.map((collection) => {
-        // ChromaDB Collection objects have name and metadata properties
-        // Access them directly without type assertion
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
         return {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-          name: (collection as any).name as string,
+          name: collection.name,
           count: 0, // ChromaDB doesn't return count in list, would need to query each
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-          metadata: ((collection as any).metadata as Record<string, unknown>) ?? {},
+          metadata: (collection.metadata as Record<string, unknown>) ?? {},
         };
       });
     } catch (error) {
