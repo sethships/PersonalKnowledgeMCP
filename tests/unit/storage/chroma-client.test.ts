@@ -22,6 +22,7 @@ import {
   createTestMetadata,
   similarityThresholds,
 } from "../../fixtures/sample-embeddings.js";
+import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 describe("ChromaStorageClientImpl", () => {
   let client: ChromaStorageClientImpl;
@@ -32,6 +33,12 @@ describe("ChromaStorageClientImpl", () => {
   };
 
   beforeEach(() => {
+    // Initialize logger before creating client
+    initializeLogger({
+      level: "info",
+      format: "json",
+    });
+
     client = new ChromaStorageClientImpl(testConfig);
     mockChromaClient = new MockChromaClient();
 
@@ -42,6 +49,8 @@ describe("ChromaStorageClientImpl", () => {
 
   afterEach(() => {
     mockChromaClient.clear();
+    // Reset logger after each test to allow re-initialization
+    resetLogger();
   });
 
   describe("Constructor", () => {
