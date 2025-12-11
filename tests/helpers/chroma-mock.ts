@@ -195,8 +195,12 @@ export class MockChromaClient {
     this.collections.delete(params.name);
   }
 
-  async listCollections(): Promise<MockCollection[]> {
-    return Array.from(this.collections.values());
+  /**
+   * List collection names only (matching ChromaDB API)
+   * Returns array of collection name strings
+   */
+  async listCollections(): Promise<string[]> {
+    return Array.from(this.collections.keys());
   }
 
   async listCollectionsAndMetadata(): Promise<
@@ -210,9 +214,20 @@ export class MockChromaClient {
   }
 
   /**
-   * Get a collection (for testing purposes)
+   * Get an existing collection (matching ChromaDB API)
    */
-  getCollection(name: string): MockCollection | undefined {
+  async getCollection(params: { name: string }): Promise<MockCollection> {
+    const collection = this.collections.get(params.name);
+    if (!collection) {
+      throw new Error(`Collection ${params.name} not found`);
+    }
+    return collection;
+  }
+
+  /**
+   * Get a collection synchronously (for internal test helper use)
+   */
+  getCollectionSync(name: string): MockCollection | undefined {
     return this.collections.get(name);
   }
 

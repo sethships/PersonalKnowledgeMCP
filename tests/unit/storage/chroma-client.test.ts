@@ -193,7 +193,7 @@ describe("ChromaStorageClientImpl", () => {
       await client.addDocuments(collectionName, sampleDocuments);
 
       // Verify documents were added
-      const collection = mockChromaClient.getCollection(collectionName);
+      const collection = mockChromaClient.getCollectionSync(collectionName);
       expect(collection).toBeDefined();
 
       const count = await collection!.count();
@@ -270,7 +270,7 @@ describe("ChromaStorageClientImpl", () => {
       await client.getOrCreateCollection(collectionName);
 
       // Get the mock collection and configure it to fail
-      const mockCollection = mockChromaClient.getCollection(collectionName);
+      const mockCollection = mockChromaClient.getCollectionSync(collectionName);
       mockCollection!.setShouldFailAdd(true);
 
       // Attempt to add documents should throw DocumentOperationError
@@ -484,7 +484,7 @@ describe("ChromaStorageClientImpl", () => {
 
       expect(stats.name).toBe(collectionName);
       expect(stats.documentCount).toBe(sampleDocuments.length);
-      expect(stats.createdAt).toBeDefined();
+      expect(stats.retrievedAt).toBeDefined();
     });
 
     test("should return zero count for empty collection", async () => {

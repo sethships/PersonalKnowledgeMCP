@@ -146,7 +146,7 @@ describe("ChromaDB Integration Tests", () => {
 
       expect(stats.name).toBe(testCollectionName);
       expect(stats.documentCount).toBe(sampleDocuments.length);
-      expect(stats.createdAt).toBeDefined();
+      expect(stats.retrievedAt).toBeDefined();
     });
   });
 

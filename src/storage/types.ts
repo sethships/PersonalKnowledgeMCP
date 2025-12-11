@@ -22,6 +22,10 @@ export interface ChromaConfig {
  *
  * This metadata is stored alongside each embedded document chunk in ChromaDB
  * to enable filtering, provenance tracking, and result enrichment.
+ *
+ * NOTE: Properties use snake_case to match ChromaDB metadata storage requirements.
+ * ChromaDB metadata keys are stored as-is and snake_case maintains consistency
+ * with Python ecosystem conventions commonly used with vector databases.
  */
 export interface DocumentMetadata {
   // File identification
@@ -133,8 +137,8 @@ export interface CollectionStats {
   name: string;
   /** Number of documents in the collection */
   documentCount: number;
-  /** ISO 8601 timestamp when the collection was created */
-  createdAt: string;
+  /** ISO 8601 timestamp when stats were retrieved (ChromaDB doesn't track creation time) */
+  retrievedAt: string;
 }
 
 /**

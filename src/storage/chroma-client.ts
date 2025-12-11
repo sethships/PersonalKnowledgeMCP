@@ -126,7 +126,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       // ChromaDB heartbeat() returns timestamp if healthy
       await this.client.heartbeat();
       return true;
-    } catch (error) {
+    } catch {
       // Heartbeat failed - server not healthy
       return false;
     }
@@ -375,7 +375,14 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       // Query each collection
       for (const collectionName of query.collections) {
         try {
-          const collection = await this.getOrCreateCollection(collectionName);
+          // Use getCollection() to avoid auto-creating during search
+          const collection = await this.client!.getCollection({
+            name: collectionName,
+          });
+          if (!collection) {
+            console.warn(`Collection ${collectionName} not found during search, skipping`);
+            continue;
+          }
 
           // Query the collection
           const queryResult = await collection.query({
@@ -447,7 +454,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       return {
         name,
         documentCount: count,
-        createdAt: new Date().toISOString(), // ChromaDB doesn't track creation time
+        retrievedAt: new Date().toISOString(),
       };
     } catch (error) {
       if (error instanceof StorageError) {
@@ -486,7 +493,9 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * @returns Similarity score (0-1)
    */
   private convertDistanceToSimilarity(distance: number): number {
-    return 1 - distance / 2;
+    const similarity = 1 - distance / 2;
+    // Clamp to [0, 1] for defensive coding against floating-point errors
+    return Math.max(0, Math.min(1, similarity));
   }
 
   /**

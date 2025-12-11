@@ -19,6 +19,10 @@ export class StorageError extends Error {
 
   /**
    * Original error that caused this error (if any)
+   *
+   * NOTE: Uses 'override' to explicitly shadow ES2022 Error.cause property.
+   * This provides type safety by restricting cause to Error instances only,
+   * whereas the built-in property allows any unknown value.
    */
   public override readonly cause?: Error;
 
