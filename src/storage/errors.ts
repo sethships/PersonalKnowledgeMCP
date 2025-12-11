@@ -1,0 +1,201 @@
+/**
+ * Custom error classes for ChromaDB storage operations
+ *
+ * These error classes provide structured error handling for storage operations,
+ * making it easier to diagnose issues and handle different failure scenarios.
+ */
+
+/**
+ * Base error class for all storage-related errors
+ *
+ * Extends the native Error class with additional context and error codes
+ * for integration with the MCP error handling system.
+ */
+export class StorageError extends Error {
+  /**
+   * Error code for categorization and handling
+   */
+  public readonly code: string;
+
+  /**
+   * Original error that caused this error (if any)
+   */
+  public readonly cause?: Error;
+
+  /**
+   * Create a new StorageError
+   *
+   * @param message - Human-readable error message
+   * @param code - Error code for categorization (default: 'STORAGE_ERROR')
+   * @param cause - Original error that caused this error
+   */
+  constructor(message: string, code: string = "STORAGE_ERROR", cause?: Error) {
+    super(message);
+    this.name = "StorageError";
+    this.code = code;
+    this.cause = cause;
+
+    // Maintain proper stack trace for where our error was thrown (V8 only)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+
+    // Include cause stack trace if available
+    if (cause && cause.stack) {
+      this.stack = `${this.stack}\nCaused by: ${cause.stack}`;
+    }
+  }
+}
+
+/**
+ * Error thrown when connection to ChromaDB fails
+ *
+ * This error indicates that the ChromaDB server is unreachable,
+ * not responding, or refusing connections.
+ *
+ * Common causes:
+ * - ChromaDB Docker container not running
+ * - Network connectivity issues
+ * - Incorrect host/port configuration
+ * - ChromaDB server crashed or restarting
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await client.connect();
+ * } catch (error) {
+ *   if (error instanceof StorageConnectionError) {
+ *     console.error("ChromaDB is not available. Ensure Docker container is running.");
+ *   }
+ * }
+ * ```
+ */
+export class StorageConnectionError extends StorageError {
+  constructor(message: string, cause?: Error) {
+    super(message, "CONNECTION_ERROR", cause);
+    this.name = "StorageConnectionError";
+  }
+}
+
+/**
+ * Error thrown when a requested collection doesn't exist
+ *
+ * This error indicates that an operation was attempted on a collection
+ * that hasn't been created yet or has been deleted.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   const stats = await client.getCollectionStats("repo_nonexistent");
+ * } catch (error) {
+ *   if (error instanceof CollectionNotFoundError) {
+ *     console.error("Repository not indexed yet");
+ *   }
+ * }
+ * ```
+ */
+export class CollectionNotFoundError extends StorageError {
+  /**
+   * The collection name that was not found
+   */
+  public readonly collectionName: string;
+
+  constructor(collectionName: string, message?: string) {
+    super(message || `Collection '${collectionName}' not found`, "COLLECTION_NOT_FOUND");
+    this.name = "CollectionNotFoundError";
+    this.collectionName = collectionName;
+  }
+}
+
+/**
+ * Error thrown when invalid parameters are provided to storage operations
+ *
+ * This error indicates that the provided parameters don't meet the requirements
+ * for the operation (e.g., empty collection name, invalid embedding dimensions,
+ * missing required metadata fields).
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await client.addDocuments("repo_test", [
+ *     { id: "", content: "test", embedding: [], metadata: {} }
+ *   ]);
+ * } catch (error) {
+ *   if (error instanceof InvalidParametersError) {
+ *     console.error("Invalid document format:", error.message);
+ *   }
+ * }
+ * ```
+ */
+export class InvalidParametersError extends StorageError {
+  /**
+   * The parameter name that was invalid
+   */
+  public readonly parameterName?: string;
+
+  constructor(message: string, parameterName?: string) {
+    super(message, "INVALID_PARAMETERS");
+    this.name = "InvalidParametersError";
+    this.parameterName = parameterName;
+  }
+}
+
+/**
+ * Error thrown when a document operation fails
+ *
+ * This error covers failures during document addition, update, or deletion
+ * that aren't covered by more specific error types.
+ *
+ * Common causes:
+ * - Embedding dimension mismatch
+ * - Duplicate document IDs
+ * - Malformed metadata
+ * - ChromaDB internal errors
+ */
+export class DocumentOperationError extends StorageError {
+  /**
+   * The operation that failed
+   */
+  public readonly operation: "add" | "update" | "delete";
+
+  /**
+   * Document IDs involved in the failed operation
+   */
+  public readonly documentIds?: string[];
+
+  constructor(
+    operation: "add" | "update" | "delete",
+    message: string,
+    documentIds?: string[],
+    cause?: Error
+  ) {
+    super(message, "DOCUMENT_OPERATION_ERROR", cause);
+    this.name = "DocumentOperationError";
+    this.operation = operation;
+    this.documentIds = documentIds;
+  }
+}
+
+/**
+ * Error thrown when a search operation fails
+ *
+ * This error indicates that a similarity search couldn't be completed.
+ *
+ * Common causes:
+ * - Invalid query embedding
+ * - Search timeout
+ * - ChromaDB query errors
+ * - Result processing failures
+ */
+export class SearchOperationError extends StorageError {
+  /**
+   * The collections that were being searched
+   */
+  public readonly collections?: string[];
+
+  constructor(message: string, collections?: string[], cause?: Error) {
+    super(message, "SEARCH_OPERATION_ERROR", cause);
+    this.name = "SearchOperationError";
+    this.collections = collections;
+  }
+}
