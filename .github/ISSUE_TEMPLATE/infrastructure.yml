@@ -1,0 +1,48 @@
+name: Infrastructure/Tooling
+description: Tooling, CI/CD, build system, or infrastructure improvements
+title: "[Infra]: "
+labels: ["infrastructure", "tooling"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest improvements to build system, CI/CD, testing infrastructure, or development tools.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What infrastructure change are you proposing?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - CI/CD Pipeline
+        - Build System
+        - Testing Infrastructure
+        - Development Tools
+        - Docker/Containerization
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why is this change needed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Approach
+      description: How would this be implemented?
