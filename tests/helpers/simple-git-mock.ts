@@ -4,14 +4,15 @@
  * @module tests/helpers/simple-git-mock
  */
 
-import type { SimpleGit } from "simple-git";
-
 /**
  * Mock SimpleGit client for testing repository cloner.
  *
  * Provides configurable success/failure modes and call tracking.
+ *
+ * Note: Does not fully implement SimpleGit interface - only provides
+ * the methods needed for testing RepositoryCloner.
  */
-export class MockSimpleGit implements Partial<SimpleGit> {
+export class MockSimpleGit {
   private shouldFailClone: boolean = false;
   private failureError?: Error;
   private cloneCallCount: number = 0;
