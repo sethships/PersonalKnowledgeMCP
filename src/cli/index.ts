@@ -16,10 +16,10 @@ import "dotenv/config";
 import { Command } from "commander";
 import { initializeDependencies } from "./utils/dependency-init.js";
 import { handleCommandError } from "./utils/error-handler.js";
-import { indexCommand } from "./commands/index-command.js";
-import { searchCommand } from "./commands/search-command.js";
-import { statusCommand } from "./commands/status-command.js";
-import { removeCommand } from "./commands/remove-command.js";
+import { indexCommand, type IndexCommandOptions } from "./commands/index-command.js";
+import { searchCommand, type SearchCommandOptions } from "./commands/search-command.js";
+import { statusCommand, type StatusCommandOptions } from "./commands/status-command.js";
+import { removeCommand, type RemoveCommandOptions } from "./commands/remove-command.js";
 import { healthCommand } from "./commands/health-command.js";
 
 const program = new Command();
