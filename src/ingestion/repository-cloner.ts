@@ -422,4 +422,35 @@ export class RepositoryCloner {
       return false;
     }
   }
+
+  /**
+   * Clean up a cloned repository directory.
+   *
+   * Removes the repository directory and all its contents.
+   * Used to clean up after failed indexing operations.
+   *
+   * @param repoPath - Path to the repository directory to remove
+   * @throws {Error} If cleanup fails
+   */
+  async cleanup(repoPath: string): Promise<void> {
+    this.logger.info("Cleaning up repository directory", { repoPath });
+
+    try {
+      await rm(repoPath, { recursive: true, force: true });
+      this.logger.debug("Repository directory removed", { repoPath });
+    } catch (error) {
+      this.logger.error("Failed to cleanup repository directory", {
+        repoPath,
+        error,
+      });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorCause = error instanceof Error ? error : undefined;
+      throw new CloneError(
+        `Failed to cleanup repository directory at ${repoPath}: ${errorMessage}`,
+        repoPath,
+        repoPath,
+        errorCause
+      );
+    }
+  }
 }
