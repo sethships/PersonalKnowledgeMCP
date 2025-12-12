@@ -244,6 +244,192 @@ List all indexed repositories with status and statistics.
 - Last indexed timestamp
 - Indexing status (ready, indexing, error)
 
+## CLI Usage
+
+The Personal Knowledge MCP includes a command-line interface (`pk-mcp`) for managing indexed repositories.
+
+### Installation
+
+After building the project, you can use the CLI directly or install it globally:
+
+```bash
+# Build the CLI
+bun run build
+
+# Run directly
+bun run dist/cli.js --help
+
+# Or install globally
+bun link
+pk-mcp --help
+```
+
+### Commands
+
+#### index - Index a Repository
+
+Clone and index a repository for semantic search.
+
+```bash
+pk-mcp index <repository-url> [options]
+```
+
+**Options:**
+- `-n, --name <name>` - Custom repository name (defaults to repo name from URL)
+- `-b, --branch <branch>` - Branch to clone (defaults to repository default branch)
+- `-f, --force` - Force reindexing if repository already exists
+
+**Examples:**
+
+```bash
+# Index a public repository
+pk-mcp index https://github.com/user/my-project.git
+
+# Index with custom name and specific branch
+pk-mcp index https://github.com/user/repo.git --name my-repo --branch develop
+
+# Reindex an existing repository
+pk-mcp index https://github.com/user/repo.git --force
+```
+
+**Output:** Real-time progress through cloning, scanning, chunking, embedding, and storing phases. Shows final statistics including files processed, chunks created, embeddings generated, and duration.
+
+#### search - Semantic Search
+
+Search indexed repositories using natural language queries.
+
+```bash
+pk-mcp search <query> [options]
+```
+
+**Options:**
+- `-l, --limit <number>` - Maximum results (1-100, default: 10)
+- `-t, --threshold <number>` - Similarity threshold (0.0-1.0, default: 0.7)
+- `-r, --repo <name>` - Filter to specific repository
+- `--json` - Output as JSON
+
+**Examples:**
+
+```bash
+# Basic search
+pk-mcp search "authentication middleware"
+
+# Search with custom limit and threshold
+pk-mcp search "error handling" --limit 5 --threshold 0.8
+
+# Search specific repository
+pk-mcp search "database query" --repo my-api
+
+# JSON output for programmatic use
+pk-mcp search "API endpoints" --json
+```
+
+**Output:** Table showing rank, repository, file path, code snippet, and similarity score. JSON output includes full metadata.
+
+#### status - List Repositories
+
+List all indexed repositories with their status and statistics.
+
+```bash
+pk-mcp status [options]
+```
+
+**Options:**
+- `--json` - Output as JSON
+
+**Examples:**
+
+```bash
+# List repositories
+pk-mcp status
+
+# JSON output
+pk-mcp status --json
+```
+
+**Output:** Table showing repository name, URL, file count, chunk count, last indexed timestamp, and status (✓ ready, ⟳ indexing, ✗ error).
+
+#### remove - Remove Repository
+
+Remove a repository from the index.
+
+```bash
+pk-mcp remove <repository-name> [options]
+```
+
+**Options:**
+- `-f, --force` - Skip confirmation prompt
+- `--delete-files` - Also delete local repository files
+
+**Examples:**
+
+```bash
+# Remove with confirmation
+pk-mcp remove my-repo
+
+# Force remove without confirmation
+pk-mcp remove my-repo --force
+
+# Remove and delete local files
+pk-mcp remove my-repo --force --delete-files
+```
+
+**Output:** Confirmation prompt (unless --force), progress spinner, success message indicating what was deleted.
+
+#### health - Health Check
+
+Check the health of all required services.
+
+```bash
+pk-mcp health
+```
+
+**Output:** Status of ChromaDB, OpenAI API, and Metadata Store with response times. Exit code 0 if all healthy, 1 if any unhealthy.
+
+### CLI Configuration
+
+The CLI uses the same environment variables as the MCP server:
+
+```bash
+# Required
+OPENAI_API_KEY=sk-...
+
+# Optional (defaults shown)
+CHROMADB_HOST=localhost
+CHROMADB_PORT=8000
+DATA_PATH=./data
+CLONE_PATH=./data/repositories
+LOG_LEVEL=warn
+```
+
+### Troubleshooting
+
+**ChromaDB Connection Failed:**
+```bash
+# Verify ChromaDB is running
+docker-compose ps
+
+# Start ChromaDB if needed
+docker-compose up -d
+
+# Check logs
+docker-compose logs chromadb
+```
+
+**Repository Clone Failed:**
+```bash
+# For private repositories, set GitHub PAT
+export GITHUB_PAT=ghp_...
+
+# Verify URL is correct
+# Ensure Git is installed and in PATH
+```
+
+**Enable Verbose Logging:**
+```bash
+LOG_LEVEL=debug pk-mcp <command>
+```
+
 ## Development
 
 ### Project Structure
