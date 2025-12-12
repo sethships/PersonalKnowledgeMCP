@@ -393,6 +393,43 @@ sequenceDiagram
     Formatter->>Claude: Return response via MCP protocol
 ```
 
+### Error Message and Logging Design
+
+#### Repository Name Sanitization Decision
+
+**Context:** During code review of the SearchService implementation (PR #33), a recommendation was made to sanitize repository names in error messages to prevent potential information disclosure.
+
+**Decision:** Repository names will **NOT** be sanitized or redacted in error messages and logs.
+
+**Rationale:**
+1. **Not Sensitive Information**: Repository names are typically not sensitive data
+   - They are already visible throughout the system (MCP responses, CLI output, status endpoints)
+   - They are required for users to identify which repository encountered an error
+   - They do not contain credentials, API keys, or personal information
+
+2. **Critical for Debugging**: Repository names are essential for troubleshooting
+   - Users need to know which repository failed to clone, index, or search
+   - Support and debugging become significantly harder without context
+   - Error messages like "Repository not found: [REDACTED]" provide no actionable information
+
+3. **System Design**: The architecture already exposes repository names
+   - MCP tool responses include repository names in search results
+   - CLI status command lists all repository names
+   - Repository names are part of the public API surface
+
+4. **Security Context**: Phase 1 operates in a trusted environment
+   - Localhost-only deployment (no network exposure)
+   - Single-user system on developer's local machine
+   - No authentication layer required for Phase 1
+
+**Implementation Guidelines:**
+- Repository names remain visible in all error messages
+- Actual secrets (GitHub PAT, OpenAI API keys) continue to be excluded from logs and error messages
+- File paths from repositories may be logged for debugging purposes
+- URLs are logged but authentication tokens are stripped
+
+**Review Date:** This decision should be revisited in Phase 3 when multi-instance architecture and authentication are introduced.
+
 ---
 
 ## Configuration
