@@ -86,6 +86,24 @@ describe("FileChunker", () => {
       delete process.env["CHUNK_MAX_TOKENS"];
       delete process.env["CHUNK_OVERLAP_TOKENS"];
     });
+
+    test("throws ValidationError for empty repository name", () => {
+      const chunker = new FileChunker();
+      const fileInfo = createMockFileInfo();
+
+      expect(() => {
+        chunker.chunkFile(SMALL_FILE_CONTENT, fileInfo, "");
+      }).toThrow(ValidationError);
+    });
+
+    test("throws ValidationError for repository name containing colon", () => {
+      const chunker = new FileChunker();
+      const fileInfo = createMockFileInfo();
+
+      expect(() => {
+        chunker.chunkFile(SMALL_FILE_CONTENT, fileInfo, "my:repo");
+      }).toThrow(ValidationError);
+    });
   });
 
   describe("Empty Files", () => {
@@ -393,9 +411,8 @@ describe("FileChunker", () => {
         chunker.chunkFile("content", invalidFileInfo, "test-repo");
         expect.unreachable("Should have thrown");
       } catch (error) {
-        if (error instanceof ChunkingError) {
-          expect(error.filePath).toBeDefined();
-        }
+        expect(error).toBeInstanceOf(ChunkingError);
+        expect((error as ChunkingError).filePath).toBeDefined();
       }
     });
   });

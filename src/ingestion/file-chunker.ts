@@ -33,11 +33,17 @@ interface ChunkBoundary {
  * overestimates to prevent embedding API limit violations.
  * This is adequate for Phase 1; can be replaced with tiktoken later.
  *
+ * Note: Uses spread operator to count actual Unicode code points,
+ * correctly handling surrogate pairs (emojis, some CJK characters).
+ *
  * @param text - Text to estimate tokens for
  * @returns Estimated token count
  */
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  // Use spread operator to count actual Unicode code points
+  // This handles surrogate pairs (emojis, some CJK) correctly
+  const charCount = [...text].length;
+  return Math.ceil(charCount / 4);
 }
 
 /**
@@ -258,16 +264,23 @@ export class FileChunker {
   chunkFile(content: string, fileInfo: FileInfo, repository: string): FileChunk[] {
     const startTime = Date.now();
 
-    this.logger.debug(
-      {
-        repository,
-        filePath: fileInfo.relativePath,
-        sizeBytes: fileInfo.sizeBytes,
-      },
-      "Starting file chunking"
-    );
+    // Validate repository name doesn't contain ID separator
+    if (!repository || repository.includes(":")) {
+      throw new ValidationError(
+        `Repository name cannot be empty or contain ':' character, got: "${repository}"`,
+        "repository"
+      );
+    }
 
     try {
+      this.logger.debug(
+        {
+          repository,
+          filePath: fileInfo.relativePath,
+          sizeBytes: fileInfo.sizeBytes,
+        },
+        "Starting file chunking"
+      );
       // Handle empty file
       if (!content || content.trim().length === 0) {
         this.logger.debug({ filePath: fileInfo.relativePath }, "Empty file, returning no chunks");
@@ -275,7 +288,9 @@ export class FileChunker {
       }
 
       // Split into lines
-      const lines = content.split("\n");
+      // Normalize line endings before splitting (handles \r\n, \r, \n)
+      const normalizedContent = content.replace(/\r\n?/g, "\n");
+      const lines = normalizedContent.split("\n");
 
       // Generate chunk boundaries
       const boundaries = this.splitIntoChunkBoundaries(
@@ -340,23 +355,24 @@ export class FileChunker {
       return chunks;
     } catch (error) {
       const duration = Date.now() - startTime;
+      const filePath = fileInfo?.relativePath ?? "<unknown>";
 
       this.logger.error(
         {
           metric: "file_chunker.error",
           duration_ms: duration,
           repository,
-          filePath: fileInfo.relativePath,
+          filePath,
           err: error,
         },
         "File chunking failed"
       );
 
       throw new ChunkingError(
-        `Failed to chunk file ${fileInfo.relativePath}: ${
+        `Failed to chunk file ${filePath}: ${
           error instanceof Error ? error.message : "unknown error"
         }`,
-        fileInfo.relativePath,
+        filePath,
         error instanceof Error ? error : undefined
       );
     }
