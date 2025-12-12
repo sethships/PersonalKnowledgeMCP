@@ -9,6 +9,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../services/types.js";
+import type { RepositoryMetadataService } from "../repositories/types.js";
 import type { MCPServerConfig, ToolRegistry } from "./types.js";
 import { createToolRegistry, getToolDefinitions, getToolHandler } from "./tools/index.js";
 import { createMethodNotFoundError } from "./errors.js";
@@ -35,12 +36,14 @@ export class PersonalKnowledgeMCPServer {
    * Creates a new MCP server instance
    *
    * @param searchService - Search service for semantic_search tool
+   * @param repositoryService - Repository metadata service for list_indexed_repositories tool
    * @param config - Server configuration (name, version, capabilities)
    *
    * @example
    * ```typescript
    * const searchService = new SearchServiceImpl(provider, storage, repoService);
-   * const server = new PersonalKnowledgeMCPServer(searchService, {
+   * const repositoryService = RepositoryMetadataStoreImpl.getInstance();
+   * const server = new PersonalKnowledgeMCPServer(searchService, repositoryService, {
    *   name: "personal-knowledge-mcp",
    *   version: "1.0.0",
    *   capabilities: { tools: true }
@@ -50,6 +53,7 @@ export class PersonalKnowledgeMCPServer {
    */
   constructor(
     searchService: SearchService,
+    repositoryService: RepositoryMetadataService,
     config: MCPServerConfig = {
       name: "personal-knowledge-mcp",
       version: "1.0.0",
@@ -72,7 +76,7 @@ export class PersonalKnowledgeMCPServer {
     );
 
     // Create tool registry with all available tools
-    this.toolRegistry = createToolRegistry(searchService);
+    this.toolRegistry = createToolRegistry(searchService, repositoryService);
 
     // Register request handlers
     this.registerHandlers();
