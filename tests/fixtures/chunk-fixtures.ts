@@ -131,8 +131,7 @@ export function generateLargeFileContent(lineCount: number = 200): string {
 /**
  * File content with Windows line endings (\r\n).
  */
-export const WINDOWS_LINE_ENDINGS_CONTENT =
-  "line 1\r\nline 2\r\nline 3\r\nline 4\r\n";
+export const WINDOWS_LINE_ENDINGS_CONTENT = "line 1\r\nline 2\r\nline 3\r\nline 4\r\n";
 
 /**
  * File content with no final newline.
@@ -159,9 +158,7 @@ function test() {
  * @param overrides - Partial FileInfo to override defaults
  * @returns Complete FileInfo object
  */
-export function createMockFileInfo(
-  overrides?: Partial<FileInfo>
-): FileInfo {
+export function createMockFileInfo(overrides?: Partial<FileInfo>): FileInfo {
   return {
     relativePath: "src/test.ts",
     absolutePath: "/repo/src/test.ts",
