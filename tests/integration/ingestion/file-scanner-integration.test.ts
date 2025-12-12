@@ -6,7 +6,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { FileScanner } from "../../../src/ingestion/file-scanner.js";
 import type { ScanOptions } from "../../../src/ingestion/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
-import { mkdir, writeFile, rm } from "fs/promises";
+import { mkdir, writeFile, rm, symlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -190,6 +190,37 @@ describe("FileScanner Integration", () => {
         // Should be relative, not absolute
         expect(file.relativePath.startsWith(testDir)).toBe(false);
       });
+    });
+  });
+
+  describe("symlink handling", () => {
+    test("should not follow symlinks (security - prevent path traversal)", async () => {
+      // Create a file outside the test directory
+      const outsidePath = join(testDir, "..", "outside-testdir-file.ts");
+      await writeFile(outsidePath, "export const outside = true;");
+
+      // Create a symlink inside testDir pointing to the outside file
+      const symlinkPath = join(testDir, "src", "symlink.ts");
+      try {
+        await symlink(outsidePath, symlinkPath);
+      } catch (error) {
+        // Symlink creation may fail on Windows without admin rights - skip test
+        await rm(outsidePath, { force: true });
+        return;
+      }
+
+      const files = await scanner.scanFiles(testDir);
+
+      // The symlink should not be followed
+      // glob's default behavior is followSymbolicLinks: false
+      const hasOutsideFile = files.some(
+        (f) => f.relativePath.includes("symlink") || f.relativePath.includes("outside")
+      );
+      expect(hasOutsideFile).toBe(false);
+
+      // Clean up
+      await rm(outsidePath, { force: true });
+      await rm(symlinkPath, { force: true });
     });
   });
 

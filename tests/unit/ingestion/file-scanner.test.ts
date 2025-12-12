@@ -2,15 +2,32 @@
  * Unit tests for FileScanner
  * Tests all methods with comprehensive coverage
  */
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
 import { FileScanner } from "../../../src/ingestion/file-scanner.js";
 import { ValidationError } from "../../../src/ingestion/errors.js";
 import type { ScanOptions } from "../../../src/ingestion/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
-import { resolve } from "path";
+import { resolve, join } from "path";
+import { writeFile, unlink } from "fs/promises";
 
 describe("FileScanner", () => {
   let scanner: FileScanner;
+  const largeFilePath = join(__dirname, "../../fixtures/sample-repo/large-file.bin");
+
+  beforeAll(async () => {
+    // Create large test file (2MB) dynamically to avoid committing binary to repo
+    const largeBuffer = Buffer.alloc(2 * 1024 * 1024);
+    await writeFile(largeFilePath, largeBuffer);
+  });
+
+  afterAll(async () => {
+    // Clean up large test file
+    try {
+      await unlink(largeFilePath);
+    } catch {
+      // File may not exist, ignore error
+    }
+  });
 
   beforeEach(() => {
     initializeLogger({ level: "info", format: "json" });
@@ -50,6 +67,40 @@ describe("FileScanner", () => {
       expect(async () => {
         await scanner.scanFiles(resolve("/non/existent/path"));
       }).toThrow(ValidationError);
+    });
+
+    test("should throw ValidationError for path outside allowed base directories", async () => {
+      const restrictedScanner = new FileScanner({
+        allowedBasePaths: [resolve(__dirname, "../../fixtures")],
+      });
+
+      // Attempt to scan a path outside the allowed base
+      expect(async () => {
+        await restrictedScanner.scanFiles(resolve(__dirname, "../../../src"));
+      }).toThrow(ValidationError);
+    });
+
+    test("should allow scanning within allowed base directories", async () => {
+      const restrictedScanner = new FileScanner({
+        allowedBasePaths: [resolve(__dirname, "../../fixtures")],
+      });
+
+      // This should succeed since sample-repo is within fixtures/
+      const repoPath = resolve(__dirname, "../../fixtures/sample-repo");
+      const files = await restrictedScanner.scanFiles(repoPath);
+
+      expect(files).toBeInstanceOf(Array);
+    });
+
+    test("should allow scanning exact allowed base directory", async () => {
+      const repoPath = resolve(__dirname, "../../fixtures/sample-repo");
+      const restrictedScanner = new FileScanner({
+        allowedBasePaths: [repoPath], // Exact match
+      });
+
+      // Should succeed for exact match
+      const files = await restrictedScanner.scanFiles(repoPath);
+      expect(files).toBeInstanceOf(Array);
     });
 
     test("should scan sample repository and return files", async () => {

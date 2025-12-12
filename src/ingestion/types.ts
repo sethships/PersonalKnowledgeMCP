@@ -131,16 +131,24 @@ export interface ScanOptions {
   /**
    * Optional progress callback invoked during scanning.
    *
-   * Called periodically with the number of files scanned so far.
-   * The total parameter may be an estimate and can change during scanning.
+   * Called periodically (every 100 files) with progress information.
+   * The final callback is invoked after all files are processed.
    *
-   * @param scanned - Number of files processed so far
-   * @param total - Estimated total number of files (may change)
+   * **Important**: The final `scanned` value may be less than `total` if files
+   * are excluded due to size limits (>1MB by default) or stat errors. The
+   * `total` represents files that matched glob patterns, while `scanned`
+   * represents files successfully included in results after all filtering.
+   *
+   * @param scanned - Number of files successfully scanned and included in results.
+   *   Excludes files filtered by size limits or with stat errors.
+   * @param total - Total number of files that matched extension and exclusion
+   *   filters. All these files will be stat'ed, but not all may pass size checks.
    *
    * @example
    * ```typescript
    * onProgress: (scanned, total) => {
    *   console.log(`Progress: ${scanned}/${total} files`);
+   *   // Note: final scanned may be < total if large files are excluded
    * }
    * ```
    */
@@ -225,4 +233,34 @@ export interface FileScannerConfig {
    * @default 1048576 (1MB)
    */
   maxFileSizeBytes?: number;
+
+  /**
+   * Optional list of allowed base directory paths for repository scanning.
+   *
+   * When specified, repository paths must be located within one of these
+   * base directories. This provides path traversal defense for multi-instance
+   * deployments where different instances should only access specific directories.
+   *
+   * All paths must be absolute and normalized. Repository paths are validated
+   * to ensure they start with one of the allowed base paths.
+   *
+   * If not specified (default), any absolute path can be scanned.
+   *
+   * @default undefined (no restrictions)
+   *
+   * @example
+   * ```typescript
+   * // Restrict to project directories
+   * const scanner = new FileScanner({
+   *   allowedBasePaths: [
+   *     '/home/user/work-repos',
+   *     '/home/user/personal-repos'
+   *   ]
+   * });
+   *
+   * // Valid: /home/user/work-repos/project1
+   * // Invalid: /tmp/malicious-repo (throws ValidationError)
+   * ```
+   */
+  allowedBasePaths?: string[];
 }

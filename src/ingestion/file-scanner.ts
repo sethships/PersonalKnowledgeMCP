@@ -121,6 +121,7 @@ export class FileScanner {
     this.logger = getComponentLogger("ingestion:file-scanner");
     this.config = {
       maxFileSizeBytes: config.maxFileSizeBytes ?? this.MAX_FILE_SIZE_BYTES,
+      allowedBasePaths: config.allowedBasePaths ?? [],
     };
   }
 
@@ -258,6 +259,21 @@ export class FileScanner {
 
     // Normalize path
     const normalizedPath = resolve(repoPath);
+
+    // If allowedBasePaths is configured, validate path is within allowed directories
+    if (this.config.allowedBasePaths && this.config.allowedBasePaths.length > 0) {
+      const isAllowed = this.config.allowedBasePaths.some((basePath) => {
+        const normalizedBase = resolve(basePath);
+        return normalizedPath.startsWith(normalizedBase + sep) || normalizedPath === normalizedBase;
+      });
+
+      if (!isAllowed) {
+        throw new ValidationError(
+          `Repository path is outside allowed base directories. Path: ${normalizedPath}`,
+          "repoPath"
+        );
+      }
+    }
 
     // Check if directory exists and is accessible
     try {
