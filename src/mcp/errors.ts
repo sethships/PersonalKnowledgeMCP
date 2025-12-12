@@ -80,10 +80,7 @@ export function mapToMCPError(error: unknown): McpError {
   }
 
   if (error instanceof SearchOperationError) {
-    log.error(
-      { error: error.message, retryable: error.retryable },
-      "Search operation failed"
-    );
+    log.error({ error: error.message, retryable: error.retryable }, "Search operation failed");
     // Don't leak internal error details - return generic message
     return new McpError(ErrorCode.InternalError, "Search operation failed. Please try again.");
   }

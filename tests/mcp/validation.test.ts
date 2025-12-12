@@ -6,11 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
-import {
-  validateSemanticSearchArgs,
-  SemanticSearchArgsSchema,
-} from "../../src/mcp/validation.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { validateSemanticSearchArgs, SemanticSearchArgsSchema } from "../../src/mcp/validation.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
 describe("MCP Validation", () => {
@@ -61,9 +58,10 @@ describe("MCP Validation", () => {
 
         try {
           validateSemanticSearchArgs({ query: longQuery });
-        } catch (error: any) {
-          expect(error.code).toBe(ErrorCode.InvalidParams);
-          expect(error.message).toContain("1000");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.code).toBe(ErrorCode.InvalidParams);
+          expect(mcpError.message).toContain("1000");
         }
       });
 
@@ -89,8 +87,9 @@ describe("MCP Validation", () => {
       it("should provide helpful error message for empty query", () => {
         try {
           validateSemanticSearchArgs({ query: "" });
-        } catch (error: any) {
-          expect(error.message).toContain("cannot be empty");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("cannot be empty");
         }
       });
     });
@@ -150,9 +149,10 @@ describe("MCP Validation", () => {
 
         try {
           validateSemanticSearchArgs({ query: "test", limit: 51 });
-        } catch (error: any) {
-          expect(error.code).toBe(ErrorCode.InvalidParams);
-          expect(error.message).toContain("50");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.code).toBe(ErrorCode.InvalidParams);
+          expect(mcpError.message).toContain("50");
         }
       });
 
@@ -175,8 +175,9 @@ describe("MCP Validation", () => {
 
         try {
           validateSemanticSearchArgs({ query: "test", limit: 10.5 });
-        } catch (error: any) {
-          expect(error.message).toContain("integer");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("integer");
         }
       });
     });
@@ -227,9 +228,10 @@ describe("MCP Validation", () => {
 
         try {
           validateSemanticSearchArgs({ query: "test", threshold: -0.1 });
-        } catch (error: any) {
-          expect(error.code).toBe(ErrorCode.InvalidParams);
-          expect(error.message).toContain("0.0");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.code).toBe(ErrorCode.InvalidParams);
+          expect(mcpError.message).toContain("0.0");
         }
       });
 
@@ -243,8 +245,9 @@ describe("MCP Validation", () => {
 
         try {
           validateSemanticSearchArgs({ query: "test", threshold: 1.1 });
-        } catch (error: any) {
-          expect(error.message).toContain("1.0");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("1.0");
         }
       });
 
@@ -335,10 +338,11 @@ describe("MCP Validation", () => {
             limit: 100,
             threshold: 1.5,
           });
-        } catch (error: any) {
-          expect(error.message).toContain("semantic_search");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("semantic_search");
           // Should mention at least one validation error
-          expect(error.message.length).toBeGreaterThan(20);
+          expect(mcpError.message.length).toBeGreaterThan(20);
         }
       });
     });
@@ -350,16 +354,18 @@ describe("MCP Validation", () => {
             query: "test",
             limit: -5,
           });
-        } catch (error: any) {
-          expect(error.message).toContain("limit");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("limit");
         }
       });
 
       it("should start with descriptive prefix", () => {
         try {
           validateSemanticSearchArgs({ query: "" });
-        } catch (error: any) {
-          expect(error.message).toContain("Invalid semantic_search arguments");
+        } catch (error: unknown) {
+          const mcpError = error as McpError;
+          expect(mcpError.message).toContain("Invalid semantic_search arguments");
         }
       });
     });

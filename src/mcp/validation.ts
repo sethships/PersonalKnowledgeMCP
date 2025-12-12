@@ -20,34 +20,32 @@ import type { SemanticSearchArgs } from "./types.js";
  *
  * Aligns with the inputSchema in semantic_search tool definition.
  */
-export const SemanticSearchArgsSchema = z.object({
-  query: z
-    .string()
-    .trim()
-    .min(1, "Query cannot be empty")
-    .max(1000, "Query exceeds maximum length of 1000 characters"),
+export const SemanticSearchArgsSchema = z
+  .object({
+    query: z
+      .string()
+      .trim()
+      .min(1, "Query cannot be empty")
+      .max(1000, "Query exceeds maximum length of 1000 characters"),
 
-  limit: z
-    .number()
-    .int("Limit must be an integer")
-    .min(1, "Limit must be at least 1")
-    .max(50, "Limit cannot exceed 50")
-    .optional()
-    .default(10),
+    limit: z
+      .number()
+      .int("Limit must be an integer")
+      .min(1, "Limit must be at least 1")
+      .max(50, "Limit cannot exceed 50")
+      .optional()
+      .default(10),
 
-  threshold: z
-    .number()
-    .min(0.0, "Threshold must be between 0.0 and 1.0")
-    .max(1.0, "Threshold must be between 0.0 and 1.0")
-    .optional()
-    .default(0.7),
+    threshold: z
+      .number()
+      .min(0.0, "Threshold must be between 0.0 and 1.0")
+      .max(1.0, "Threshold must be between 0.0 and 1.0")
+      .optional()
+      .default(0.7),
 
-  repository: z
-    .string()
-    .trim()
-    .min(1, "Repository name cannot be empty")
-    .optional(),
-}).strict();
+    repository: z.string().trim().min(1, "Repository name cannot be empty").optional(),
+  })
+  .strict();
 
 /**
  * Validates and parses semantic_search tool arguments

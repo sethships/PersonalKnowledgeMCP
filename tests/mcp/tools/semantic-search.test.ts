@@ -13,6 +13,43 @@ import {
 } from "../../../src/mcp/tools/semantic-search.js";
 import { SearchOperationError } from "../../../src/services/errors.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
+
+// Helper interface for JSON Schema property testing
+interface JsonSchemaProperty {
+  type?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  default?: unknown;
+  description?: string;
+}
+
+// Helper interface for semantic_search tool response
+interface SemanticSearchResult {
+  content: string;
+  similarity_score: number;
+  metadata: {
+    file_path: string;
+    repository: string;
+    chunk_index: number;
+    file_extension: string;
+    file_size_bytes: number;
+    indexed_at: string;
+  };
+}
+
+interface SemanticSearchResponse {
+  results: SemanticSearchResult[];
+  metadata: {
+    total_matches: number;
+    query_time_ms: number;
+    embedding_time_ms: number;
+    search_time_ms: number;
+    repositories_searched: string[];
+  };
+}
 
 // Mock SearchService
 class MockSearchService implements SearchService {
@@ -81,14 +118,18 @@ describe("semantic_search Tool", () => {
     });
 
     it("should define query property with constraints", () => {
-      const queryProp = semanticSearchToolDefinition.inputSchema.properties!["query"] as any;
+      const queryProp = semanticSearchToolDefinition.inputSchema.properties![
+        "query"
+      ] as JsonSchemaProperty;
       expect(queryProp.type).toBe("string");
       expect(queryProp.minLength).toBe(1);
       expect(queryProp.maxLength).toBe(1000);
     });
 
     it("should define limit property with range", () => {
-      const limitProp = semanticSearchToolDefinition.inputSchema.properties!["limit"] as any;
+      const limitProp = semanticSearchToolDefinition.inputSchema.properties![
+        "limit"
+      ] as JsonSchemaProperty;
       expect(limitProp.type).toBe("number");
       expect(limitProp.minimum).toBe(1);
       expect(limitProp.maximum).toBe(50);
@@ -96,7 +137,9 @@ describe("semantic_search Tool", () => {
     });
 
     it("should define threshold property with range", () => {
-      const thresholdProp = semanticSearchToolDefinition.inputSchema.properties!["threshold"] as any;
+      const thresholdProp = semanticSearchToolDefinition.inputSchema.properties![
+        "threshold"
+      ] as JsonSchemaProperty;
       expect(thresholdProp.type).toBe("number");
       expect(thresholdProp.minimum).toBe(0.0);
       expect(thresholdProp.maximum).toBe(1.0);
@@ -104,7 +147,9 @@ describe("semantic_search Tool", () => {
     });
 
     it("should define optional repository property", () => {
-      const repoProp = semanticSearchToolDefinition.inputSchema.properties!["repository"] as any;
+      const repoProp = semanticSearchToolDefinition.inputSchema.properties![
+        "repository"
+      ] as JsonSchemaProperty;
       expect(repoProp.type).toBe("string");
       expect(semanticSearchToolDefinition.inputSchema.required).not.toContain("repository");
     });
@@ -156,7 +201,9 @@ describe("semantic_search Tool", () => {
         expect(result.content).toHaveLength(1);
         expect(result.content[0]!.type).toBe("text");
 
-        const responseData = JSON.parse((result.content[0] as any).text);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
         expect(responseData.results).toHaveLength(1);
         expect(responseData.results[0].content).toContain("authenticate");
         expect(responseData.metadata.total_matches).toBe(1);
@@ -213,7 +260,9 @@ describe("semantic_search Tool", () => {
         const result = await handler({ query: "nonexistent" });
 
         expect(result.isError).toBe(false);
-        const responseData = JSON.parse((result.content[0] as any).text);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
         expect(responseData.results).toHaveLength(0);
         expect(responseData.metadata.total_matches).toBe(0);
       });
@@ -247,7 +296,9 @@ describe("semantic_search Tool", () => {
         const handler = createSemanticSearchHandler(mockService);
         const result = await handler({ query: "test" });
 
-        const responseData = JSON.parse((result.content[0] as any).text);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
 
         expect(responseData.results).toBeDefined();
         expect(responseData.metadata).toBeDefined();
@@ -272,7 +323,9 @@ describe("semantic_search Tool", () => {
         const handler = createSemanticSearchHandler(mockService);
         const result = await handler({ query: "test" });
 
-        const responseData = JSON.parse((result.content[0] as any).text);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
 
         expect(responseData.metadata.total_matches).toBe(0);
         expect(responseData.metadata.query_time_ms).toBe(150);
@@ -291,7 +344,7 @@ describe("semantic_search Tool", () => {
         });
 
         expect(result.isError).toBe(true);
-        expect((result.content[0] as any).text).toContain("Error:");
+        expect((result.content[0] as TextContent).text).toContain("Error:");
       });
 
       it("should handle SearchService errors", async () => {
@@ -303,7 +356,7 @@ describe("semantic_search Tool", () => {
         });
 
         expect(result.isError).toBe(true);
-        expect((result.content[0] as any).text).toContain("Error:");
+        expect((result.content[0] as TextContent).text).toContain("Error:");
       });
 
       it("should not leak internal error details", async () => {
@@ -316,8 +369,8 @@ describe("semantic_search Tool", () => {
         const result = await handler({ query: "test" });
 
         expect(result.isError).toBe(true);
-        expect((result.content[0] as any).text).not.toContain("/secret/path");
-        expect((result.content[0] as any).text).not.toContain("database");
+        expect((result.content[0] as TextContent).text).not.toContain("/secret/path");
+        expect((result.content[0] as TextContent).text).not.toContain("database");
       });
 
       it("should handle validation errors with proper error codes", async () => {
@@ -338,7 +391,7 @@ describe("semantic_search Tool", () => {
         const result = await handler({ query: longQuery });
 
         expect(result.isError).toBe(true);
-        expect((result.content[0] as any).text).toContain("Error");
+        expect((result.content[0] as TextContent).text).toContain("Error");
       });
     });
 

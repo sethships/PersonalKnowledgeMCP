@@ -8,10 +8,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../../services/types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
-import {
-  semanticSearchToolDefinition,
-  createSemanticSearchHandler,
-} from "./semantic-search.js";
+import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
 
 /**
  * Creates the tool registry with all available MCP tools
@@ -74,9 +71,6 @@ export function getToolDefinitions(registry: ToolRegistry): Tool[] {
  * @param toolName - Name of the tool to retrieve
  * @returns Tool handler function, or undefined if tool not found
  */
-export function getToolHandler(
-  registry: ToolRegistry,
-  toolName: string
-): ToolHandler | undefined {
+export function getToolHandler(registry: ToolRegistry, toolName: string): ToolHandler | undefined {
   return registry[toolName]?.handler;
 }

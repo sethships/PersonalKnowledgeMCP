@@ -7,10 +7,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../services/types.js";
 import type { MCPServerConfig, ToolRegistry } from "./types.js";
 import { createToolRegistry, getToolDefinitions, getToolHandler } from "./tools/index.js";
@@ -97,12 +94,15 @@ export class PersonalKnowledgeMCPServer {
    */
   private registerHandlers(): void {
     // Handle ListTools request
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    this.server.setRequestHandler(ListToolsRequestSchema, () => {
       this.logger.debug("Handling ListTools request");
 
       const tools = getToolDefinitions(this.toolRegistry);
 
-      this.logger.info({ toolCount: tools.length, tools: tools.map((t) => t.name) }, "Listed available tools");
+      this.logger.info(
+        { toolCount: tools.length, tools: tools.map((t) => t.name) },
+        "Listed available tools"
+      );
 
       return { tools };
     });
@@ -135,19 +135,13 @@ export class PersonalKnowledgeMCPServer {
       try {
         const result = await handler(args);
 
-        this.logger.info(
-          { toolName, isError: result.isError },
-          "CallTool completed"
-        );
+        this.logger.info({ toolName, isError: result.isError }, "CallTool completed");
 
         return result;
       } catch (error) {
         // This should rarely happen as handlers catch their own errors
         // But we handle it defensively to prevent server crashes
-        this.logger.error(
-          { toolName, error },
-          "Unexpected error in tool handler"
-        );
+        this.logger.error({ toolName, error }, "Unexpected error in tool handler");
 
         return {
           content: [

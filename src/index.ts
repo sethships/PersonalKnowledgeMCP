@@ -78,7 +78,10 @@ async function main(): Promise<void> {
     });
 
     // Connect to ChromaDB
-    logger.info({ host: config.chromadb.host, port: config.chromadb.port }, "Connecting to ChromaDB");
+    logger.info(
+      { host: config.chromadb.host, port: config.chromadb.port },
+      "Connecting to ChromaDB"
+    );
     await chromaClient.connect();
 
     // Verify connection health
