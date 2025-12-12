@@ -11,6 +11,7 @@
  * Log levels supported by the logger
  *
  * Ordered from highest to lowest severity:
+ * - silent: Suppress all logging (typically used in tests)
  * - fatal: Application crash, requires immediate attention
  * - error: Error events that might still allow the application to continue
  * - warn: Warning events indicating potential issues
@@ -18,7 +19,7 @@
  * - debug: Detailed information for debugging
  * - trace: Very detailed information, typically for development only
  */
-export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
+export type LogLevel = "silent" | "fatal" | "error" | "warn" | "info" | "debug" | "trace";
 
 /**
  * Logger configuration
