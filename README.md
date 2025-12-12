@@ -212,6 +212,7 @@ docker-compose up -d
 ```
 
 For detailed Docker operations guide, see [docs/docker-operations.md](docs/docker-operations.md).
+
 ## Claude Code Integration
 
 Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, providing AI-assisted code search and retrieval capabilities directly in your development workflow.

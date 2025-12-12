@@ -37,10 +37,10 @@ This guide helps resolve common issues when using Personal Knowledge MCP with Cl
 **Windows**:
 ```powershell
 # Check if configuration file exists
-Test-Path "$env:APPDATA\Claude Code\mcp.json"
+Test-Path "$env:APPDATA/Claude Code/mcp.json"
 
 # View contents
-Get-Content "$env:APPDATA\Claude Code\mcp.json"
+Get-Content "$env:APPDATA/Claude Code/mcp.json"
 ```
 
 **macOS/Linux**:
@@ -52,6 +52,9 @@ ls -la ~/.config/claude-code/mcp.json  # Linux
 # View contents
 cat ~/Library/Application\ Support/Claude\ Code/mcp.json  # macOS
 cat ~/.config/claude-code/mcp.json  # Linux
+
+# Or use forward slashes (works in most shells)
+ls -la "$HOME/Library/Application Support/Claude Code/mcp.json"  # macOS
 ```
 
 #### 2. Verify Command Path is Absolute

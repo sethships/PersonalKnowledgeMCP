@@ -434,12 +434,19 @@ docker-compose up -d
 - **p99**: _____ ms
 - **max**: _____ ms
 
-**Target**: p95 <500ms
+**Target**: p95 <500ms (total query time)
+
+> **Note**: The <500ms target is for total MCP query response time. This includes:
+> - Embedding generation via OpenAI API (~200-400ms depending on network)
+> - Vector similarity search in ChromaDB (<200ms)
+>
+> The vector search component alone targets <200ms. Total query time varies based on OpenAI API latency.
 
 **Validation**:
-- [ ] p95 <500ms
-- [ ] p50 <250ms
-- [ ] No queries >1000ms
+- [ ] p95 <500ms (total query time, may vary with API latency)
+- [ ] p50 <250ms (total query time)
+- [ ] Vector search only: <200ms (check `search_time_ms` in response metadata)
+- [ ] No queries >1500ms (accounts for API latency spikes)
 
 **Status**: ⬜ Not Run | ✅ Pass | ❌ Fail
 

@@ -1,5 +1,7 @@
 # E2E Test Results - 2025-12-12
 
+> **Note**: This document captures a point-in-time snapshot of E2E test results. Results may vary with different data sets, API versions, or infrastructure changes. For the most current validation, re-run the E2E tests using [e2e-validation.md](e2e-validation.md).
+
 ## Test Execution Summary
 
 **Date**: 2025-12-12

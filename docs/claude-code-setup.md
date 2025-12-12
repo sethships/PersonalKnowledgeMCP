@@ -49,10 +49,10 @@ Create or update your `.env` file in the project root with required variables:
 
 ```bash
 # Required: OpenAI API key for embeddings
-OPENAI_API_KEY=sk-proj-...
+OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
 
 # Optional: GitHub PAT for private repositories
-GITHUB_PAT=ghp_...
+GITHUB_PAT=ghp_YOUR_TOKEN_HERE
 
 # ChromaDB connection (defaults shown)
 CHROMADB_HOST=localhost
@@ -70,9 +70,53 @@ LOG_FORMAT=pretty
 
 ### 4. Configure Claude Code
 
-#### Locate Your MCP Configuration File
+Claude Code supports two configuration locations for MCP servers. Choose based on your use case:
 
-The MCP configuration file location varies by platform:
+#### Configuration Options
+
+| Option | Location | Best For |
+|--------|----------|----------|
+| **Project-level** | `.claude/mcp.json` in project root | Portable, project-specific setup; version control friendly |
+| **User-level** | Platform-specific path (see below) | Personal/global settings; shared across all projects |
+
+**Project-level configuration** is recommended when:
+- You want the MCP config checked into version control
+- Multiple team members need the same MCP server setup
+- Configuration is specific to a particular project
+
+**User-level configuration** is better when:
+- You have a central MCP server instance used across all projects
+- Configuration contains paths or settings specific to your machine
+- You don't want MCP config in your repository
+
+#### Project-Level Configuration (Recommended)
+
+Create `.claude/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "personal-knowledge": {
+      "command": "bun",
+      "args": ["run", "C:/src/PersonalKnowledgeMCP/dist/index.js"],
+      "cwd": "C:/src/PersonalKnowledgeMCP",
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "GITHUB_PAT": "${GITHUB_PAT}",
+        "CHROMADB_HOST": "localhost",
+        "CHROMADB_PORT": "8000",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+```
+
+**Important**: The `cwd` field is required for project-level configs to ensure correct path resolution for data directories.
+
+#### User-Level Configuration
+
+User-level MCP configuration file locations by platform:
 
 | Platform | Configuration Path |
 |----------|-------------------|
@@ -262,20 +306,20 @@ Expected: Claude Code returns files related to ChromaDB storage layer, demonstra
 
 **Windows (PowerShell)**:
 ```powershell
-$env:OPENAI_API_KEY = "sk-proj-abc123..."
-$env:GITHUB_PAT = "ghp_xyz789..."
+$env:OPENAI_API_KEY = "sk-proj-YOUR_KEY_HERE"
+$env:GITHUB_PAT = "ghp_YOUR_TOKEN_HERE"
 ```
 
 **Windows (Command Prompt)**:
 ```cmd
-set OPENAI_API_KEY=sk-proj-abc123...
-set GITHUB_PAT=ghp_xyz789...
+set OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
+set GITHUB_PAT=ghp_YOUR_TOKEN_HERE
 ```
 
 **macOS/Linux (Bash/Zsh)**:
 ```bash
-export OPENAI_API_KEY="sk-proj-abc123..."
-export GITHUB_PAT="ghp_xyz789..."
+export OPENAI_API_KEY="sk-proj-YOUR_KEY_HERE"
+export GITHUB_PAT="ghp_YOUR_TOKEN_HERE"
 ```
 
 **Persistent Configuration** (recommended):

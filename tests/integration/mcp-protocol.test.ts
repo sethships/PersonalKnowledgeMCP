@@ -95,7 +95,7 @@ describe("MCP Protocol Integration", () => {
     resetLogger();
   });
 
-  describe("tools/list protocol", () => {
+  describe("tool availability", () => {
     it("should expose semantic_search tool in tools list", async () => {
       const result = await callTool(server, "semantic_search", {
         query: "test",
@@ -569,22 +569,51 @@ describe("MCP Protocol Integration", () => {
 });
 
 /**
+ * Type definition for accessing internal tool registry during testing.
+ * This interface describes the structure we need to access for integration tests.
+ * In production, the MCP client would handle tool invocation via stdio.
+ */
+interface ToolHandler {
+  handler: (args: unknown) => Promise<CallToolResult>;
+}
+
+interface ServerWithToolRegistry {
+  toolRegistry: Record<string, ToolHandler>;
+}
+
+/**
+ * Type guard to safely access the server's internal tool registry.
+ * Returns the registry if available, or null if the structure doesn't match.
+ */
+function getToolRegistry(server: PersonalKnowledgeMCPServer): Record<string, ToolHandler> | null {
+  const serverObj = server as unknown as ServerWithToolRegistry;
+  if (serverObj.toolRegistry && typeof serverObj.toolRegistry === "object") {
+    return serverObj.toolRegistry;
+  }
+  return null;
+}
+
+/**
  * Helper function to simulate MCP tool call
  *
  * In a real integration test, we would use the MCP SDK's client to send
  * requests via stdio. For now, we directly invoke the tool handlers via
- * the server's internal registry.
+ * the server's internal registry using a type-safe accessor.
  */
 async function callTool(
   server: PersonalKnowledgeMCPServer,
   toolName: string,
   args: unknown
 ): Promise<CallToolResult> {
-  // Access the private toolRegistry via type assertion
-  // In production integration tests, we'd use the MCP client instead
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-  const serverWithRegistry = server as any;
-  const registry = serverWithRegistry.toolRegistry;
+  // Access the tool registry using type-safe accessor
+  const registry = getToolRegistry(server);
+
+  if (!registry) {
+    return {
+      content: [{ type: "text", text: "Failed to access tool registry" }],
+      isError: true,
+    };
+  }
 
   if (!registry[toolName]) {
     return {
