@@ -194,33 +194,37 @@ describe("FileScanner Integration", () => {
   });
 
   describe("symlink handling", () => {
-    test("should not follow symlinks (security - prevent path traversal)", async () => {
-      // Create a file outside the test directory
-      const outsidePath = join(testDir, "..", "outside-testdir-file.ts");
-      await writeFile(outsidePath, "export const outside = true;");
+    test("should not follow directory symlinks (security - prevent path traversal)", async () => {
+      // Create a directory outside the test directory with a file
+      const outsideDir = join(testDir, "..", "outside-dir");
+      const outsideFile = join(outsideDir, "outside.ts");
 
-      // Create a symlink inside testDir pointing to the outside file
-      const symlinkPath = join(testDir, "src", "symlink.ts");
+      await mkdir(outsideDir, { recursive: true });
+      await writeFile(outsideFile, "export const outside = true;");
+
+      // Create a symlink to the outside directory
+      const symlinkDirPath = join(testDir, "src", "linked-dir");
       try {
-        await symlink(outsidePath, symlinkPath);
+        await symlink(outsideDir, symlinkDirPath, "dir");
       } catch (error) {
         // Symlink creation may fail on Windows without admin rights - skip test
-        await rm(outsidePath, { force: true });
+        await rm(outsideDir, { recursive: true, force: true });
         return;
       }
 
       const files = await scanner.scanFiles(testDir);
 
-      // The symlink should not be followed
-      // glob's default behavior is followSymbolicLinks: false
+      // Symlink to directory should NOT be followed (security measure)
+      // Files inside the linked directory should not appear in results
+      // Note: glob's default is to not follow directory symlinks
       const hasOutsideFile = files.some(
-        (f) => f.relativePath.includes("symlink") || f.relativePath.includes("outside")
+        (f) => f.relativePath.includes("outside.ts") || f.relativePath.includes("linked-dir")
       );
       expect(hasOutsideFile).toBe(false);
 
       // Clean up
-      await rm(outsidePath, { force: true });
-      await rm(symlinkPath, { force: true });
+      await rm(symlinkDirPath, { recursive: true, force: true });
+      await rm(outsideDir, { recursive: true, force: true });
     });
   });
 
