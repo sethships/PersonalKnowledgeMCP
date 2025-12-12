@@ -1,7 +1,7 @@
 # Phase 1 Implementation Roadmap
 
 **Date:** 2025-12-10 (Updated: 2025-12-12)
-**Status:** In Progress - 9 of 17 issues completed (53%)
+**Status:** In Progress - 11 of 17 issues completed (65%)
 **Timeline:** 2-3 weeks (with 1-week risk buffer)
 
 ---
@@ -18,10 +18,10 @@
 | ~~#8~~ | ~~Repository Metadata Store~~ | ~~S~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | ~~#9~~ | ~~Repository Cloner Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | ~~#10~~ | ~~File Scanner Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
-| #11 | File Chunker Implementation | M | P0 | feature | Open |
+| ~~#11~~ | ~~File Chunker Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | #12 | Ingestion Service Implementation | L | P0 | feature | Open |
 | ~~#13~~ | ~~Search Service Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
-| #14 | MCP Server and semantic_search Tool | M | P0 | feature | Open |
+| ~~#14~~ | ~~MCP Server and semantic_search Tool~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | #15 | MCP list_indexed_repositories Tool | S | P0 | feature | Open |
 | #16 | CLI Commands Implementation | M | P0 | feature | Open |
 | #17 | Claude Code Integration and Testing | M | P0 | feature, testing | Open |
@@ -29,7 +29,7 @@
 | #19 | Test Coverage and Quality Validation | L | P0 | testing | Open |
 | #20 | Documentation and README | M | P1 | documentation | Open |
 
-**Total: 17 issues + 1 Epic | Completed: 9 | Remaining: 8**
+**Total: 17 issues + 1 Epic | Completed: 11 | Remaining: 6**
 
 ---
 
@@ -50,8 +50,8 @@
                                           |
         +-------------------+-------------+-------------+-------------------+
         |                   |             |             |                   |
-    ~~[#8] Repo~~      ~~[#9] Repo~~   ~~[#10] File~~  [#11] File        ~~[#13] Search~~
-    ~~Metadata~~ ✅      ~~Cloner~~ ✅     ~~Scanner~~ ✅    Chunker          ~~Service~~ ✅
+    ~~[#8] Repo~~      ~~[#9] Repo~~   ~~[#10] File~~  ~~[#11] File~~    ~~[#13] Search~~
+    ~~Metadata~~ ✅      ~~Cloner~~ ✅     ~~Scanner~~ ✅    ~~Chunker~~ ✅      ~~Service~~ ✅
         |                   |             |             |                   |
         +-------------------+-------------+-------------+                   |
                                           |                                 |
@@ -60,8 +60,8 @@
                                           |                                 |
                     +---------------------+---------------------------------+
                     |                                                       |
-              [#16] CLI                                             [#14] MCP Server
-              Commands                                              semantic_search
+              [#16] CLI                                             ~~[#14] MCP Server~~
+              Commands                                              ~~semantic_search~~ ✅
                     |                                                       |
                     |                                              [#15] list_repos
                     |                                                       |
@@ -120,7 +120,7 @@
 |-------|------|--------|--------------|
 | ~~#9~~ | ~~Repository Cloner~~ | ~~4-6h~~ | ~~#4~~ | ✅ **DONE** |
 | ~~#10~~ | ~~File Scanner~~ | ~~4-6h~~ | ~~#4~~ | ✅ **DONE** |
-| #11 | File Chunker | 4-6h | #4, #10 |
+| ~~#11~~ | ~~File Chunker~~ | ~~4-6h~~ | ~~#4, #10~~ | ✅ **DONE** |
 
 **Day 8: Ingestion Service**
 | Issue | Task | Effort | Dependencies |
@@ -135,14 +135,14 @@
 **Day 10: MCP Server**
 | Issue | Task | Effort | Dependencies |
 |-------|------|--------|--------------|
-| #14 | MCP Server + semantic_search | 6-8h | #4, #13 |
+| ~~#14~~ | ~~MCP Server + semantic_search~~ | ~~6-8h~~ | ~~#4, #13~~ | ✅ **DONE** |
 | #15 | list_indexed_repositories | 2-3h | #8, #14 |
 
 **Week 2 Deliverables:**
-- [ ] Can clone and index repositories
-- [ ] Can perform semantic searches
-- [ ] MCP server responds to tool calls
-- [ ] Both MCP tools functional
+- [x] Can clone and index repositories (file chunker complete) ✅
+- [x] Can perform semantic searches ✅
+- [x] MCP server responds to tool calls ✅
+- [ ] Both MCP tools functional (list_indexed_repositories pending)
 
 ---
 
@@ -178,13 +178,13 @@
 The critical path for Phase 1 completion:
 
 ```
-~~#4~~ ✅ -> ~~#6~~ ✅ -> #12 -> #14 -> #17 -> #19
+~~#4~~ ✅ -> ~~#6~~ ✅ -> #12 -> ~~#14~~ ✅ -> #17 -> #19
 ```
 
 1. ~~**#4 Project Setup**~~ ✅ - Foundation for all work
 2. ~~**#6 ChromaDB Storage**~~ ✅ - Required for all data operations
 3. **#12 Ingestion Service** - Enables repository indexing
-4. **#14 MCP Server** - Core user-facing interface
+4. ~~**#14 MCP Server**~~ ✅ - Core user-facing interface
 5. **#17 Claude Code Integration** - Validates the system works
 6. **#19 Testing** - Ensures quality and completeness
 
@@ -197,17 +197,17 @@ The critical path for Phase 1 completion:
 These issues can be worked on in parallel:
 
 **Parallel Track A (Storage/Search):**
-- ~~#5~~ ✅ -> ~~#6~~ ✅ -> ~~#13~~ ✅ -> #14
+- ~~#5~~ ✅ -> ~~#6~~ ✅ -> ~~#13~~ ✅ -> ~~#14~~ ✅
 
 **Parallel Track B (Ingestion):**
-- ~~#9~~ ✅, ~~#10~~ ✅, #11 -> #12
+- ~~#9~~ ✅, ~~#10~~ ✅, ~~#11~~ ✅ -> #12
 
 **Parallel Track C (Supporting):**
 - ~~#7~~ ✅, ~~#8~~ ✅, ~~#18~~ ✅ (independent of each other)
 
 **With multiple developers:**
-- Developer 1: Storage and MCP (~~#5~~ ✅, ~~#6~~ ✅, ~~#13~~ ✅, #14, #15)
-- Developer 2: Ingestion pipeline (~~#9~~ ✅, ~~#10~~ ✅, #11, #12, #16)
+- Developer 1: Storage and MCP (~~#5~~ ✅, ~~#6~~ ✅, ~~#13~~ ✅, ~~#14~~ ✅, #15)
+- Developer 2: Ingestion pipeline (~~#9~~ ✅, ~~#10~~ ✅, ~~#11~~ ✅, #12, #16)
 - Shared: ~~#4~~ ✅, ~~#7~~ ✅, ~~#8~~ ✅, ~~#18~~ ✅, #17, #19, #20
 
 ---
@@ -235,7 +235,12 @@ All items must be complete:
 - [x] ~~#7~~ Embedding Provider Interface completed and merged ✅
 - [x] ~~#8~~ Repository Metadata Store completed and merged ✅
 - [x] ~~#9~~ Repository Cloner completed and merged ✅
-- [ ] #10-#17 completed and merged
+- [x] ~~#10~~ File Scanner completed and merged ✅
+- [x] ~~#11~~ File Chunker completed and merged ✅
+- [ ] #12 Ingestion Service completed and merged
+- [x] ~~#13~~ Search Service completed and merged ✅
+- [x] ~~#14~~ MCP Server completed and merged ✅
+- [ ] #15-#17 completed and merged
 - [ ] #19 Test coverage >= 90%
 - [ ] MCP service responds to Claude Code
 - [ ] semantic_search returns relevant results
@@ -284,5 +289,5 @@ All items must be complete:
 ---
 
 *Document generated: 2025-12-10*
-*Last updated: 2025-12-12 - Issues #10 and #13 marked as completed (9 of 17 issues done, 53% complete)*
+*Last updated: 2025-12-12 - Issues #10, #11, #13, and #14 marked as completed (11 of 17 issues done, 65% complete)*
 *Repository: sethb75/PersonalKnowledgeMCP*
