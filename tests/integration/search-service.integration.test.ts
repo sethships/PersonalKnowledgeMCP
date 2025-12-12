@@ -21,6 +21,10 @@ import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import fs from "fs";
 import path from "path";
 
+// Only run these tests if explicitly enabled (requires running ChromaDB)
+const shouldRunIntegrationTests = Bun.env["RUN_INTEGRATION_TESTS"] === "true";
+const describeIntegration = shouldRunIntegrationTests ? describe : describe.skip;
+
 // Mock EmbeddingProvider for integration tests
 class MockEmbeddingProvider implements EmbeddingProvider {
   public readonly providerId = "mock";
@@ -53,7 +57,7 @@ class MockEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-describe("SearchService Integration Tests", () => {
+describeIntegration("SearchService Integration Tests", () => {
   const testDataPath = "/tmp/search-service-integration-test";
   const testChromaHost = process.env["CHROMADB_HOST"] || "localhost";
   const testChromaPort = parseInt(process.env["CHROMADB_PORT"] || "8000", 10);
