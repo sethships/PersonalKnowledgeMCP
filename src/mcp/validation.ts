@@ -74,7 +74,7 @@ export function validateSemanticSearchArgs(args: unknown): SemanticSearchArgs {
 
   if (!result.success) {
     // Format Zod errors into human-readable message
-    const errorMessage = result.error.errors
+    const errorMessage = result.error.issues
       .map((e) => {
         const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
         return `${path}${e.message}`;
