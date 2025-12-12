@@ -148,3 +148,6 @@ DEV_PLAN*.md
 *dev-plan.md
 *-dev-plan.md
 docs/pm/*plan*.md
+
+# Claude Code MCP configuration (machine-specific paths)
+.claude/mcp.json
