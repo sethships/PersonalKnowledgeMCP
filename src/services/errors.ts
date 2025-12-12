@@ -73,11 +73,10 @@ export class NoRepositoriesAvailableError extends SearchError {
  * Retryability depends on underlying cause
  */
 export class SearchOperationError extends SearchError {
-  constructor(
-    message: string,
-    retryable: boolean = true,
-    public readonly cause?: Error
-  ) {
+  public override readonly cause?: Error;
+
+  constructor(message: string, retryable: boolean = true, cause?: Error) {
     super(message, retryable);
+    this.cause = cause;
   }
 }

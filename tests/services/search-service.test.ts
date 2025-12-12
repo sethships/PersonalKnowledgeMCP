@@ -306,9 +306,9 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].similarity_score).toBe(0.95);
-      expect(response.results[1].similarity_score).toBe(0.85);
-      expect(response.results[2].similarity_score).toBe(0.75);
+      expect(response.results[0]!.similarity_score).toBe(0.95);
+      expect(response.results[1]!.similarity_score).toBe(0.85);
+      expect(response.results[2]!.similarity_score).toBe(0.75);
     });
 
     it("should handle zero results gracefully", async () => {
@@ -331,8 +331,8 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].content_snippet.length).toBeLessThanOrEqual(503); // 500 + "..."
-      expect(response.results[0].content_snippet).toEndWith("...");
+      expect(response.results[0]!.content_snippet.length).toBeLessThanOrEqual(503); // 500 + "..."
+      expect(response.results[0]!.content_snippet).toEndWith("...");
     });
 
     it("should not truncate snippets shorter than 500 chars", async () => {
@@ -343,7 +343,7 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].content_snippet).toBe(shortContent);
+      expect(response.results[0]!.content_snippet).toBe(shortContent);
     });
 
     it("should extract file_path from metadata", async () => {
@@ -353,7 +353,7 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].file_path).toBe("src/test.ts");
+      expect(response.results[0]!.file_path).toBe("src/test.ts");
     });
 
     it("should extract repository from metadata", async () => {
@@ -363,7 +363,7 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].repository).toBe("test-repo");
+      expect(response.results[0]!.repository).toBe("test-repo");
     });
 
     it("should handle missing metadata gracefully with defaults", async () => {
@@ -380,11 +380,11 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.results[0].file_path).toBe("unknown");
-      expect(response.results[0].repository).toBe("unknown");
-      expect(response.results[0].chunk_index).toBe(0);
-      expect(response.results[0].metadata.file_extension).toBe("");
-      expect(response.results[0].metadata.file_size_bytes).toBe(0);
+      expect(response.results[0]!.file_path).toBe("unknown");
+      expect(response.results[0]!.repository).toBe("unknown");
+      expect(response.results[0]!.chunk_index).toBe(0);
+      expect(response.results[0]!.metadata.file_extension).toBe("");
+      expect(response.results[0]!.metadata.file_size_bytes).toBe(0);
     });
   });
 

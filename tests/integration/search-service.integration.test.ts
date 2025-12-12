@@ -154,8 +154,8 @@ describe("SearchService Integration Tests", () => {
 
       // Results should be sorted by similarity
       for (let i = 1; i < response.results.length; i++) {
-        expect(response.results[i - 1].similarity_score).toBeGreaterThanOrEqual(
-          response.results[i].similarity_score
+        expect(response.results[i - 1]!.similarity_score).toBeGreaterThanOrEqual(
+          response.results[i]!.similarity_score
         );
       }
     });
@@ -275,7 +275,7 @@ describe("SearchService Integration Tests", () => {
 
   describe("Edge Cases", () => {
     it("should handle repository with no indexed chunks", async () => {
-      await repositoryService.addRepository({
+      await repositoryService.updateRepository({
         name: "empty-repo",
         url: "https://github.com/test/empty",
         localPath: "/tmp/empty",
@@ -341,7 +341,7 @@ describe("SearchService Integration Tests", () => {
     const collectionName = `repo_${repoName.replace(/[^a-z0-9]/gi, "_")}`;
 
     // Add repository metadata
-    await repositoryService.addRepository({
+    await repositoryService.updateRepository({
       name: repoName,
       url: `https://github.com/test/${repoName}`,
       localPath: `/tmp/${repoName}`,
@@ -362,7 +362,7 @@ describe("SearchService Integration Tests", () => {
     const documentInputs: DocumentInput[] = documents.map((doc, index) => ({
       id: `${repoName}:${doc.filePath}:${doc.chunkIndex}`,
       content: doc.content,
-      embedding: embeddings[index],
+      embedding: embeddings[index]!,
       metadata: {
         file_path: doc.filePath,
         repository: repoName,
