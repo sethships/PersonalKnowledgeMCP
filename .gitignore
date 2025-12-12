@@ -142,3 +142,9 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+
+# Transient development plan files (stay in .claude/plans/)
+DEV_PLAN*.md
+*dev-plan.md
+*-dev-plan.md
+docs/pm/*plan*.md
