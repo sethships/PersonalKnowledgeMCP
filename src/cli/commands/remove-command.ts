@@ -9,6 +9,7 @@
 import chalk from "chalk";
 import { rm } from "fs/promises";
 import { existsSync } from "fs";
+import { resolve } from "path";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import { confirm } from "../utils/prompts.js";
 import { createRemoveSpinner, completeRemoveSpinner } from "../output/progress.js";
@@ -74,6 +75,16 @@ export async function removeCommand(
     let filesDeleted = false;
     if (options.deleteFiles && repo.localPath && existsSync(repo.localPath)) {
       try {
+        // Defensive: Ensure path is within expected clone directory
+        const clonePath = resolve(Bun.env["CLONE_PATH"] || "./data/repositories");
+        const repoPath = resolve(repo.localPath);
+
+        if (!repoPath.startsWith(clonePath)) {
+          throw new Error(
+            `Security: Repository path '${repo.localPath}' is outside expected clone directory '${clonePath}'`
+          );
+        }
+
         // Recursively remove directory
         await rm(repo.localPath, { recursive: true, force: true });
         filesDeleted = true;

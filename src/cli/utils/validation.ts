@@ -23,12 +23,29 @@ export const SearchCommandOptionsSchema = z.object({
     .string()
     .optional()
     .transform((val) => (val ? parseInt(val, 10) : 10))
-    .pipe(z.number().int().min(1).max(100)),
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .refine((n) => !isNaN(n), {
+          message: "limit must be a valid number between 1-100",
+        })
+    ),
   threshold: z
     .string()
     .optional()
     .transform((val) => (val ? parseFloat(val) : 0.7))
-    .pipe(z.number().min(0).max(1)),
+    .pipe(
+      z
+        .number()
+        .min(0)
+        .max(1)
+        .refine((n) => !isNaN(n), {
+          message: "threshold must be a valid number between 0.0-1.0",
+        })
+    ),
   repo: z.string().optional(),
   json: z.boolean().optional(),
 });
