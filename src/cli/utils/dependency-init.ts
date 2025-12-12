@@ -22,6 +22,24 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
 
 /**
+ * Parse integer from environment variable with validation
+ *
+ * @param key - Environment variable name
+ * @param defaultValue - Default value if not set
+ * @returns Parsed integer value
+ * @throws {Error} If value is not a valid number
+ */
+function parseIntEnv(key: string, defaultValue: number): number {
+  const value = Bun.env[key];
+  if (!value) return defaultValue;
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed)) {
+    throw new Error(`Invalid value for ${key}: expected a number, got '${value}'`);
+  }
+  return parsed;
+}
+
+/**
  * All dependencies required by CLI commands
  */
 export interface CliDependencies {
@@ -56,15 +74,15 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     const config = {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
-        port: parseInt(Bun.env["CHROMADB_PORT"] || "8000", 10),
+        port: parseIntEnv("CHROMADB_PORT", 8000),
       },
       embedding: {
         provider: "openai",
         model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
-        dimensions: parseInt(Bun.env["EMBEDDING_DIMENSIONS"] || "1536", 10),
-        batchSize: parseInt(Bun.env["EMBEDDING_BATCH_SIZE"] || "100", 10),
-        maxRetries: parseInt(Bun.env["EMBEDDING_MAX_RETRIES"] || "3", 10),
-        timeoutMs: parseInt(Bun.env["EMBEDDING_TIMEOUT_MS"] || "30000", 10),
+        dimensions: parseIntEnv("EMBEDDING_DIMENSIONS", 1536),
+        batchSize: parseIntEnv("EMBEDDING_BATCH_SIZE", 100),
+        maxRetries: parseIntEnv("EMBEDDING_MAX_RETRIES", 3),
+        timeoutMs: parseIntEnv("EMBEDDING_TIMEOUT_MS", 30000),
       },
       data: {
         path: Bun.env["DATA_PATH"] || "./data",

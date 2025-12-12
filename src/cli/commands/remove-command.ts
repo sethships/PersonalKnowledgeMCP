@@ -7,7 +7,7 @@
 /* eslint-disable no-console */
 
 import chalk from "chalk";
-import { rmdir } from "fs/promises";
+import { rm } from "fs/promises";
 import { existsSync } from "fs";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import { confirm } from "../utils/prompts.js";
@@ -75,7 +75,7 @@ export async function removeCommand(
     if (options.deleteFiles && repo.localPath && existsSync(repo.localPath)) {
       try {
         // Recursively remove directory
-        await rmdir(repo.localPath, { recursive: true });
+        await rm(repo.localPath, { recursive: true, force: true });
         filesDeleted = true;
       } catch (error) {
         // Log warning but don't fail the entire operation

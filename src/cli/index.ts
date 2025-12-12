@@ -10,17 +10,21 @@
  * - health: Health check
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-
 import "dotenv/config";
 import { Command } from "commander";
 import { initializeDependencies } from "./utils/dependency-init.js";
 import { handleCommandError } from "./utils/error-handler.js";
-import { indexCommand, type IndexCommandOptions } from "./commands/index-command.js";
-import { searchCommand, type SearchCommandOptions } from "./commands/search-command.js";
-import { statusCommand, type StatusCommandOptions } from "./commands/status-command.js";
-import { removeCommand, type RemoveCommandOptions } from "./commands/remove-command.js";
+import { indexCommand } from "./commands/index-command.js";
+import { searchCommand } from "./commands/search-command.js";
+import { statusCommand } from "./commands/status-command.js";
+import { removeCommand } from "./commands/remove-command.js";
 import { healthCommand } from "./commands/health-command.js";
+import {
+  IndexCommandOptionsSchema,
+  SearchCommandOptionsSchema,
+  StatusCommandOptionsSchema,
+  RemoveCommandOptionsSchema,
+} from "./utils/validation.js";
 
 const program = new Command();
 
@@ -39,8 +43,9 @@ program
   .option("-f, --force", "Force reindexing if repository already exists")
   .action(async (url: string, options: Record<string, unknown>) => {
     try {
+      const validatedOptions = IndexCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
-      await indexCommand(url, options as IndexCommandOptions, deps);
+      await indexCommand(url, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }
@@ -57,8 +62,9 @@ program
   .option("--json", "Output as JSON")
   .action(async (query: string, options: Record<string, unknown>) => {
     try {
+      const validatedOptions = SearchCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
-      await searchCommand(query, options as SearchCommandOptions, deps);
+      await searchCommand(query, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }
@@ -71,8 +77,9 @@ program
   .option("--json", "Output as JSON")
   .action(async (options: Record<string, unknown>) => {
     try {
+      const validatedOptions = StatusCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
-      await statusCommand(options as StatusCommandOptions, deps);
+      await statusCommand(validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }
@@ -87,8 +94,9 @@ program
   .option("--delete-files", "Also delete local repository files")
   .action(async (name: string, options: Record<string, unknown>) => {
     try {
+      const validatedOptions = RemoveCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
-      await removeCommand(name, options as RemoveCommandOptions, deps);
+      await removeCommand(name, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

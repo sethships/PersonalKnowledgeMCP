@@ -17,6 +17,7 @@ import type { SearchResult } from "../../services/types.js";
  * @returns Truncated string with ellipsis if needed
  */
 function truncate(str: string, maxLength: number): string {
+  if (maxLength < 4) return str.substring(0, maxLength);
   if (str.length <= maxLength) {
     return str;
   }

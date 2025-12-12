@@ -55,7 +55,7 @@
     "pino": "^8.19.0",
     "pino-pretty": "^10.3.1",
     "simple-git": "^3.25.0",
-    "zod": "^3.23.8"
+    "zod": "4.1.13"
   },
   "devDependencies": {
     "@types/bun": "latest",

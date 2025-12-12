@@ -386,6 +386,8 @@ pk-mcp health
 
 **Output:** Status of ChromaDB, OpenAI API, and Metadata Store with response times. Exit code 0 if all healthy, 1 if any unhealthy.
 
+> **Note:** The OpenAI API health check verifies authentication (API key validity) but cannot detect quota exceeded or billing issues. These will only surface during actual embedding generation.
+
 ### CLI Configuration
 
 The CLI uses the same environment variables as the MCP server:

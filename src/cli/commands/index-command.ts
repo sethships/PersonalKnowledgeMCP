@@ -21,7 +21,6 @@ export interface IndexCommandOptions {
   name?: string;
   branch?: string;
   force?: boolean;
-  shallow?: boolean;
 }
 
 /**
@@ -42,6 +41,13 @@ function extractRepositoryName(url: string): string {
   if (!lastPart || lastPart === "") {
     throw new Error(
       "Could not extract repository name from URL. Please use --name to specify explicitly."
+    );
+  }
+
+  // Security: Reject names with path traversal patterns
+  if (lastPart.includes("..") || lastPart.includes("/") || lastPart.includes("\\")) {
+    throw new Error(
+      "Invalid repository name extracted from URL. Please use --name to specify explicitly."
     );
   }
 

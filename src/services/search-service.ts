@@ -168,7 +168,7 @@ export class SearchServiceImpl implements SearchService {
       return SearchQuerySchema.parse(query);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const validationErrors = error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
+        const validationErrors = error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
         throw new SearchValidationError(
           `Invalid search query: ${validationErrors.join("; ")}`,
           validationErrors
