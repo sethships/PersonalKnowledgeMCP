@@ -56,7 +56,18 @@ async function main(): Promise<void> {
       },
     };
 
-    logger.info({ config }, "Configuration loaded");
+    // Log safe subset explicitly (avoid accidentally logging sensitive fields)
+    logger.info(
+      {
+        chromadb: { host: config.chromadb.host, port: config.chromadb.port },
+        embedding: {
+          model: config.embedding.model,
+          dimensions: config.embedding.dimensions,
+        },
+        data: { path: config.data.path },
+      },
+      "Configuration loaded"
+    );
 
     // Step 2: Initialize embedding provider (OpenAI)
     logger.info("Initializing embedding provider");

@@ -28,6 +28,8 @@ export class PersonalKnowledgeMCPServer {
   private server: Server;
   private toolRegistry: ToolRegistry;
   private logger = getComponentLogger("mcp:server");
+  private isShuttingDown = false;
+  private shutdownHandlersRegistered = false;
 
   /**
    * Creates a new MCP server instance
@@ -172,16 +174,28 @@ export class PersonalKnowledgeMCPServer {
 
     const transport = new StdioServerTransport();
 
-    // Handle graceful shutdown signals
-    process.on("SIGINT", () => {
-      this.logger.info("Received SIGINT, initiating shutdown");
-      void this.shutdown();
-    });
+    // Handle graceful shutdown signals (register only once)
+    if (!this.shutdownHandlersRegistered) {
+      const shutdown = async (): Promise<void> => {
+        if (this.isShuttingDown) {
+          return; // Shutdown already in progress
+        }
+        this.isShuttingDown = true;
+        await this.shutdown();
+      };
 
-    process.on("SIGTERM", () => {
-      this.logger.info("Received SIGTERM, initiating shutdown");
-      void this.shutdown();
-    });
+      process.once("SIGINT", () => {
+        this.logger.info("Received SIGINT, initiating shutdown");
+        void shutdown();
+      });
+
+      process.once("SIGTERM", () => {
+        this.logger.info("Received SIGTERM, initiating shutdown");
+        void shutdown();
+      });
+
+      this.shutdownHandlersRegistered = true;
+    }
 
     try {
       await this.server.connect(transport);

@@ -72,8 +72,7 @@ export const semanticSearchToolDefinition: Tool = {
         type: "string",
         description:
           "Optional repository name to limit search scope. If omitted, searches across " +
-          "all indexed repositories with 'ready' status. Use 'list_repositories' tool " +
-          "to see available repositories.",
+          "all indexed repositories with 'ready' status.",
       },
     },
     required: ["query"],
