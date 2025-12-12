@@ -204,9 +204,9 @@ describe("createListRepositoriesHandler", () => {
       const response = parseResponse(getTextContent(result.content));
 
       expect(response.repositories).toHaveLength(3);
-      expect(response.repositories[0].name).toBe("repo1");
-      expect(response.repositories[1].name).toBe("repo2");
-      expect(response.repositories[2].name).toBe("repo3");
+      expect(response.repositories[0]!.name).toBe("repo1");
+      expect(response.repositories[1]!.name).toBe("repo2");
+      expect(response.repositories[2]!.name).toBe("repo3");
 
       expect(response.summary).toEqual({
         total_repositories: 3,
@@ -230,8 +230,8 @@ describe("createListRepositoriesHandler", () => {
       expect(result.isError).toBe(false);
       const response = parseResponse(getTextContent(result.content));
 
-      expect(response.repositories[0].status).toBe("error");
-      expect(response.repositories[0].error_message).toBe("Failed to clone repository");
+      expect(response.repositories[0]!.status).toBe("error");
+      expect(response.repositories[0]!.error_message).toBe("Failed to clone repository");
     });
 
     it("should handle repository with indexing status", async () => {
@@ -248,7 +248,7 @@ describe("createListRepositoriesHandler", () => {
       expect(result.isError).toBe(false);
       const response = parseResponse(getTextContent(result.content));
 
-      expect(response.repositories[0].status).toBe("indexing");
+      expect(response.repositories[0]!.status).toBe("indexing");
     });
 
     it("should preserve ISO 8601 timestamp format", async () => {
@@ -266,7 +266,7 @@ describe("createListRepositoriesHandler", () => {
       expect(result.isError).toBe(false);
       const response = parseResponse(getTextContent(result.content));
 
-      expect(response.repositories[0].last_indexed).toBe(timestamp);
+      expect(response.repositories[0]!.last_indexed).toBe(timestamp);
     });
 
     it("should map camelCase to snake_case correctly", async () => {
