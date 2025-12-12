@@ -93,7 +93,7 @@ function formatListRepositoriesResponse(
     last_indexed: repo.lastIndexedAt,
     status: repo.status,
     index_duration_ms: repo.indexDurationMs,
-    error_message: repo.errorMessage,
+    ...(repo.errorMessage && { error_message: repo.errorMessage }),
   }));
 
   // Calculate summary statistics
@@ -115,7 +115,7 @@ function formatListRepositoriesResponse(
  * This definition is returned in response to ListTools requests and describes
  * the tool's interface contract to MCP clients like Claude Code.
  */
-export const listIndexedRepositoriesTool: Tool = {
+export const listIndexedRepositoriesToolDefinition: Tool = {
   name: "list_indexed_repositories",
   description:
     "Lists all repositories currently indexed in the knowledge base. " +

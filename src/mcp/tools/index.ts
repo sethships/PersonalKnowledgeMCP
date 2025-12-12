@@ -11,7 +11,7 @@ import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
 import {
-  listIndexedRepositoriesTool,
+  listIndexedRepositoriesToolDefinition,
   createListRepositoriesHandler,
 } from "./list-indexed-repositories.js";
 
@@ -50,7 +50,7 @@ export function createToolRegistry(
       handler: createSemanticSearchHandler(searchService),
     },
     list_indexed_repositories: {
-      definition: listIndexedRepositoriesTool,
+      definition: listIndexedRepositoriesToolDefinition,
       handler: createListRepositoriesHandler(repositoryService),
     },
   };

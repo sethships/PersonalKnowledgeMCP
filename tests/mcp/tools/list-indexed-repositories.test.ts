@@ -9,7 +9,7 @@ import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/rep
 import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
 import {
   createListRepositoriesHandler,
-  listIndexedRepositoriesTool,
+  listIndexedRepositoriesToolDefinition,
 } from "../../../src/mcp/tools/list-indexed-repositories.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
@@ -91,23 +91,23 @@ function createMockRepo(
   };
 }
 
-describe("listIndexedRepositoriesTool definition", () => {
+describe("listIndexedRepositoriesToolDefinition definition", () => {
   it("should have correct tool name", () => {
-    expect(listIndexedRepositoriesTool.name).toBe("list_indexed_repositories");
+    expect(listIndexedRepositoriesToolDefinition.name).toBe("list_indexed_repositories");
   });
 
   it("should have a description", () => {
-    expect(listIndexedRepositoriesTool.description).toBeTruthy();
-    expect(listIndexedRepositoriesTool.description).toBeDefined();
-    if (listIndexedRepositoriesTool.description) {
-      expect(listIndexedRepositoriesTool.description.length).toBeGreaterThan(0);
+    expect(listIndexedRepositoriesToolDefinition.description).toBeTruthy();
+    expect(listIndexedRepositoriesToolDefinition.description).toBeDefined();
+    if (listIndexedRepositoriesToolDefinition.description) {
+      expect(listIndexedRepositoriesToolDefinition.description.length).toBeGreaterThan(0);
     }
   });
 
   it("should have empty input schema (no required parameters)", () => {
-    expect(listIndexedRepositoriesTool.inputSchema.type).toBe("object");
-    expect(listIndexedRepositoriesTool.inputSchema.properties).toEqual({});
-    expect(listIndexedRepositoriesTool.inputSchema.required).toEqual([]);
+    expect(listIndexedRepositoriesToolDefinition.inputSchema.type).toBe("object");
+    expect(listIndexedRepositoriesToolDefinition.inputSchema.properties).toEqual({});
+    expect(listIndexedRepositoriesToolDefinition.inputSchema.required).toEqual([]);
   });
 });
 
@@ -177,7 +177,6 @@ describe("createListRepositoriesHandler", () => {
         last_indexed: "2025-01-15T10:30:00.000Z",
         status: "ready",
         index_duration_ms: 5000,
-        error_message: undefined,
       });
 
       expect(response.summary).toEqual({
@@ -433,6 +432,64 @@ describe("createListRepositoriesHandler", () => {
         total_files_indexed: 0,
         total_chunks: 0,
       });
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle very large file and chunk counts", async () => {
+      // Given: Repository with very large counts (near integer limits)
+      const largeCount = 2147483647; // Integer.MAX_VALUE
+      const mockRepo = createMockRepo("large-repo", largeCount, largeCount);
+      mockRepositoryService.listRepositories = mock(() => Promise.resolve([mockRepo]));
+
+      // When: Handler called
+      const result = await handler({});
+
+      // Then: Large numbers handled correctly
+      expect(result.isError).toBe(false);
+      const response = parseResponse(getTextContent(result.content));
+
+      expect(response.repositories[0]!.file_count).toBe(largeCount);
+      expect(response.repositories[0]!.chunk_count).toBe(largeCount);
+      expect(response.summary.total_files_indexed).toBe(largeCount);
+      expect(response.summary.total_chunks).toBe(largeCount);
+    });
+
+    it("should handle repositories with minimal fields", async () => {
+      // Given: Repository with only required fields (no optional error_message)
+      const mockRepo = createMockRepo("minimal-repo", 0, 0, {
+        errorMessage: undefined,
+      });
+      mockRepositoryService.listRepositories = mock(() => Promise.resolve([mockRepo]));
+
+      // When: Handler called
+      const result = await handler({});
+
+      // Then: No error_message field in response when undefined
+      expect(result.isError).toBe(false);
+      const response = parseResponse(getTextContent(result.content));
+
+      expect(response.repositories[0]).not.toHaveProperty("error_message");
+    });
+
+    it("should handle special characters in repository names and URLs", async () => {
+      // Given: Repository with special characters
+      const specialName = "repo-with_special.chars@2024";
+      const specialUrl = "https://github.com/user/repo-with_special.chars%402024.git";
+      const mockRepo = createMockRepo(specialName, 10, 20, {
+        url: specialUrl,
+      });
+      mockRepositoryService.listRepositories = mock(() => Promise.resolve([mockRepo]));
+
+      // When: Handler called
+      const result = await handler({});
+
+      // Then: Special characters preserved correctly
+      expect(result.isError).toBe(false);
+      const response = parseResponse(getTextContent(result.content));
+
+      expect(response.repositories[0]!.name).toBe(specialName);
+      expect(response.repositories[0]!.url).toBe(specialUrl);
     });
   });
 });
