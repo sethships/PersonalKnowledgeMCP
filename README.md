@@ -213,6 +213,96 @@ docker-compose up -d
 
 For detailed Docker operations guide, see [docs/docker-operations.md](docs/docker-operations.md).
 
+## Claude Code Integration
+
+Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, providing AI-assisted code search and retrieval capabilities directly in your development workflow.
+
+### Quick Setup
+
+1. **Prerequisites**:
+   - Personal Knowledge MCP built and ChromaDB running
+   - At least one repository indexed
+   - Bun or Node.js installed
+
+2. **Configure Claude Code**:
+
+   Add the MCP server configuration to your Claude Code MCP settings file (location varies by platform):
+
+   - **Windows**: `%APPDATA%\Claude Code\mcp.json`
+   - **macOS**: `~/Library/Application Support/Claude Code/mcp.json`
+   - **Linux**: `~/.config/claude-code/mcp.json`
+
+   ```json
+   {
+     "mcpServers": {
+       "personal-knowledge": {
+         "command": "bun",
+         "args": ["run", "/absolute/path/to/PersonalKnowledgeMCP/dist/index.js"],
+         "env": {
+           "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+           "GITHUB_PAT": "${GITHUB_PAT}",
+           "CHROMADB_HOST": "localhost",
+           "CHROMADB_PORT": "8000"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Restart Claude Code** to load the new MCP server
+
+4. **Verify Integration**:
+   - In Claude Code, you should see two new tools available:
+     - **`semantic_search`**: Search your indexed code semantically
+     - **`list_indexed_repositories`**: View indexed repositories
+
+   Try asking: *"Can you list my indexed repositories?"*
+
+### Usage Examples
+
+Once integrated, Claude Code can help you find code across your indexed projects:
+
+**Find specific implementations**:
+```
+Find authentication middleware that validates JWT tokens
+```
+
+**Explore code patterns**:
+```
+Show me examples of error handling in the API layer
+```
+
+**Understand architecture**:
+```
+Where is the database connection logic implemented?
+```
+
+**Cross-repository search**:
+```
+Find all implementations of rate limiting across my projects
+```
+
+### Performance
+
+The MCP integration is optimized for fast response times:
+- Tool discovery: <100ms
+- Repository listing: <50ms
+- Semantic search: <500ms (95th percentile)
+
+### Advanced Configuration
+
+For detailed setup instructions, troubleshooting, and advanced configuration options, see:
+- **[Claude Code Setup Guide](docs/claude-code-setup.md)** - Complete setup and configuration
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+
+### Requirements
+
+- **Bun 1.0+** or **Node.js 18+** (for running the MCP server)
+- **Docker Desktop** (for ChromaDB)
+- **OpenAI API Key** (for embedding generation)
+- **At least one indexed repository** (use `bun run cli index <url>`)
+
+
 ## MCP Tools
 
 ### semantic_search
