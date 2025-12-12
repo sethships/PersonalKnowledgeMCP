@@ -108,3 +108,33 @@ export class FileScanError extends RepositoryError {
     this.repoPath = repoPath;
   }
 }
+
+/**
+ * Error thrown when file chunking operations fail.
+ *
+ * Common causes include:
+ * - Invalid configuration (overlap >= maxTokens)
+ * - Chunk limit exceeded (>100 chunks)
+ * - Hash computation failures
+ * - Unexpected errors during chunking process
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   const chunks = await chunker.chunkFile(content, fileInfo, repo);
+ * } catch (error) {
+ *   if (error instanceof ChunkingError) {
+ *     console.error(`Chunking failed for ${error.filePath}:`, error.message);
+ *   }
+ * }
+ * ```
+ */
+export class ChunkingError extends RepositoryError {
+  public readonly filePath: string;
+
+  constructor(message: string, filePath: string, cause?: Error) {
+    super(message, "CHUNKING_ERROR", cause);
+    this.name = "ChunkingError";
+    this.filePath = filePath;
+  }
+}
