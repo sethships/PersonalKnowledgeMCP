@@ -114,7 +114,7 @@ async function main(): Promise<void> {
 
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
-    const mcpServer = new PersonalKnowledgeMCPServer(searchService, {
+    const mcpServer = new PersonalKnowledgeMCPServer(searchService, repositoryService, {
       name: "personal-knowledge-mcp",
       version: "1.0.0",
       capabilities: {

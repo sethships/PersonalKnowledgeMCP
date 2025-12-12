@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type { SearchService, SearchResponse, SearchQuery } from "../../src/services/types.js";
+import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
 import { PersonalKnowledgeMCPServer } from "../../src/mcp/server.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
@@ -26,12 +27,33 @@ class MockSearchService implements SearchService {
   }
 }
 
+// Mock RepositoryMetadataService
+class MockRepositoryMetadataService implements RepositoryMetadataService {
+  async listRepositories(): Promise<RepositoryInfo[]> {
+    return [];
+  }
+
+  async getRepository(_name: string): Promise<RepositoryInfo | null> {
+    return null;
+  }
+
+  async updateRepository(_info: RepositoryInfo): Promise<void> {
+    // Mock implementation
+  }
+
+  async removeRepository(_name: string): Promise<void> {
+    // Mock implementation
+  }
+}
+
 describe("PersonalKnowledgeMCPServer", () => {
   let mockService: MockSearchService;
+  let mockRepositoryService: MockRepositoryMetadataService;
 
   beforeEach(() => {
     initializeLogger({ level: "silent", format: "json" });
     mockService = new MockSearchService();
+    mockRepositoryService = new MockRepositoryMetadataService();
   });
 
   afterEach(() => {
@@ -40,12 +62,12 @@ describe("PersonalKnowledgeMCPServer", () => {
 
   describe("initialization", () => {
     it("should create server with default config", () => {
-      const server = new PersonalKnowledgeMCPServer(mockService);
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
       expect(server).toBeDefined();
     });
 
     it("should create server with custom config", () => {
-      const server = new PersonalKnowledgeMCPServer(mockService, {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, {
         name: "custom-server",
         version: "2.0.0",
         capabilities: { tools: true },
@@ -53,22 +75,22 @@ describe("PersonalKnowledgeMCPServer", () => {
       expect(server).toBeDefined();
     });
 
-    it("should initialize with SearchService dependency", () => {
+    it("should initialize with SearchService and RepositoryMetadataService dependencies", () => {
       // Should not throw
-      const server = new PersonalKnowledgeMCPServer(mockService);
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
       expect(server).toBeDefined();
     });
   });
 
   describe("configuration", () => {
     it("should use default name if not provided", () => {
-      const server = new PersonalKnowledgeMCPServer(mockService);
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
       // Server should be initialized without errors
       expect(server).toBeDefined();
     });
 
     it("should accept custom server name", () => {
-      const server = new PersonalKnowledgeMCPServer(mockService, {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, {
         name: "test-mcp-server",
         version: "1.0.0",
         capabilities: { tools: true },
@@ -77,7 +99,7 @@ describe("PersonalKnowledgeMCPServer", () => {
     });
 
     it("should accept custom version", () => {
-      const server = new PersonalKnowledgeMCPServer(mockService, {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, {
         name: "test-server",
         version: "3.0.0",
         capabilities: { tools: true },

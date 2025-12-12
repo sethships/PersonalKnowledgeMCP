@@ -7,8 +7,13 @@
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../../services/types.js";
+import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
+import {
+  listIndexedRepositoriesTool,
+  createListRepositoriesHandler,
+} from "./list-indexed-repositories.js";
 
 /**
  * Creates the tool registry with all available MCP tools
@@ -19,12 +24,14 @@ import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./sem
  * - Enables easy addition of new tools without modifying the MCP server
  *
  * @param searchService - Injected search service for semantic_search tool
+ * @param repositoryService - Injected repository metadata service for list_indexed_repositories tool
  * @returns Complete tool registry with all available tools
  *
  * @example
  * ```typescript
  * const searchService = new SearchServiceImpl(provider, storage, repoService);
- * const registry = createToolRegistry(searchService);
+ * const repositoryService = RepositoryMetadataStoreImpl.getInstance();
+ * const registry = createToolRegistry(searchService, repositoryService);
  *
  * // List all tool names
  * const toolNames = Object.keys(registry);
@@ -33,17 +40,19 @@ import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./sem
  * const handler = getToolHandler(registry, 'semantic_search');
  * ```
  */
-export function createToolRegistry(searchService: SearchService): ToolRegistry {
+export function createToolRegistry(
+  searchService: SearchService,
+  repositoryService: RepositoryMetadataService
+): ToolRegistry {
   return {
     semantic_search: {
       definition: semanticSearchToolDefinition,
       handler: createSemanticSearchHandler(searchService),
     },
-    // Future tools can be added here, for example:
-    // list_repositories: {
-    //   definition: listRepositoriesToolDefinition,
-    //   handler: createListRepositoriesHandler(repositoryService),
-    // },
+    list_indexed_repositories: {
+      definition: listIndexedRepositoriesTool,
+      handler: createListRepositoriesHandler(repositoryService),
+    },
   };
 }
 
