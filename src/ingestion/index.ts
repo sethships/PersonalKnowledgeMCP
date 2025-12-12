@@ -8,6 +8,7 @@
 
 export { RepositoryCloner } from "./repository-cloner.js";
 export { FileScanner } from "./file-scanner.js";
+export { FileChunker } from "./file-chunker.js";
 export type {
   CloneOptions,
   CloneResult,
@@ -15,6 +16,8 @@ export type {
   ScanOptions,
   FileInfo,
   FileScannerConfig,
+  FileChunk,
+  ChunkerConfig,
 } from "./types.js";
 export {
   RepositoryError,
@@ -22,4 +25,5 @@ export {
   CloneError,
   AuthenticationError,
   FileScanError,
+  ChunkingError,
 } from "./errors.js";

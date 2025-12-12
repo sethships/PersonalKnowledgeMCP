@@ -264,3 +264,175 @@ export interface FileScannerConfig {
    */
   allowedBasePaths?: string[];
 }
+
+/**
+ * Represents a single chunk of a file, ready for embedding.
+ *
+ * Contains the chunk content, position tracking, and metadata for
+ * semantic search and result rendering. Files are split into chunks
+ * to fit within embedding model token limits while preserving line
+ * boundaries and maintaining overlap for semantic continuity.
+ *
+ * @example
+ * ```typescript
+ * const chunk: FileChunk = {
+ *   id: "my-api:src/auth/middleware.ts:0",
+ *   repository: "my-api",
+ *   filePath: "src/auth/middleware.ts",
+ *   content: "import express from 'express';\n...",
+ *   chunkIndex: 0,
+ *   totalChunks: 3,
+ *   startLine: 1,
+ *   endLine: 45,
+ *   metadata: {
+ *     extension: ".ts",
+ *     fileSizeBytes: 4096,
+ *     contentHash: "a1b2c3...",
+ *     fileModifiedAt: new Date("2024-12-11T10:00:00Z")
+ *   }
+ * };
+ * ```
+ */
+export interface FileChunk {
+  /**
+   * Unique chunk identifier.
+   *
+   * Format: {repository}:{filePath}:{chunkIndex}
+   * Colon-separated to enable easy parsing and filtering.
+   *
+   * @example "my-api:src/auth/middleware.ts:0"
+   */
+  id: string;
+
+  /**
+   * Repository name (slugified identifier).
+   *
+   * Should match the repository name in RepositoryInfo.
+   *
+   * @example "my-api", "frontend-app"
+   */
+  repository: string;
+
+  /**
+   * File path relative to repository root.
+   *
+   * Uses POSIX separators (/) for cross-platform consistency.
+   * Matches FileInfo.relativePath format.
+   *
+   * @example "src/auth/middleware.ts"
+   */
+  filePath: string;
+
+  /**
+   * Chunk text content.
+   *
+   * Preserves line boundaries - never splits mid-line.
+   * May include overlap from previous chunk for context continuity.
+   */
+  content: string;
+
+  /**
+   * Zero-based chunk index within file.
+   *
+   * First chunk is 0, second is 1, etc.
+   */
+  chunkIndex: number;
+
+  /**
+   * Total number of chunks for this file.
+   *
+   * All chunks from same file will have identical totalChunks value.
+   * Updated after chunking is complete.
+   */
+  totalChunks: number;
+
+  /**
+   * Starting line number in original file (1-based).
+   *
+   * Line numbers are 1-based to match editor conventions.
+   */
+  startLine: number;
+
+  /**
+   * Ending line number in original file (1-based, inclusive).
+   *
+   * The endLine is inclusive - it's the last line included in the chunk.
+   */
+  endLine: number;
+
+  /**
+   * Chunk-specific metadata.
+   */
+  metadata: {
+    /**
+     * File extension (lowercase, with leading dot).
+     *
+     * Copied from FileInfo.extension
+     *
+     * @example ".ts", ".md", ".py"
+     */
+    extension: string;
+
+    /**
+     * Original file size in bytes.
+     *
+     * Size of the entire file, not just this chunk.
+     * Copied from FileInfo.sizeBytes
+     */
+    fileSizeBytes: number;
+
+    /**
+     * SHA-256 hash of chunk content.
+     *
+     * Used for deduplication and change detection.
+     * Computed from chunk.content at creation time.
+     */
+    contentHash: string;
+
+    /**
+     * File modification timestamp.
+     *
+     * Copied from FileInfo.modifiedAt
+     * Useful for cache invalidation and version tracking.
+     */
+    fileModifiedAt: Date;
+  };
+}
+
+/**
+ * Configuration for FileChunker behavior.
+ *
+ * Controls chunk size, overlap, and limits to optimize for embedding
+ * model token constraints while maintaining semantic context continuity.
+ *
+ * @example
+ * ```typescript
+ * const config: ChunkerConfig = {
+ *   maxChunkTokens: 500,
+ *   overlapTokens: 50
+ * };
+ * const chunker = new FileChunker(config);
+ * ```
+ */
+export interface ChunkerConfig {
+  /**
+   * Maximum tokens per chunk.
+   *
+   * Chunks will not exceed this token limit (with some tolerance for
+   * long single lines that cannot be split). Token estimation uses
+   * a conservative character-based heuristic (~4 characters per token).
+   *
+   * @default 500 (from CHUNK_MAX_TOKENS env var or hardcoded default)
+   */
+  maxChunkTokens?: number;
+
+  /**
+   * Overlap tokens between consecutive chunks.
+   *
+   * Ensures semantic context continuity across chunk boundaries.
+   * Should be significantly smaller than maxChunkTokens.
+   *
+   * @default 50 (from CHUNK_OVERLAP_TOKENS env var or hardcoded default)
+   */
+  overlapTokens?: number;
+}
