@@ -205,7 +205,7 @@ describe("semantic_search Tool", () => {
           (result.content[0] as TextContent).text
         ) as SemanticSearchResponse;
         expect(responseData.results).toHaveLength(1);
-        expect(responseData.results[0].content).toContain("authenticate");
+        expect(responseData.results[0]!.content).toContain("authenticate");
         expect(responseData.metadata.total_matches).toBe(1);
       });
 
@@ -302,9 +302,9 @@ describe("semantic_search Tool", () => {
 
         expect(responseData.results).toBeDefined();
         expect(responseData.metadata).toBeDefined();
-        expect(responseData.results[0].content).toBe("test content");
-        expect(responseData.results[0].similarity_score).toBe(0.95);
-        expect(responseData.results[0].metadata.file_path).toBe("test.ts");
+        expect(responseData.results[0]!.content).toBe("test content");
+        expect(responseData.results[0]!.similarity_score).toBe(0.95);
+        expect(responseData.results[0]!.metadata.file_path).toBe("test.ts");
       });
 
       it("should include all metadata fields in response", async () => {
