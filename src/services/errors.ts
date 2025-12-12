@@ -15,7 +15,10 @@ export abstract class SearchError extends Error {
     super(message);
     this.name = this.constructor.name;
     this.retryable = retryable;
-    Error.captureStackTrace(this, this.constructor);
+    // V8-specific - only available in Node.js/Bun, not all runtimes
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 

@@ -20,6 +20,7 @@ import type { DocumentInput } from "../../src/storage/types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 // Only run these tests if explicitly enabled (requires running ChromaDB)
 const shouldRunIntegrationTests = Bun.env["RUN_INTEGRATION_TESTS"] === "true";
@@ -58,7 +59,7 @@ class MockEmbeddingProvider implements EmbeddingProvider {
 }
 
 describeIntegration("SearchService Integration Tests", () => {
-  const testDataPath = "/tmp/search-service-integration-test";
+  const testDataPath = path.join(os.tmpdir(), "search-service-integration-test");
   const testChromaHost = process.env["CHROMADB_HOST"] || "localhost";
   const testChromaPort = parseInt(process.env["CHROMADB_PORT"] || "8000", 10);
 
@@ -282,7 +283,7 @@ describeIntegration("SearchService Integration Tests", () => {
       await repositoryService.updateRepository({
         name: "empty-repo",
         url: "https://github.com/test/empty",
-        localPath: "/tmp/empty",
+        localPath: path.join(os.tmpdir(), "empty"),
         collectionName: "repo_empty",
         status: "ready",
         fileCount: 0,
@@ -348,7 +349,7 @@ describeIntegration("SearchService Integration Tests", () => {
     await repositoryService.updateRepository({
       name: repoName,
       url: `https://github.com/test/${repoName}`,
-      localPath: `/tmp/${repoName}`,
+      localPath: path.join(os.tmpdir(), repoName),
       collectionName,
       status: "ready",
       fileCount: documents.length,

@@ -25,6 +25,13 @@ import { getComponentLogger } from "../logging/index.js";
  * Implementation of SearchService using ChromaDB for vector similarity search
  */
 export class SearchServiceImpl implements SearchService {
+  /**
+   * Maximum distance (in chars) from maxChars to search for word boundary
+   * when truncating snippets. If no word boundary found within this range,
+   * will hard truncate at maxChars.
+   */
+  private static readonly WORD_BOUNDARY_TOLERANCE = 50;
+
   private _logger: Logger | null = null;
 
   constructor(
@@ -64,6 +71,14 @@ export class SearchServiceImpl implements SearchService {
       const embeddingStart = performance.now();
       const embedding = await this.embeddingProvider.generateEmbedding(validated.query);
       const embeddingTime = performance.now() - embeddingStart;
+
+      // Validate embedding dimensions match provider specification
+      if (embedding.length !== this.embeddingProvider.dimensions) {
+        throw new SearchOperationError(
+          `Embedding dimension mismatch: expected ${this.embeddingProvider.dimensions}, got ${embedding.length}`,
+          false // Not retryable - indicates provider configuration error
+        );
+      }
 
       this.logger.info("Generated query embedding", {
         query_length: validated.query.length,
@@ -213,18 +228,18 @@ export class SearchServiceImpl implements SearchService {
    */
   private formatResults(rawResults: SimilarityResult[]): SearchResult[] {
     return rawResults.map((result) => {
-      const metadata = result.metadata || {};
+      const metadata = result.metadata ?? {};
 
       return {
-        file_path: metadata.file_path || "unknown",
-        repository: metadata.repository || "unknown",
+        file_path: metadata.file_path ?? "unknown",
+        repository: metadata.repository ?? "unknown",
         content_snippet: this.truncateSnippet(result.content, 500),
         similarity_score: result.similarity,
         chunk_index: metadata.chunk_index ?? 0,
         metadata: {
-          file_extension: metadata.file_extension || "",
+          file_extension: metadata.file_extension ?? "",
           file_size_bytes: metadata.file_size_bytes ?? 0,
-          indexed_at: metadata.indexed_at || new Date().toISOString(),
+          indexed_at: metadata.indexed_at ?? new Date().toISOString(),
         },
       };
     });
@@ -245,7 +260,7 @@ export class SearchServiceImpl implements SearchService {
     const lastSpace = truncated.lastIndexOf(" ");
 
     // Only truncate at word boundary if it's reasonably close to max
-    if (lastSpace > maxChars - 50) {
+    if (lastSpace > maxChars - SearchServiceImpl.WORD_BOUNDARY_TOLERANCE) {
       return truncated.substring(0, lastSpace) + "...";
     }
 

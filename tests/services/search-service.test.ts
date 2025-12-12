@@ -146,6 +146,10 @@ describe("SearchServiceImpl", () => {
       // Empty query
       await expect(service.search({ query: "" })).rejects.toThrow(SearchValidationError);
 
+      // Whitespace-only query (should be trimmed then rejected)
+      await expect(service.search({ query: "   " })).rejects.toThrow(SearchValidationError);
+      await expect(service.search({ query: "\t\n  " })).rejects.toThrow(SearchValidationError);
+
       // Query too long
       await expect(service.search({ query: "a".repeat(1001) })).rejects.toThrow(
         SearchValidationError

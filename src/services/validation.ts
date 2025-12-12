@@ -28,15 +28,13 @@ export const SearchQuerySchema = z
       .int("Limit must be an integer")
       .min(1, "Limit must be at least 1")
       .max(50, "Limit must not exceed 50")
-      .default(10)
-      .optional(),
+      .default(10),
 
     threshold: z
       .number()
       .min(0.0, "Threshold must be at least 0.0")
       .max(1.0, "Threshold must not exceed 1.0")
-      .default(0.7)
-      .optional(),
+      .default(0.7),
 
     repository: z.string().trim().min(1, "Repository name must not be empty").optional(),
   })
