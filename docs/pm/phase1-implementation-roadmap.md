@@ -1,7 +1,7 @@
 # Phase 1 Implementation Roadmap
 
 **Date:** 2025-12-10 (Updated: 2025-12-12)
-**Status:** In Progress - 13 of 17 issues completed (76%)
+**Status:** In Progress - 14 of 17 issues completed (82%)
 **Timeline:** 2-3 weeks (with 1-week risk buffer)
 
 ---
@@ -23,13 +23,13 @@
 | ~~#13~~ | ~~Search Service Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | ~~#14~~ | ~~MCP Server and semantic_search Tool~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | ~~#15~~ | ~~MCP list_indexed_repositories Tool~~ | ~~S~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
-| #16 | CLI Commands Implementation | M | P0 | feature | Open |
+| ~~#16~~ | ~~CLI Commands Implementation~~ | ~~M~~ | ~~P0~~ | ~~feature~~ | ✅ **CLOSED** |
 | #17 | Claude Code Integration and Testing | M | P0 | feature, testing | Open |
 | ~~#18~~ | ~~Logging Infrastructure Setup~~ | ~~S~~ | ~~P1~~ | ~~infrastructure~~ | ✅ **CLOSED** |
 | #19 | Test Coverage and Quality Validation | L | P0 | testing | Open |
 | #20 | Documentation and README | M | P1 | documentation | Open |
 
-**Total: 17 issues + 1 Epic | Completed: 13 | Remaining: 4**
+**Total: 17 issues + 1 Epic | Completed: 14 | Remaining: 3**
 
 ---
 
@@ -60,8 +60,8 @@
                                           |                                 |
                     +---------------------+---------------------------------+
                     |                                                       |
-              [#16] CLI                                             ~~[#14] MCP Server~~
-              Commands                                              ~~semantic_search~~ ✅
+              ~~[#16] CLI~~                                         ~~[#14] MCP Server~~
+              ~~Commands~~ ✅                                        ~~semantic_search~~ ✅
                     |                                                       |
                     |                                              ~~[#15] list_repos~~ ✅
                     |                                                       |
@@ -151,7 +151,7 @@
 **Day 11-12: CLI and Integration**
 | Issue | Task | Effort | Dependencies |
 |-------|------|--------|--------------|
-| #16 | CLI Commands | 6-8h | #12, #13, #8 |
+| ~~#16~~ | ~~CLI Commands~~ | ~~6-8h~~ | ~~#12, #13, #8~~ | ✅ **DONE** |
 | #17 | Claude Code Integration | 4-6h | #14, #15 |
 
 **Day 13-14: Testing and Quality**
@@ -165,7 +165,7 @@
 | #20 | Documentation | 4-6h | All features, #17 |
 
 **Week 3 Deliverables:**
-- [ ] CLI fully functional
+- [x] CLI fully functional ✅
 - [ ] Claude Code integration working
 - [ ] 90% test coverage achieved
 - [ ] Documentation complete
@@ -241,7 +241,8 @@ All items must be complete:
 - [x] ~~#13~~ Search Service completed and merged ✅
 - [x] ~~#14~~ MCP Server completed and merged ✅
 - [x] ~~#15~~ list_indexed_repositories completed and merged ✅
-- [ ] #16-#17 completed and merged
+- [x] ~~#16~~ CLI Commands completed and merged ✅
+- [ ] #17 Claude Code Integration completed and merged
 - [ ] #19 Test coverage >= 90%
 - [ ] MCP service responds to Claude Code
 - [ ] semantic_search returns relevant results
@@ -290,5 +291,5 @@ All items must be complete:
 ---
 
 *Document generated: 2025-12-10*
-*Last updated: 2025-12-12 - Issues #12 and #15 marked as completed (13 of 17 issues done, 76% complete)*
+*Last updated: 2025-12-12 - Issue #16 (CLI Commands) marked as completed (14 of 17 issues done, 82% complete)*
 *Repository: sethb75/PersonalKnowledgeMCP*
