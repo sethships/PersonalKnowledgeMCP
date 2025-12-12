@@ -78,3 +78,33 @@ export class AuthenticationError extends RepositoryError {
     this.url = url;
   }
 }
+
+/**
+ * Error thrown when file scanning operations fail.
+ *
+ * Common causes include:
+ * - Directory doesn't exist or is inaccessible
+ * - Permission denied on directory or files
+ * - Invalid glob patterns
+ * - File system errors during stat operations
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   const files = await scanner.scanFiles('/invalid/path');
+ * } catch (error) {
+ *   if (error instanceof FileScanError) {
+ *     console.error(`Scan failed for ${error.repoPath}:`, error.message);
+ *   }
+ * }
+ * ```
+ */
+export class FileScanError extends RepositoryError {
+  public readonly repoPath: string;
+
+  constructor(message: string, repoPath: string, cause?: Error) {
+    super(message, "FILE_SCAN_ERROR", cause);
+    this.name = "FileScanError";
+    this.repoPath = repoPath;
+  }
+}
