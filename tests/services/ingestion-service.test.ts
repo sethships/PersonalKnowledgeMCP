@@ -22,7 +22,7 @@
 /* eslint-disable @typescript-eslint/await-thenable */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
 import { IngestionService } from "../../src/services/ingestion-service.js";
 import {
   IngestionError,
@@ -40,6 +40,7 @@ import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 class MockRepositoryCloner {
   private shouldFail = false;
   private failureError: Error | null = null;
+  private cleanupCalled = false;
 
   async clone(_url: string, options?: { branch?: string }): Promise<CloneResult> {
     if (this.shouldFail && this.failureError) {
@@ -52,7 +53,19 @@ class MockRepositoryCloner {
     };
   }
 
-  setShouldFail(shouldFail: boolean, error?: Error) {
+  async cleanup(_repoPath: string): Promise<void> {
+    this.cleanupCalled = true;
+  }
+
+  wasCleanupCalled(): boolean {
+    return this.cleanupCalled;
+  }
+
+  resetCleanupFlag(): void {
+    this.cleanupCalled = false;
+  }
+
+  setShouldFail(shouldFail: boolean, error?: Error): void {
     this.shouldFail = shouldFail;
     this.failureError = error || null;
   }
@@ -283,6 +296,9 @@ describe("IngestionService", () => {
     resetLogger();
   });
 
+  // Store original Bun.file for cleanup
+  const originalBunFile = Bun.file;
+
   beforeEach(() => {
     // Create fresh mocks
     mockCloner = new MockRepositoryCloner();
@@ -305,6 +321,11 @@ describe("IngestionService", () => {
     // Reset state
     mockStorage.clear();
     mockRepoService.clear();
+  });
+
+  afterEach(() => {
+    // Restore original Bun.file to prevent test pollution
+    Bun.file = originalBunFile;
   });
 
   describe("indexRepository", () => {

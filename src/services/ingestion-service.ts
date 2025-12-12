@@ -79,6 +79,12 @@ export class IngestionService {
    */
   private readonly EMBEDDING_BATCH_SIZE = 100;
 
+  /**
+   * Timeout for embedding API calls in milliseconds (2 minutes)
+   * Prevents hanging on slow or unresponsive API calls
+   */
+  private readonly EMBEDDING_TIMEOUT_MS = 120000;
+
   constructor(
     private readonly repositoryCloner: RepositoryCloner,
     private readonly fileScanner: FileScanner,
@@ -142,6 +148,8 @@ export class IngestionService {
 
     let repositoryName = "";
     let collectionName = "";
+    let clonePath: string | null = null; // Track cloned directory for cleanup
+    let indexingSucceeded = false; // Track if indexing completed successfully
 
     try {
       // Pre-flight checks
@@ -163,15 +171,7 @@ export class IngestionService {
         throw new IndexingInProgressError("unknown");
       }
 
-      // Check if repository already exists (unless force flag set)
-      if (!options.force) {
-        const existing = await this.repositoryService.getRepository(repositoryName);
-        if (existing) {
-          throw new RepositoryAlreadyExistsError(repositoryName);
-        }
-      }
-
-      // Set indexing state
+      // Set indexing state immediately to prevent race conditions
       this._isIndexing = true;
       this._currentOperation = {
         repository: repositoryName,
@@ -185,6 +185,14 @@ export class IngestionService {
           timestamp: new Date(),
         },
       };
+
+      // Check if repository already exists (unless force flag set)
+      if (!options.force) {
+        const existing = await this.repositoryService.getRepository(repositoryName);
+        if (existing) {
+          throw new RepositoryAlreadyExistsError(repositoryName);
+        }
+      }
 
       // Phase 1: Clone repository
       this.updateProgress(
@@ -201,6 +209,7 @@ export class IngestionService {
       const cloneResult = await this.repositoryCloner.clone(url, {
         branch: options.branch,
       });
+      clonePath = cloneResult.path; // Store for cleanup if needed
 
       this.logger.info("Repository cloned", {
         repository: repositoryName,
@@ -394,6 +403,9 @@ export class IngestionService {
         errorCount: errors.length,
       });
 
+      // Mark indexing as successful (prevents cleanup of cloned directory)
+      indexingSucceeded = true;
+
       return {
         status,
         repository: repositoryName,
@@ -436,6 +448,22 @@ export class IngestionService {
         completedAt: new Date(),
       };
     } finally {
+      // Clean up cloned repository if indexing failed
+      if (clonePath && !indexingSucceeded) {
+        try {
+          await this.repositoryCloner.cleanup(clonePath);
+          this.logger.info("Cleaned up failed indexing", {
+            repository: repositoryName,
+            path: clonePath,
+          });
+        } catch (cleanupError) {
+          this.logger.warn("Failed to cleanup cloned repository", {
+            path: clonePath,
+            error: cleanupError,
+          });
+        }
+      }
+
       // Always clear indexing state
       this._isIndexing = false;
       this._currentOperation = null;
@@ -627,7 +655,11 @@ export class IngestionService {
     const allEmbeddings: number[][] = [];
 
     for (const embeddingBatch of embeddingBatches) {
-      const embeddings = await this.embeddingProvider.generateEmbeddings(embeddingBatch);
+      const embeddings = await this.withTimeout(
+        this.embeddingProvider.generateEmbeddings(embeddingBatch),
+        this.EMBEDDING_TIMEOUT_MS,
+        `Embedding generation (batch of ${embeddingBatch.length} texts)`
+      );
       allEmbeddings.push(...embeddings);
       result.embeddingsGenerated += embeddings.length;
     }
@@ -714,7 +746,7 @@ export class IngestionService {
    * @throws {IngestionError} If name cannot be extracted
    */
   private extractRepositoryName(url: string): string {
-    const match = url.match(/\/([^/]+?)(\.git)?$/);
+    const match = url.match(/[/:]([^/:]+?)(\.git)?$/);
     if (!match || !match[1]) {
       throw new IngestionError(`Cannot extract repository name from URL: ${url}`, false);
     }
@@ -751,6 +783,30 @@ export class IngestionService {
     }
 
     return sanitized;
+  }
+
+  /**
+   * Wrap a promise with a timeout
+   *
+   * Returns a promise that rejects if the operation takes longer than the timeout.
+   *
+   * @param promise - Promise to wrap
+   * @param timeoutMs - Timeout in milliseconds
+   * @param operationName - Name of the operation for error messages
+   * @returns Promise that resolves/rejects with timeout handling
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    operationName: string
+  ): Promise<T> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    return Promise.race([promise, timeoutPromise]);
   }
 
   /**
