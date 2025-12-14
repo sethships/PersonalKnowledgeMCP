@@ -17,6 +17,31 @@ import { PersonalKnowledgeMCPServer } from "../../src/mcp/server.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+/**
+ * Type definition for list_indexed_repositories response.
+ * Used for type-safe JSON parsing in tests.
+ */
+interface ListRepositoriesResponse {
+  repositories: Array<{ name: string; [key: string]: unknown }>;
+}
+
+/**
+ * Type guard to validate list_indexed_repositories response structure.
+ */
+function isListRepositoriesResponse(value: unknown): value is ListRepositoriesResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if (!("repositories" in value)) {
+    return false;
+  }
+  const repos = (value as { repositories: unknown }).repositories;
+  if (!Array.isArray(repos)) {
+    return false;
+  }
+  return true;
+}
+
 // Mock SearchService with configurable behavior
 class MockSearchService implements SearchService {
   private searchResults: SearchResponse = {
@@ -370,12 +395,14 @@ describe("PersonalKnowledgeMCPServer", () => {
       const jsonContent = result.content.find((c) => c.type === "text");
       expect(jsonContent).toBeDefined();
       if (jsonContent && jsonContent.type === "text") {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const response = JSON.parse(jsonContent.text);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        expect(response.repositories).toHaveLength(1);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        expect(response.repositories[0].name).toBe("test-repo");
+        const response: unknown = JSON.parse(jsonContent.text);
+        expect(isListRepositoriesResponse(response)).toBe(true);
+        if (isListRepositoriesResponse(response)) {
+          expect(response.repositories).toHaveLength(1);
+          const firstRepo = response.repositories[0];
+          expect(firstRepo).toBeDefined();
+          expect(firstRepo?.name).toBe("test-repo");
+        }
       }
     });
 
@@ -389,10 +416,11 @@ describe("PersonalKnowledgeMCPServer", () => {
 
       const jsonContent = result.content.find((c) => c.type === "text");
       if (jsonContent && jsonContent.type === "text") {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const response = JSON.parse(jsonContent.text);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        expect(response.repositories).toHaveLength(0);
+        const response: unknown = JSON.parse(jsonContent.text);
+        expect(isListRepositoriesResponse(response)).toBe(true);
+        if (isListRepositoriesResponse(response)) {
+          expect(response.repositories).toHaveLength(0);
+        }
       }
     });
 

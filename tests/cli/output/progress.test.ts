@@ -29,12 +29,16 @@ describe("CLI Progress Indicators", () => {
       const spinner = createIndexSpinner("org/my-repo-name");
 
       expect(spinner).toBeDefined();
+      expect(typeof spinner.start).toBe("function");
+      expect(typeof spinner.succeed).toBe("function");
+      expect(typeof spinner.fail).toBe("function");
     });
 
     it("should handle empty repository name", () => {
       const spinner = createIndexSpinner("");
 
       expect(spinner).toBeDefined();
+      expect(typeof spinner.start).toBe("function");
     });
   });
 
@@ -277,10 +281,8 @@ describe("CLI Progress Indicators", () => {
 
       completeIndexSpinner(spinner, true, stats);
 
-      // Verify succeed was called (the spinner should have succeed message)
-      // Can't easily check the exact message without more complex mocking,
-      // but we verify the function doesn't throw
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should format duration in seconds", () => {
@@ -294,31 +296,32 @@ describe("CLI Progress Indicators", () => {
         durationMs: 1500, // 1.5 seconds
       };
 
-      // This should not throw
       completeIndexSpinner(spinner, true, stats);
-      expect(spinner).toBeDefined();
+
+      // Spinner should be stopped after completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should call fail on failure without error message", () => {
       completeIndexSpinner(spinner, false);
 
-      // Verify function completed without throwing
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failure
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should call fail on failure with error message", () => {
       completeIndexSpinner(spinner, false, undefined, "Connection timeout");
 
-      // Verify function completed without throwing
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failure
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle success without stats gracefully", () => {
       // Edge case: success=true but stats=undefined
       completeIndexSpinner(spinner, true, undefined);
 
-      // Should default to failure path since stats required for success display
-      expect(spinner).toBeDefined();
+      // Should handle gracefully and stop spinner
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle zero duration correctly", () => {
@@ -333,7 +336,9 @@ describe("CLI Progress Indicators", () => {
       };
 
       completeIndexSpinner(spinner, true, stats);
-      expect(spinner).toBeDefined();
+
+      // Spinner should be stopped after completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle large numbers correctly", () => {
@@ -348,7 +353,9 @@ describe("CLI Progress Indicators", () => {
       };
 
       completeIndexSpinner(spinner, true, stats);
-      expect(spinner).toBeDefined();
+
+      // Spinner should be stopped after completion
+      expect(spinner.isSpinning).toBe(false);
     });
   });
 
@@ -365,6 +372,9 @@ describe("CLI Progress Indicators", () => {
       const spinner = createRemoveSpinner("org/repo-name");
 
       expect(spinner).toBeDefined();
+      expect(typeof spinner.start).toBe("function");
+      expect(typeof spinner.succeed).toBe("function");
+      expect(typeof spinner.fail).toBe("function");
     });
   });
 
@@ -378,29 +388,30 @@ describe("CLI Progress Indicators", () => {
     it("should succeed with deletion message when files deleted", () => {
       completeRemoveSpinner(spinner, true, true);
 
-      // Verify function completed without throwing
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after successful completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should succeed with preserved message when files not deleted", () => {
       completeRemoveSpinner(spinner, true, false);
 
-      // Verify function completed without throwing
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after successful completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should fail on unsuccessful removal", () => {
       completeRemoveSpinner(spinner, false, false);
 
-      // Verify function completed without throwing
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failure
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should fail even when deletedFiles is true but operation failed", () => {
       // Edge case: deletion attempted but operation still failed
       completeRemoveSpinner(spinner, false, true);
 
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failure
+      expect(spinner.isSpinning).toBe(false);
     });
   });
 
@@ -447,7 +458,8 @@ describe("CLI Progress Indicators", () => {
         durationMs: 10000,
       });
 
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after successful workflow completion
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle failed indexing workflow", () => {
@@ -463,21 +475,24 @@ describe("CLI Progress Indicators", () => {
 
       completeIndexSpinner(spinner, false, undefined, "Repository not found");
 
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failed workflow
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle removal workflow success", () => {
       const spinner = createRemoveSpinner("remove-test-repo");
       completeRemoveSpinner(spinner, true, true);
 
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after successful removal
+      expect(spinner.isSpinning).toBe(false);
     });
 
     it("should handle removal workflow failure", () => {
       const spinner = createRemoveSpinner("remove-fail-repo");
       completeRemoveSpinner(spinner, false, false);
 
-      expect(spinner).toBeDefined();
+      // Spinner should be stopped after failed removal
+      expect(spinner.isSpinning).toBe(false);
     });
   });
 });
