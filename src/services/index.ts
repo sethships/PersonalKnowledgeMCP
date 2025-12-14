@@ -37,3 +37,39 @@ export {
   CloneError,
   CollectionCreationError,
 } from "./ingestion-errors.js";
+
+// GitHubClient exports
+export type {
+  GitHubClient,
+  GitHubClientConfig,
+  FileChange,
+  CommitInfo,
+  CommitComparison,
+} from "./github-client-types.js";
+export { GitHubClientImpl } from "./github-client.js";
+export {
+  GitHubOwnerSchema,
+  GitHubRepoSchema,
+  GitRefSchema,
+  OwnerRepoSchema,
+  GetHeadCommitSchema,
+  CompareCommitsSchema,
+  GitHubClientConfigSchema,
+} from "./github-client-validation.js";
+export type {
+  ValidatedOwnerRepo,
+  ValidatedGetHeadCommit,
+  ValidatedCompareCommits,
+  ValidatedGitHubClientConfig,
+} from "./github-client-validation.js";
+export {
+  GitHubClientError,
+  GitHubAuthenticationError,
+  GitHubRateLimitError,
+  GitHubNotFoundError,
+  GitHubNetworkError,
+  GitHubAPIError,
+  GitHubValidationError,
+  isRetryableGitHubError,
+  isRetryableStatusCode,
+} from "./github-client-errors.js";
