@@ -7,6 +7,18 @@
 import { z } from "zod";
 
 /**
+ * Validation constants matching GitHub's actual limits
+ */
+const GITHUB_OWNER_MAX_LENGTH = 39;
+const GITHUB_REPO_MAX_LENGTH = 100;
+const GIT_REF_MAX_LENGTH = 255;
+const TIMEOUT_MIN_MS = 1000;
+const TIMEOUT_MAX_MS = 300000;
+const TIMEOUT_DEFAULT_MS = 30000;
+const MAX_RETRIES_LIMIT = 10;
+const MAX_RETRIES_DEFAULT = 3;
+
+/**
  * GitHub username/organization name validation
  *
  * Rules:
@@ -18,7 +30,7 @@ import { z } from "zod";
 export const GitHubOwnerSchema = z
   .string()
   .min(1, "Owner is required")
-  .max(39, "Owner must be at most 39 characters")
+  .max(GITHUB_OWNER_MAX_LENGTH, `Owner must be at most ${GITHUB_OWNER_MAX_LENGTH} characters`)
   .regex(
     /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/,
     "Invalid GitHub username or organization name"
@@ -34,7 +46,10 @@ export const GitHubOwnerSchema = z
 export const GitHubRepoSchema = z
   .string()
   .min(1, "Repository name is required")
-  .max(100, "Repository name must be at most 100 characters")
+  .max(
+    GITHUB_REPO_MAX_LENGTH,
+    `Repository name must be at most ${GITHUB_REPO_MAX_LENGTH} characters`
+  )
   .regex(/^[\w.-]+$/, "Invalid repository name");
 
 /**
@@ -47,7 +62,7 @@ export const GitHubRepoSchema = z
 export const GitRefSchema = z
   .string()
   .min(1, "Git reference is required")
-  .max(255, "Git reference must be at most 255 characters");
+  .max(GIT_REF_MAX_LENGTH, `Git reference must be at most ${GIT_REF_MAX_LENGTH} characters`);
 
 /**
  * Schema for owner/repo pair
@@ -81,17 +96,17 @@ export const GitHubClientConfigSchema = z.object({
   timeoutMs: z
     .number()
     .int()
-    .min(1000, "Timeout must be at least 1000ms")
-    .max(300000, "Timeout must be at most 300000ms")
+    .min(TIMEOUT_MIN_MS, `Timeout must be at least ${TIMEOUT_MIN_MS}ms`)
+    .max(TIMEOUT_MAX_MS, `Timeout must be at most ${TIMEOUT_MAX_MS}ms`)
     .optional()
-    .default(30000),
+    .default(TIMEOUT_DEFAULT_MS),
   maxRetries: z
     .number()
     .int()
     .min(0, "Max retries must be non-negative")
-    .max(10, "Max retries must be at most 10")
+    .max(MAX_RETRIES_LIMIT, `Max retries must be at most ${MAX_RETRIES_LIMIT}`)
     .optional()
-    .default(3),
+    .default(MAX_RETRIES_DEFAULT),
 });
 
 /**

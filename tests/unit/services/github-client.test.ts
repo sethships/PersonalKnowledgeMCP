@@ -324,6 +324,42 @@ describe("GitHubClientImpl", () => {
       expect(renamedFile?.previousPath).toBe("old-name.ts");
     });
 
+    test("maps 'changed' status to 'modified'", async () => {
+      mockAPI.setCompareResponse(
+        createMockCompareResponse({
+          files: [{ filename: "changed-file.ts", status: "changed" }],
+        })
+      );
+
+      const result = await client.compareCommits(
+        TEST_REPOS.valid.owner,
+        TEST_REPOS.valid.repo,
+        TEST_SHAS.base,
+        TEST_SHAS.head
+      );
+
+      const changedFile = result.files.find((f) => f.path === "changed-file.ts");
+      expect(changedFile?.status).toBe("modified");
+    });
+
+    test("maps unknown status to 'modified' as fallback", async () => {
+      mockAPI.setCompareResponse(
+        createMockCompareResponse({
+          files: [{ filename: "unknown-status.ts", status: "unknown_status_type" }],
+        })
+      );
+
+      const result = await client.compareCommits(
+        TEST_REPOS.valid.owner,
+        TEST_REPOS.valid.repo,
+        TEST_SHAS.base,
+        TEST_SHAS.head
+      );
+
+      const unknownFile = result.files.find((f) => f.path === "unknown-status.ts");
+      expect(unknownFile?.status).toBe("modified");
+    });
+
     test("handles comparison with no file changes", async () => {
       mockAPI.setCompareResponse(createMockCompareResponse({ files: [] }));
 

@@ -162,6 +162,10 @@ export class GitHubClientImpl implements GitHubClient {
 
   /**
    * Compare two commits and get the list of changed files
+   *
+   * Note: GitHub API limits file comparison results to 300 files per page.
+   * For comparisons exceeding this limit, results will be truncated.
+   * Consider using the diff endpoint for very large comparisons.
    */
   async compareCommits(
     owner: string,
@@ -381,16 +385,12 @@ export class GitHubClientImpl implements GitHubClient {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
         await this.handleErrorResponse(response, url);
       }
 
       return (await response.json()) as T;
     } catch (error) {
-      clearTimeout(timeoutId);
-
       // Handle network errors
       if (error instanceof Error) {
         if (error.name === "AbortError") {
@@ -426,6 +426,8 @@ export class GitHubClientImpl implements GitHubClient {
         `Unexpected error: ${error instanceof Error ? this.sanitizeErrorMessage(error.message) : String(error)}`,
         error
       );
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -496,11 +498,18 @@ export class GitHubClientImpl implements GitHubClient {
 
   /**
    * Sanitize error message to remove potential secrets
+   *
+   * Covers all GitHub token prefixes:
+   * - ghp_: Personal Access Tokens
+   * - gho_: OAuth tokens
+   * - ghu_: User-to-server tokens
+   * - ghs_: Server-to-server tokens
+   * - ghr_: Refresh tokens
    */
   private sanitizeErrorMessage(message: string): string {
     // Remove any token-like patterns
     return message
-      .replace(/ghp_[A-Za-z0-9]{36,}/g, "[REDACTED]")
+      .replace(/gh[pousr]_[A-Za-z0-9]{36,}/g, "[REDACTED]")
       .replace(/github_pat_[A-Za-z0-9_]{82}/g, "[REDACTED]")
       .replace(/Bearer [A-Za-z0-9_-]+/gi, "Bearer [REDACTED]");
   }
