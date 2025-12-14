@@ -180,6 +180,34 @@ export const sampleRepositories = {
     fileCount: 80,
     chunkCount: 240,
   }),
+
+  /**
+   * Repository with incremental update history
+   *
+   * Demonstrates a repository that has been incrementally updated
+   * multiple times since its initial full indexing.
+   */
+  incrementallyUpdated: createTestRepositoryInfo("active-project", {
+    status: "ready",
+    fileCount: 200,
+    chunkCount: 600,
+    lastIndexedCommitSha: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    lastIncrementalUpdateAt: new Date("2024-12-12T14:00:00.000Z").toISOString(),
+    incrementalUpdateCount: 5,
+  }),
+
+  /**
+   * Repository with only initial full index (no incremental updates yet)
+   *
+   * Has commit SHA from indexing but no incremental update history.
+   */
+  freshlyIndexed: createTestRepositoryInfo("new-project", {
+    status: "ready",
+    fileCount: 75,
+    chunkCount: 225,
+    lastIndexedCommitSha: "fedcba9876543210fedcba9876543210fedcba98",
+    // No lastIncrementalUpdateAt or incrementalUpdateCount - first index only
+  }),
 };
 
 /**
