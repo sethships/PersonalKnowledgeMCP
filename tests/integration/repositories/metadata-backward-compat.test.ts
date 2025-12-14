@@ -62,14 +62,16 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
       const repos = await store.listRepositories();
 
       expect(repos).toHaveLength(1);
-      expect(repos[0].name).toBe("legacy-repo");
-      expect(repos[0].fileCount).toBe(50);
-      expect(repos[0].status).toBe("ready");
+      const repo = repos[0];
+      expect(repo).toBeDefined();
+      expect(repo!.name).toBe("legacy-repo");
+      expect(repo!.fileCount).toBe(50);
+      expect(repo!.status).toBe("ready");
 
       // New fields should be undefined
-      expect(repos[0].lastIndexedCommitSha).toBeUndefined();
-      expect(repos[0].lastIncrementalUpdateAt).toBeUndefined();
-      expect(repos[0].incrementalUpdateCount).toBeUndefined();
+      expect(repo!.lastIndexedCommitSha).toBeUndefined();
+      expect(repo!.lastIncrementalUpdateAt).toBeUndefined();
+      expect(repo!.incrementalUpdateCount).toBeUndefined();
     });
 
     test("should load metadata with multiple legacy repositories", async () => {
@@ -188,9 +190,9 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
       const savedRepo = parsed.repositories["sha-only-repo"];
 
       expect(savedRepo).toBeDefined();
-      expect(savedRepo.lastIndexedCommitSha).toBe("fedcba9876543210fedcba9876543210fedcba98");
-      expect(savedRepo.lastIncrementalUpdateAt).toBeUndefined();
-      expect(savedRepo.incrementalUpdateCount).toBeUndefined();
+      expect(savedRepo!.lastIndexedCommitSha).toBe("fedcba9876543210fedcba9876543210fedcba98");
+      expect(savedRepo!.lastIncrementalUpdateAt).toBeUndefined();
+      expect(savedRepo!.incrementalUpdateCount).toBeUndefined();
     });
   });
 
