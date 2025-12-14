@@ -4,7 +4,7 @@
  * Tests spinner creation, updates, and completion for indexing and removal operations.
  */
 
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach } from "bun:test";
 import type { Ora } from "ora";
 import type { IndexProgress, IndexResult } from "../../../src/services/ingestion-types.js";
 import {
@@ -15,32 +15,7 @@ import {
   completeRemoveSpinner,
 } from "../../../src/cli/output/progress.js";
 
-// Mock ora module
-const mockSpinner = {
-  text: "",
-  color: "cyan" as const,
-  start: mock(() => mockSpinner),
-  succeed: mock(() => mockSpinner),
-  fail: mock(() => mockSpinner),
-  stop: mock(() => mockSpinner),
-  isSpinning: true,
-};
-
-// Reset mock state between tests
-function resetMocks(): void {
-  mockSpinner.text = "";
-  mockSpinner.start.mockClear();
-  mockSpinner.succeed.mockClear();
-  mockSpinner.fail.mockClear();
-  mockSpinner.stop.mockClear();
-  mockSpinner.isSpinning = true;
-}
-
 describe("CLI Progress Indicators", () => {
-  beforeEach(() => {
-    resetMocks();
-  });
-
   describe("createIndexSpinner", () => {
     it("should create a spinner with the repository name", () => {
       const spinner = createIndexSpinner("my-repo");

@@ -5,9 +5,6 @@
  * with mocked dependencies.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type {
   SearchService,
@@ -101,8 +98,10 @@ interface ServerWithToolRegistry {
 
 /**
  * Type guard to safely access the server's internal tool registry.
+ * Uses type assertion to access private property for testing purposes.
  */
 function getToolRegistry(server: PersonalKnowledgeMCPServer): Record<string, ToolHandler> | null {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
   const serverObj = server as unknown as ServerWithToolRegistry;
   if (serverObj.toolRegistry && typeof serverObj.toolRegistry === "object") {
     return serverObj.toolRegistry;
@@ -371,8 +370,11 @@ describe("PersonalKnowledgeMCPServer", () => {
       const jsonContent = result.content.find((c) => c.type === "text");
       expect(jsonContent).toBeDefined();
       if (jsonContent && jsonContent.type === "text") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(jsonContent.text);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(response.repositories).toHaveLength(1);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(response.repositories[0].name).toBe("test-repo");
       }
     });
@@ -387,7 +389,9 @@ describe("PersonalKnowledgeMCPServer", () => {
 
       const jsonContent = result.content.find((c) => c.type === "text");
       if (jsonContent && jsonContent.type === "text") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(jsonContent.text);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(response.repositories).toHaveLength(0);
       }
     });
