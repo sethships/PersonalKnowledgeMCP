@@ -430,4 +430,238 @@ describe("ChromaDB Integration Tests", () => {
       expect(results.length).toBe(10);
     });
   });
+
+  describe("Upsert Operations", () => {
+    test("should upsert documents idempotently with real ChromaDB", async () => {
+      const testDoc = sampleDocuments[0]!;
+
+      // First upsert
+      await client.upsertDocuments(testCollectionName, [testDoc]);
+
+      // Verify document was added
+      let stats = await client.getCollectionStats(testCollectionName);
+      expect(stats.documentCount).toBe(1);
+
+      // Second upsert with same ID (should update, not duplicate)
+      const updatedDoc = {
+        ...testDoc,
+        content: "Updated content for idempotency test",
+      };
+      await client.upsertDocuments(testCollectionName, [updatedDoc]);
+
+      // Verify count is still 1 (not 2)
+      stats = await client.getCollectionStats(testCollectionName);
+      expect(stats.documentCount).toBe(1);
+    });
+
+    test("should upsert large batch with performance target", async () => {
+      const largeBatch = createTestDocumentBatch(500, "test-repo");
+
+      const startTime = Date.now();
+      await client.upsertDocuments(testCollectionName, largeBatch);
+      const duration = Date.now() - startTime;
+
+      // eslint-disable-next-line no-console
+      console.log(`Upserted 500 documents in ${duration}ms`);
+
+      // Should complete under 10 seconds
+      expect(duration).toBeLessThan(10000);
+
+      // Verify all documents were upserted
+      const stats = await client.getCollectionStats(testCollectionName);
+      expect(stats.documentCount).toBe(500);
+    });
+  });
+
+  describe("Delete Operations", () => {
+    beforeEach(async () => {
+      // Add test documents
+      await client.addDocuments(testCollectionName, sampleDocuments);
+    });
+
+    test("should delete documents by ID with real ChromaDB", async () => {
+      const initialStats = await client.getCollectionStats(testCollectionName);
+      const initialCount = initialStats.documentCount;
+
+      // Delete one document
+      await client.deleteDocuments(testCollectionName, [sampleDocuments[0]!.id]);
+
+      // Verify count decreased
+      const afterStats = await client.getCollectionStats(testCollectionName);
+      expect(afterStats.documentCount).toBe(initialCount - 1);
+    });
+
+    test("should be idempotent - deleting same ID twice", async () => {
+      const docId = sampleDocuments[0]!.id;
+
+      // Delete once
+      await client.deleteDocuments(testCollectionName, [docId]);
+
+      const afterFirst = await client.getCollectionStats(testCollectionName);
+
+      // Delete again (should not throw error - idempotent)
+      await client.deleteDocuments(testCollectionName, [docId]);
+
+      // Count should remain the same
+      const afterSecond = await client.getCollectionStats(testCollectionName);
+      expect(afterSecond.documentCount).toBe(afterFirst.documentCount);
+    });
+  });
+
+  describe("Metadata Query Operations", () => {
+    beforeEach(async () => {
+      // Add test documents with known metadata
+      await client.addDocuments(testCollectionName, sampleDocuments);
+    });
+
+    test("should query documents by repository", async () => {
+      const results = await client.getDocumentsByMetadata(testCollectionName, {
+        repository: "test-repo",
+      });
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]).toHaveProperty("id");
+      expect(results[0]).toHaveProperty("content");
+      expect(results[0]).toHaveProperty("metadata");
+      expect(results[0]!.metadata.repository).toBe("test-repo");
+    });
+
+    test("should query documents by file_path", async () => {
+      const results = await client.getDocumentsByMetadata(testCollectionName, {
+        file_path: "src/auth/login.ts",
+      });
+
+      expect(results.length).toBe(2); // Two chunks from login.ts
+      expect(results[0]!.metadata.file_path).toBe("src/auth/login.ts");
+    });
+
+    test("should not include embeddings by default", async () => {
+      const results = await client.getDocumentsByMetadata(testCollectionName, {
+        repository: "test-repo",
+      });
+
+      if (results.length > 0) {
+        expect(results[0]!.embedding).toBeUndefined();
+      }
+    });
+
+    test("should include embeddings when requested", async () => {
+      const results = await client.getDocumentsByMetadata(
+        testCollectionName,
+        { repository: "test-repo" },
+        true // includeEmbeddings
+      );
+
+      if (results.length > 0) {
+        expect(results[0]!.embedding).toBeDefined();
+        expect(Array.isArray(results[0]!.embedding)).toBe(true);
+        expect(results[0]!.embedding!.length).toBe(384);
+      }
+    });
+
+    test("should return empty array when no matches", async () => {
+      const results = await client.getDocumentsByMetadata(testCollectionName, {
+        repository: "non-existent-repo",
+      });
+
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe("File Prefix Delete Helper", () => {
+    beforeEach(async () => {
+      // Add test documents with multiple chunks for same file
+      await client.addDocuments(testCollectionName, sampleDocuments);
+    });
+
+    test("should delete all chunks for a file", async () => {
+      const initialStats = await client.getCollectionStats(testCollectionName);
+
+      // Delete all chunks for login.ts (2 chunks)
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        testCollectionName,
+        "test-repo",
+        "src/auth/login.ts"
+      );
+
+      expect(deletedCount).toBe(2); // Two chunks should be deleted
+
+      // Verify deletion - query for login.ts should return nothing
+      const results = await client.getDocumentsByMetadata(testCollectionName, {
+        $and: [{ repository: "test-repo" }, { file_path: "src/auth/login.ts" }],
+      });
+
+      expect(results.length).toBe(0);
+
+      // Verify count decreased by deletedCount
+      const afterStats = await client.getCollectionStats(testCollectionName);
+      expect(afterStats.documentCount).toBe(initialStats.documentCount - deletedCount);
+    });
+
+    test("should return 0 when no chunks found", async () => {
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        testCollectionName,
+        "test-repo",
+        "non-existent-file.ts"
+      );
+
+      expect(deletedCount).toBe(0);
+    });
+  });
+
+  describe("Incremental Update Workflow (End-to-End)", () => {
+    test("should handle complete incremental update workflow", async () => {
+      const repository = "test-repo";
+      const filePath = "src/auth/login.ts";
+
+      // Step 1: Add initial documents
+      await client.addDocuments(testCollectionName, sampleDocuments);
+
+      const initialStats = await client.getCollectionStats(testCollectionName);
+      const initialCount = initialStats.documentCount;
+
+      // Step 2: Query to find chunks for the file
+      const existingChunks = await client.getDocumentsByMetadata(testCollectionName, {
+        $and: [{ repository }, { file_path: filePath }],
+      });
+
+      expect(existingChunks.length).toBeGreaterThan(0);
+      const chunkCount = existingChunks.length;
+
+      // Step 3: Delete old chunks
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        testCollectionName,
+        repository,
+        filePath
+      );
+
+      expect(deletedCount).toBe(chunkCount);
+
+      // Step 4: Create new chunks with updated content
+      const newChunks = existingChunks.map((chunk, index) => ({
+        id: chunk.id,
+        content: `Updated content for chunk ${index}`,
+        embedding: queryEmbeddingSimilarToAuth,
+        metadata: {
+          ...chunk.metadata,
+          indexed_at: new Date().toISOString(),
+        },
+      }));
+
+      // Step 5: Upsert new chunks
+      await client.upsertDocuments(testCollectionName, newChunks);
+
+      // Step 6: Verify final state
+      const finalStats = await client.getCollectionStats(testCollectionName);
+      expect(finalStats.documentCount).toBe(initialCount); // Same count as before
+
+      // Verify updated content
+      const updatedChunks = await client.getDocumentsByMetadata(testCollectionName, {
+        $and: [{ repository }, { file_path: filePath }],
+      });
+
+      expect(updatedChunks.length).toBe(chunkCount);
+      expect(updatedChunks[0]!.content).toContain("Updated content");
+    });
+  });
 });

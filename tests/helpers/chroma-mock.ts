@@ -26,6 +26,7 @@ export class MockCollection {
   > = new Map();
   private shouldFailAdd: boolean = false;
   private shouldFailQuery: boolean = false;
+  private shouldFailUpsert: boolean = false;
 
   constructor(name: string, metadata: Record<string, unknown> = {}) {
     this.name = name;
@@ -46,6 +47,13 @@ export class MockCollection {
     this.shouldFailQuery = shouldFail;
   }
 
+  /**
+   * Configure the mock to fail upsert operations
+   */
+  setShouldFailUpsert(shouldFail: boolean): void {
+    this.shouldFailUpsert = shouldFail;
+  }
+
   async add(params: {
     ids: string[];
     embeddings: number[][];
@@ -54,6 +62,30 @@ export class MockCollection {
   }): Promise<void> {
     if (this.shouldFailAdd) {
       throw new Error("Mock collection add operation failed");
+    }
+
+    for (let i = 0; i < params.ids.length; i++) {
+      this.documents.set(params.ids[i]!, {
+        id: params.ids[i]!,
+        embedding: params.embeddings[i]!,
+        metadata: params.metadatas[i]!,
+        document: params.documents[i]!,
+      });
+    }
+  }
+
+  /**
+   * Upsert documents (add new or update existing)
+   * Idempotent operation - updates existing IDs, adds new ones
+   */
+  async upsert(params: {
+    ids: string[];
+    embeddings: number[][];
+    metadatas: Record<string, unknown>[];
+    documents: string[];
+  }): Promise<void> {
+    if (this.shouldFailUpsert) {
+      throw new Error("Mock collection upsert operation failed");
     }
 
     for (let i = 0; i < params.ids.length; i++) {
@@ -98,22 +130,51 @@ export class MockCollection {
     return this.documents.size;
   }
 
-  async get(params?: { ids?: string[] }): Promise<{
+  async get(params?: {
+    ids?: string[];
+    where?: Record<string, unknown>;
+    include?: ("documents" | "metadatas" | "embeddings")[];
+  }): Promise<{
     ids: string[];
-    embeddings: number[][];
-    metadatas: Record<string, unknown>[];
-    documents: string[];
+    embeddings?: number[][];
+    metadatas?: Record<string, unknown>[];
+    documents?: string[];
   }> {
-    const docs = params?.ids
+    let docs = params?.ids
       ? params.ids.map((id) => this.documents.get(id)).filter((doc) => doc !== undefined)
       : Array.from(this.documents.values());
 
-    return {
+    // Apply where clause filtering if provided
+    if (params?.where) {
+      docs = docs.filter((doc) => this.matchesWhereClause(doc.metadata, params.where!));
+    }
+
+    // Determine what to include (default: all)
+    const include = params?.include || ["documents", "metadatas", "embeddings"];
+    const includeDocuments = include.includes("documents");
+    const includeMetadatas = include.includes("metadatas");
+    const includeEmbeddings = include.includes("embeddings");
+
+    const result: {
+      ids: string[];
+      embeddings?: number[][];
+      metadatas?: Record<string, unknown>[];
+      documents?: string[];
+    } = {
       ids: docs.map((doc) => doc.id),
-      embeddings: docs.map((doc) => doc.embedding),
-      metadatas: docs.map((doc) => doc.metadata),
-      documents: docs.map((doc) => doc.document),
     };
+
+    if (includeDocuments) {
+      result.documents = docs.map((doc) => doc.document);
+    }
+    if (includeMetadatas) {
+      result.metadatas = docs.map((doc) => doc.metadata);
+    }
+    if (includeEmbeddings) {
+      result.embeddings = docs.map((doc) => doc.embedding);
+    }
+
+    return result;
   }
 
   async delete(params?: { ids?: string[] }): Promise<void> {
@@ -128,6 +189,72 @@ export class MockCollection {
    * Calculate cosine distance between two vectors
    * Returns value between 0 (identical) and 2 (opposite)
    */
+  /**
+   * Check if metadata matches a where clause filter
+   * Supports equality, comparison operators, and logical AND/OR
+   */
+  private matchesWhereClause(
+    metadata: Record<string, unknown>,
+    where: Record<string, unknown>
+  ): boolean {
+    for (const [key, value] of Object.entries(where)) {
+      // Handle logical AND
+      if (key === "$and" && Array.isArray(value)) {
+        return value.every((clause) =>
+          this.matchesWhereClause(metadata, clause as Record<string, unknown>)
+        );
+      }
+
+      // Handle logical OR
+      if (key === "$or" && Array.isArray(value)) {
+        return value.some((clause) =>
+          this.matchesWhereClause(metadata, clause as Record<string, unknown>)
+        );
+      }
+
+      // Handle comparison operators
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        const metaValue = metadata[key];
+        const operators = value as Record<string, unknown>;
+
+        for (const [op, opValue] of Object.entries(operators)) {
+          switch (op) {
+            case "$eq":
+              if (metaValue !== opValue) return false;
+              break;
+            case "$ne":
+              if (metaValue === opValue) return false;
+              break;
+            case "$gt":
+              if (typeof metaValue !== "number" || typeof opValue !== "number") return false;
+              if (metaValue <= opValue) return false;
+              break;
+            case "$gte":
+              if (typeof metaValue !== "number" || typeof opValue !== "number") return false;
+              if (metaValue < opValue) return false;
+              break;
+            case "$lt":
+              if (typeof metaValue !== "number" || typeof opValue !== "number") return false;
+              if (metaValue >= opValue) return false;
+              break;
+            case "$lte":
+              if (typeof metaValue !== "number" || typeof opValue !== "number") return false;
+              if (metaValue > opValue) return false;
+              break;
+          }
+        }
+        continue;
+      }
+
+      // Simple equality check
+      if (metadata[key] !== value) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   private calculateCosineDistance(a: number[], b: number[]): number {
     if (a.length !== b.length) {
       throw new Error("Vectors must have same dimension");

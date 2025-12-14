@@ -39,6 +39,8 @@ export type {
   SimilarityResult,
   CollectionInfo,
   CollectionStats,
+  MetadataFilter,
+  DocumentQueryResult,
 } from "./types.js";
 
 // Export all error classes

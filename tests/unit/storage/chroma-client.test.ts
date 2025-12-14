@@ -578,6 +578,295 @@ describe("ChromaStorageClientImpl", () => {
     });
   });
 
+  describe("upsertDocuments", () => {
+    test("should upsert documents successfully", async () => {
+      const collectionName = "repo_test";
+      const documents = [sampleDocuments[0]!];
+      await client.upsertDocuments(collectionName, documents);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+    });
+
+    test("should update existing documents (idempotent)", async () => {
+      const collectionName = "repo_test";
+      const doc = sampleDocuments[0]!;
+
+      // First upsert
+      await client.upsertDocuments(collectionName, [doc]);
+
+      // Second upsert with same ID (should update)
+      const updatedDoc = {
+        ...doc,
+        content: "Updated content",
+      };
+      await client.upsertDocuments(collectionName, [updatedDoc]);
+
+      // Should succeed without error (idempotent)
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+    });
+
+    test("should handle mixed new and existing documents", async () => {
+      const collectionName = "repo_test";
+      // Add one document first
+      await client.upsertDocuments(collectionName, [sampleDocuments[0]!]);
+
+      // Upsert with one existing and one new
+      await client.upsertDocuments(collectionName, [
+        sampleDocuments[0]!, // existing
+        sampleDocuments[1]!, // new
+      ]);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+    });
+
+    test("should throw InvalidParametersError for empty documents array", async () => {
+      const collectionName = "repo_test";
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.upsertDocuments(collectionName, [])).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw InvalidParametersError for document with empty ID", async () => {
+      const collectionName = "repo_test";
+      const invalidDoc = { ...sampleDocuments[0]!, id: "" };
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.upsertDocuments(collectionName, [invalidDoc])).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw InvalidParametersError for document with empty content", async () => {
+      const collectionName = "repo_test";
+      const invalidDoc = { ...sampleDocuments[0]!, content: "" };
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.upsertDocuments(collectionName, [invalidDoc])).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw InvalidParametersError for document with invalid embedding", async () => {
+      const collectionName = "repo_test";
+      const invalidDoc = { ...sampleDocuments[0]!, embedding: [] };
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.upsertDocuments(collectionName, [invalidDoc])).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw StorageConnectionError when not connected", async () => {
+      const collectionName = "repo_test";
+      const disconnectedClient = new ChromaStorageClientImpl(testConfig);
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        disconnectedClient.upsertDocuments(collectionName, [sampleDocuments[0]!])
+      ).rejects.toThrow(StorageConnectionError);
+    });
+
+    test("should throw DocumentOperationError on ChromaDB failure", async () => {
+      const collectionName = "repo_test";
+      // First create the collection by adding a document
+      await client.addDocuments(collectionName, [sampleDocuments[0]!]);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      if (collection) {
+        collection.setShouldFailUpsert(true);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.upsertDocuments(collectionName, [sampleDocuments[1]!])).rejects.toThrow(
+        DocumentOperationError
+      );
+    });
+  });
+
+  describe("deleteDocuments", () => {
+    test("should delete documents by ID", async () => {
+      const collectionName = "repo_test";
+      // Add documents first
+      await client.addDocuments(collectionName, sampleDocuments);
+
+      // Delete one document
+      await client.deleteDocuments(collectionName, [sampleDocuments[0]!.id]);
+
+      // Should succeed without error
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+    });
+
+    test("should be idempotent - deleting non-existent IDs succeeds", async () => {
+      const collectionName = "repo_test";
+      // First create the collection
+      await client.addDocuments(collectionName, sampleDocuments);
+
+      // Delete non-existent IDs (should not throw because ChromaDB silently ignores them)
+      await client.deleteDocuments(collectionName, ["non-existent-id-1", "non-existent-id-2"]);
+      // Test passes if we get here without throwing
+    });
+
+    test("should handle empty ID array as no-op", async () => {
+      const collectionName = "repo_test";
+      // Empty array should be no-op (no error, no collection creation)
+      await client.deleteDocuments(collectionName, []);
+      // Test passes if we get here without throwing
+    });
+
+    test("should throw InvalidParametersError for empty ID string", async () => {
+      const collectionName = "repo_test";
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.deleteDocuments(collectionName, [""])).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw CollectionNotFoundError for non-existent collection", async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.deleteDocuments("non-existent-collection", ["some-id"])).rejects.toThrow(
+        CollectionNotFoundError
+      );
+    });
+
+    test("should throw StorageConnectionError when not connected", async () => {
+      const collectionName = "repo_test";
+      const disconnectedClient = new ChromaStorageClientImpl(testConfig);
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(disconnectedClient.deleteDocuments(collectionName, ["id"])).rejects.toThrow(
+        StorageConnectionError
+      );
+    });
+  });
+
+  describe("getDocumentsByMetadata", () => {
+    const collectionName = "repo_test";
+
+    beforeEach(async () => {
+      // Add test documents
+      await client.addDocuments(collectionName, sampleDocuments);
+    });
+
+    test("should query documents by single metadata field", async () => {
+      const results = await client.getDocumentsByMetadata(collectionName, {
+        repository: "test-repo",
+      });
+
+      expect(Array.isArray(results)).toBe(true);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]).toHaveProperty("id");
+      expect(results[0]).toHaveProperty("content");
+      expect(results[0]).toHaveProperty("metadata");
+    });
+
+    test("should query documents by multiple metadata fields", async () => {
+      const results = await client.getDocumentsByMetadata(collectionName, {
+        repository: "test-repo",
+        file_path: "src/auth/middleware.ts",
+      });
+
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    test("should not include embeddings by default", async () => {
+      const results = await client.getDocumentsByMetadata(collectionName, {
+        repository: "test-repo",
+      });
+
+      if (results.length > 0) {
+        expect(results[0]!.embedding).toBeUndefined();
+      }
+    });
+
+    test("should include embeddings when requested", async () => {
+      const results = await client.getDocumentsByMetadata(
+        collectionName,
+        { repository: "test-repo" },
+        true // includeEmbeddings
+      );
+
+      if (results.length > 0) {
+        expect(results[0]!.embedding).toBeDefined();
+        expect(Array.isArray(results[0]!.embedding)).toBe(true);
+      }
+    });
+
+    test("should return empty array when no matches found", async () => {
+      const results = await client.getDocumentsByMetadata(collectionName, {
+        repository: "non-existent-repo",
+      });
+
+      expect(results).toEqual([]);
+    });
+
+    test("should throw InvalidParametersError for empty where clause", async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.getDocumentsByMetadata(collectionName, {})).rejects.toThrow(
+        InvalidParametersError
+      );
+    });
+
+    test("should throw CollectionNotFoundError for non-existent collection", async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        client.getDocumentsByMetadata("non-existent-collection", { repository: "test" })
+      ).rejects.toThrow(CollectionNotFoundError);
+    });
+
+    test("should throw StorageConnectionError when not connected", async () => {
+      const disconnectedClient = new ChromaStorageClientImpl(testConfig);
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        disconnectedClient.getDocumentsByMetadata(collectionName, { repository: "test" })
+      ).rejects.toThrow(StorageConnectionError);
+    });
+  });
+
+  describe("deleteDocumentsByFilePrefix", () => {
+    const collectionName = "repo_test";
+
+    beforeEach(async () => {
+      // Add test documents
+      await client.addDocuments(collectionName, sampleDocuments);
+    });
+
+    test("should delete all chunks for a file", async () => {
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        collectionName,
+        "test-repo",
+        "src/auth/middleware.ts"
+      );
+
+      expect(typeof deletedCount).toBe("number");
+      expect(deletedCount).toBeGreaterThanOrEqual(0);
+    });
+
+    test("should return 0 when no chunks found for file", async () => {
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        collectionName,
+        "test-repo",
+        "non-existent-file.ts"
+      );
+
+      expect(deletedCount).toBe(0);
+    });
+
+    test("should throw CollectionNotFoundError for non-existent collection", async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        client.deleteDocumentsByFilePrefix("non-existent-collection", "repo", "file.ts")
+      ).rejects.toThrow(CollectionNotFoundError);
+    });
+
+    test("should throw StorageConnectionError when not connected", async () => {
+      const disconnectedClient = new ChromaStorageClientImpl(testConfig);
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        disconnectedClient.deleteDocumentsByFilePrefix(collectionName, "repo", "file.ts")
+      ).rejects.toThrow(StorageConnectionError);
+    });
+  });
+
   describe("Error Classes", () => {
     afterEach(() => {
       resetLogger();
