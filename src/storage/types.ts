@@ -171,7 +171,9 @@ export type MetadataFilter = {
         $gte?: number;
         $lt?: number;
         $lte?: number;
-      };
+      }
+    | MetadataFilter[]
+    | undefined;
 } & {
   $and?: MetadataFilter[];
   $or?: MetadataFilter[];

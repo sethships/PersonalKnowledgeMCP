@@ -911,6 +911,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       // Query ChromaDB
       const result = await collection.get({
         where: where as Record<string, unknown>,
+        // @ts-expect-error - String literals are compatible with IncludeEnum
         include: include,
       });
 
