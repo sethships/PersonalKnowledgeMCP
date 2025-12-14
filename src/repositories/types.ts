@@ -37,7 +37,11 @@ export type RepositoryStatus = "ready" | "indexing" | "error";
  *   status: "ready",
  *   branch: "main",
  *   includeExtensions: [".ts", ".js", ".md"],
- *   excludePatterns: ["node_modules/**", "dist/**"]
+ *   excludePatterns: ["node_modules/**", "dist/**"],
+ *   // Incremental update fields (optional)
+ *   lastIndexedCommitSha: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+ *   lastIncrementalUpdateAt: "2024-12-12T14:00:00.000Z",
+ *   incrementalUpdateCount: 3
  * };
  * ```
  */
@@ -169,6 +173,44 @@ export interface RepositoryInfo {
    * @example ["node_modules/**", "dist/**", "*.test.ts"]
    */
   excludePatterns: string[];
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Incremental Update Fields (Optional)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Git commit SHA of the last indexed state
+   *
+   * Stores the full 40-character SHA of the commit that was indexed.
+   * Used to determine what has changed since the last indexing operation
+   * for incremental updates.
+   *
+   * @example "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+   */
+  lastIndexedCommitSha?: string;
+
+  /**
+   * ISO 8601 timestamp of the last incremental update
+   *
+   * Records when the most recent incremental (not full) indexing
+   * operation completed. Null/undefined for repositories that have
+   * only had full indexes.
+   *
+   * @example "2024-12-14T10:30:00.000Z"
+   */
+  lastIncrementalUpdateAt?: string;
+
+  /**
+   * Count of incremental updates since last full index
+   *
+   * Tracks how many incremental updates have been applied since
+   * the last full re-index. Useful for determining when a full
+   * re-index might be beneficial (e.g., after 50+ incremental updates).
+   * Resets to 0 on full re-index.
+   *
+   * @example 5
+   */
+  incrementalUpdateCount?: number;
 }
 
 /**
