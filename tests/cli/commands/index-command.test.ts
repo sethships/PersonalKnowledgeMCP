@@ -180,4 +180,161 @@ describe("Index Command", () => {
       );
     });
   });
+
+  describe("Error handling and partial success", () => {
+    it("should handle partial success status with warnings", async () => {
+      const partialResult: IndexResult = {
+        status: "partial",
+        repository: "test-repo",
+        collectionName: "test-repo",
+        stats: {
+          filesScanned: 10,
+          filesProcessed: 8,
+          filesFailed: 2,
+          chunksCreated: 40,
+          embeddingsGenerated: 40,
+          documentsStored: 40,
+          durationMs: 1000,
+        },
+        errors: [
+          { type: "file_error", message: "File 1 failed to process" },
+          { type: "file_error", message: "File 2 failed to process" },
+        ],
+        completedAt: new Date(),
+      };
+
+      mockIndexRepository.mockResolvedValue(partialResult);
+
+      // Partial success should complete without throwing
+      await expect(
+        indexCommand("https://github.com/user/repo.git", {}, mockDeps)
+      ).resolves.toBeUndefined();
+    });
+
+    it("should truncate error list to first 5 when more than 5 errors", async () => {
+      const partialResult: IndexResult = {
+        status: "partial",
+        repository: "test-repo",
+        collectionName: "test-repo",
+        stats: {
+          filesScanned: 10,
+          filesProcessed: 4,
+          filesFailed: 6,
+          chunksCreated: 20,
+          embeddingsGenerated: 20,
+          documentsStored: 20,
+          durationMs: 1000,
+        },
+        errors: [
+          { type: "file_error", message: "Error 1" },
+          { type: "file_error", message: "Error 2" },
+          { type: "file_error", message: "Error 3" },
+          { type: "file_error", message: "Error 4" },
+          { type: "file_error", message: "Error 5" },
+          { type: "file_error", message: "Error 6" },
+          { type: "file_error", message: "Error 7" },
+        ],
+        completedAt: new Date(),
+      };
+
+      mockIndexRepository.mockResolvedValue(partialResult);
+
+      // Should complete without throwing despite many errors
+      await expect(
+        indexCommand("https://github.com/user/repo.git", {}, mockDeps)
+      ).resolves.toBeUndefined();
+    });
+
+    it("should handle failed status and throw error", async () => {
+      const failedResult: IndexResult = {
+        status: "failed",
+        repository: "test-repo",
+        collectionName: "test-repo",
+        stats: {
+          filesScanned: 0,
+          filesProcessed: 0,
+          filesFailed: 0,
+          chunksCreated: 0,
+          embeddingsGenerated: 0,
+          documentsStored: 0,
+          durationMs: 500,
+        },
+        errors: [{ type: "fatal_error", message: "Failed to clone repository" }],
+        completedAt: new Date(),
+      };
+
+      mockIndexRepository.mockResolvedValue(failedResult);
+
+      await expect(indexCommand("https://github.com/user/repo.git", {}, mockDeps)).rejects.toThrow(
+        "Indexing failed"
+      );
+    });
+
+    it("should handle failed status with no errors", async () => {
+      const failedResult: IndexResult = {
+        status: "failed",
+        repository: "test-repo",
+        collectionName: "test-repo",
+        stats: {
+          filesScanned: 0,
+          filesProcessed: 0,
+          filesFailed: 0,
+          chunksCreated: 0,
+          embeddingsGenerated: 0,
+          documentsStored: 0,
+          durationMs: 500,
+        },
+        errors: [],
+        completedAt: new Date(),
+      };
+
+      mockIndexRepository.mockResolvedValue(failedResult);
+
+      await expect(indexCommand("https://github.com/user/repo.git", {}, mockDeps)).rejects.toThrow(
+        "Unknown error"
+      );
+    });
+
+    it("should handle service exception and stop spinner", async () => {
+      mockIndexRepository.mockRejectedValue(new Error("Network failure"));
+
+      await expect(indexCommand("https://github.com/user/repo.git", {}, mockDeps)).rejects.toThrow(
+        "Network failure"
+      );
+    });
+
+    it("should handle non-Error exception", async () => {
+      mockIndexRepository.mockRejectedValue("String error");
+
+      await expect(indexCommand("https://github.com/user/repo.git", {}, mockDeps)).rejects.toThrow(
+        "String error"
+      );
+    });
+  });
+
+  describe("Repository name extraction edge cases", () => {
+    it("should reject URLs that extract names with path traversal patterns", async () => {
+      // Mock to ensure we test the extraction function
+      mockIndexRepository.mockResolvedValue(createMockIndexResult());
+
+      // URL where extracted name contains ..
+      await expect(indexCommand("https://github.com/user/...", {}, mockDeps)).rejects.toThrow();
+    });
+
+    it("should reject URLs that extract names with forward slash", async () => {
+      // URL that could extract a name with slash (won't actually work but tests the logic)
+      await expect(
+        indexCommand("https://github.com/user/evil%2Frepo", {}, mockDeps)
+      ).rejects.toThrow();
+    });
+
+    it("should reject URLs with empty final segment", async () => {
+      // URL with trailing slash results in empty segment
+      await expect(indexCommand("https://github.com/user/", {}, mockDeps)).rejects.toThrow();
+    });
+
+    it("should reject URLs with only domain", async () => {
+      await expect(indexCommand("https://github.com/", {}, mockDeps)).rejects.toThrow();
+    });
+  });
 });

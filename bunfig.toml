@@ -30,6 +30,10 @@ coverage = true
 # Test output
 verbose = true
 
+# Limit test discovery to project tests directory only
+# (data/ contains cloned repos with their own tests that have unmet dependencies)
+root = "tests"
+
 [run]
 # Automatically restart on file changes in dev mode
 watch = []

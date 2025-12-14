@@ -170,6 +170,20 @@ describe("Logger Factory", () => {
     });
   });
 
+  describe("Silent log level", () => {
+    test("should support silent level for tests", () => {
+      expect(() => {
+        initializeLogger({
+          level: "silent",
+          format: "json",
+        });
+      }).not.toThrow();
+
+      const rootLogger = getRootLogger();
+      expect(rootLogger.level).toBe("silent");
+    });
+  });
+
   describe("Log level configuration", () => {
     test("should respect configured log level", () => {
       // Initialize with info level
