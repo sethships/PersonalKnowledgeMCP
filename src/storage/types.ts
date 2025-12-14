@@ -142,6 +142,58 @@ export interface CollectionStats {
 }
 
 /**
+ * Metadata filter clause for querying documents by metadata
+ *
+ * Supports equality, comparison, and logical operators for flexible filtering.
+ * Based on ChromaDB's where clause syntax.
+ *
+ * @example
+ * ```typescript
+ * // Simple equality
+ * { repository: "my-api", file_path: "src/index.ts" }
+ *
+ * // Comparison operators
+ * { chunk_index: { $gte: 0, $lt: 5 } }
+ *
+ * // Logical operators
+ * { $and: [{ repository: "my-api" }, { file_extension: ".ts" }] }
+ * ```
+ */
+export type MetadataFilter = {
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | {
+        $eq?: string | number | boolean;
+        $ne?: string | number | boolean;
+        $gt?: number;
+        $gte?: number;
+        $lt?: number;
+        $lte?: number;
+      };
+} & {
+  $and?: MetadataFilter[];
+  $or?: MetadataFilter[];
+};
+
+/**
+ * Result from getDocumentsByMetadata operation
+ *
+ * Contains the document content, metadata, and optionally the embedding vector.
+ */
+export interface DocumentQueryResult {
+  /** Document ID in format: {repo}:{file_path}:{chunk_index} */
+  id: string;
+  /** Text content of the document chunk */
+  content: string;
+  /** Document metadata */
+  metadata: DocumentMetadata;
+  /** Embedding vector (only included if requested via includeEmbeddings parameter) */
+  embedding?: number[];
+}
+
+/**
  * ChromaDB collection type alias
  *
  * Re-export of the chromadb Collection type for convenience.
@@ -261,4 +313,75 @@ export interface ChromaStorageClient {
    * @throws {CollectionNotFoundError} If collection doesn't exist
    */
   getCollectionStats(name: string): Promise<CollectionStats>;
+
+  /**
+   * Upsert documents with embeddings to a collection
+   *
+   * Adds new documents or updates existing ones (idempotent operation).
+   * Documents with existing IDs will be updated, new IDs will be added.
+   *
+   * @param collectionName - Target collection name
+   * @param documents - Array of documents to upsert
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {DocumentOperationError} If upsert operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  upsertDocuments(collectionName: string, documents: DocumentInput[]): Promise<void>;
+
+  /**
+   * Delete documents by ID from a collection
+   *
+   * Idempotent operation - deleting non-existent IDs is silently ignored.
+   * Empty ID array is treated as a no-op.
+   *
+   * @param collectionName - Target collection name
+   * @param ids - Array of document IDs to delete
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {DocumentOperationError} If delete operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  deleteDocuments(collectionName: string, ids: string[]): Promise<void>;
+
+  /**
+   * Query documents by metadata filters
+   *
+   * Retrieves documents matching the provided metadata filter criteria.
+   * Embeddings are not included by default to reduce bandwidth.
+   *
+   * @param collectionName - Target collection name
+   * @param where - Metadata filter criteria
+   * @param includeEmbeddings - Whether to include embedding vectors (default: false)
+   * @returns Array of matching documents
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  getDocumentsByMetadata(
+    collectionName: string,
+    where: MetadataFilter,
+    includeEmbeddings?: boolean
+  ): Promise<DocumentQueryResult[]>;
+
+  /**
+   * Delete all document chunks for a specific file
+   *
+   * Helper method that queries for all chunks matching the repository and file path,
+   * then deletes them. Useful for re-indexing updated files.
+   *
+   * @param collectionName - Target collection name
+   * @param repository - Repository name
+   * @param filePath - File path within the repository
+   * @returns Number of chunks deleted
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {DocumentOperationError} If delete operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  deleteDocumentsByFilePrefix(
+    collectionName: string,
+    repository: string,
+    filePath: string
+  ): Promise<number>;
 }

@@ -86,6 +86,18 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return this.mockResults;
   }
 
+  async upsertDocuments(): Promise<void> {}
+
+  async deleteDocuments(): Promise<void> {}
+
+  async getDocumentsByMetadata(): Promise<any[]> {
+    return [];
+  }
+
+  async deleteDocumentsByFilePrefix(): Promise<number> {
+    return 0;
+  }
+
   setMockResults(results: SimilarityResult[]) {
     this.mockResults = results;
   }

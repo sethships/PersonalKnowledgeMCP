@@ -210,6 +210,18 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return { name: "test", documentCount: 0, retrievedAt: new Date().toISOString() };
   }
 
+  async upsertDocuments(_collectionName: string, _documents: DocumentInput[]): Promise<void> {}
+
+  async deleteDocuments(_collectionName: string, _ids: string[]): Promise<void> {}
+
+  async getDocumentsByMetadata(): Promise<any[]> {
+    return [];
+  }
+
+  async deleteDocumentsByFilePrefix(): Promise<number> {
+    return 0;
+  }
+
   setShouldFailCreate(shouldFail: boolean) {
     this.shouldFailCreate = shouldFail;
   }

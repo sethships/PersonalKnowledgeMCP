@@ -19,6 +19,8 @@ import type {
   DocumentMetadata,
   SimilarityQuery,
   SimilarityResult,
+  MetadataFilter,
+  DocumentQueryResult,
 } from "./types.js";
 import {
   StorageError,
@@ -618,6 +620,429 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  /**
+   * Upsert documents with embeddings to a collection
+   *
+   * Adds new documents or updates existing ones (idempotent operation).
+   * Documents with existing IDs will be updated, new IDs will be added.
+   *
+   * Uses the same validation as addDocuments() to ensure consistency.
+   *
+   * @param collectionName - Target collection name
+   * @param documents - Array of documents to upsert
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {DocumentOperationError} If upsert operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async upsertDocuments(collectionName: string, documents: DocumentInput[]): Promise<void> {
+    this.ensureConnected();
+
+    const startTime = Date.now();
+
+    try {
+      // Validate inputs (reuse addDocuments validation logic)
+      if (!documents || documents.length === 0) {
+        throw new InvalidParametersError("Documents array cannot be empty", "documents");
+      }
+
+      // Validate each document
+      const documentIds: string[] = [];
+      for (const doc of documents) {
+        if (!doc.id || doc.id.trim() === "") {
+          throw new InvalidParametersError("Document ID cannot be empty", "documents.id");
+        }
+        if (!doc.content || doc.content.trim() === "") {
+          throw new InvalidParametersError(
+            `Document content cannot be empty for ID: ${doc.id}`,
+            "documents.content"
+          );
+        }
+        if (!doc.embedding || !Array.isArray(doc.embedding) || doc.embedding.length === 0) {
+          throw new InvalidParametersError(
+            `Document embedding must be a non-empty array for ID: ${doc.id}`,
+            "documents.embedding"
+          );
+        }
+        if (!doc.metadata) {
+          throw new InvalidParametersError(
+            `Document metadata cannot be null for ID: ${doc.id}`,
+            "documents.metadata"
+          );
+        }
+
+        documentIds.push(doc.id);
+      }
+
+      // Get or create the collection
+      const collection = await this.getOrCreateCollection(collectionName);
+
+      // Prepare data for ChromaDB (same as addDocuments)
+      const ids = documents.map((d) => d.id);
+      const embeddings = documents.map((d) => d.embedding);
+      const chromaDocuments = documents.map((d) => d.content);
+      const metadatas = documents.map((d) => d.metadata);
+
+      // Convert metadata to ChromaDB-compatible format (primitives only)
+      const chromaMetadatas = metadatas.map((meta) => {
+        const chromaMeta: Record<string, string | number | boolean> = {};
+        for (const [key, value] of Object.entries(meta)) {
+          if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean"
+          ) {
+            chromaMeta[key] = value;
+          } else {
+            // Convert complex types to strings
+            chromaMeta[key] = String(value);
+          }
+        }
+        return chromaMeta;
+      });
+
+      // Upsert to ChromaDB (idempotent - updates existing, adds new)
+      await collection.upsert({
+        ids,
+        embeddings,
+        metadatas: chromaMetadatas,
+        documents: chromaDocuments,
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      this.logger.info(
+        {
+          metric: "chromadb.upsert_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          documentCount: documents.length,
+        },
+        `Upserted ${documents.length} documents to collection '${collectionName}'`
+      );
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      // Re-throw our own errors
+      if (error instanceof StorageError) {
+        this.logger.error(
+          {
+            metric: "chromadb.upsert_documents_ms",
+            value: durationMs,
+            collection: collectionName,
+            documentCount: documents.length,
+            err: error,
+          },
+          "Upsert failed (validation or operation error)"
+        );
+        throw error;
+      }
+
+      // Wrap ChromaDB errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        {
+          metric: "chromadb.upsert_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          documentCount: documents.length,
+          err: error,
+        },
+        "Upsert failed (ChromaDB error)"
+      );
+
+      const documentIds = documents.map((d) => d.id);
+      throw new DocumentOperationError(
+        "update",
+        `Failed to upsert ${documents.length} documents to collection '${collectionName}': ${errorMessage}`,
+        documentIds,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Delete documents by ID from a collection
+   *
+   * Idempotent operation - deleting non-existent IDs is silently ignored by ChromaDB.
+   * Empty ID array is treated as a no-op.
+   *
+   * @param collectionName - Target collection name
+   * @param ids - Array of document IDs to delete
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {DocumentOperationError} If delete operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async deleteDocuments(collectionName: string, ids: string[]): Promise<void> {
+    this.ensureConnected();
+
+    const startTime = Date.now();
+
+    try {
+      // Empty array is a no-op
+      if (!ids || ids.length === 0) {
+        this.logger.debug(
+          {
+            collection: collectionName,
+          },
+          "Delete called with empty ID array, skipping"
+        );
+        return;
+      }
+
+      // Validate each ID
+      for (const id of ids) {
+        if (!id || id.trim() === "") {
+          throw new InvalidParametersError("Document ID cannot be empty", "ids");
+        }
+      }
+
+      // Use getCollectionIfExists to avoid auto-creating during deletion
+      const collection = await this.getCollectionIfExists(collectionName);
+
+      if (!collection) {
+        throw new CollectionNotFoundError(collectionName);
+      }
+
+      // Delete from ChromaDB (idempotent - non-existent IDs are silently ignored)
+      await collection.delete({ ids });
+
+      const durationMs = Date.now() - startTime;
+
+      this.logger.info(
+        {
+          metric: "chromadb.delete_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          documentCount: ids.length,
+        },
+        `Deleted ${ids.length} documents from collection '${collectionName}'`
+      );
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      // Re-throw our own errors
+      if (error instanceof StorageError) {
+        this.logger.error(
+          {
+            metric: "chromadb.delete_documents_ms",
+            value: durationMs,
+            collection: collectionName,
+            documentCount: ids.length,
+            err: error,
+          },
+          "Delete failed (validation or collection not found)"
+        );
+        throw error;
+      }
+
+      // Wrap ChromaDB errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        {
+          metric: "chromadb.delete_documents_ms",
+          value: durationMs,
+          collection: collectionName,
+          documentCount: ids.length,
+          err: error,
+        },
+        "Delete failed (ChromaDB error)"
+      );
+
+      throw new DocumentOperationError(
+        "delete",
+        `Failed to delete ${ids.length} documents from collection '${collectionName}': ${errorMessage}`,
+        ids,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Query documents by metadata filters
+   *
+   * Retrieves documents matching the provided metadata filter criteria.
+   * Embeddings are not included by default to reduce bandwidth (they're large: 1536 floats).
+   *
+   * @param collectionName - Target collection name
+   * @param where - Metadata filter criteria
+   * @param includeEmbeddings - Whether to include embedding vectors (default: false)
+   * @returns Array of matching documents
+   * @throws {InvalidParametersError} If validation fails
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async getDocumentsByMetadata(
+    collectionName: string,
+    where: MetadataFilter,
+    includeEmbeddings = false
+  ): Promise<DocumentQueryResult[]> {
+    this.ensureConnected();
+
+    const startTime = Date.now();
+
+    try {
+      // Validate where clause
+      if (!where || Object.keys(where).length === 0) {
+        throw new InvalidParametersError(
+          "Where clause cannot be empty - provide at least one filter criterion",
+          "where"
+        );
+      }
+
+      // Use getCollectionIfExists to avoid auto-creating during query
+      const collection = await this.getCollectionIfExists(collectionName);
+
+      if (!collection) {
+        throw new CollectionNotFoundError(collectionName);
+      }
+
+      // Determine what to include in response
+      const include: Array<"documents" | "metadatas" | "embeddings"> = ["documents", "metadatas"];
+      if (includeEmbeddings) {
+        include.push("embeddings");
+      }
+
+      // Query ChromaDB
+      const result = await collection.get({
+        where: where as Record<string, unknown>,
+        include: include,
+      });
+
+      // Map ChromaDB response to DocumentQueryResult
+      const documents: DocumentQueryResult[] = [];
+
+      for (let i = 0; i < result.ids.length; i++) {
+        const id = result.ids[i];
+        if (!id) continue;
+
+        const doc: DocumentQueryResult = {
+          id,
+          content: result.documents?.[i] || "",
+          metadata: result.metadatas?.[i] as unknown as DocumentMetadata,
+        };
+
+        // Add embedding if requested and available
+        if (includeEmbeddings && result.embeddings?.[i]) {
+          doc.embedding = result.embeddings[i];
+        }
+
+        documents.push(doc);
+      }
+
+      const durationMs = Date.now() - startTime;
+
+      this.logger.info(
+        {
+          metric: "chromadb.get_by_metadata_ms",
+          value: durationMs,
+          collection: collectionName,
+          resultCount: documents.length,
+          includeEmbeddings,
+        },
+        `Retrieved ${documents.length} documents from collection '${collectionName}' by metadata filter`
+      );
+
+      return documents;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+
+      // Re-throw our own errors
+      if (error instanceof StorageError) {
+        this.logger.error(
+          {
+            metric: "chromadb.get_by_metadata_ms",
+            value: durationMs,
+            collection: collectionName,
+            err: error,
+          },
+          "Metadata query failed (validation or collection not found)"
+        );
+        throw error;
+      }
+
+      // Wrap ChromaDB errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        {
+          metric: "chromadb.get_by_metadata_ms",
+          value: durationMs,
+          collection: collectionName,
+          err: error,
+        },
+        "Metadata query failed (ChromaDB error)"
+      );
+
+      throw new SearchOperationError(
+        `Failed to query documents by metadata in collection '${collectionName}': ${errorMessage}`,
+        [collectionName],
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Delete all document chunks for a specific file
+   *
+   * Helper method that queries for all chunks matching the repository and file path,
+   * then deletes them. Useful for re-indexing updated files.
+   *
+   * @param collectionName - Target collection name
+   * @param repository - Repository name
+   * @param filePath - File path within the repository
+   * @returns Number of chunks deleted
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {DocumentOperationError} If delete operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async deleteDocumentsByFilePrefix(
+    collectionName: string,
+    repository: string,
+    filePath: string
+  ): Promise<number> {
+    this.ensureConnected();
+
+    // Query for all chunks matching the file
+    // Use $and operator for multiple conditions (ChromaDB requirement)
+    const chunks = await this.getDocumentsByMetadata(collectionName, {
+      $and: [{ repository }, { file_path: filePath }],
+    });
+
+    // If no chunks found, return 0
+    if (chunks.length === 0) {
+      this.logger.debug(
+        {
+          collection: collectionName,
+          repository,
+          filePath,
+        },
+        "No chunks found for file, skipping deletion"
+      );
+      return 0;
+    }
+
+    // Extract IDs and delete
+    const ids = chunks.map((chunk) => chunk.id);
+    await this.deleteDocuments(collectionName, ids);
+
+    this.logger.info(
+      {
+        collection: collectionName,
+        repository,
+        filePath,
+        deletedCount: ids.length,
+      },
+      `Deleted ${ids.length} chunks for file '${filePath}' in repository '${repository}'`
+    );
+
+    return ids.length;
   }
 
   /**
