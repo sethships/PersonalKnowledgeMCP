@@ -600,10 +600,20 @@ bun run cli health
 
 ## Documentation
 
+### Getting Started
+- **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Complete guide for integrating with Claude Code
+
+### Phase 1: Core MCP + Vector Search
 - **[Phase 1 PRD](docs/Phase1-Core-MCP-Vector-Search-PRD.md)** - Product requirements for Phase 1
 - **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
-- **[Project Configuration](.claude/CLAUDE.md)** - Development guidelines for Claude Code
 - **[Review Summary](docs/pm/phase1-review-summary.md)** - Document review and issue creation strategy
+
+### Incremental Updates Feature
+- **[Architecture Plan](docs/architecture/incremental-updates-plan.md)** - Technical design for incremental index updates
+- **[Implementation Roadmap](docs/pm/incremental-updates-roadmap.md)** - Phased implementation plan with GitHub issues
+
+### Development
+- **[Project Configuration](.claude/CLAUDE.md)** - Development guidelines for Claude Code
 
 ## Performance Targets
 
@@ -657,6 +667,12 @@ The project maintains **90% minimum test coverage** across all components.
 - CLI commands (index, search, status, remove)
 - 90% test coverage
 - Query response <500ms (p95)
+
+**Planned Extension - Incremental Updates** ([Epic #41](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41)):
+- On-demand index updates when PRs are merged (CLI-triggered)
+- Change detection via GitHub Compare API
+- Update history tracking and observability
+- See [Architecture Plan](docs/architecture/incremental-updates-plan.md) for details
 
 ### 📋 Phase 2: Code Intelligence + Local Files
 - AST parsing with tree-sitter
