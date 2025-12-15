@@ -1,8 +1,8 @@
 # Incremental Updates Implementation Roadmap
 
-**Version:** 1.2
+**Version:** 1.3
 **Date:** December 15, 2025
-**Status:** Phase 1 Foundation - In Progress (4/7 Complete)
+**Status:** Phase 1 Foundation - In Progress (5/7 Complete)
 **Parent Document:** [incremental-updates-plan.md](../architecture/incremental-updates-plan.md)
 **Project Phase:** Extension of Phase 1 (Core MCP + Vector Search)
 **Epic:** [#41 - Incremental Updates Feature](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41)
@@ -54,8 +54,8 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 | ~~1~~ | ~~[#44](https://github.com/sethb75/PersonalKnowledgeMCP/issues/44)~~ | ~~ChromaDB Upsert and Delete Operations~~ | ~~P0~~ | ~~4-6h~~ | ~~—~~ |
 | ~~2~~ | ~~[#43](https://github.com/sethb75/PersonalKnowledgeMCP/issues/43)~~ | ~~GitHub API Client for Change Detection~~ | ~~P0~~ | ~~4-6h~~ | ~~#42~~ |
 | ~~3~~ | ~~[#45](https://github.com/sethb75/PersonalKnowledgeMCP/issues/45)~~ | ~~Incremental Update Pipeline~~ | ~~P0~~ | ~~6-8h~~ | ~~#44~~ |
-| 4 | [#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46) | Update Coordinator Service | P0 | 4-6h | ~~#43~~, ~~#45~~ |
-| 5 | [#47](https://github.com/sethb75/PersonalKnowledgeMCP/issues/47) | CLI Update Commands | P0 | 3-4h | #46 |
+| ~~4~~ | ~~[#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46)~~ | ~~Update Coordinator Service~~ | ~~P0~~ | ~~4-6h~~ | ~~#43~~, ~~#45~~ |
+| 5 | [#47](https://github.com/sethb75/PersonalKnowledgeMCP/issues/47) | CLI Update Commands | P0 | 3-4h | ~~#46~~ |
 | 6 | [#48](https://github.com/sethb75/PersonalKnowledgeMCP/issues/48) | Foundation Phase Unit and Integration Tests | P0 | 4-6h | ~~#42~~-#47 |
 
 **Parallel Tracks:** Issues #42 and #44 can be worked simultaneously (no dependencies).
@@ -225,14 +225,15 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.5 Update Coordinator Service — [#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46)
+#### 1.5 Update Coordinator Service — [#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46) ✅ **COMPLETED**
 **Effort:** 4-6 hours
 **Priority:** P0
-**Dependencies:** #43, #45
+**Dependencies:** ~~#43~~, ~~#45~~
+**Completed:** 2025-12-15 via PR #66
 
 **Deliverables:**
-- Create `IncrementalUpdateCoordinator` service
-- Orchestrate full update workflow:
+- ✅ Create `IncrementalUpdateCoordinator` service
+- ✅ Orchestrate full update workflow:
   1. Get repository metadata
   2. Fetch HEAD commit from GitHub
   3. Compare with last indexed commit
@@ -240,24 +241,24 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
   5. Update local clone (`git pull`)
   6. Process changes via pipeline
   7. Update repository metadata with new commit SHA
-- Implement force push detection (commit not found error)
-- Implement 500-file threshold check
-- Trigger full re-index when appropriate
+- ✅ Implement force push detection (commit not found error)
+- ✅ Implement 500-file threshold check
+- ✅ Trigger full re-index when appropriate
 
 **Acceptance Criteria:**
-- [ ] Full update workflow completes successfully
-- [ ] Detects "no changes needed" correctly
-- [ ] Force push triggers full re-index with warning
-- [ ] >500 files triggers full re-index with warning
-- [ ] Updates `lastIndexedCommitSha` on success
-- [ ] Integration tests with real repository
+- [x] Full update workflow completes successfully
+- [x] Detects "no changes needed" correctly
+- [x] Force push triggers full re-index with warning
+- [x] >500 files triggers full re-index with warning
+- [x] Updates `lastIndexedCommitSha` on success
+- [x] Integration tests with real repository
 
 ---
 
 #### 1.6 CLI Update Commands — [#47](https://github.com/sethb75/PersonalKnowledgeMCP/issues/47)
 **Effort:** 3-4 hours
 **Priority:** P0
-**Dependencies:** #46
+**Dependencies:** ~~#46~~
 
 **Deliverables:**
 - Implement `bun run cli update <repository>` command
@@ -521,13 +522,13 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 ```
                                 Phase 1: Foundation
 
-    [#42 Schema]        [#43 GitHub API]        [#44 ChromaDB Ops]
+    [~~#42 Schema~~]    [~~#43 GitHub API~~]    [~~#44 ChromaDB Ops~~]
          |                    |                        |
          +--------------------+                        |
                               |                        |
-                       [#45 Update Pipeline] <---------+
+                   [~~#45 Update Pipeline~~] <---------+
                               |
-                       [#46 Update Coordinator]
+                   [~~#46 Update Coordinator~~]
                               |
                        [#47 CLI Commands]
                               |
@@ -696,10 +697,10 @@ The implementation can proceed based on the approved architecture plan.
 
 | Phase | Issues | Priority | Status |
 |-------|--------|----------|--------|
-| **Foundation** | ~~#42~~, ~~#43~~, ~~#44~~, ~~#45~~, #46, #47, #48 | All P0 | 4/7 Complete |
+| **Foundation** | ~~#42~~, ~~#43~~, ~~#44~~, ~~#45~~, ~~#46~~, #47, #48 | All P0 | 5/7 Complete |
 | **Observability** | #49, #50, #51, #52, #53 | P1/P2 | 0/5 Complete |
 | **Robustness** | #54, #55, #56, #57, #58, #59 | All P1 | 0/6 Complete |
-| **Total** | 18 issues (+ 1 epic) | | **4/18 Complete (22%)** |
+| **Total** | 18 issues (+ 1 epic) | | **5/18 Complete (28%)** |
 
 ### Labels
 
@@ -726,6 +727,7 @@ Issues use existing labels plus:
 | 1.0 | 2025-12-14 | Claude Code | Initial roadmap based on approved architecture plan |
 | 1.1 | 2025-12-14 | Claude Code | Added GitHub issue numbers, execution order tables, and dependency references |
 | 1.2 | 2025-12-15 | Claude Code | Marked Issue #45 (Incremental Update Pipeline) as completed via PR #65 |
+| 1.3 | 2025-12-15 | Claude Code | Marked Issue #46 (Update Coordinator Service) as completed via PR #66 |
 
 ---
 
