@@ -131,12 +131,12 @@ export async function updateRepositoryCommand(
             status: "re-indexed",
             fileCount: result.stats.filesProcessed,
             chunkCount: result.stats.chunksCreated,
-            durationMs: result.stats.duration,
+            durationMs: result.stats.durationMs,
           }, null, 2));
         } else {
           console.log(`  ${chalk.gray("Files:")} ${result.stats.filesProcessed}`);
           console.log(`  ${chalk.gray("Chunks:")} ${result.stats.chunksCreated}`);
-          console.log(`  ${chalk.gray("Duration:")} ${result.stats.duration}ms`);
+          console.log(`  ${chalk.gray("Duration:")} ${result.stats.durationMs}ms`);
         }
       } else {
         spinner.fail(chalk.red(`✗ Re-index failed for ${repositoryName}`));
