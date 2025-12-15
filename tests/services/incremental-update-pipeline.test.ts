@@ -315,7 +315,8 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats.filesAdded).toBe(1);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.path).toBe("src/missing.ts");
-      expect(result.errors[0]?.error).toContain("ENOENT");
+      // Error message varies by platform: "ENOENT" (Windows) or "No such file or directory" (Linux)
+      expect(result.errors[0]?.error).toMatch(/ENOENT|No such file or directory/);
     });
 
     it("should handle renamed file with missing previousPath", async () => {
