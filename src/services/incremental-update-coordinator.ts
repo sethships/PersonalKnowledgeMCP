@@ -392,7 +392,7 @@ export class IncrementalUpdateCoordinator {
    */
   private parseGitHubUrl(url: string): GitHubRepoInfo {
     // Handle HTTPS format: https://github.com/owner/repo.git
-    const httpsMatch = url.match(/github\.com[/:]([\w-]+)\/([\w-]+)(\.git)?$/);
+    const httpsMatch = url.match(/github\.com[/:]([\w.-]+)\/([\w.-]+)(\.git)?$/);
     if (httpsMatch && httpsMatch[1] && httpsMatch[2]) {
       return {
         owner: httpsMatch[1],
@@ -401,7 +401,7 @@ export class IncrementalUpdateCoordinator {
     }
 
     // Handle SSH format: git@github.com:owner/repo.git
-    const sshMatch = url.match(/git@github\.com:([\w-]+)\/([\w-]+)(\.git)?$/);
+    const sshMatch = url.match(/git@github\.com:([\w.-]+)\/([\w.-]+)(\.git)?$/);
     if (sshMatch && sshMatch[1] && sshMatch[2]) {
       return {
         owner: sshMatch[1],

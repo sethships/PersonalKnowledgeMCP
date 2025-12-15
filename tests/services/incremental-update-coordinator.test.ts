@@ -23,6 +23,7 @@ import {
   ForcePushDetectedError,
   ChangeThresholdExceededError,
   MissingCommitShaError,
+  GitPullError,
 } from "../../src/services/incremental-update-coordinator-errors.js";
 
 describe("IncrementalUpdateCoordinator", () => {
@@ -236,8 +237,8 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // Verify metadata was updated
       expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const updatedRepo = mockRepositoryService.updateRepository.mock.calls[0]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
       expect(updatedRepo).toBeDefined();
       if (updatedRepo) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -280,8 +281,8 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // Verify metadata was still updated with new commit SHA
       expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const updatedRepo = mockRepositoryService.updateRepository.mock.calls[0]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
       expect(updatedRepo).toBeDefined();
       if (updatedRepo) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -289,7 +290,7 @@ describe("IncrementalUpdateCoordinator", () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(updatedRepo.status).toBe("error");
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        expect(updatedRepo.errorMessage).toContain("2 error");
+        expect(updatedRepo.errorMessage).toMatch(/2 error/i);
       }
     });
 
@@ -355,8 +356,8 @@ describe("IncrementalUpdateCoordinator", () => {
     it("should update incrementalUpdateCount correctly", async () => {
       // First update
       await coordinator.updateRepository("test-repo");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      let updatedRepo = mockRepositoryService.updateRepository.mock.calls[0]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      let updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(1);
 
@@ -381,8 +382,8 @@ describe("IncrementalUpdateCoordinator", () => {
       mockGitHubClient.compareCommits = mock(async () => newComparison);
 
       await coordinator.updateRepository("test-repo");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      updatedRepo = mockRepositoryService.updateRepository.mock.calls[1]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[1]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(2);
     });
@@ -396,8 +397,8 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await coordinator.updateRepository("test-repo");
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const updatedRepo = mockRepositoryService.updateRepository.mock.calls[0]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(1);
     });
@@ -425,6 +426,22 @@ describe("IncrementalUpdateCoordinator", () => {
       await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
         /Cannot parse GitHub URL/
       );
+    });
+
+    it("should throw GitPullError when git pull fails", async () => {
+      const failingCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {
+            throw new Error("Merge conflict detected");
+          }),
+        }
+      );
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(failingCoordinator.updateRepository("test-repo")).rejects.toThrow(GitPullError);
     });
   });
 

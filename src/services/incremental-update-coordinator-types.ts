@@ -75,8 +75,8 @@ export interface CoordinatorResult {
   /**
    * Commit SHA that was indexed.
    *
-   * The new HEAD commit SHA after successful update.
-   * Undefined if status is "no_changes" or "failed".
+   * The HEAD commit SHA from GitHub. Present for both "no_changes" and "updated" statuses.
+   * May be undefined only if the operation fails before fetching the HEAD commit.
    */
   commitSha?: string;
 
