@@ -73,3 +73,13 @@ export {
   isRetryableGitHubError,
   isRetryableStatusCode,
 } from "./github-client-errors.js";
+
+// IncrementalUpdatePipeline exports
+export { IncrementalUpdatePipeline } from "./incremental-update-pipeline.js";
+export type {
+  FileChange as IncrementalFileChange,
+  UpdateOptions,
+  UpdateStats,
+  UpdateResult,
+  FileProcessingError,
+} from "./incremental-update-types.js";
