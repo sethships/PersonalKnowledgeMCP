@@ -189,7 +189,9 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error("Incremental update cannot determine the changes since the last index.");
     console.error("\n" + chalk.bold("Next steps:"));
     console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
-    console.error("  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force"));
+    console.error(
+      "  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force")
+    );
     process.exit(1);
   }
 
@@ -200,7 +202,9 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error("Full re-indexing is more efficient than incremental update.");
     console.error("\n" + chalk.bold("Next steps:"));
     console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
-    console.error("  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force"));
+    console.error(
+      "  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force")
+    );
     process.exit(1);
   }
 
@@ -226,7 +230,9 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error("This typically indicates the repository was never fully indexed.");
     console.error("\n" + chalk.bold("Next steps:"));
     console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
-    console.error("  • Or remove and re-index: " + chalk.gray("pk-mcp remove <repo> && pk-mcp index <url>"));
+    console.error(
+      "  • Or remove and re-index: " + chalk.gray("pk-mcp remove <repo> && pk-mcp index <url>")
+    );
     process.exit(1);
   }
 

@@ -74,10 +74,12 @@ function formatUpdateResultJson(
   return {
     repository: repositoryName,
     status: result.status,
-    commitRange: baseSha ? formatCommitRange(baseSha, result.commitSha ?? "unknown") : result.commitSha?.substring(0, 7),
+    commitRange: baseSha
+      ? formatCommitRange(baseSha, result.commitSha ?? "unknown")
+      : result.commitSha?.substring(0, 7),
     commitMessage: result.commitMessage,
     stats: result.stats,
-    errors: result.errors.map(e => ({ path: e.path, error: e.error })),
+    errors: result.errors.map((e) => ({ path: e.path, error: e.error })),
     durationMs: result.durationMs,
   };
 }
@@ -126,13 +128,19 @@ export async function updateRepositoryCommand(
         spinner.succeed(chalk.green(`✓ Re-indexed ${repositoryName}`));
 
         if (options.json) {
-          console.log(JSON.stringify({
-            repository: repositoryName,
-            status: "re-indexed",
-            fileCount: result.stats.filesProcessed,
-            chunkCount: result.stats.chunksCreated,
-            durationMs: result.stats.durationMs,
-          }, null, 2));
+          console.log(
+            JSON.stringify(
+              {
+                repository: repositoryName,
+                status: "re-indexed",
+                fileCount: result.stats.filesProcessed,
+                chunkCount: result.stats.chunksCreated,
+                durationMs: result.stats.durationMs,
+              },
+              null,
+              2
+            )
+          );
         } else {
           console.log(`  ${chalk.gray("Files:")} ${result.stats.filesProcessed}`);
           console.log(`  ${chalk.gray("Chunks:")} ${result.stats.chunksCreated}`);
@@ -165,7 +173,13 @@ export async function updateRepositoryCommand(
       spinner.info(chalk.cyan(`Repository ${repositoryName} is already up-to-date`));
 
       if (options.json) {
-        console.log(JSON.stringify(formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha), null, 2));
+        console.log(
+          JSON.stringify(
+            formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha),
+            null,
+            2
+          )
+        );
       } else {
         console.log(`  ${chalk.gray("Commit:")} ${result.commitSha?.substring(0, 7)}`);
         console.log(`  ${chalk.gray("Message:")} ${result.commitMessage}`);
@@ -178,9 +192,17 @@ export async function updateRepositoryCommand(
       spinner.succeed(chalk.green(`✓ Updated ${repositoryName}`));
 
       if (options.json) {
-        console.log(JSON.stringify(formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha), null, 2));
+        console.log(
+          JSON.stringify(
+            formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha),
+            null,
+            2
+          )
+        );
       } else {
-        console.log(`  ${chalk.gray("Commits:")} ${formatCommitRange(repo.lastIndexedCommitSha, result.commitSha ?? "unknown")} (${result.commitMessage ?? ""})`);
+        console.log(
+          `  ${chalk.gray("Commits:")} ${formatCommitRange(repo.lastIndexedCommitSha, result.commitSha ?? "unknown")} (${result.commitMessage ?? ""})`
+        );
         console.log(`  ${chalk.gray("Files:")} ${formatFileChanges(result.stats)}`);
         console.log(`  ${chalk.gray("Chunks:")} ${formatChunkChanges(result.stats)}`);
         console.log(`  ${chalk.gray("Duration:")} ${result.stats.durationMs}ms`);
@@ -188,7 +210,9 @@ export async function updateRepositoryCommand(
 
       // Warn about partial failures
       if (result.errors.length > 0) {
-        console.log(chalk.yellow(`\n⚠ Update completed with ${result.errors.length} file error(s)`));
+        console.log(
+          chalk.yellow(`\n⚠ Update completed with ${result.errors.length} file error(s)`)
+        );
         if (!options.json) {
           console.log(chalk.gray("  First few errors:"));
           for (const error of result.errors.slice(0, 3)) {
@@ -207,7 +231,13 @@ export async function updateRepositoryCommand(
       spinner.fail(chalk.red(`✗ Update failed for ${repositoryName}`));
 
       if (options.json) {
-        console.log(JSON.stringify(formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha), null, 2));
+        console.log(
+          JSON.stringify(
+            formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha),
+            null,
+            2
+          )
+        );
       } else {
         console.log(chalk.red(`\n${result.errors.length} error(s) occurred during update`));
         console.log(chalk.gray("  First few errors:"));
