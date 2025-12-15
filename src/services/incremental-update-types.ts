@@ -102,7 +102,12 @@ export interface UpdateOptions {
    * Only files with these extensions will be processed.
    * Must include the leading dot.
    *
+   * **Note**: Files without extensions (e.g., `Dockerfile`, `Makefile`, `LICENSE`)
+   * are not processed unless the full filename is added to `includeExtensions`.
+   * For example, to process Dockerfiles, add `"Dockerfile"` to this array.
+   *
    * @example [".ts", ".js", ".tsx", ".jsx", ".md"]
+   * @example [".ts", ".js", ".md", "Dockerfile", "Makefile"] // Include extension-less files
    */
   includeExtensions: string[];
 

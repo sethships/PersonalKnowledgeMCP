@@ -8,7 +8,7 @@
  * @module services/incremental-update-pipeline
  */
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import ignore from "ignore";
 import type { Logger } from "pino";
 import type { ChromaStorageClient } from "../storage/index.js";
@@ -82,6 +82,41 @@ export class IncrementalUpdatePipeline {
   ) {}
 
   /**
+   * Validate file path to prevent path traversal attacks.
+   *
+   * Ensures that the absolute file path stays within the repository root
+   * by checking that the normalized absolute path starts with the normalized
+   * local path. This provides defense-in-depth even though the caller is
+   * expected to provide sanitized input.
+   *
+   * @param localPath - Repository root directory path
+   * @param relativePath - Relative file path from repository root
+   * @returns Validated absolute file path
+   * @throws Error if path traversal is detected
+   *
+   * @example
+   * ```typescript
+   * // Valid path
+   * validateFilePath("/repos/my-api", "src/auth.ts")
+   * // Returns: "/repos/my-api/src/auth.ts"
+   *
+   * // Invalid path (traversal)
+   * validateFilePath("/repos/my-api", "../../../etc/passwd")
+   * // Throws: Error("Path traversal detected: ../../../etc/passwd")
+   * ```
+   */
+  private validateFilePath(localPath: string, relativePath: string): string {
+    const absolutePath = join(localPath, relativePath);
+    const normalizedLocal = resolve(localPath);
+    const normalizedAbsolute = resolve(absolutePath);
+
+    if (!normalizedAbsolute.startsWith(normalizedLocal)) {
+      throw new Error(`Path traversal detected: ${relativePath}`);
+    }
+    return absolutePath;
+  }
+
+  /**
    * Process file changes and update the vector index incrementally.
    *
    * Processes each change type appropriately:
@@ -140,9 +175,12 @@ export class IncrementalUpdatePipeline {
       };
     }
 
+    // Create ignorer instance once for all files in this batch
+    const ig = ignore().add(options.excludePatterns);
+
     // Filter changes by extension and exclusion patterns
     const filteredChanges = changes.filter((change) =>
-      this.shouldProcessFile(change.path, options.includeExtensions, options.excludePatterns)
+      this.shouldProcessFile(change.path, options.includeExtensions, ig)
     );
 
     this.logger.info(
@@ -235,13 +273,13 @@ export class IncrementalUpdatePipeline {
    *
    * @param filePath - File path to check
    * @param includeExtensions - Extensions to include
-   * @param excludePatterns - Patterns to exclude
+   * @param ig - Pre-configured ignore instance for exclusion pattern matching
    * @returns True if file should be processed
    */
   private shouldProcessFile(
     filePath: string,
     includeExtensions: string[],
-    excludePatterns: string[]
+    ig: ReturnType<typeof ignore>
   ): boolean {
     // Check extension
     const extension = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
@@ -250,7 +288,6 @@ export class IncrementalUpdatePipeline {
     }
 
     // Check exclusion patterns using ignore library (same as FileScanner)
-    const ig = ignore().add(excludePatterns);
     if (ig.ignores(filePath)) {
       return false;
     }
@@ -276,14 +313,14 @@ export class IncrementalUpdatePipeline {
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing added file");
 
-    const absolutePath = join(options.localPath, change.path);
+    const absolutePath = this.validateFilePath(options.localPath, change.path);
     const content = await Bun.file(absolutePath).text();
 
     const fileInfo: FileInfo = {
       relativePath: change.path,
       absolutePath,
       extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: content.length,
+      sizeBytes: Buffer.byteLength(content, "utf8"),
       modifiedAt: new Date(), // Use current time for newly added files
     };
 
@@ -320,14 +357,14 @@ export class IncrementalUpdatePipeline {
     stats.chunksDeleted += deletedCount;
 
     // Read and chunk new content
-    const absolutePath = join(options.localPath, change.path);
+    const absolutePath = this.validateFilePath(options.localPath, change.path);
     const content = await Bun.file(absolutePath).text();
 
     const fileInfo: FileInfo = {
       relativePath: change.path,
       absolutePath,
       extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: content.length,
+      sizeBytes: Buffer.byteLength(content, "utf8"),
       modifiedAt: new Date(),
     };
 
@@ -398,14 +435,14 @@ export class IncrementalUpdatePipeline {
     stats.chunksDeleted += deletedCount;
 
     // Read and chunk at new path
-    const absolutePath = join(options.localPath, change.path);
+    const absolutePath = this.validateFilePath(options.localPath, change.path);
     const content = await Bun.file(absolutePath).text();
 
     const fileInfo: FileInfo = {
       relativePath: change.path,
       absolutePath,
       extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: content.length,
+      sizeBytes: Buffer.byteLength(content, "utf8"),
       modifiedAt: new Date(),
     };
 
