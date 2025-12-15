@@ -196,7 +196,7 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
   if (error instanceof ChangeThresholdExceededError) {
     console.error(chalk.red("✗ Too Many Changes for Incremental Update"));
     console.error(`\n${error.message}`);
-    console.error("\nMore than 500 files have changed since the last index.");
+    console.error(`\nMore than ${error.threshold} files have changed since the last index.`);
     console.error("Full re-indexing is more efficient than incremental update.");
     console.error("\n" + chalk.bold("Next steps:"));
     console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));

@@ -74,7 +74,7 @@ function formatUpdateResultJson(
   return {
     repository: repositoryName,
     status: result.status,
-    commitRange: baseSha ? formatCommitRange(baseSha, result.commitSha!) : result.commitSha?.substring(0, 7),
+    commitRange: baseSha ? formatCommitRange(baseSha, result.commitSha ?? "unknown") : result.commitSha?.substring(0, 7),
     commitMessage: result.commitMessage,
     stats: result.stats,
     errors: result.errors.map(e => ({ path: e.path, error: e.error })),
@@ -180,7 +180,7 @@ export async function updateRepositoryCommand(
       if (options.json) {
         console.log(JSON.stringify(formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha), null, 2));
       } else {
-        console.log(`  ${chalk.gray("Commits:")} ${formatCommitRange(repo.lastIndexedCommitSha, result.commitSha!)} (${result.commitMessage})`);
+        console.log(`  ${chalk.gray("Commits:")} ${formatCommitRange(repo.lastIndexedCommitSha, result.commitSha ?? "unknown")} (${result.commitMessage ?? ""})`);
         console.log(`  ${chalk.gray("Files:")} ${formatFileChanges(result.stats)}`);
         console.log(`  ${chalk.gray("Chunks:")} ${formatChunkChanges(result.stats)}`);
         console.log(`  ${chalk.gray("Duration:")} ${result.stats.durationMs}ms`);
