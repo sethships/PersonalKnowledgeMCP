@@ -66,9 +66,26 @@ export const RemoveCommandOptionsSchema = z.object({
 });
 
 /**
+ * Schema for update command options
+ */
+export const UpdateCommandOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for update-all command options
+ */
+export const UpdateAllCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
  * Inferred TypeScript types from schemas
  */
 export type ValidatedIndexOptions = z.infer<typeof IndexCommandOptionsSchema>;
 export type ValidatedSearchOptions = z.infer<typeof SearchCommandOptionsSchema>;
 export type ValidatedStatusOptions = z.infer<typeof StatusCommandOptionsSchema>;
 export type ValidatedRemoveOptions = z.infer<typeof RemoveCommandOptionsSchema>;
+export type ValidatedUpdateOptions = z.infer<typeof UpdateCommandOptionsSchema>;
+export type ValidatedUpdateAllOptions = z.infer<typeof UpdateAllCommandOptionsSchema>;

@@ -23,6 +23,12 @@ import {
   SearchOperationError,
 } from "../../services/errors.js";
 import { RepositoryMetadataError } from "../../repositories/errors.js";
+import {
+  ForcePushDetectedError,
+  ChangeThresholdExceededError,
+  GitPullError,
+  MissingCommitShaError,
+} from "../../services/incremental-update-coordinator-errors.js";
 
 /**
  * Handle command errors and exit with appropriate status code
@@ -172,6 +178,61 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error("  • Check file permissions in DATA_PATH directory");
     console.error("  • Verify repositories.json is not corrupted");
     console.error("  • Enable verbose logging: " + chalk.gray("LOG_LEVEL=debug pk-mcp <command>"));
+    process.exit(1);
+  }
+
+  // Handle incremental update coordinator errors
+  if (error instanceof ForcePushDetectedError) {
+    console.error(chalk.red("✗ Force Push Detected"));
+    console.error(`\n${error.message}`);
+    console.error("\nThe repository's commit history has been rewritten (force push).");
+    console.error("Incremental update cannot determine the changes since the last index.");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
+    console.error(
+      "  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force")
+    );
+    process.exit(1);
+  }
+
+  if (error instanceof ChangeThresholdExceededError) {
+    console.error(chalk.red("✗ Too Many Changes for Incremental Update"));
+    console.error(`\n${error.message}`);
+    console.error(`\nMore than ${error.threshold} files have changed since the last index.`);
+    console.error("Full re-indexing is more efficient than incremental update.");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
+    console.error(
+      "  • Or use update command with force flag: " + chalk.gray("pk-mcp update <repo> --force")
+    );
+    process.exit(1);
+  }
+
+  if (error instanceof GitPullError) {
+    console.error(chalk.red("✗ Git Pull Failed"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Common causes:"));
+    console.error("  • Local repository has uncommitted changes or conflicts");
+    console.error("  • Network connectivity issues");
+    console.error("  • Remote repository unavailable");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Check local repository status manually");
+    console.error("  • Resolve any merge conflicts or uncommitted changes");
+    console.error("  • Retry the update command");
+    console.error("  • Or trigger full re-index: " + chalk.gray("pk-mcp update <repo> --force"));
+    process.exit(1);
+  }
+
+  if (error instanceof MissingCommitShaError) {
+    console.error(chalk.red("✗ Missing Commit SHA"));
+    console.error(`\n${error.message}`);
+    console.error("\nThe repository has no recorded commit SHA from initial indexing.");
+    console.error("This typically indicates the repository was never fully indexed.");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
+    console.error(
+      "  • Or remove and re-index: " + chalk.gray("pk-mcp remove <repo> && pk-mcp index <url>")
+    );
     process.exit(1);
   }
 

@@ -7,6 +7,8 @@
  * - search: Search indexed repositories
  * - status: List indexed repositories
  * - remove: Remove a repository from index
+ * - update: Update a repository with latest changes
+ * - update-all: Update all repositories
  * - health: Health check
  */
 
@@ -19,11 +21,15 @@ import { searchCommand } from "./commands/search-command.js";
 import { statusCommand } from "./commands/status-command.js";
 import { removeCommand } from "./commands/remove-command.js";
 import { healthCommand } from "./commands/health-command.js";
+import { updateRepositoryCommand } from "./commands/update-repository-command.js";
+import { updateAllCommand } from "./commands/update-all-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
   StatusCommandOptionsSchema,
   RemoveCommandOptionsSchema,
+  UpdateCommandOptionsSchema,
+  UpdateAllCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -110,6 +116,38 @@ program
     try {
       const deps = await initializeDependencies();
       await healthCommand(deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Update command
+program
+  .command("update")
+  .description("Update a repository with latest changes")
+  .argument("<repository>", "Repository name to update")
+  .option("-f, --force", "Force full re-index instead of incremental update")
+  .option("--json", "Output as JSON")
+  .action(async (repository: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = UpdateCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await updateRepositoryCommand(repository, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Update-all command
+program
+  .command("update-all")
+  .description("Update all repositories with latest changes")
+  .option("--json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = UpdateAllCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await updateAllCommand(validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }
