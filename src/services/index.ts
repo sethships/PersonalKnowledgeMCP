@@ -83,3 +83,20 @@ export type {
   UpdateResult,
   FileProcessingError,
 } from "./incremental-update-types.js";
+
+// IncrementalUpdateCoordinator exports
+export { IncrementalUpdateCoordinator } from "./incremental-update-coordinator.js";
+export type {
+  CoordinatorConfig,
+  CoordinatorResult,
+  CoordinatorStatus,
+  GitHubRepoInfo,
+} from "./incremental-update-coordinator-types.js";
+export {
+  CoordinatorError,
+  RepositoryNotFoundError as CoordinatorRepositoryNotFoundError,
+  ForcePushDetectedError,
+  ChangeThresholdExceededError,
+  GitPullError,
+  MissingCommitShaError,
+} from "./incremental-update-coordinator-errors.js";
