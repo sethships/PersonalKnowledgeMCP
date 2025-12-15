@@ -54,7 +54,7 @@ function formatChunkChanges(stats: CoordinatorResult["stats"]): string {
  */
 function createUpdateAllTable(
   results: UpdateResult[]
-): ReturnType<typeof Table> {
+): InstanceType<typeof Table> {
   const table = new Table({
     head: [
       chalk.bold("Repository"),
