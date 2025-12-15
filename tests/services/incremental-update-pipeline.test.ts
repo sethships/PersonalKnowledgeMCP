@@ -12,13 +12,10 @@ import { mkdir, writeFile, rm } from "node:fs/promises";
 import pino from "pino";
 import { IncrementalUpdatePipeline } from "../../src/services/incremental-update-pipeline.js";
 import { FileChunker } from "../../src/ingestion/file-chunker.js";
-import { initializeLogger } from "../../src/logging/logger-factory.js";
+import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import type { EmbeddingProvider } from "../../src/providers/index.js";
 import type { ChromaStorageClient } from "../../src/storage/index.js";
 import type { FileChange, UpdateOptions } from "../../src/services/incremental-update-types.js";
-
-// Initialize logger before tests
-initializeLogger({ level: "silent", format: "pretty" });
 
 describe("IncrementalUpdatePipeline", () => {
   let pipeline: IncrementalUpdatePipeline;
@@ -29,6 +26,9 @@ describe("IncrementalUpdatePipeline", () => {
   let testDir: string;
 
   beforeEach(async () => {
+    // Initialize logger for tests
+    initializeLogger({ level: "silent", format: "json" });
+
     // Create test directory
     testDir = join(import.meta.dir, "..", "..", "test-temp", `test-${Date.now()}`);
     await mkdir(testDir, { recursive: true });
@@ -69,6 +69,9 @@ describe("IncrementalUpdatePipeline", () => {
   afterEach(async () => {
     // Clean up test directory
     await rm(testDir, { recursive: true, force: true });
+
+    // Reset logger for next test
+    resetLogger();
   });
 
   describe("processChanges", () => {
