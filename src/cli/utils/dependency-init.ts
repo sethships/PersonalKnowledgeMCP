@@ -11,6 +11,7 @@ import type { ChromaStorageClient } from "../../storage/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { SearchService } from "../../services/types.js";
 import type { IngestionService } from "../../services/ingestion-service.js";
+import type { GitHubClient } from "../../services/github-client-types.js";
 import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
@@ -19,6 +20,9 @@ import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.j
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
 import { FileScanner } from "../../ingestion/file-scanner.js";
 import { FileChunker } from "../../ingestion/file-chunker.js";
+import { GitHubClientImpl } from "../../services/github-client.js";
+import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
+import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
 
 /**
@@ -48,6 +52,9 @@ export interface CliDependencies {
   repositoryService: RepositoryMetadataService;
   searchService: SearchService;
   ingestionService: IngestionService;
+  githubClient: GitHubClient;
+  updatePipeline: IncrementalUpdatePipeline;
+  updateCoordinator: IncrementalUpdateCoordinator;
   logger: Logger;
 }
 
@@ -173,12 +180,38 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     );
     logger.debug("Ingestion service initialized");
 
+    // Step 8: Initialize GitHub client
+    const githubClient = new GitHubClientImpl({
+      token: Bun.env["GITHUB_TOKEN"],
+    });
+    logger.debug("GitHub client initialized");
+
+    // Step 9: Initialize incremental update pipeline
+    const updatePipeline = new IncrementalUpdatePipeline(
+      fileChunker,
+      embeddingProvider,
+      chromaClient,
+      getComponentLogger("services:incremental-update-pipeline")
+    );
+    logger.debug("Incremental update pipeline initialized");
+
+    // Step 10: Initialize incremental update coordinator
+    const updateCoordinator = new IncrementalUpdateCoordinator(
+      githubClient,
+      repositoryService,
+      updatePipeline
+    );
+    logger.debug("Incremental update coordinator initialized");
+
     return {
       embeddingProvider,
       chromaClient,
       repositoryService,
       searchService,
       ingestionService,
+      githubClient,
+      updatePipeline,
+      updateCoordinator,
       logger,
     };
   } catch (error) {

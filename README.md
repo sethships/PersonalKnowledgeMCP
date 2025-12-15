@@ -591,6 +591,15 @@ bun run cli search "query text" [--limit 10] [--threshold 0.7]
 # List indexed repositories
 bun run cli status
 
+# Update a repository with latest changes
+bun run cli update <repository-name>
+
+# Force full re-index
+bun run cli update <repository-name> --force
+
+# Update all repositories
+bun run cli update-all
+
 # Remove a repository
 bun run cli remove <repository-name>
 
