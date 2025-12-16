@@ -613,7 +613,7 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should rotate oldest entry when limit exceeded", async () => {
-      // Create history at limit (3 entries)
+      // Create history at limit (3 entries) in reverse chronological order (newest first)
       const existingHistory = Array.from({ length: 3 }, (_, i) => ({
         timestamp: `2024-12-15T${String(10 + i).padStart(2, "0")}:00:00.000Z`,
         previousCommit: `commit${i}`,
@@ -626,7 +626,7 @@ describe("IncrementalUpdateCoordinator", () => {
         durationMs: 1000,
         errorCount: 0,
         status: "success" as const,
-      }));
+      })).reverse(); // Reverse to get newest-first ordering
 
       testRepo.updateHistory = existingHistory;
 
