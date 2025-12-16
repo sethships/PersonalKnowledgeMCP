@@ -6,14 +6,22 @@
 
 /* eslint-disable no-console */
 
+import chalk from "chalk";
 import type { CliDependencies } from "../utils/dependency-init.js";
-import { createRepositoryTable, formatRepositoriesJson } from "../output/formatters.js";
+import {
+  createRepositoryTable,
+  formatRepositoriesJson,
+  type RepositoryDisplayInfo,
+} from "../output/formatters.js";
+import { parseGitHubUrl } from "../../utils/git-url-parser.js";
+import type { RepositoryInfo } from "../../repositories/types.js";
 
 /**
  * Status command options
  */
 export interface StatusCommandOptions {
   json?: boolean;
+  check?: boolean;
 }
 
 /**
@@ -21,6 +29,7 @@ export interface StatusCommandOptions {
  *
  * Lists all indexed repositories with their metadata.
  * Supports JSON output format for programmatic use.
+ * Optionally checks GitHub for available updates with --check flag.
  *
  * @param options - Command options
  * @param deps - CLI dependencies
@@ -32,13 +41,111 @@ export async function statusCommand(
   // Fetch all repositories
   const repositories = await deps.repositoryService.listRepositories();
 
+  // If --check option is provided, query GitHub for updates
+  let displayRepos: RepositoryDisplayInfo[] = repositories;
+  if (options.check) {
+    displayRepos = await checkRepositoryUpdates(repositories, deps);
+  }
+
   // Output as JSON if requested
   if (options.json) {
-    console.log(formatRepositoriesJson(repositories));
+    console.log(formatRepositoriesJson(displayRepos));
     return;
   }
 
   // Output as table (default)
-  console.log(createRepositoryTable(repositories));
+  console.log(createRepositoryTable(displayRepos));
   console.log(); // Blank line for spacing
+}
+
+/**
+ * Check repositories for available updates on GitHub
+ *
+ * @param repositories - List of repositories to check
+ * @param deps - CLI dependencies
+ * @returns Enhanced repository information with update status
+ */
+async function checkRepositoryUpdates(
+  repositories: RepositoryInfo[],
+  deps: CliDependencies
+): Promise<RepositoryDisplayInfo[]> {
+  if (repositories.length === 0) {
+    return [];
+  }
+
+  console.log(
+    chalk.gray(
+      `\nChecking ${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"} for updates...\n`
+    )
+  );
+
+  const displayRepos: RepositoryDisplayInfo[] = [];
+  const errors: string[] = [];
+
+  for (const repo of repositories) {
+    try {
+      // Parse GitHub URL to extract owner/repo
+      const parsed = parseGitHubUrl(repo.url);
+
+      // If not a GitHub URL, mark as unknown
+      if (!parsed) {
+        displayRepos.push({
+          ...repo,
+          updateStatus: "unknown",
+        });
+        continue;
+      }
+
+      // If no lastIndexedCommitSha, we can't compare - mark as unknown
+      if (!repo.lastIndexedCommitSha) {
+        displayRepos.push({
+          ...repo,
+          updateStatus: "unknown",
+        });
+        continue;
+      }
+
+      // Fetch latest commit from GitHub
+      const headCommit = await deps.githubClient.getHeadCommit(
+        parsed.owner,
+        parsed.repo,
+        repo.branch
+      );
+
+      // Compare SHAs
+      const updateStatus =
+        headCommit.sha === repo.lastIndexedCommitSha ? "up-to-date" : "updates-available";
+
+      displayRepos.push({
+        ...repo,
+        updateStatus,
+        remoteSha: headCommit.sha,
+      });
+    } catch (error) {
+      // Handle errors gracefully - don't fail entire command
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errors.push(`${repo.name}: ${errorMessage}`);
+
+      displayRepos.push({
+        ...repo,
+        updateStatus: "error",
+        checkError: errorMessage,
+      });
+    }
+  }
+
+  // Show warning summary if there were errors
+  if (errors.length > 0) {
+    console.log(
+      chalk.yellow(
+        `\n⚠ ${errors.length} ${errors.length === 1 ? "repository" : "repositories"} could not be checked:\n`
+      )
+    );
+    for (const error of errors) {
+      console.log(chalk.yellow(`  • ${error}`));
+    }
+    console.log();
+  }
+
+  return displayRepos;
 }

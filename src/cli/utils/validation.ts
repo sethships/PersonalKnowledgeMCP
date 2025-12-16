@@ -55,6 +55,7 @@ export const SearchCommandOptionsSchema = z.object({
  */
 export const StatusCommandOptionsSchema = z.object({
   json: z.boolean().optional(),
+  check: z.boolean().optional(),
 });
 
 /**
