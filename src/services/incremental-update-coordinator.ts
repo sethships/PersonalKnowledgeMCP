@@ -329,6 +329,9 @@ export class IncrementalUpdateCoordinator {
       let historyStatus: "success" | "partial" | "failed";
       if (pipelineResult.errors.length === 0) {
         historyStatus = "success";
+      } else if (totalFilesChanged === 0) {
+        // Errors occurred but no files were tracked as changed - treat as failed
+        historyStatus = "failed";
       } else if (pipelineResult.errors.length >= totalFilesChanged) {
         historyStatus = "failed";
       } else {
@@ -338,6 +341,7 @@ export class IncrementalUpdateCoordinator {
       // Create history entry
       const historyEntry: UpdateHistoryEntry = {
         timestamp: new Date().toISOString(),
+        // Validated above - throws MissingCommitShaError if undefined
         previousCommit: repo.lastIndexedCommitSha,
         newCommit: headCommit.sha,
         filesAdded: pipelineResult.stats.filesAdded,

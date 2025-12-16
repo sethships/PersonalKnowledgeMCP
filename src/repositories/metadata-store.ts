@@ -613,6 +613,9 @@ export function addHistoryEntry(
   newEntry: UpdateHistoryEntry,
   limit: number = 20
 ): UpdateHistoryEntry[] {
+  // Ensure limit is non-negative
+  const effectiveLimit = Math.max(0, limit);
+
   // Start with existing history or empty array
   const history = currentHistory ? [...currentHistory] : [];
 
@@ -620,7 +623,7 @@ export function addHistoryEntry(
   history.unshift(newEntry);
 
   // Rotate if limit exceeded (drop oldest)
-  if (history.length > limit) {
+  if (history.length > effectiveLimit) {
     history.pop();
   }
 

@@ -42,6 +42,21 @@ function parseIntEnv(key: string, defaultValue: number): number {
   }
   return parsed;
 }
+/**
+ * Parse non-negative integer from environment variable with validation
+ *
+ * @param key - Environment variable name
+ * @param defaultValue - Default value if not set
+ * @returns Parsed non-negative integer value
+ * @throws {Error} If value is not a valid number or is negative
+ */
+function parseNonNegativeIntEnv(key: string, defaultValue: number): number {
+  const value = parseIntEnv(key, defaultValue);
+  if (value < 0) {
+    throw new Error(`Invalid value for ${key}: expected a non-negative number, got '${value}'`);
+  }
+  return value;
+}
 
 /**
  * All dependencies required by CLI commands
@@ -196,8 +211,8 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     logger.debug("Incremental update pipeline initialized");
 
     // Step 10: Initialize incremental update coordinator
-    const updateHistoryLimit = parseIntEnv("UPDATE_HISTORY_LIMIT", 20);
-    const changeFileThreshold = parseIntEnv("CHANGE_FILE_THRESHOLD", 500);
+    const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
+    const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
 
     const updateCoordinator = new IncrementalUpdateCoordinator(
       githubClient,
