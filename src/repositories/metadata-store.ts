@@ -9,7 +9,12 @@
  */
 
 import { join } from "path";
-import type { RepositoryInfo, RepositoryMetadataService, RepositoryMetadataFile } from "./types.js";
+import type {
+  RepositoryInfo,
+  RepositoryMetadataService,
+  RepositoryMetadataFile,
+  UpdateHistoryEntry,
+} from "./types.js";
 import {
   RepositoryMetadataError,
   FileOperationError,
@@ -572,4 +577,55 @@ export function sanitizeCollectionName(name: string): string {
     return `${prefixed.substring(0, 54)}_${hash}`;
   }
   return prefixed;
+}
+
+/**
+ * Add a new entry to update history with FIFO rotation.
+ *
+ * Prepends the new entry (newest first) and removes the oldest
+ * entry if the limit is exceeded. This function is immutable - it
+ * returns a new array without modifying the input.
+ *
+ * @param currentHistory - Existing history array (may be undefined)
+ * @param newEntry - New history entry to add
+ * @param limit - Maximum number of entries to retain (default 20)
+ * @returns New history array (immutable operation)
+ *
+ * @example
+ * ```typescript
+ * const updated = addHistoryEntry(repo.updateHistory, {
+ *   timestamp: new Date().toISOString(),
+ *   previousCommit: "abc123...",
+ *   newCommit: "def456...",
+ *   filesAdded: 3,
+ *   filesModified: 5,
+ *   filesDeleted: 1,
+ *   chunksUpserted: 47,
+ *   chunksDeleted: 12,
+ *   durationMs: 2340,
+ *   errorCount: 0,
+ *   status: 'success'
+ * }, 20);
+ * ```
+ */
+export function addHistoryEntry(
+  currentHistory: UpdateHistoryEntry[] | undefined,
+  newEntry: UpdateHistoryEntry,
+  limit: number = 20
+): UpdateHistoryEntry[] {
+  // Ensure limit is non-negative
+  const effectiveLimit = Math.max(0, limit);
+
+  // Start with existing history or empty array
+  const history = currentHistory ? [...currentHistory] : [];
+
+  // Prepend new entry (newest first)
+  history.unshift(newEntry);
+
+  // Rotate if limit exceeded (drop oldest)
+  if (history.length > effectiveLimit) {
+    history.pop();
+  }
+
+  return history;
 }

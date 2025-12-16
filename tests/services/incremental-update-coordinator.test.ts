@@ -483,4 +483,264 @@ describe("IncrementalUpdateCoordinator", () => {
       );
     });
   });
+
+  describe("Update History Recording", () => {
+    it("should record history on successful update (status='success')", async () => {
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      expect(updatedRepo?.updateHistory).toBeDefined();
+      expect(updatedRepo?.updateHistory).toHaveLength(1);
+
+      const historyEntry = updatedRepo?.updateHistory?.[0];
+      expect(historyEntry).toBeDefined();
+      if (!historyEntry) throw new Error("History entry not found");
+
+      expect(historyEntry.previousCommit).toBe("abc123def456abc123def456abc123def456abc1");
+      expect(historyEntry.newCommit).toBe("def456abc123def456abc123def456abc123def4");
+      expect(historyEntry.filesAdded).toBe(1);
+      expect(historyEntry.filesModified).toBe(1);
+      expect(historyEntry.filesDeleted).toBe(1);
+      expect(historyEntry.chunksUpserted).toBe(15);
+      expect(historyEntry.chunksDeleted).toBe(5);
+      expect(historyEntry.durationMs).toBe(1500);
+      expect(historyEntry.errorCount).toBe(0);
+      expect(historyEntry.status).toBe("success");
+      expect(historyEntry.timestamp).toBeDefined();
+    });
+
+    it("should record 'partial' status when some files fail", async () => {
+      // Mock pipeline with some errors
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 2,
+          filesModified: 1,
+          filesDeleted: 1,
+          chunksUpserted: 35,
+          chunksDeleted: 10,
+          durationMs: 1500,
+        },
+        errors: [
+          {
+            path: "file1.ts",
+            error: "Parse error",
+          },
+        ],
+      }));
+
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const historyEntry = updatedRepo?.updateHistory?.[0];
+      expect(historyEntry).toBeDefined();
+      if (!historyEntry) throw new Error("History entry not found");
+
+      expect(historyEntry.errorCount).toBe(1);
+      expect(historyEntry.status).toBe("partial");
+    });
+
+    it("should record 'failed' status when all files fail", async () => {
+      // Mock pipeline with errors >= total files changed
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 1,
+          filesModified: 1,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 500,
+        },
+        errors: [
+          { path: "file1.ts", error: "Error 1" },
+          { path: "file2.ts", error: "Error 2" },
+        ],
+      }));
+
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const historyEntry = updatedRepo?.updateHistory?.[0];
+      expect(historyEntry).toBeDefined();
+      if (!historyEntry) throw new Error("History entry not found");
+
+      expect(historyEntry.errorCount).toBe(2);
+      expect(historyEntry.status).toBe("failed");
+    });
+
+    it("should append to existing history (newest first)", async () => {
+      const existingHistory = [
+        {
+          timestamp: "2024-12-15T10:00:00.000Z",
+          previousCommit: "old1",
+          newCommit: "old2",
+          filesAdded: 1,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 5,
+          chunksDeleted: 0,
+          durationMs: 1000,
+          errorCount: 0,
+          status: "success" as const,
+        },
+      ];
+
+      testRepo.updateHistory = existingHistory;
+
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo?.updateHistory).toHaveLength(2);
+
+      // Newest should be first
+      const history = updatedRepo?.updateHistory;
+      expect(history).toBeDefined();
+      if (!history) throw new Error("History not found");
+
+      expect(history[0]?.newCommit).toBe("def456abc123def456abc123def456abc123def4");
+      expect(history[1]?.newCommit).toBe("old2");
+    });
+
+    it("should rotate oldest entry when limit exceeded", async () => {
+      // Create history at limit (3 entries) in reverse chronological order (newest first)
+      const existingHistory = Array.from({ length: 3 }, (_, i) => ({
+        timestamp: `2024-12-15T${String(10 + i).padStart(2, "0")}:00:00.000Z`,
+        previousCommit: `commit${i}`,
+        newCommit: `commit${i + 1}`,
+        filesAdded: 1,
+        filesModified: 0,
+        filesDeleted: 0,
+        chunksUpserted: 5,
+        chunksDeleted: 0,
+        durationMs: 1000,
+        errorCount: 0,
+        status: "success" as const,
+      })).reverse(); // Reverse to get newest-first ordering
+
+      testRepo.updateHistory = existingHistory;
+
+      // Create coordinator with limit=3
+      const limitedCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        { updateHistoryLimit: 3, customGitPull: mock(async () => {}) }
+      );
+
+      await limitedCoordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const history = updatedRepo?.updateHistory;
+      expect(history).toBeDefined();
+      if (!history) throw new Error("History not found");
+
+      expect(history).toHaveLength(3); // Still 3 entries
+
+      // Newest should be our new update
+      expect(history[0]?.newCommit).toBe("def456abc123def456abc123def456abc123def4");
+      // Oldest (commit0 -> commit1) should be dropped
+      expect(history.find((e) => e.newCommit === "commit1")).toBeUndefined();
+    });
+
+    it("should NOT record history for 'no_changes' status", async () => {
+      // Create a fresh repo with history
+      const repoWithHistory: RepositoryInfo = {
+        ...testRepo,
+        updateHistory: [
+          {
+            timestamp: "2024-12-15T09:00:00.000Z",
+            previousCommit: "older",
+            newCommit: "abc123def456abc123def456abc123def456abc1",
+            filesAdded: 1,
+            filesModified: 0,
+            filesDeleted: 0,
+            chunksUpserted: 5,
+            chunksDeleted: 0,
+            durationMs: 1000,
+            errorCount: 0,
+            status: "success" as const,
+          },
+        ],
+      };
+
+      // Create new coordinator with mocks that return same commit
+      const noChangeGitHubClient: GitHubClient = {
+        getHeadCommit: mock(async () => ({
+          sha: "abc123def456abc123def456abc123def456abc1", // Same as testRepo.lastIndexedCommitSha
+          message: "Same commit",
+          author: "Test Author",
+          date: "2024-12-15T10:00:00Z",
+        })),
+        compareCommits: mock(async () => comparison),
+        healthCheck: mock(async () => true),
+      };
+
+      const noChangeRepositoryService: RepositoryMetadataService = {
+        listRepositories: mock(async () => [repoWithHistory]),
+        getRepository: mock(async () => repoWithHistory),
+        updateRepository: mock(async () => {}),
+        removeRepository: mock(async () => {}),
+      };
+
+      const noChangeCoordinator = new IncrementalUpdateCoordinator(
+        noChangeGitHubClient,
+        noChangeRepositoryService,
+        mockUpdatePipeline,
+        { customGitPull: mock(async () => {}) }
+      );
+
+      const result = await noChangeCoordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("no_changes");
+      // updateRepository should not be called for no_changes
+      expect(noChangeRepositoryService.updateRepository).not.toHaveBeenCalled();
+    });
+
+    it("should respect custom updateHistoryLimit from config", async () => {
+      const customLimit = 5;
+      const customCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        { updateHistoryLimit: customLimit, customGitPull: mock(async () => {}) }
+      );
+
+      // Create history at limit
+      const existingHistory = Array.from({ length: customLimit }, (_, i) => ({
+        timestamp: `2024-12-15T${String(10 + i).padStart(2, "0")}:00:00.000Z`,
+        previousCommit: `commit${i}`,
+        newCommit: `commit${i + 1}`,
+        filesAdded: 1,
+        filesModified: 0,
+        filesDeleted: 0,
+        chunksUpserted: 5,
+        chunksDeleted: 0,
+        durationMs: 1000,
+        errorCount: 0,
+        status: "success" as const,
+      }));
+
+      testRepo.updateHistory = existingHistory;
+
+      await customCoordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo?.updateHistory).toHaveLength(customLimit); // Limit enforced
+    });
+  });
 });

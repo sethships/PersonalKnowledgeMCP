@@ -522,6 +522,47 @@ export GITHUB_PAT=ghp_...
 LOG_LEVEL=debug pk-mcp <command>
 ```
 
+**Incremental Updates Not Working:**
+
+If you get an error when running `pk-mcp update <repo-name>` saying that incremental updates require `lastIndexedCommitSha`, this is a known limitation where the initial indexing doesn't record the commit SHA.
+
+**Workaround (until [Issue #70](https://github.com/sethb75/PersonalKnowledgeMCP/issues/70) is fixed):**
+
+1. Navigate to the cloned repository directory:
+   ```bash
+   cd data/repositories/<repo-name>
+   ```
+
+2. Get the current commit SHA:
+   ```bash
+   git rev-parse HEAD
+   ```
+
+3. Manually add the SHA to `data/repositories.json`:
+   ```json
+   {
+     "repositories": {
+       "repo-name": {
+         "name": "repo-name",
+         "lastIndexedCommitSha": "abc123def456...",
+         ...
+       }
+     }
+   }
+   ```
+
+4. Now incremental updates should work:
+   ```bash
+   pk-mcp update <repo-name>
+   ```
+
+**Alternatively**, you can force a full re-index which will record the commit SHA:
+```bash
+pk-mcp index <repository-url> --force
+```
+
+**Root Cause**: The `IngestionService` doesn't currently record `lastIndexedCommitSha` during initial indexing. This will be fixed in a future update (see [Issue #70](https://github.com/sethb75/PersonalKnowledgeMCP/issues/70)).
+
 ## Development
 
 ### Project Structure

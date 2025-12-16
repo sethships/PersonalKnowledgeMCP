@@ -28,6 +28,16 @@ export interface CoordinatorConfig {
    * @default 500
    */
   changeFileThreshold?: number;
+
+  /**
+   * Maximum number of update history entries to retain per repository.
+   *
+   * When the number of history entries exceeds this limit, the oldest
+   * entries are automatically rotated out (FIFO).
+   *
+   * @default 20
+   */
+  updateHistoryLimit?: number;
 }
 
 /**

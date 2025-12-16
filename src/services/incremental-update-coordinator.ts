@@ -12,8 +12,13 @@ import simpleGit from "simple-git";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { GitHubClient, CommitComparison } from "./github-client-types.js";
-import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
+import type {
+  RepositoryMetadataService,
+  RepositoryInfo,
+  UpdateHistoryEntry,
+} from "../repositories/types.js";
 import type { IncrementalUpdatePipeline } from "./incremental-update-pipeline.js";
+import { addHistoryEntry } from "../repositories/metadata-store.js";
 import { GitHubNotFoundError } from "./github-client-errors.js";
 import type {
   CoordinatorConfig,
@@ -77,6 +82,16 @@ export class IncrementalUpdateCoordinator {
   private readonly changeFileThreshold: number;
 
   /**
+   * Maximum number of update history entries to retain per repository.
+   *
+   * When the number of history entries exceeds this limit, the oldest
+   * entries are automatically rotated out (FIFO).
+   *
+   * @default 20
+   */
+  private readonly updateHistoryLimit: number;
+
+  /**
    * Lazy-initialized logger instance.
    */
   private _logger: Logger | null = null;
@@ -103,6 +118,7 @@ export class IncrementalUpdateCoordinator {
     } = {}
   ) {
     this.changeFileThreshold = config.changeFileThreshold ?? 500;
+    this.updateHistoryLimit = config.updateHistoryLimit ?? 20;
     this.customGitPull = config.customGitPull;
   }
 
@@ -304,8 +320,50 @@ export class IncrementalUpdateCoordinator {
       );
 
       // Step 9: Update repository metadata with new commit SHA
+      // Determine history entry status based on error count
+      const totalFilesChanged =
+        pipelineResult.stats.filesAdded +
+        pipelineResult.stats.filesModified +
+        pipelineResult.stats.filesDeleted;
+
+      let historyStatus: "success" | "partial" | "failed";
+      if (pipelineResult.errors.length === 0) {
+        historyStatus = "success";
+      } else if (totalFilesChanged === 0) {
+        // Errors occurred but no files were tracked as changed - treat as failed
+        historyStatus = "failed";
+      } else if (pipelineResult.errors.length >= totalFilesChanged) {
+        historyStatus = "failed";
+      } else {
+        historyStatus = "partial";
+      }
+
+      // Create history entry
+      const historyEntry: UpdateHistoryEntry = {
+        timestamp: new Date().toISOString(),
+        // Validated above - throws MissingCommitShaError if undefined
+        previousCommit: repo.lastIndexedCommitSha,
+        newCommit: headCommit.sha,
+        filesAdded: pipelineResult.stats.filesAdded,
+        filesModified: pipelineResult.stats.filesModified,
+        filesDeleted: pipelineResult.stats.filesDeleted,
+        chunksUpserted: pipelineResult.stats.chunksUpserted,
+        chunksDeleted: pipelineResult.stats.chunksDeleted,
+        durationMs: pipelineResult.stats.durationMs,
+        errorCount: pipelineResult.errors.length,
+        status: historyStatus,
+      };
+
+      // Add to history with rotation
+      const updatedHistory = addHistoryEntry(
+        repo.updateHistory,
+        historyEntry,
+        this.updateHistoryLimit
+      );
+
       const updatedMetadata: RepositoryInfo = {
         ...repo,
+        updateHistory: updatedHistory,
         lastIndexedCommitSha: headCommit.sha,
         lastIncrementalUpdateAt: new Date().toISOString(),
         incrementalUpdateCount: (repo.incrementalUpdateCount || 0) + 1,
