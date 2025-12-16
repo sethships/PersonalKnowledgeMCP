@@ -32,7 +32,7 @@ describe("Update Repository Command", () => {
   let mockDeps: CliDependencies;
   let mockGetRepository: Mock<() => Promise<RepositoryInfo | null>>;
   let mockUpdateRepository: Mock<() => Promise<CoordinatorResult>>;
-  let mockIndexRepository: Mock<() => Promise<any>>;
+  let mockIndexRepository: Mock<(url: string, options?: any) => Promise<any>>;
   let consoleLogSpy: Mock<(...args: any[]) => void>;
 
   // Sample repository for testing
@@ -45,10 +45,11 @@ describe("Update Repository Command", () => {
     status: "ready",
     fileCount: 100,
     chunkCount: 500,
-    lastIndexedAt: new Date("2024-01-15T10:00:00Z"),
+    lastIndexedAt: new Date("2024-01-15T10:00:00Z").toISOString(),
+    indexDurationMs: 5000,
     lastIndexedCommitSha: TEST_COMMIT_SHAS.base,
-    createdAt: new Date("2024-01-01T00:00:00Z"),
-    updatedAt: new Date("2024-01-15T10:00:00Z"),
+    includeExtensions: [".ts", ".js", ".md"],
+    excludePatterns: ["node_modules/**", "dist/**"],
   };
 
   beforeEach(() => {
@@ -164,7 +165,7 @@ describe("Update Repository Command", () => {
 
       expect(jsonCalls.length).toBeGreaterThan(0);
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.repository).toBe("test-repo");
       expect(jsonOutput.status).toBe("no_changes");
       expect(jsonOutput.commitSha).toBeDefined();
@@ -271,7 +272,7 @@ describe("Update Repository Command", () => {
         }
       });
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.repository).toBe("test-repo");
       expect(jsonOutput.status).toBe("updated");
       expect(jsonOutput.commitRange).toBeDefined();
@@ -306,12 +307,12 @@ describe("Update Repository Command", () => {
 
       // Verify first error is displayed
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[0].path)
+        expect.stringContaining(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[0]!.path)
       );
 
       // Verify second error is displayed
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[1].path)
+        expect.stringContaining(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[1]!.path)
       );
     });
 
@@ -355,10 +356,10 @@ describe("Update Repository Command", () => {
         }
       });
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.errors).toHaveLength(2);
-      expect(jsonOutput.errors[0].path).toBe(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[0].path);
-      expect(jsonOutput.errors[1].path).toBe(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[1].path);
+      expect(jsonOutput.errors[0]!.path).toBe(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[0]!.path);
+      expect(jsonOutput.errors[1]!.path).toBe(SAMPLE_UPDATED_WITH_ERRORS_RESULT.errors[1]!.path);
     });
   });
 
@@ -388,7 +389,7 @@ describe("Update Repository Command", () => {
 
       // Verify errors are displayed
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining(SAMPLE_FAILED_RESULT.errors[0].path)
+        expect.stringContaining(SAMPLE_FAILED_RESULT.errors[0]!.path)
       );
     });
 
@@ -415,7 +416,7 @@ describe("Update Repository Command", () => {
 
       expect(jsonCalls.length).toBeGreaterThan(0);
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.status).toBe("failed");
       expect(jsonOutput.errors).toHaveLength(3);
     });
@@ -508,7 +509,7 @@ describe("Update Repository Command", () => {
         }
       });
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.repository).toBe("test-repo");
       expect(jsonOutput.status).toBe("re-indexed");
       expect(jsonOutput.fileCount).toBe(100);
@@ -534,7 +535,7 @@ describe("Update Repository Command", () => {
 
       let capturedCallback: ((progress: any) => void) | undefined;
 
-      mockIndexRepository.mockImplementation(async (_url, opts) => {
+      mockIndexRepository.mockImplementation(async (_url: string, opts: any) => {
         // Capture the onProgress callback
         capturedCallback = opts.onProgress;
 

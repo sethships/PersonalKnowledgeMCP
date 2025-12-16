@@ -45,10 +45,11 @@ describe("Update All Command", () => {
     status: status as any,
     fileCount: 100,
     chunkCount: 500,
-    lastIndexedAt: new Date("2024-01-15T10:00:00Z"),
+    lastIndexedAt: new Date("2024-01-15T10:00:00Z").toISOString(),
+    indexDurationMs: 5000,
     lastIndexedCommitSha: TEST_COMMIT_SHAS.base,
-    createdAt: new Date("2024-01-01T00:00:00Z"),
-    updatedAt: new Date("2024-01-15T10:00:00Z"),
+    includeExtensions: [".ts", ".js", ".md"],
+    excludePatterns: ["node_modules/**", "dist/**"],
   });
 
   beforeEach(() => {
@@ -270,7 +271,7 @@ describe("Update All Command", () => {
 
       expect(jsonCalls.length).toBeGreaterThan(0);
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.summary).toBeDefined();
       expect(jsonOutput.summary.total).toBe(2);
       expect(jsonOutput.summary.updated).toBe(1);
@@ -303,7 +304,7 @@ describe("Update All Command", () => {
         }
       });
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.results[0].status).toBe("error");
       expect(jsonOutput.results[0].error).toBe("Network timeout");
       expect(jsonOutput.summary.failed).toBe(1);
@@ -328,7 +329,7 @@ describe("Update All Command", () => {
         }
       });
 
-      const jsonOutput = JSON.parse(jsonCalls[0][0]);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
       expect(jsonOutput.results[0].stats).toEqual(SAMPLE_UPDATED_RESULT.stats);
       expect(jsonOutput.results[0].durationMs).toBe(SAMPLE_UPDATED_RESULT.durationMs);
     });
