@@ -11,6 +11,7 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import {
   RepositoryMetadataStoreImpl,
   sanitizeCollectionName,
+  addHistoryEntry,
 } from "../../../src/repositories/metadata-store.js";
 import {
   RepositoryMetadataError,
@@ -18,6 +19,7 @@ import {
   FileOperationError,
   InvalidMetadataFormatError,
 } from "../../../src/repositories/errors.js";
+import type { UpdateHistoryEntry } from "../../../src/repositories/types.js";
 import { edgeCaseRepositoryNames } from "../../fixtures/repository-fixtures.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
@@ -209,6 +211,214 @@ describe("RepositoryMetadataStoreImpl", () => {
         const error = new InvalidMetadataFormatError("Parse failed", cause);
         expect(error.cause).toBe(cause);
       });
+    });
+  });
+
+  describe("addHistoryEntry()", () => {
+    const createMockEntry = (
+      timestamp: string,
+      commits: { prev: string; new: string }
+    ): UpdateHistoryEntry => ({
+      timestamp,
+      previousCommit: commits.prev,
+      newCommit: commits.new,
+      filesAdded: 1,
+      filesModified: 2,
+      filesDeleted: 0,
+      chunksUpserted: 15,
+      chunksDeleted: 3,
+      durationMs: 1000,
+      errorCount: 0,
+      status: "success" as const,
+    });
+
+    test("should add first entry to empty history", () => {
+      const entry = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "abc123",
+        new: "def456",
+      });
+
+      const result = addHistoryEntry(undefined, entry, 20);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(entry);
+    });
+
+    test("should prepend new entry (newest first ordering)", () => {
+      const entry1 = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "abc123",
+        new: "def456",
+      });
+      const entry2 = createMockEntry("2024-12-15T11:00:00.000Z", {
+        prev: "def456",
+        new: "ghi789",
+      });
+
+      const history = addHistoryEntry(undefined, entry1, 20);
+      const result = addHistoryEntry(history, entry2, 20);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual(entry2); // Newest first
+      expect(result[1]).toEqual(entry1); // Older second
+    });
+
+    test("should rotate oldest entry when limit exceeded", () => {
+      // Create history with 3 entries
+      const entry1 = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "aaa",
+        new: "bbb",
+      });
+      const entry2 = createMockEntry("2024-12-15T11:00:00.000Z", {
+        prev: "bbb",
+        new: "ccc",
+      });
+      const entry3 = createMockEntry("2024-12-15T12:00:00.000Z", {
+        prev: "ccc",
+        new: "ddd",
+      });
+
+      let history = addHistoryEntry(undefined, entry1, 3);
+      history = addHistoryEntry(history, entry2, 3);
+      history = addHistoryEntry(history, entry3, 3);
+
+      expect(history).toHaveLength(3);
+
+      // Add 4th entry with limit=3, should drop oldest (entry1)
+      const entry4 = createMockEntry("2024-12-15T13:00:00.000Z", {
+        prev: "ddd",
+        new: "eee",
+      });
+      const result = addHistoryEntry(history, entry4, 3);
+
+      expect(result).toHaveLength(3); // Still 3 entries
+      expect(result[0]).toEqual(entry4); // Newest
+      expect(result[1]).toEqual(entry3);
+      expect(result[2]).toEqual(entry2);
+      expect(result.find((e) => e.timestamp === entry1.timestamp)).toBeUndefined(); // entry1 dropped
+    });
+
+    test("should handle custom limit of 5", () => {
+      const entries = Array.from({ length: 10 }, (_, i) =>
+        createMockEntry(`2024-12-15T${String(10 + i).padStart(2, "0")}:00:00.000Z`, {
+          prev: `commit${i}`,
+          new: `commit${i + 1}`,
+        })
+      );
+
+      const firstEntry = entries[0];
+      if (!firstEntry) throw new Error("First entry is undefined");
+
+      let history = addHistoryEntry(undefined, firstEntry, 5);
+      for (let i = 1; i < entries.length; i++) {
+        const entry = entries[i];
+        if (!entry) throw new Error(`Entry at index ${i} is undefined`);
+        history = addHistoryEntry(history, entry, 5);
+      }
+
+      expect(history).toHaveLength(5); // Limit enforced
+      // Should contain last 5 entries (newest first)
+      expect(history[0]).toEqual(entries[9]);
+      expect(history[4]).toEqual(entries[5]);
+    });
+
+    test("should handle custom limit of 1", () => {
+      const entry1 = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "aaa",
+        new: "bbb",
+      });
+      const entry2 = createMockEntry("2024-12-15T11:00:00.000Z", {
+        prev: "bbb",
+        new: "ccc",
+      });
+
+      let history = addHistoryEntry(undefined, entry1, 1);
+      expect(history).toHaveLength(1);
+
+      history = addHistoryEntry(history, entry2, 1);
+      expect(history).toHaveLength(1);
+      expect(history[0]).toEqual(entry2); // Only newest remains
+    });
+
+    test("should not mutate input array (immutability)", () => {
+      const entry1 = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "aaa",
+        new: "bbb",
+      });
+      const entry2 = createMockEntry("2024-12-15T11:00:00.000Z", {
+        prev: "bbb",
+        new: "ccc",
+      });
+
+      const originalHistory = [entry1];
+      const result = addHistoryEntry(originalHistory, entry2, 20);
+
+      // Original should be unchanged
+      expect(originalHistory).toHaveLength(1);
+      expect(originalHistory[0]).toEqual(entry1);
+
+      // Result should be new array with 2 entries
+      expect(result).toHaveLength(2);
+      expect(result).not.toBe(originalHistory);
+    });
+
+    test("should handle limit of 0 (no history retention)", () => {
+      const entry = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "aaa",
+        new: "bbb",
+      });
+
+      const result = addHistoryEntry(undefined, entry, 0);
+      expect(result).toHaveLength(0); // Immediately rotated out
+    });
+
+    test("should use default limit of 20 when not specified", () => {
+      const entry = createMockEntry("2024-12-15T10:00:00.000Z", {
+        prev: "aaa",
+        new: "bbb",
+      });
+
+      const result = addHistoryEntry(undefined, entry); // No limit specified
+      expect(result).toHaveLength(1);
+
+      // Add 21 entries to test default limit
+      let history = result;
+      for (let i = 1; i < 25; i++) {
+        const newEntry = createMockEntry(
+          `2024-12-15T${String(10 + i).padStart(2, "0")}:00:00.000Z`,
+          {
+            prev: `commit${i}`,
+            new: `commit${i + 1}`,
+          }
+        );
+        history = addHistoryEntry(history, newEntry);
+      }
+
+      expect(history).toHaveLength(20); // Default limit enforced
+    });
+
+    test("should preserve entry status field correctly", () => {
+      const successEntry = {
+        ...createMockEntry("2024-12-15T10:00:00.000Z", { prev: "a", new: "b" }),
+        status: "success" as const,
+      };
+      const partialEntry = {
+        ...createMockEntry("2024-12-15T11:00:00.000Z", { prev: "b", new: "c" }),
+        status: "partial" as const,
+        errorCount: 2,
+      };
+      const failedEntry = {
+        ...createMockEntry("2024-12-15T12:00:00.000Z", { prev: "c", new: "d" }),
+        status: "failed" as const,
+        errorCount: 10,
+      };
+
+      let history = addHistoryEntry(undefined, successEntry, 10);
+      history = addHistoryEntry(history, partialEntry, 10);
+      history = addHistoryEntry(history, failedEntry, 10);
+
+      expect(history[0]?.status).toBe("failed");
+      expect(history[1]?.status).toBe("partial");
+      expect(history[2]?.status).toBe("success");
     });
   });
 });

@@ -196,12 +196,22 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     logger.debug("Incremental update pipeline initialized");
 
     // Step 10: Initialize incremental update coordinator
+    const updateHistoryLimit = parseIntEnv("UPDATE_HISTORY_LIMIT", 20);
+    const changeFileThreshold = parseIntEnv("CHANGE_FILE_THRESHOLD", 500);
+
     const updateCoordinator = new IncrementalUpdateCoordinator(
       githubClient,
       repositoryService,
-      updatePipeline
+      updatePipeline,
+      {
+        changeFileThreshold,
+        updateHistoryLimit,
+      }
     );
-    logger.debug("Incremental update coordinator initialized");
+    logger.debug(
+      { changeFileThreshold, updateHistoryLimit },
+      "Incremental update coordinator initialized"
+    );
 
     return {
       embeddingProvider,

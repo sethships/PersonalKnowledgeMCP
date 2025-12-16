@@ -211,6 +211,130 @@ export interface RepositoryInfo {
    * @example 5
    */
   incrementalUpdateCount?: number;
+
+  /**
+   * History of incremental update operations
+   *
+   * Records details of past update operations for auditing and troubleshooting.
+   * Newest entries first (index 0 = most recent update).
+   * Automatically rotated when limit exceeded (configured via UPDATE_HISTORY_LIMIT).
+   *
+   * @example [{ timestamp: "2024-12-14T15:30:00.000Z", previousCommit: "abc...", newCommit: "def...", ... }]
+   */
+  updateHistory?: UpdateHistoryEntry[];
+}
+
+/**
+ * Record of a single incremental update operation
+ *
+ * Captures comprehensive statistics and metadata about a repository update,
+ * enabling audit trails and troubleshooting of update operations.
+ *
+ * @example
+ * ```typescript
+ * const entry: UpdateHistoryEntry = {
+ *   timestamp: "2024-12-14T15:30:00.000Z",
+ *   previousCommit: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+ *   newCommit: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+ *   filesAdded: 3,
+ *   filesModified: 5,
+ *   filesDeleted: 1,
+ *   chunksUpserted: 47,
+ *   chunksDeleted: 12,
+ *   durationMs: 2340,
+ *   errorCount: 0,
+ *   status: 'success'
+ * };
+ * ```
+ */
+export interface UpdateHistoryEntry {
+  /**
+   * ISO 8601 timestamp when the update operation completed
+   *
+   * @example "2024-12-14T15:30:00.000Z"
+   */
+  timestamp: string;
+
+  /**
+   * Git commit SHA before the update (40 characters)
+   *
+   * The commit that was indexed prior to this update operation.
+   *
+   * @example "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+   */
+  previousCommit: string;
+
+  /**
+   * Git commit SHA after the update (40 characters)
+   *
+   * The new HEAD commit that was indexed by this update operation.
+   *
+   * @example "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+   */
+  newCommit: string;
+
+  /**
+   * Count of files added in this update
+   *
+   * @example 3
+   */
+  filesAdded: number;
+
+  /**
+   * Count of files modified in this update
+   *
+   * @example 5
+   */
+  filesModified: number;
+
+  /**
+   * Count of files deleted in this update
+   *
+   * @example 1
+   */
+  filesDeleted: number;
+
+  /**
+   * Total number of chunks added or updated in ChromaDB
+   *
+   * @example 47
+   */
+  chunksUpserted: number;
+
+  /**
+   * Total number of chunks deleted from ChromaDB
+   *
+   * @example 12
+   */
+  chunksDeleted: number;
+
+  /**
+   * Duration of the pipeline processing in milliseconds
+   *
+   * Time spent processing file changes, excluding git operations
+   * and GitHub API calls.
+   *
+   * @example 2340
+   */
+  durationMs: number;
+
+  /**
+   * Number of file processing errors encountered
+   *
+   * Files that failed to process due to errors (parsing, embedding, storage).
+   *
+   * @example 0
+   */
+  errorCount: number;
+
+  /**
+   * Overall status of the update operation
+   *
+   * - `success`: No errors, all files processed successfully
+   * - `partial`: Some files failed, but some succeeded
+   * - `failed`: All files failed or critical failure occurred
+   */
+  status: "success" | "partial" | "failed";
 }
 
 /**
