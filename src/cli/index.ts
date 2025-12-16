@@ -23,6 +23,7 @@ import { removeCommand } from "./commands/remove-command.js";
 import { healthCommand } from "./commands/health-command.js";
 import { updateRepositoryCommand } from "./commands/update-repository-command.js";
 import { updateAllCommand } from "./commands/update-all-command.js";
+import { historyCommand } from "./commands/history-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -30,6 +31,7 @@ import {
   RemoveCommandOptionsSchema,
   UpdateCommandOptionsSchema,
   UpdateAllCommandOptionsSchema,
+  HistoryCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -148,6 +150,23 @@ program
       const validatedOptions = UpdateAllCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await updateAllCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// History command
+program
+  .command("history")
+  .description("Display update history for a repository")
+  .argument("<repository>", "Repository name to show history for")
+  .option("-l, --limit <number>", "Maximum history entries to show (1-100)", "10")
+  .option("--json", "Output as JSON")
+  .action(async (repository: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = HistoryCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await historyCommand(repository, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

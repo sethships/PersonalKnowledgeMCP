@@ -81,6 +81,27 @@ export const UpdateAllCommandOptionsSchema = z.object({
 });
 
 /**
+ * Schema for history command options
+ */
+export const HistoryCommandOptionsSchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 10))
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .refine((n) => !isNaN(n), {
+          message: "limit must be a valid number between 1-100",
+        })
+    ),
+  json: z.boolean().optional(),
+});
+
+/**
  * Inferred TypeScript types from schemas
  */
 export type ValidatedIndexOptions = z.infer<typeof IndexCommandOptionsSchema>;
@@ -89,3 +110,4 @@ export type ValidatedStatusOptions = z.infer<typeof StatusCommandOptionsSchema>;
 export type ValidatedRemoveOptions = z.infer<typeof RemoveCommandOptionsSchema>;
 export type ValidatedUpdateOptions = z.infer<typeof UpdateCommandOptionsSchema>;
 export type ValidatedUpdateAllOptions = z.infer<typeof UpdateAllCommandOptionsSchema>;
+export type ValidatedHistoryOptions = z.infer<typeof HistoryCommandOptionsSchema>;
