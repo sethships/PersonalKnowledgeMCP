@@ -146,8 +146,14 @@ export class IncrementalUpdatePipeline {
   async processChanges(changes: FileChange[], options: UpdateOptions): Promise<UpdateResult> {
     const startTime = Date.now();
 
-    this.logger.info(
+    // Create correlation-aware logger if correlation ID provided
+    const logger = options.correlationId
+      ? this.logger.child({ correlationId: options.correlationId })
+      : this.logger;
+
+    logger.info(
       {
+        operation: "pipeline_process_changes",
         repository: options.repository,
         totalChanges: changes.length,
         collection: options.collectionName,
@@ -168,7 +174,7 @@ export class IncrementalUpdatePipeline {
 
     // Handle empty change list gracefully
     if (changes.length === 0) {
-      this.logger.info("No changes to process");
+      logger.info({ operation: "pipeline_process_changes" }, "No changes to process");
       return {
         stats: { ...stats, durationMs: Date.now() - startTime },
         errors,
@@ -183,8 +189,9 @@ export class IncrementalUpdatePipeline {
       this.shouldProcessFile(change.path, options.includeExtensions, ig)
     );
 
-    this.logger.info(
+    logger.debug(
       {
+        operation: "pipeline_filter_changes",
         totalChanges: changes.length,
         filteredChanges: filteredChanges.length,
         skipped: changes.length - filteredChanges.length,
@@ -222,15 +229,18 @@ export class IncrementalUpdatePipeline {
       } catch (error) {
         // Collect error and continue processing other files
         const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorType = error instanceof Error ? error.constructor.name : "Unknown";
         errors.push({
           path: change.path,
           error: errorMessage,
         });
-        this.logger.warn(
+        logger.warn(
           {
+            operation: "pipeline_file_error",
             path: change.path,
             status: change.status,
             error: errorMessage,
+            errorType,
           },
           "Failed to process file change"
         );
@@ -240,11 +250,17 @@ export class IncrementalUpdatePipeline {
     // If we have chunks to embed and store, do it in batches
     if (allChunks.length > 0) {
       try {
-        await this.embedAndStoreChunks(allChunks, options.collectionName, stats);
+        await this.embedAndStoreChunks(allChunks, options.collectionName, stats, logger);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          { error: errorMessage, chunkCount: allChunks.length },
+        const errorType = error instanceof Error ? error.constructor.name : "Unknown";
+        logger.error(
+          {
+            operation: "pipeline_embed_and_store",
+            error: errorMessage,
+            errorType,
+            chunkCount: allChunks.length,
+          },
           "Failed to embed and store chunks"
         );
         // Add error for the batch operation
@@ -257,9 +273,20 @@ export class IncrementalUpdatePipeline {
 
     stats.durationMs = Date.now() - startTime;
 
-    this.logger.info(
+    const status = errors.length > 0 ? "completed_with_errors" : "completed";
+
+    logger.info(
       {
-        stats,
+        operation: "pipeline_process_changes",
+        status,
+        stats: {
+          filesAdded: stats.filesAdded,
+          filesModified: stats.filesModified,
+          filesDeleted: stats.filesDeleted,
+          chunksUpserted: stats.chunksUpserted,
+          chunksDeleted: stats.chunksDeleted,
+          durationMs: stats.durationMs,
+        },
         errorCount: errors.length,
       },
       "Incremental update completed"
@@ -465,20 +492,31 @@ export class IncrementalUpdatePipeline {
   private async embedAndStoreChunks(
     chunks: FileChunk[],
     collectionName: string,
-    stats: UpdateStats
+    stats: UpdateStats,
+    logger: Logger
   ): Promise<void> {
-    this.logger.info({ chunkCount: chunks.length }, "Generating embeddings for chunks");
+    const startTime = Date.now();
+
+    logger.info(
+      { operation: "pipeline_embed_chunks", chunkCount: chunks.length },
+      "Generating embeddings for chunks"
+    );
 
     // Batch embedding generation (max 100 texts per request)
     const allEmbeddings: number[][] = [];
+    const batchCount = Math.ceil(chunks.length / this.EMBEDDING_BATCH_SIZE);
 
     for (let i = 0; i < chunks.length; i += this.EMBEDDING_BATCH_SIZE) {
       const batch = chunks.slice(i, i + this.EMBEDDING_BATCH_SIZE);
       const batchTexts = batch.map((c) => c.content);
+      const batchIndex = Math.floor(i / this.EMBEDDING_BATCH_SIZE) + 1;
+      const batchStartTime = Date.now();
 
-      this.logger.debug(
+      logger.debug(
         {
-          batchIndex: Math.floor(i / this.EMBEDDING_BATCH_SIZE) + 1,
+          operation: "pipeline_embed_batch",
+          batchIndex,
+          batchCount,
           batchSize: batchTexts.length,
         },
         "Generating embeddings for batch"
@@ -486,6 +524,15 @@ export class IncrementalUpdatePipeline {
 
       const embeddings = await this.embeddingProvider.generateEmbeddings(batchTexts);
       allEmbeddings.push(...embeddings);
+
+      logger.debug(
+        {
+          operation: "pipeline_embed_batch",
+          batchIndex,
+          durationMs: Date.now() - batchStartTime,
+        },
+        "Batch embedding completed"
+      );
     }
 
     // Create DocumentInput objects
@@ -516,16 +563,27 @@ export class IncrementalUpdatePipeline {
     });
 
     // Upsert to ChromaDB
-    this.logger.info(
-      { documentCount: documents.length, collection: collectionName },
+    const upsertStartTime = Date.now();
+
+    logger.info(
+      {
+        operation: "pipeline_upsert_documents",
+        documentCount: documents.length,
+        collection: collectionName,
+      },
       "Upserting documents to ChromaDB"
     );
 
     await this.storageClient.upsertDocuments(collectionName, documents);
     stats.chunksUpserted += documents.length;
 
-    this.logger.info(
-      { upsertedCount: documents.length },
+    logger.info(
+      {
+        operation: "pipeline_upsert_documents",
+        upsertedCount: documents.length,
+        durationMs: Date.now() - upsertStartTime,
+        totalDurationMs: Date.now() - startTime,
+      },
       "Successfully upserted chunks to ChromaDB"
     );
   }

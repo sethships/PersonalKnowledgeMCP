@@ -69,12 +69,18 @@ export interface GitHubClient {
    * @param owner - Repository owner (user or organization)
    * @param repo - Repository name
    * @param branch - Branch name (default: repository's default branch)
+   * @param correlationId - Optional correlation ID for tracing operations
    * @returns Commit information for the HEAD of the branch
    * @throws GitHubNotFoundError if repository or branch not found
    * @throws GitHubAuthenticationError if authentication fails
    * @throws GitHubRateLimitError if rate limit exceeded
    */
-  getHeadCommit(owner: string, repo: string, branch?: string): Promise<CommitInfo>;
+  getHeadCommit(
+    owner: string,
+    repo: string,
+    branch?: string,
+    correlationId?: string
+  ): Promise<CommitInfo>;
 
   /**
    * Compare two commits and get the list of changed files
@@ -83,6 +89,7 @@ export interface GitHubClient {
    * @param repo - Repository name
    * @param base - Base commit SHA or branch name
    * @param head - Head commit SHA or branch name
+   * @param correlationId - Optional correlation ID for tracing operations
    * @returns Comparison result with list of file changes
    * @throws GitHubNotFoundError if repository or commits not found
    * @throws GitHubAuthenticationError if authentication fails
@@ -92,7 +99,8 @@ export interface GitHubClient {
     owner: string,
     repo: string,
     base: string,
-    head: string
+    head: string,
+    correlationId?: string
   ): Promise<CommitComparison>;
 
   /**
