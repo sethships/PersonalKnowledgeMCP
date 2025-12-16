@@ -77,6 +77,128 @@ function formatDuration(ms: number): string {
 }
 
 /**
+ * Format ISO timestamp as relative time from now
+ *
+ * Converts an ISO 8601 timestamp to a human-readable relative time string.
+ * Handles past dates only - future dates are treated as "just now".
+ *
+ * @param isoDate - ISO 8601 timestamp string
+ * @returns Formatted relative time string
+ * @example
+ * formatRelativeTime('2024-12-16T10:30:00Z') // "2h ago" (if now is 12:30)
+ * formatRelativeTime('2024-12-15T10:00:00Z') // "1d ago"
+ * formatRelativeTime('2024-11-16T10:00:00Z') // "Nov 16"
+ */
+function formatRelativeTime(isoDate: string): string {
+  try {
+    const date = new Date(isoDate);
+    const now = new Date();
+
+    // Handle invalid dates
+    if (isNaN(date.getTime())) {
+      return isoDate;
+    }
+
+    const diffMs = now.getTime() - date.getTime();
+
+    // Future dates or same time
+    if (diffMs < 0) {
+      return "just now";
+    }
+
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const diffWeeks = Math.floor(diffDays / 7);
+
+    // Less than 1 minute
+    if (diffSeconds < 60) {
+      return "just now";
+    }
+
+    // Less than 60 minutes
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    }
+
+    // Less than 24 hours
+    if (diffHours < 24) {
+      return `${diffHours}h ago`;
+    }
+
+    // Less than 7 days
+    if (diffDays < 7) {
+      return `${diffDays}d ago`;
+    }
+
+    // Less than 30 days
+    if (diffDays < 30) {
+      return `${diffWeeks}w ago`;
+    }
+
+    // Less than 365 days - show "Mon DD"
+    if (diffDays < 365) {
+      const months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      return `${months[date.getMonth()]} ${date.getDate()}`;
+    }
+
+    // 365 days or more - show "MMM DD, YYYY"
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  } catch {
+    // Return original string on any error
+    return isoDate;
+  }
+}
+
+/**
+ * Format Git SHA to short form
+ *
+ * Converts a full 40-character SHA to short 7-character form.
+ * Returns "-" for undefined or empty SHAs.
+ *
+ * @param sha - Full Git commit SHA (40 characters) or undefined
+ * @returns Short SHA (7 characters) or "-"
+ * @example
+ * formatShortSha('a1b2c3d4e5f6...') // "a1b2c3d"
+ * formatShortSha(undefined) // "-"
+ * formatShortSha('') // "-"
+ */
+function formatShortSha(sha: string | undefined): string {
+  if (!sha || sha.length === 0) {
+    return "-";
+  }
+  return sha.substring(0, 7);
+}
+
+/**
  * Format commit range with short SHAs
  *
  * @param previousCommit - Previous commit SHA (40 chars)
@@ -143,12 +265,44 @@ function getUpdateStatusIndicator(
 }
 
 /**
+ * Enhanced repository info with update status for display
+ */
+export interface RepositoryDisplayInfo extends RepositoryInfo {
+  updateStatus?: "up-to-date" | "updates-available" | "unknown" | "error";
+  remoteSha?: string;
+  checkError?: string;
+}
+
+/**
+ * Get enhanced status indicator (when --check is used)
+ *
+ * @param updateStatus - Update check status
+ * @returns Colored status string
+ */
+function getEnhancedStatusIndicator(updateStatus: RepositoryDisplayInfo["updateStatus"]): string {
+  switch (updateStatus) {
+    case "up-to-date":
+      return chalk.green("✓ up-to-date");
+    case "updates-available":
+      return chalk.yellow("⚠ updates available");
+    case "unknown":
+      return chalk.gray("? unknown");
+    case "error":
+      return chalk.red("✗ error");
+    default:
+      return chalk.gray("-");
+  }
+}
+
+/**
  * Create a formatted table of repositories
  *
  * @param repositories - List of repository information
  * @returns Formatted table string ready to print
  */
-export function createRepositoryTable(repositories: RepositoryInfo[]): string {
+export function createRepositoryTable(
+  repositories: RepositoryInfo[] | RepositoryDisplayInfo[]
+): string {
   if (repositories.length === 0) {
     return (
       chalk.yellow("No repositories indexed yet.") +
@@ -163,16 +317,23 @@ export function createRepositoryTable(repositories: RepositoryInfo[]): string {
     );
   }
 
+  // Check if any repository has updateStatus (--check was used)
+  const hasUpdateCheck = repositories.some(
+    (repo) => "updateStatus" in repo && repo.updateStatus !== undefined
+  );
+
   const table = new Table({
     head: [
       chalk.cyan("Repository"),
-      chalk.cyan("URL"),
       chalk.cyan("Files"),
       chalk.cyan("Chunks"),
-      chalk.cyan("Last Indexed"),
+      chalk.cyan("Last Commit"),
+      chalk.cyan("Last Update"),
+      chalk.cyan("Updates"),
       chalk.cyan("Status"),
     ],
-    colAligns: ["left", "left", "right", "right", "left", "left"],
+    colAligns: ["left", "right", "right", "left", "left", "right", "left"],
+    colWidths: [20, 8, 8, 10, 15, 8, 20],
     style: {
       head: [],
       border: ["gray"],
@@ -180,13 +341,29 @@ export function createRepositoryTable(repositories: RepositoryInfo[]): string {
   });
 
   for (const repo of repositories) {
+    const displayRepo = repo as RepositoryDisplayInfo;
+
+    // Determine which timestamp to use for "Last Update"
+    const updateTime = repo.lastIncrementalUpdateAt || repo.lastIndexedAt;
+
+    // Determine status indicator
+    let statusIndicator: string;
+    if (hasUpdateCheck && displayRepo.updateStatus) {
+      // Use enhanced status if --check was used
+      statusIndicator = getEnhancedStatusIndicator(displayRepo.updateStatus);
+    } else {
+      // Use regular status
+      statusIndicator = getStatusIndicator(repo.status);
+    }
+
     table.push([
-      repo.name,
-      truncate(repo.url, 40),
+      truncate(repo.name, 18),
       repo.fileCount.toString(),
       repo.chunkCount.toString(),
-      formatDate(repo.lastIndexedAt),
-      getStatusIndicator(repo.status),
+      formatShortSha(repo.lastIndexedCommitSha),
+      formatRelativeTime(updateTime),
+      repo.incrementalUpdateCount !== undefined ? repo.incrementalUpdateCount.toString() : "-",
+      statusIndicator,
     ]);
   }
 
@@ -257,21 +434,45 @@ export function createSearchResultsTable(results: SearchResult[], queryTimeMs: n
  * @param repositories - List of repository information
  * @returns Pretty-printed JSON string
  */
-export function formatRepositoriesJson(repositories: RepositoryInfo[]): string {
+export function formatRepositoriesJson(
+  repositories: RepositoryInfo[] | RepositoryDisplayInfo[]
+): string {
   return JSON.stringify(
     {
       totalRepositories: repositories.length,
-      repositories: repositories.map((repo) => ({
-        name: repo.name,
-        url: repo.url,
-        fileCount: repo.fileCount,
-        chunkCount: repo.chunkCount,
-        lastIndexedAt: repo.lastIndexedAt,
-        indexDurationMs: repo.indexDurationMs,
-        status: repo.status,
-        branch: repo.branch,
-        errorMessage: repo.errorMessage,
-      })),
+      repositories: repositories.map((repo) => {
+        const displayRepo = repo as RepositoryDisplayInfo;
+        const baseInfo = {
+          name: repo.name,
+          url: repo.url,
+          fileCount: repo.fileCount,
+          chunkCount: repo.chunkCount,
+          lastIndexedAt: repo.lastIndexedAt,
+          indexDurationMs: repo.indexDurationMs,
+          status: repo.status,
+          branch: repo.branch,
+          errorMessage: repo.errorMessage,
+          // Add update fields if they exist
+          lastIndexedCommitSha: repo.lastIndexedCommitSha,
+          lastIncrementalUpdateAt: repo.lastIncrementalUpdateAt,
+          incrementalUpdateCount: repo.incrementalUpdateCount,
+        };
+
+        // Add update check info if present
+        if (displayRepo.updateStatus) {
+          return {
+            ...baseInfo,
+            updateCheck: {
+              remoteSha: displayRepo.remoteSha,
+              status: displayRepo.updateStatus,
+              error: displayRepo.checkError,
+              checkedAt: new Date().toISOString(),
+            },
+          };
+        }
+
+        return baseInfo;
+      }),
     },
     null,
     2
