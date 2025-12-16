@@ -6,7 +6,7 @@
 
 import Table from "cli-table3";
 import chalk from "chalk";
-import type { RepositoryInfo } from "../../repositories/types.js";
+import type { RepositoryInfo, UpdateHistoryEntry } from "../../repositories/types.js";
 import type { SearchResult } from "../../services/types.js";
 
 /**
@@ -53,6 +53,90 @@ function getStatusIndicator(status: string): string {
       return chalk.yellow("⟳ indexing");
     case "error":
       return chalk.red("✗ error");
+    default:
+      return status;
+  }
+}
+
+/**
+ * Format duration in milliseconds to human readable string
+ *
+ * @param ms - Duration in milliseconds
+ * @returns Formatted duration string
+ * @example
+ * formatDuration(500) // "500ms"
+ * formatDuration(2340) // "2.3s"
+ * formatDuration(75000) // "1m 15s"
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Format commit range with short SHAs
+ *
+ * @param previousCommit - Previous commit SHA (40 chars)
+ * @param newCommit - New commit SHA (40 chars)
+ * @returns Formatted commit range
+ * @example
+ * formatCommitRange("abc123...", "def456...") // "abc1234..def5678"
+ */
+function formatCommitRange(previousCommit: string, newCommit: string): string {
+  return `${previousCommit.substring(0, 7)}..${newCommit.substring(0, 7)}`;
+}
+
+/**
+ * Format file changes as "+2 ~3 -1"
+ *
+ * @param added - Files added count
+ * @param modified - Files modified count
+ * @param deleted - Files deleted count
+ * @returns Formatted file changes string with colors
+ */
+function formatFileChanges(added: number, modified: number, deleted: number): string {
+  const parts: string[] = [];
+  if (added > 0) parts.push(chalk.green(`+${added}`));
+  if (modified > 0) parts.push(chalk.yellow(`~${modified}`));
+  if (deleted > 0) parts.push(chalk.red(`-${deleted}`));
+  return parts.length > 0 ? parts.join(" ") : chalk.gray("0");
+}
+
+/**
+ * Format chunk changes as "+15 -8"
+ *
+ * @param upserted - Chunks upserted count
+ * @param deleted - Chunks deleted count
+ * @returns Formatted chunk changes string with colors
+ */
+function formatChunkChanges(upserted: number, deleted: number): string {
+  const parts: string[] = [];
+  if (upserted > 0) parts.push(chalk.green(`+${upserted}`));
+  if (deleted > 0) parts.push(chalk.red(`-${deleted}`));
+  return parts.length > 0 ? parts.join(" ") : chalk.gray("0");
+}
+
+/**
+ * Get colored status indicator for update history
+ *
+ * @param status - Update status
+ * @param errorCount - Number of errors
+ * @returns Colored status string
+ */
+function getUpdateStatusIndicator(
+  status: "success" | "partial" | "failed",
+  errorCount: number
+): string {
+  switch (status) {
+    case "success":
+      return chalk.green("✓ success");
+    case "partial":
+      return chalk.yellow(`⚠ partial (${errorCount} errors)`);
+    case "failed":
+      return chalk.red(`✗ failed (${errorCount} errors)`);
     default:
       return status;
   }
@@ -229,6 +313,124 @@ export function formatSearchResultsJson(
         similarityScore: result.similarity_score,
         chunkIndex: result.chunk_index,
         metadata: result.metadata,
+      })),
+    },
+    null,
+    2
+  );
+}
+
+/**
+ * Create a formatted table of repository update history
+ *
+ * @param repositoryName - Repository name
+ * @param history - List of update history entries (newest first)
+ * @param repoInfo - Repository info for context
+ * @returns Formatted table string ready to print
+ */
+export function createHistoryTable(
+  repositoryName: string,
+  history: UpdateHistoryEntry[],
+  repoInfo: RepositoryInfo
+): string {
+  // Handle empty history
+  if (history.length === 0) {
+    return (
+      chalk.yellow(`No update history found for ${chalk.cyan(repositoryName)}.`) +
+      "\n\n" +
+      chalk.bold("Repository status:") +
+      "\n  " +
+      chalk.gray(`Last indexed: ${formatDate(repoInfo.lastIndexedAt)}`) +
+      "\n  " +
+      chalk.gray(`File count: ${repoInfo.fileCount}`) +
+      "\n  " +
+      chalk.gray(`Chunk count: ${repoInfo.chunkCount}`) +
+      "\n\n" +
+      chalk.bold("Note:") +
+      "\n  " +
+      chalk.gray("Update history is recorded only for incremental updates.") +
+      "\n  " +
+      chalk.gray("Trigger an update: ") +
+      chalk.cyan(`pk-mcp update ${repositoryName}`)
+    );
+  }
+
+  const table = new Table({
+    head: [
+      chalk.cyan("Timestamp"),
+      chalk.cyan("Commits"),
+      chalk.cyan("Files"),
+      chalk.cyan("Chunks"),
+      chalk.cyan("Duration"),
+      chalk.cyan("Status"),
+    ],
+    colAligns: ["left", "left", "left", "left", "right", "left"],
+    colWidths: [20, 20, 15, 12, 10, 25],
+    style: {
+      head: [],
+      border: ["gray"],
+    },
+  });
+
+  for (const entry of history) {
+    table.push([
+      formatDate(entry.timestamp),
+      formatCommitRange(entry.previousCommit, entry.newCommit),
+      formatFileChanges(entry.filesAdded, entry.filesModified, entry.filesDeleted),
+      formatChunkChanges(entry.chunksUpserted, entry.chunksDeleted),
+      formatDuration(entry.durationMs),
+      getUpdateStatusIndicator(entry.status, entry.errorCount),
+    ]);
+  }
+
+  const header = chalk.bold(
+    `\nUpdate History for ${chalk.cyan(repositoryName)} (${history.length} ${
+      history.length === 1 ? "entry" : "entries"
+    })\n`
+  );
+  return header + table.toString();
+}
+
+/**
+ * Format update history as JSON
+ *
+ * @param repositoryName - Repository name
+ * @param history - List of update history entries
+ * @param repoInfo - Repository info for context
+ * @returns Pretty-printed JSON string
+ */
+export function formatHistoryJson(
+  repositoryName: string,
+  history: UpdateHistoryEntry[],
+  repoInfo: RepositoryInfo
+): string {
+  return JSON.stringify(
+    {
+      repository: repositoryName,
+      totalEntries: history.length,
+      repositoryInfo: {
+        lastIndexedAt: repoInfo.lastIndexedAt,
+        fileCount: repoInfo.fileCount,
+        chunkCount: repoInfo.chunkCount,
+        status: repoInfo.status,
+      },
+      history: history.map((entry) => ({
+        timestamp: entry.timestamp,
+        commitRange: formatCommitRange(entry.previousCommit, entry.newCommit),
+        previousCommit: entry.previousCommit,
+        newCommit: entry.newCommit,
+        files: {
+          added: entry.filesAdded,
+          modified: entry.filesModified,
+          deleted: entry.filesDeleted,
+        },
+        chunks: {
+          upserted: entry.chunksUpserted,
+          deleted: entry.chunksDeleted,
+        },
+        durationMs: entry.durationMs,
+        errorCount: entry.errorCount,
+        status: entry.status,
       })),
     },
     null,
