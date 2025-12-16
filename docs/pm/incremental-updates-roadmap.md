@@ -1,8 +1,8 @@
 # Incremental Updates Implementation Roadmap
 
-**Version:** 1.3
-**Date:** December 15, 2025
-**Status:** Phase 1 Foundation - In Progress (5/7 Complete)
+**Version:** 1.4
+**Date:** December 16, 2025
+**Status:** Phase 1 Foundation - In Progress (5/7 Complete), Phase 2 Observability - In Progress (1/5 Complete)
 **Parent Document:** [incremental-updates-plan.md](../architecture/incremental-updates-plan.md)
 **Project Phase:** Extension of Phase 1 (Core MCP + Vector Search)
 **Epic:** [#41 - Incremental Updates Feature](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41)
@@ -65,7 +65,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 | Order | Issue | Title | Priority | Effort | Depends On |
 |-------|-------|-------|----------|--------|------------|
 | 1 | [#49](https://github.com/sethb75/PersonalKnowledgeMCP/issues/49) | Update History Tracking | P1 | 3-4h | Phase 1 |
-| 1 | [#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51) | Enhanced Status Command with Update Information | P1 | 2-3h | Phase 1 |
+| ~~1~~ | ~~[#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51)~~ | ~~Enhanced Status Command with Update Information~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
 | 1 | [#52](https://github.com/sethb75/PersonalKnowledgeMCP/issues/52) | Structured Logging for Update Operations | P1 | 2-3h | Phase 1 |
 | 1 | [#53](https://github.com/sethb75/PersonalKnowledgeMCP/issues/53) | Update Metrics Tracking | P2 | 2-3h | Phase 1 |
 | 2 | [#50](https://github.com/sethb75/PersonalKnowledgeMCP/issues/50) | CLI History Command | P1 | 2-3h | #49 |
@@ -341,22 +341,23 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 2.3 Enhanced Status Command — [#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51)
+#### 2.3 Enhanced Status Command — [#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** Phase 1 complete (#48)
+**Completed:** 2025-12-16 via PR #72
 
 **Deliverables:**
-- Enhance `bun run cli status` to show update information
-- Display: last indexed commit, last update time, update count
-- Show if repository is up-to-date or has pending changes
-- Add `--check` option to check for available updates
+- ✅ Enhance `bun run cli status` to show update information
+- ✅ Display: last indexed commit, last update time, update count
+- ✅ Show if repository is up-to-date or has pending changes
+- ✅ Add `--check` option to check for available updates
 
 **Acceptance Criteria:**
-- [ ] Status shows update-related metadata
-- [ ] Can see at a glance if repo needs update
-- [ ] `--check` option queries GitHub for new commits
-- [ ] Clear visual indication of status
+- [x] Status shows update-related metadata
+- [x] Can see at a glance if repo needs update
+- [x] `--check` option queries GitHub for new commits
+- [x] Clear visual indication of status
 
 ---
 
@@ -698,9 +699,9 @@ The implementation can proceed based on the approved architecture plan.
 | Phase | Issues | Priority | Status |
 |-------|--------|----------|--------|
 | **Foundation** | ~~#42~~, ~~#43~~, ~~#44~~, ~~#45~~, ~~#46~~, #47, #48 | All P0 | 5/7 Complete |
-| **Observability** | #49, #50, #51, #52, #53 | P1/P2 | 0/5 Complete |
+| **Observability** | #49, #50, ~~#51~~, #52, #53 | P1/P2 | 1/5 Complete |
 | **Robustness** | #54, #55, #56, #57, #58, #59 | All P1 | 0/6 Complete |
-| **Total** | 18 issues (+ 1 epic) | | **5/18 Complete (28%)** |
+| **Total** | 18 issues (+ 1 epic) | | **6/18 Complete (33%)** |
 
 ### Labels
 
@@ -728,6 +729,7 @@ Issues use existing labels plus:
 | 1.1 | 2025-12-14 | Claude Code | Added GitHub issue numbers, execution order tables, and dependency references |
 | 1.2 | 2025-12-15 | Claude Code | Marked Issue #45 (Incremental Update Pipeline) as completed via PR #65 |
 | 1.3 | 2025-12-15 | Claude Code | Marked Issue #46 (Update Coordinator Service) as completed via PR #66 |
+| 1.4 | 2025-12-16 | Claude Code | Marked Issue #51 (Enhanced Status Command) as completed via PR #72 |
 
 ---
 
