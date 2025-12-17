@@ -218,12 +218,18 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
 
       // Verify GitHub client was called
-      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith("owner", "test-repo", "main");
+      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
+        "owner",
+        "test-repo",
+        "main",
+        expect.any(String) // correlationId
+      );
       expect(mockGitHubClient.compareCommits).toHaveBeenCalledWith(
         "owner",
         "test-repo",
         testRepo.lastIndexedCommitSha,
-        headCommit.sha
+        headCommit.sha,
+        expect.any(String) // correlationId
       );
 
       // Verify pipeline was called with correct options
@@ -233,6 +239,8 @@ describe("IncrementalUpdateCoordinator", () => {
         collectionName: testRepo.collectionName,
         includeExtensions: testRepo.includeExtensions,
         excludePatterns: testRepo.excludePatterns,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        correlationId: expect.any(String), // correlationId
       });
 
       // Verify metadata was updated
@@ -298,7 +306,12 @@ describe("IncrementalUpdateCoordinator", () => {
       await coordinator.updateRepository("test-repo");
 
       // Verify GitHub client was called with parsed owner/repo
-      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith("owner", "test-repo", "main");
+      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
+        "owner",
+        "test-repo",
+        "main",
+        expect.any(String) // correlationId
+      );
     });
 
     it("should parse SSH GitHub URLs correctly", async () => {
@@ -311,7 +324,12 @@ describe("IncrementalUpdateCoordinator", () => {
       await coordinator.updateRepository("test-repo");
 
       // Verify GitHub client was called with parsed owner/repo
-      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith("owner", "test-repo", "main");
+      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
+        "owner",
+        "test-repo",
+        "main",
+        expect.any(String) // correlationId
+      );
     });
 
     it("should respect custom change file threshold", async () => {
@@ -454,7 +472,12 @@ describe("IncrementalUpdateCoordinator", () => {
       mockRepositoryService.getRepository = mock(async () => repoWithoutGit);
 
       await coordinator.updateRepository("test-repo");
-      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith("owner", "test-repo", "main");
+      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
+        "owner",
+        "test-repo",
+        "main",
+        expect.any(String) // correlationId
+      );
     });
 
     it("should parse SSH URL without .git suffix", async () => {
@@ -465,7 +488,12 @@ describe("IncrementalUpdateCoordinator", () => {
       mockRepositoryService.getRepository = mock(async () => repoWithoutGit);
 
       await coordinator.updateRepository("test-repo");
-      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith("owner", "test-repo", "main");
+      expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
+        "owner",
+        "test-repo",
+        "main",
+        expect.any(String) // correlationId
+      );
     });
 
     it("should handle repository names with hyphens and underscores", async () => {
@@ -479,7 +507,8 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(mockGitHubClient.getHeadCommit).toHaveBeenCalledWith(
         "my-org",
         "my-cool_repo-123",
-        "main"
+        "main",
+        expect.any(String) // correlationId
       );
     });
   });
