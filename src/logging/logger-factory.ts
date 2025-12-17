@@ -29,7 +29,7 @@ let rootLogger: pino.Logger | null = null;
  * This is the base logger from which all component loggers are derived.
  * Should only be called once at application startup.
  *
- * @param config - Logger configuration (level, format)
+ * @param config - Logger configuration (level, format, optional stream)
  * @returns Configured Pino logger instance
  *
  * @internal
@@ -49,12 +49,16 @@ function createRootLogger(config: LoggerConfig): pino.Logger {
     formatters: {
       level: (label) => ({ level: label }),
     },
-
-    // Output to stderr (stdout reserved for MCP protocol)
-    // This is critical for MCP compatibility
-    // @ts-expect-error - Pino types don't include destination but it works
-    destination: 2, // File descriptor 2 = stderr
   };
+
+  // If custom stream provided (for testing), use it directly
+  if (config.stream) {
+    return pino(pinoOptions, config.stream);
+  }
+
+  // Add stderr destination for normal operation
+  // @ts-expect-error - Pino types don't include destination but it works
+  pinoOptions.destination = 2; // File descriptor 2 = stderr
 
   // Configure transport based on format
   if (config.format === "pretty") {

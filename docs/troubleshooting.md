@@ -437,6 +437,345 @@ bun run cli index https://github.com/user/large-repo \
 
 ---
 
+## Troubleshooting Update Operations
+
+### Overview
+
+Incremental updates use a structured logging system with correlation IDs for end-to-end tracing. Each update operation receives a unique correlation ID (format: `update-{timestamp}-{hash}`) that appears in all related log entries.
+
+### Understanding Update Logs
+
+All update operations log with these structured fields:
+
+- **correlationId**: Unique ID for tracing (e.g., `update-1734367200-a3c9f`)
+- **operation**: Operation identifier (e.g., `github_get_head_commit`, `pipeline_process_changes`)
+- **durationMs**: Operation timing for performance analysis
+- **statusCode**: HTTP status codes for GitHub API calls
+- **rateLimit**: GitHub rate limit info (remaining, limit, resetAt)
+- **errorType**: Structured error classification
+
+### Common Update Issues
+
+#### Slow Updates
+
+**Symptoms**: Update takes longer than expected (>10 seconds for small changes)
+
+**Tracing with correlation ID**:
+
+```bash
+# Find all logs for a specific update
+cat logs.json | jq 'select(.correlationId == "update-1734367200-a3c9f")'
+
+# Find slow operations (>1 second)
+cat logs.json | jq 'select(.durationMs > 1000) | {operation, durationMs}'
+```
+
+**Common causes**:
+
+1. **Slow GitHub API responses**:
+   ```bash
+   # Find GitHub operations with timing
+   cat logs.json | jq 'select(.operation | startswith("github_")) | {operation, durationMs, rateLimit}'
+   ```
+   - Check `rateLimit.remaining` - if low, API calls may be throttled
+   - Check `durationMs` for `github_compare_commits` - >500ms indicates slow API response
+
+2. **Slow embedding generation**:
+   ```bash
+   # Find embedding operations
+   cat logs.json | jq 'select(.operation == "pipeline_embed_chunks") | {chunkCount, totalDurationMs}'
+   ```
+   - Large chunk counts (>100) take longer
+   - OpenAI API latency varies by region and load
+
+3. **Slow ChromaDB operations**:
+   ```bash
+   # Find upsert operations
+   cat logs.json | jq 'select(.operation == "pipeline_upsert_documents") | {documentCount, durationMs}'
+   ```
+   - Large document counts (>100) take longer
+   - Check Docker resource allocation
+
+#### Update Failures
+
+**Symptoms**: Update completes with errors or fails entirely
+
+**Trace the failure**:
+
+```bash
+# Find all errors for a correlation ID
+cat logs.json | jq 'select(.correlationId == "update-1734367200-a3c9f" and .level == "error")'
+
+# Find errors by type
+cat logs.json | jq 'select(.errorType == "GitHubRateLimitError")'
+```
+
+**Common error types**:
+
+1. **GitHubNotFoundError** - Base commit not found (force push detected):
+   ```json
+   {
+     "level": "warn",
+     "operation": "coordinator_update_repository",
+     "errorType": "ForcePushDetectedError",
+     "lastIndexedSha": "abc1234",
+     "currentHeadSha": "def5678",
+     "msg": "Force push detected - base commit not found"
+   }
+   ```
+   **Resolution**: Trigger full re-index of repository
+
+2. **GitHubRateLimitError** - API rate limit exceeded:
+   ```json
+   {
+     "level": "error",
+     "operation": "github_get_head_commit",
+     "errorType": "GitHubRateLimitError",
+     "rateLimit": {
+       "remaining": 0,
+       "limit": 5000,
+       "resetAt": "2025-12-16T11:30:00.000Z"
+     },
+     "msg": "GitHub API rate limit exceeded"
+   }
+   ```
+   **Resolution**: Wait until resetAt time, or use authenticated token with higher limit
+
+3. **ChangeThresholdExceededError** - Too many files changed (>500):
+   ```json
+   {
+     "level": "warn",
+     "operation": "coordinator_update_repository",
+     "filesChanged": 750,
+     "threshold": 500,
+     "msg": "Change count exceeds threshold"
+   }
+   ```
+   **Resolution**: Trigger full re-index for better performance
+
+4. **GitPullError** - Local clone update failed:
+   ```json
+   {
+     "level": "error",
+     "error": "Git pull failed: merge conflict",
+     "localPath": "/repos/my-api",
+     "branch": "main",
+     "msg": "Git pull failed"
+   }
+   ```
+   **Resolution**: Manually resolve conflicts or delete/reclone repository
+
+#### Partial Update Success
+
+**Symptoms**: Update completes but some files failed to process
+
+**Check the status**:
+
+```bash
+# Find completion log with status
+cat logs.json | jq 'select(.operation == "pipeline_process_changes" and (.status == "completed" or .status == "completed_with_errors"))'
+```
+
+**Example output**:
+```json
+{
+  "level": "info",
+  "operation": "pipeline_process_changes",
+  "correlationId": "update-1734367200-a3c9f",
+  "status": "completed_with_errors",
+  "stats": {
+    "filesAdded": 3,
+    "filesModified": 8,
+    "filesDeleted": 1,
+    "chunksUpserted": 45,
+    "chunksDeleted": 12
+  },
+  "errorCount": 2,
+  "msg": "Incremental update completed"
+}
+```
+
+**Find file-level errors**:
+
+```bash
+# Find pipeline file errors
+cat logs.json | jq 'select(.operation == "pipeline_file_error")'
+```
+
+**Example error**:
+```json
+{
+  "level": "warn",
+  "operation": "pipeline_file_error",
+  "path": "src/broken.ts",
+  "status": "modified",
+  "error": "Failed to read file: ENOENT",
+  "errorType": "Error",
+  "msg": "Failed to process file change"
+}
+```
+
+**Common file errors**:
+- **ENOENT**: File was deleted after comparison but before processing
+- **Parse errors**: Invalid file encoding or syntax
+- **Embedding errors**: OpenAI API timeout or error
+
+### Tracing a Complete Update
+
+To understand a complete update workflow, trace by correlation ID:
+
+```bash
+# Extract all logs for one update
+cat logs.json | jq -c 'select(.correlationId == "update-1734367200-a3c9f")' | \
+  jq -r '[.timestamp, .component, .operation // "N/A", .msg] | @tsv' | \
+  column -t -s $'\t'
+```
+
+**Expected sequence**:
+1. `coordinator_update_repository` - Start
+2. `coordinator_load_metadata` - Load repository metadata
+3. `github_get_head_commit` - Fetch HEAD from GitHub
+4. `github_compare_commits` - Get file changes
+5. `pipeline_process_changes` - Process changes
+6. `pipeline_filter_changes` - Filter files
+7. `pipeline_embed_chunks` - Generate embeddings
+8. `pipeline_embed_batch` - Process batches (multiple)
+9. `pipeline_upsert_documents` - Store in ChromaDB
+10. `coordinator_update_repository` - Complete
+
+### Performance Benchmarks
+
+**Target latencies** (95th percentile):
+
+| Operation | Target | Description |
+|-----------|--------|-------------|
+| Complete update (small) | <5s | <20 files changed |
+| Complete update (medium) | <30s | 20-100 files changed |
+| GitHub HEAD commit | <500ms | Fetching HEAD SHA |
+| GitHub compare commits | <1s | Comparing two commits |
+| Embedding generation | <2s | Per 100 chunks |
+| ChromaDB upsert | <500ms | Per 100 documents |
+
+**Check actual performance**:
+
+```bash
+# Find slowest operations
+cat logs.json | jq 'select(.durationMs) | {operation, durationMs, correlationId}' | \
+  jq -s 'sort_by(.durationMs) | reverse | .[0:10]'
+```
+
+### Rate Limit Monitoring
+
+**Check current rate limits**:
+
+```bash
+# Find most recent GitHub API call with rate limit info
+cat logs.json | jq 'select(.rateLimit) | {timestamp, operation, rateLimit}' | tail -1
+```
+
+**Example output**:
+```json
+{
+  "timestamp": "2025-12-16T10:30:45.123Z",
+  "operation": "github_compare_commits",
+  "rateLimit": {
+    "remaining": 4998,
+    "limit": 5000,
+    "resetAt": "2025-12-16T11:00:00.000Z"
+  }
+}
+```
+
+**Rate limit warnings**:
+- `remaining < 100`: Consider reducing update frequency
+- `remaining < 10`: High risk of rate limit errors
+- `remaining == 0`: Wait until resetAt time
+
+### Enabling Debug Logging for Updates
+
+For detailed update troubleshooting:
+
+```bash
+# Enable debug logging
+export LOG_LEVEL=debug
+
+# Run update
+bun run cli update my-repository
+
+# Or for MCP server
+LOG_LEVEL=debug bun run dist/index.js
+```
+
+**Debug logs include**:
+- Detailed file-level processing
+- Batch-level embedding progress
+- Git operation details
+- Decision points (threshold checks, filter reasons)
+
+### Common Update Patterns
+
+#### No Changes Detected
+
+**Log**:
+```json
+{
+  "level": "info",
+  "repository": "my-api",
+  "durationMs": 234,
+  "msg": "No changes detected - repository is up-to-date"
+}
+```
+
+**This is normal**: Repository already at latest commit.
+
+#### Force Push Detected
+
+**Log**:
+```json
+{
+  "level": "warn",
+  "lastIndexedSha": "abc1234",
+  "currentHeadSha": "def5678",
+  "msg": "Force push detected - base commit not found"
+}
+```
+
+**Action required**: Trigger full re-index.
+
+#### Threshold Exceeded
+
+**Log**:
+```json
+{
+  "level": "warn",
+  "filesChanged": 750,
+  "threshold": 500,
+  "msg": "Change count exceeds threshold"
+}
+```
+
+**Action required**: Use full re-index for better performance.
+
+### Troubleshooting Checklist
+
+When an update fails or performs poorly:
+
+1. **Find the correlation ID**: Look in error messages or completion logs
+2. **Trace the workflow**: Filter logs by correlation ID
+3. **Check for errors**: Look for `level == "error"` or `level == "warn"`
+4. **Check timing**: Identify slow operations with high `durationMs`
+5. **Check rate limits**: Verify `rateLimit.remaining` isn't low
+6. **Review file errors**: Check for `pipeline_file_error` operations
+7. **Verify completion**: Confirm update reached completion log
+
+### Reference Documentation
+
+For complete log schema and field descriptions, see:
+- [Logging Reference](./logging-reference.md) - Comprehensive log schema
+- [Architecture Documentation](./architecture/) - System design details
+
+---
+
 ## Repository Indexing Problems
 
 ### Symptoms

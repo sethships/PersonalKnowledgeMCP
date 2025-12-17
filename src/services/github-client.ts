@@ -107,24 +107,75 @@ export class GitHubClientImpl implements GitHubClient {
   }
 
   /**
+   * Get a logger instance with optional correlation ID.
+   *
+   * If a correlation ID is provided, returns a child logger that includes
+   * the correlation ID in all log entries. Otherwise returns the base logger.
+   *
+   * @param correlationId - Optional correlation ID for tracing
+   * @returns Logger instance (child logger if correlation ID provided)
+   */
+  private getLogger(correlationId?: string): Logger {
+    if (!this._logger) {
+      this._logger = getComponentLogger("services:github-client");
+    }
+    return correlationId ? this._logger.child({ correlationId }) : this._logger;
+  }
+
+  /**
+   * Extract rate limit information from GitHub API response headers.
+   *
+   * @param response - Fetch response from GitHub API
+   * @returns Rate limit info object, or undefined if headers not present
+   */
+  private extractRateLimitInfo(
+    response: Response
+  ): { remaining: number; limit: number; resetAt: string } | undefined {
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    const limit = response.headers.get("x-ratelimit-limit");
+    const reset = response.headers.get("x-ratelimit-reset");
+
+    if (remaining && limit && reset) {
+      return {
+        remaining: parseInt(remaining, 10),
+        limit: parseInt(limit, 10),
+        resetAt: new Date(parseInt(reset, 10) * 1000).toISOString(),
+      };
+    }
+
+    return undefined;
+  }
+
+  /**
    * Get the HEAD commit information for a repository branch
    */
-  async getHeadCommit(owner: string, repo: string, branch?: string): Promise<CommitInfo> {
+  async getHeadCommit(
+    owner: string,
+    repo: string,
+    branch?: string,
+    correlationId?: string
+  ): Promise<CommitInfo> {
     // Validate input
     const validated = this.validateGetHeadCommit(owner, repo, branch);
 
     const ref = validated.branch || "HEAD";
     const url = `${this.config.baseUrl}/repos/${validated.owner}/${validated.repo}/commits/${ref}`;
 
-    this.logger.debug(
-      { owner: validated.owner, repo: validated.repo, ref },
+    const logger = this.getLogger(correlationId);
+
+    logger.debug(
+      { operation: "github_get_head_commit", owner: validated.owner, repo: validated.repo, ref },
       "Fetching HEAD commit"
     );
 
     const startTime = Date.now();
 
     try {
-      const response = await this.fetchWithRetry<GitHubCommitResponse>(url);
+      const {
+        data: response,
+        statusCode,
+        rateLimit,
+      } = await this.fetchWithRetry<GitHubCommitResponse>(url);
 
       const commitInfo: CommitInfo = {
         sha: response.sha,
@@ -133,12 +184,15 @@ export class GitHubClientImpl implements GitHubClient {
         date: response.commit.author.date,
       };
 
-      this.logger.info(
+      logger.info(
         {
+          operation: "github_get_head_commit",
           owner: validated.owner,
           repo: validated.repo,
           ref,
           sha: commitInfo.sha.substring(0, 7),
+          statusCode,
+          rateLimit,
           durationMs: Date.now() - startTime,
         },
         "Retrieved HEAD commit"
@@ -146,12 +200,14 @@ export class GitHubClientImpl implements GitHubClient {
 
       return commitInfo;
     } catch (error) {
-      this.logger.error(
+      logger.error(
         {
+          operation: "github_get_head_commit",
           owner: validated.owner,
           repo: validated.repo,
           ref,
           error: error instanceof Error ? error.message : String(error),
+          errorType: error instanceof Error ? error.constructor.name : "Unknown",
           durationMs: Date.now() - startTime,
         },
         "Failed to fetch HEAD commit"
@@ -171,22 +227,35 @@ export class GitHubClientImpl implements GitHubClient {
     owner: string,
     repo: string,
     base: string,
-    head: string
+    head: string,
+    correlationId?: string
   ): Promise<CommitComparison> {
     // Validate input
     const validated = this.validateCompareCommits(owner, repo, base, head);
 
     const url = `${this.config.baseUrl}/repos/${validated.owner}/${validated.repo}/compare/${validated.base}...${validated.head}`;
 
-    this.logger.debug(
-      { owner: validated.owner, repo: validated.repo, base: validated.base, head: validated.head },
+    const logger = this.getLogger(correlationId);
+
+    logger.debug(
+      {
+        operation: "github_compare_commits",
+        owner: validated.owner,
+        repo: validated.repo,
+        base: validated.base,
+        head: validated.head,
+      },
       "Comparing commits"
     );
 
     const startTime = Date.now();
 
     try {
-      const response = await this.fetchWithRetry<GitHubCompareResponse>(url);
+      const {
+        data: response,
+        statusCode,
+        rateLimit,
+      } = await this.fetchWithRetry<GitHubCompareResponse>(url);
 
       const files = this.parseFileChanges(response.files || []);
 
@@ -201,14 +270,17 @@ export class GitHubClientImpl implements GitHubClient {
         files,
       };
 
-      this.logger.info(
+      logger.info(
         {
+          operation: "github_compare_commits",
           owner: validated.owner,
           repo: validated.repo,
           base: validated.base,
           head: validated.head,
           totalCommits: comparison.totalCommits,
           filesChanged: files.length,
+          statusCode,
+          rateLimit,
           durationMs: Date.now() - startTime,
         },
         "Compared commits"
@@ -216,13 +288,15 @@ export class GitHubClientImpl implements GitHubClient {
 
       return comparison;
     } catch (error) {
-      this.logger.error(
+      logger.error(
         {
+          operation: "github_compare_commits",
           owner: validated.owner,
           repo: validated.repo,
           base: validated.base,
           head: validated.head,
           error: error instanceof Error ? error.message : String(error),
+          errorType: error instanceof Error ? error.constructor.name : "Unknown",
           durationMs: Date.now() - startTime,
         },
         "Failed to compare commits"
@@ -332,7 +406,11 @@ export class GitHubClientImpl implements GitHubClient {
   /**
    * Perform HTTP fetch with retry logic
    */
-  private async fetchWithRetry<T>(url: string): Promise<T> {
+  private async fetchWithRetry<T>(url: string): Promise<{
+    data: T;
+    statusCode: number;
+    rateLimit?: { remaining: number; limit: number; resetAt: string };
+  }> {
     return withRetry(() => this.doFetch<T>(url), {
       maxRetries: this.config.maxRetries,
       shouldRetry: (error) => {
@@ -364,7 +442,11 @@ export class GitHubClientImpl implements GitHubClient {
   /**
    * Perform a single HTTP fetch
    */
-  private async doFetch<T>(url: string): Promise<T> {
+  private async doFetch<T>(url: string): Promise<{
+    data: T;
+    statusCode: number;
+    rateLimit?: { remaining: number; limit: number; resetAt: string };
+  }> {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -389,7 +471,11 @@ export class GitHubClientImpl implements GitHubClient {
         await this.handleErrorResponse(response, url);
       }
 
-      return (await response.json()) as T;
+      const data = (await response.json()) as T;
+      const statusCode = response.status;
+      const rateLimit = this.extractRateLimitInfo(response);
+
+      return { data, statusCode, rateLimit };
     } catch (error) {
       // Handle network errors
       if (error instanceof Error) {

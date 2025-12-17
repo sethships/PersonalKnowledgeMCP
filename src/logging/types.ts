@@ -40,6 +40,13 @@ export interface LoggerConfig {
    * @default "pretty"
    */
   format: "json" | "pretty";
+
+  /**
+   * Optional custom output stream for testing
+   * When provided, logs will be written to this stream instead of stderr
+   * @internal - Only used in tests for log capture
+   */
+  stream?: NodeJS.WritableStream;
 }
 
 /**

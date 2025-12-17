@@ -120,6 +120,18 @@ export interface UpdateOptions {
    * @example ["node_modules/**", "dist/**", "*.min.js"]
    */
   excludePatterns: string[];
+
+  /**
+   * Correlation ID for tracing operations across components.
+   *
+   * When provided, all log entries from the update operation will include
+   * this ID, enabling end-to-end tracing through logs.
+   *
+   * Format: update-{timestamp}-{shortHash}
+   *
+   * @example "update-1734367200-a3c9f"
+   */
+  correlationId?: string;
 }
 
 /**

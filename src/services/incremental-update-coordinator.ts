@@ -133,6 +133,23 @@ export class IncrementalUpdateCoordinator {
   }
 
   /**
+   * Generate a unique correlation ID for tracing update operations.
+   *
+   * Format: update-{timestamp}-{shortHash}
+   * - timestamp: Unix epoch seconds (10 digits)
+   * - shortHash: 5-character random hex string
+   *
+   * @returns Correlation ID string
+   *
+   * @example "update-1734367200-a3c9f"
+   */
+  private generateCorrelationId(): string {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const randomHex = Math.random().toString(16).substring(2, 7);
+    return `update-${timestamp}-${randomHex}`;
+  }
+
+  /**
    * Orchestrate incremental update for a repository.
    *
    * Performs the complete update workflow:
@@ -167,7 +184,16 @@ export class IncrementalUpdateCoordinator {
   async updateRepository(repositoryName: string): Promise<CoordinatorResult> {
     const startTime = Date.now();
 
-    this.logger.info({ repository: repositoryName }, "Starting incremental update");
+    // Generate correlation ID for tracing this update operation
+    const correlationId = this.generateCorrelationId();
+
+    // Create correlation-aware logger
+    const logger = this.logger.child({ correlationId });
+
+    logger.info(
+      { operation: "coordinator_update_repository", repository: repositoryName },
+      "Starting incremental update"
+    );
 
     try {
       // Step 1: Load repository metadata
@@ -176,8 +202,8 @@ export class IncrementalUpdateCoordinator {
         throw new RepositoryNotFoundError(repositoryName);
       }
 
-      this.logger.debug(
-        { repository: repositoryName, url: repo.url },
+      logger.debug(
+        { operation: "coordinator_load_metadata", repository: repositoryName, url: repo.url },
         "Repository metadata loaded"
       );
 
@@ -189,15 +215,20 @@ export class IncrementalUpdateCoordinator {
       // Step 2: Parse GitHub owner/repo from URL
       const { owner, repo: repoName } = this.parseGitHubUrl(repo.url);
 
-      this.logger.debug(
-        { owner, repo: repoName, branch: repo.branch },
+      logger.debug(
+        { operation: "coordinator_parse_url", owner, repo: repoName, branch: repo.branch },
         "Parsed GitHub repository info"
       );
 
       // Step 3: Fetch HEAD commit from GitHub API
-      const headCommit = await this.githubClient.getHeadCommit(owner, repoName, repo.branch);
+      const headCommit = await this.githubClient.getHeadCommit(
+        owner,
+        repoName,
+        repo.branch,
+        correlationId
+      );
 
-      this.logger.info(
+      logger.info(
         {
           repository: repositoryName,
           headSha: headCommit.sha.substring(0, 7),
@@ -209,7 +240,7 @@ export class IncrementalUpdateCoordinator {
       // Step 4: Compare with last indexed commit (short-circuit if no changes)
       if (repo.lastIndexedCommitSha === headCommit.sha) {
         const durationMs = Date.now() - startTime;
-        this.logger.info(
+        logger.info(
           { repository: repositoryName, durationMs },
           "No changes detected - repository is up-to-date"
         );
@@ -238,10 +269,11 @@ export class IncrementalUpdateCoordinator {
           owner,
           repoName,
           repo.lastIndexedCommitSha,
-          headCommit.sha
+          headCommit.sha,
+          correlationId
         );
 
-        this.logger.info(
+        logger.info(
           {
             repository: repositoryName,
             baseSha: comparison.baseSha.substring(0, 7),
@@ -254,7 +286,7 @@ export class IncrementalUpdateCoordinator {
       } catch (error) {
         // Force push detected - base commit not found
         if (error instanceof GitHubNotFoundError) {
-          this.logger.warn(
+          logger.warn(
             {
               repository: repositoryName,
               lastIndexedSha: repo.lastIndexedCommitSha.substring(0, 7),
@@ -274,7 +306,7 @@ export class IncrementalUpdateCoordinator {
 
       // Step 6: Check change threshold (>500 files triggers full re-index)
       if (comparison.files.length > this.changeFileThreshold) {
-        this.logger.warn(
+        logger.warn(
           {
             repository: repositoryName,
             filesChanged: comparison.files.length,
@@ -292,10 +324,7 @@ export class IncrementalUpdateCoordinator {
       // Step 7: Update local clone (git pull)
       await this.updateLocalClone(repo.localPath, repo.branch);
 
-      this.logger.info(
-        { repository: repositoryName, localPath: repo.localPath },
-        "Updated local clone"
-      );
+      logger.info({ repository: repositoryName, localPath: repo.localPath }, "Updated local clone");
 
       // Step 8: Process changes via pipeline
       const pipelineResult = await this.updatePipeline.processChanges(comparison.files, {
@@ -304,9 +333,10 @@ export class IncrementalUpdateCoordinator {
         collectionName: repo.collectionName,
         includeExtensions: repo.includeExtensions,
         excludePatterns: repo.excludePatterns,
+        correlationId,
       });
 
-      this.logger.info(
+      logger.info(
         {
           repository: repositoryName,
           filesAdded: pipelineResult.stats.filesAdded,
@@ -384,7 +414,7 @@ export class IncrementalUpdateCoordinator {
 
       await this.repositoryService.updateRepository(updatedMetadata);
 
-      this.logger.info(
+      logger.info(
         { repository: repositoryName, newCommitSha: headCommit.sha.substring(0, 7) },
         "Repository metadata updated"
       );
@@ -393,7 +423,7 @@ export class IncrementalUpdateCoordinator {
       const durationMs = Date.now() - startTime;
       const status = pipelineResult.errors.length > 0 ? "failed" : "updated";
 
-      this.logger.info(
+      logger.info(
         {
           metric: "incremental_update_duration_ms",
           value: durationMs,
@@ -414,7 +444,7 @@ export class IncrementalUpdateCoordinator {
     } catch (error) {
       // Log error and re-throw (let caller handle specific error types)
       const durationMs = Date.now() - startTime;
-      this.logger.error(
+      logger.error(
         {
           error: error instanceof Error ? error.message : String(error),
           repository: repositoryName,
