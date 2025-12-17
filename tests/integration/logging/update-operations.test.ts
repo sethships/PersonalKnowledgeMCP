@@ -269,7 +269,7 @@ describe("Update Operations Logging Integration", () => {
       const coordinatorLogs = logCapture.getByComponent("services:incremental-update-coordinator");
 
       // Most logs should include repository name
-      const logsWithRepo = coordinatorLogs.filter((log) => log.repository === "test-repo");
+      const logsWithRepo = coordinatorLogs.filter((log) => log["repository"] === "test-repo");
       expect(logsWithRepo.length).toBeGreaterThan(0);
     });
 
@@ -278,13 +278,15 @@ describe("Update Operations Logging Integration", () => {
       expect(result.status).toBe("updated");
 
       // Find metric log
-      const metricLog = logCapture.find((log) => log.metric === "incremental_update_duration_ms");
+      const metricLog = logCapture.find(
+        (log) => log["metric"] === "incremental_update_duration_ms"
+      );
 
       expect(metricLog).toBeDefined();
-      expect(metricLog?.value).toBeDefined();
-      expect(typeof metricLog?.value).toBe("number");
-      expect(metricLog?.repository).toBe("test-repo");
-      expect(metricLog?.status).toBe("updated");
+      expect(metricLog?.["value"]).toBeDefined();
+      expect(typeof metricLog?.["value"]).toBe("number");
+      expect(metricLog?.["repository"]).toBe("test-repo");
+      expect(metricLog?.["status"]).toBe("updated");
     });
 
     it("should include stats in coordinator completion log", async () => {
@@ -298,11 +300,11 @@ describe("Update Operations Logging Integration", () => {
       );
 
       expect(completionLog).toBeDefined();
-      expect(completionLog?.filesAdded).toBe(1);
-      expect(completionLog?.filesModified).toBe(1);
-      expect(completionLog?.filesDeleted).toBe(1);
-      expect(completionLog?.chunksUpserted).toBe(15);
-      expect(completionLog?.chunksDeleted).toBe(5);
+      expect(completionLog?.["filesAdded"]).toBe(1);
+      expect(completionLog?.["filesModified"]).toBe(1);
+      expect(completionLog?.["filesDeleted"]).toBe(1);
+      expect(completionLog?.["chunksUpserted"]).toBe(15);
+      expect(completionLog?.["chunksDeleted"]).toBe(5);
     });
   });
 
@@ -329,9 +331,9 @@ describe("Update Operations Logging Integration", () => {
       const coordinatorErrorLog = errorLogs.find((log) => log.msg === "Incremental update failed");
 
       expect(coordinatorErrorLog).toBeDefined();
-      expect(coordinatorErrorLog?.error).toBeDefined();
+      expect(coordinatorErrorLog?.["error"]).toBeDefined();
       expect(coordinatorErrorLog?.correlationId).toBeDefined();
-      expect(coordinatorErrorLog?.repository).toBe("test-repo");
+      expect(coordinatorErrorLog?.["repository"]).toBe("test-repo");
     });
   });
 

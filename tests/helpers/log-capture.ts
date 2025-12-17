@@ -92,8 +92,9 @@ export class LogCapture {
       if (typeof log.level === "string") {
         return log.level === level;
       }
-      // Pino numeric levels: trace=10, debug=20, info=30, warn=40, error=50, fatal=60
+      // Pino numeric levels: silent=Infinity, trace=10, debug=20, info=30, warn=40, error=50, fatal=60
       const levelMap: Record<LogLevel, number> = {
+        silent: Infinity,
         trace: 10,
         debug: 20,
         info: 30,
