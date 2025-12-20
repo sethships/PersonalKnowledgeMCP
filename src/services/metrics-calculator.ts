@@ -20,7 +20,6 @@ import type { AggregateMetrics, TrendMetrics, RepositoryMetrics } from "./metric
  * - File and chunk processing totals
  * - Success and error rates
  * - Last 7-day trend
-
  *
  * @param repositories - List of all repositories with update history
  * @returns Aggregate metrics across all repositories
@@ -192,6 +191,7 @@ export function calculateTrendMetrics(
   const cutoffTimestamp = cutoffDate.toISOString();
 
   // Filter history to entries within the time period
+  // ISO 8601 strings with 'Z' suffix are lexicographically comparable
   const recentHistory = history.filter((entry) => entry.timestamp >= cutoffTimestamp);
 
   // Handle empty filtered history

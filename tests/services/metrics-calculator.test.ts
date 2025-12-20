@@ -83,8 +83,18 @@ describe("calculateAggregateMetrics", () => {
 
   it("should calculate metrics from single repository", () => {
     const history: UpdateHistoryEntry[] = [
-      createMockHistoryEntry({ filesAdded: 2, filesModified: 3, filesDeleted: 1, durationMs: 1000 }),
-      createMockHistoryEntry({ filesAdded: 1, filesModified: 2, filesDeleted: 0, durationMs: 2000 }),
+      createMockHistoryEntry({
+        filesAdded: 2,
+        filesModified: 3,
+        filesDeleted: 1,
+        durationMs: 1000,
+      }),
+      createMockHistoryEntry({
+        filesAdded: 1,
+        filesModified: 2,
+        filesDeleted: 0,
+        durationMs: 2000,
+      }),
     ];
 
     const repos: RepositoryInfo[] = [createMockRepository({ updateHistory: history })];

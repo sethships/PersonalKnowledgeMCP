@@ -12,7 +12,6 @@ import {
   createRepositoryTable,
   formatRepositoriesJson,
   createMetricsTable,
-  formatMetricsJson,
   type RepositoryDisplayInfo,
 } from "../output/formatters.js";
 import { parseGitHubUrl } from "../../utils/git-url-parser.js";
@@ -55,13 +54,49 @@ export async function statusCommand(
   // Output as JSON if requested
   if (options.json) {
     if (options.metrics) {
-      // Include metrics in JSON output
+      // Include metrics in JSON output (avoid double parse/stringify)
       const metrics = calculateAggregateMetrics(repositories);
       console.log(
         JSON.stringify(
           {
-            repositories: JSON.parse(formatRepositoriesJson(displayRepos)).repositories,
-            metrics: JSON.parse(formatMetricsJson(metrics)),
+            totalRepositories: displayRepos.length,
+            repositories: displayRepos.map((repo) => ({
+              name: repo.name,
+              url: repo.url,
+              fileCount: repo.fileCount,
+              chunkCount: repo.chunkCount,
+              lastIndexedAt: repo.lastIndexedAt,
+              indexDurationMs: repo.indexDurationMs,
+              status: repo.status,
+              branch: repo.branch,
+              errorMessage: repo.errorMessage,
+              lastIndexedCommitSha: repo.lastIndexedCommitSha,
+              lastIncrementalUpdateAt: repo.lastIncrementalUpdateAt,
+              incrementalUpdateCount: repo.incrementalUpdateCount,
+              ...(repo.updateStatus && {
+                updateCheck: {
+                  remoteSha: repo.remoteSha,
+                  status: repo.updateStatus,
+                },
+              }),
+            })),
+            metrics: {
+              allTime: {
+                totalUpdates: metrics.totalUpdates,
+                averageDurationMs: metrics.averageDurationMs,
+                totalFilesProcessed: metrics.totalFilesProcessed,
+                totalChunksModified: metrics.totalChunksModified,
+                successRate: metrics.successRate,
+                errorRate: metrics.errorRate,
+              },
+              last7Days: {
+                updateCount: metrics.last7DaysTrend.updateCount,
+                filesProcessed: metrics.last7DaysTrend.filesProcessed,
+                chunksModified: metrics.last7DaysTrend.chunksModified,
+                averageDurationMs: metrics.last7DaysTrend.averageDurationMs,
+                errorRate: metrics.last7DaysTrend.errorRate,
+              },
+            },
           },
           null,
           2

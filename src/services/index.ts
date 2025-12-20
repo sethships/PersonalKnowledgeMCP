@@ -102,11 +102,7 @@ export {
 } from "./incremental-update-coordinator-errors.js";
 
 // Metrics exports
-export type {
-  AggregateMetrics,
-  TrendMetrics,
-  RepositoryMetrics,
-} from "./metrics-types.js";
+export type { AggregateMetrics, TrendMetrics, RepositoryMetrics } from "./metrics-types.js";
 export {
   calculateAggregateMetrics,
   calculateRepositoryMetrics,

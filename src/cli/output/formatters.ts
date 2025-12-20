@@ -2,8 +2,9 @@
  * Output Formatters for CLI
  *
  * Functions for formatting output as tables or JSON.
-import type { AggregateMetrics } from "../../services/metrics-types.js";
  */
+
+import type { AggregateMetrics } from "../../services/metrics-types.js";
 
 import Table from "cli-table3";
 import chalk from "chalk";
