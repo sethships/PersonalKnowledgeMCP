@@ -4,6 +4,8 @@
  * Functions for formatting output as tables or JSON.
  */
 
+import type { AggregateMetrics } from "../../services/metrics-types.js";
+
 import Table from "cli-table3";
 import chalk from "chalk";
 import type { RepositoryInfo, UpdateHistoryEntry } from "../../repositories/types.js";
@@ -633,6 +635,117 @@ export function formatHistoryJson(
         errorCount: entry.errorCount,
         status: entry.status,
       })),
+    },
+    null,
+    2
+  );
+}
+
+/**
+ * Create a formatted table of aggregate metrics
+ *
+ * Displays comprehensive metrics across all repositories including
+ * totals, averages, success rates, and 7-day trends.
+ *
+ * @param metrics - Aggregate metrics to display
+ * @returns Formatted table string ready to print
+ */
+export function createMetricsTable(metrics: AggregateMetrics): string {
+  if (metrics.totalUpdates === 0) {
+    return (
+      chalk.yellow("\nNo update history available yet.") +
+      "\n\n" +
+      chalk.bold("Note:") +
+      "\n  " +
+      chalk.gray("Metrics are calculated from incremental update history.") +
+      "\n  " +
+      chalk.gray("Perform updates to start tracking metrics: ") +
+      chalk.cyan("pk-mcp update <repository>")
+    );
+  }
+
+  const table = new Table({
+    head: [chalk.cyan("Metric"), chalk.cyan("Value")],
+    colAligns: ["left", "right"],
+    colWidths: [30, 20],
+    style: {
+      head: [],
+      border: ["gray"],
+    },
+  });
+
+  // All-time metrics
+  table.push(
+    [chalk.bold("All-Time Metrics"), ""],
+    ["Total Updates", metrics.totalUpdates.toString()],
+    ["Avg Duration", formatDuration(metrics.averageDurationMs)],
+    ["Total Files Processed", metrics.totalFilesProcessed.toLocaleString()],
+    ["Total Chunks Modified", metrics.totalChunksModified.toLocaleString()],
+    [
+      "Success Rate",
+      metrics.successRate > 0
+        ? chalk.green(`${(metrics.successRate * 100).toFixed(1)}%`)
+        : chalk.gray("0%"),
+    ],
+    [
+      "Error Rate",
+      metrics.errorRate > 0
+        ? chalk.yellow(`${(metrics.errorRate * 100).toFixed(1)}%`)
+        : chalk.green("0%"),
+    ]
+  );
+
+  // 7-day trend section
+  if (metrics.last7DaysTrend.updateCount > 0) {
+    table.push(
+      ["", ""], // Blank row for separation
+      [chalk.bold("Last 7 Days"), ""],
+      ["Updates", metrics.last7DaysTrend.updateCount.toString()],
+      ["Files Processed", metrics.last7DaysTrend.filesProcessed.toLocaleString()],
+      ["Chunks Modified", metrics.last7DaysTrend.chunksModified.toLocaleString()],
+      ["Avg Duration", formatDuration(metrics.last7DaysTrend.averageDurationMs)],
+      [
+        "Error Rate",
+        metrics.last7DaysTrend.errorRate > 0
+          ? chalk.yellow(`${(metrics.last7DaysTrend.errorRate * 100).toFixed(1)}%`)
+          : chalk.green("0%"),
+      ]
+    );
+  } else {
+    table.push(
+      ["", ""], // Blank row for separation
+      [chalk.bold("Last 7 Days"), chalk.gray("No updates")]
+    );
+  }
+
+  const header = chalk.bold("\nAggregate Update Metrics\n");
+  return header + table.toString();
+}
+
+/**
+ * Format aggregate metrics as JSON
+ *
+ * @param metrics - Aggregate metrics
+ * @returns Pretty-printed JSON string
+ */
+export function formatMetricsJson(metrics: AggregateMetrics): string {
+  return JSON.stringify(
+    {
+      allTime: {
+        totalUpdates: metrics.totalUpdates,
+        averageDurationMs: metrics.averageDurationMs,
+        totalFilesProcessed: metrics.totalFilesProcessed,
+        totalChunksModified: metrics.totalChunksModified,
+        successRate: metrics.successRate,
+        errorRate: metrics.errorRate,
+      },
+      last7Days: {
+        updateCount: metrics.last7DaysTrend.updateCount,
+        filesProcessed: metrics.last7DaysTrend.filesProcessed,
+        chunksModified: metrics.last7DaysTrend.chunksModified,
+        averageDurationMs: metrics.last7DaysTrend.averageDurationMs,
+        errorRate: metrics.last7DaysTrend.errorRate,
+      },
     },
     null,
     2

@@ -11,10 +11,12 @@ import type { CliDependencies } from "../utils/dependency-init.js";
 import {
   createRepositoryTable,
   formatRepositoriesJson,
+  createMetricsTable,
   type RepositoryDisplayInfo,
 } from "../output/formatters.js";
 import { parseGitHubUrl } from "../../utils/git-url-parser.js";
 import type { RepositoryInfo } from "../../repositories/types.js";
+import { calculateAggregateMetrics } from "../../services/metrics-calculator.js";
 
 /**
  * Status command options
@@ -22,6 +24,7 @@ import type { RepositoryInfo } from "../../repositories/types.js";
 export interface StatusCommandOptions {
   json?: boolean;
   check?: boolean;
+  metrics?: boolean;
 }
 
 /**
@@ -30,6 +33,7 @@ export interface StatusCommandOptions {
  * Lists all indexed repositories with their metadata.
  * Supports JSON output format for programmatic use.
  * Optionally checks GitHub for available updates with --check flag.
+ * Optionally displays aggregate metrics with --metrics flag.
  *
  * @param options - Command options
  * @param deps - CLI dependencies
@@ -49,12 +53,70 @@ export async function statusCommand(
 
   // Output as JSON if requested
   if (options.json) {
-    console.log(formatRepositoriesJson(displayRepos));
+    if (options.metrics) {
+      // Include metrics in JSON output (avoid double parse/stringify)
+      const metrics = calculateAggregateMetrics(repositories);
+      console.log(
+        JSON.stringify(
+          {
+            totalRepositories: displayRepos.length,
+            repositories: displayRepos.map((repo) => ({
+              name: repo.name,
+              url: repo.url,
+              fileCount: repo.fileCount,
+              chunkCount: repo.chunkCount,
+              lastIndexedAt: repo.lastIndexedAt,
+              indexDurationMs: repo.indexDurationMs,
+              status: repo.status,
+              branch: repo.branch,
+              errorMessage: repo.errorMessage,
+              lastIndexedCommitSha: repo.lastIndexedCommitSha,
+              lastIncrementalUpdateAt: repo.lastIncrementalUpdateAt,
+              incrementalUpdateCount: repo.incrementalUpdateCount,
+              ...(repo.updateStatus && {
+                updateCheck: {
+                  remoteSha: repo.remoteSha,
+                  status: repo.updateStatus,
+                },
+              }),
+            })),
+            metrics: {
+              allTime: {
+                totalUpdates: metrics.totalUpdates,
+                averageDurationMs: metrics.averageDurationMs,
+                totalFilesProcessed: metrics.totalFilesProcessed,
+                totalChunksModified: metrics.totalChunksModified,
+                successRate: metrics.successRate,
+                errorRate: metrics.errorRate,
+              },
+              last7Days: {
+                updateCount: metrics.last7DaysTrend.updateCount,
+                filesProcessed: metrics.last7DaysTrend.filesProcessed,
+                chunksModified: metrics.last7DaysTrend.chunksModified,
+                averageDurationMs: metrics.last7DaysTrend.averageDurationMs,
+                errorRate: metrics.last7DaysTrend.errorRate,
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(formatRepositoriesJson(displayRepos));
+    }
     return;
   }
 
   // Output as table (default)
   console.log(createRepositoryTable(displayRepos));
+
+  // If --metrics option is provided, display aggregate metrics
+  if (options.metrics) {
+    const metrics = calculateAggregateMetrics(repositories);
+    console.log(createMetricsTable(metrics));
+  }
+
   console.log(); // Blank line for spacing
 }
 

@@ -84,6 +84,7 @@ program
   .description("List indexed repositories and their status")
   .option("--json", "Output as JSON")
   .option("--check", "Check GitHub for available updates")
+  .option("--metrics", "Display aggregate update metrics")
   .action(async (options: Record<string, unknown>) => {
     try {
       const validatedOptions = StatusCommandOptionsSchema.parse(options);
