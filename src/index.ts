@@ -16,6 +16,7 @@ import {
   detectInterruptedUpdates,
   formatElapsedTime,
 } from "./services/interrupted-update-detector.js";
+import { evaluateRecoveryStrategy } from "./services/interrupted-update-recovery.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -116,8 +117,11 @@ async function main(): Promise<void> {
     const detectionResult = await detectInterruptedUpdates(repositoryService);
 
     if (detectionResult.interrupted.length > 0) {
-      // Log each interrupted update with details
+      // Log each interrupted update with details and evaluated recovery strategy
       for (const interrupted of detectionResult.interrupted) {
+        // Evaluate recovery strategy for this interrupted update
+        const strategy = await evaluateRecoveryStrategy(interrupted);
+
         logger.warn(
           {
             repository: interrupted.repositoryName,
@@ -125,6 +129,9 @@ async function main(): Promise<void> {
             elapsed: formatElapsedTime(interrupted.elapsedMs),
             lastKnownCommit: interrupted.lastKnownCommit?.substring(0, 7),
             currentStatus: interrupted.status,
+            recoveryStrategy: strategy.type,
+            recoveryReason: strategy.reason,
+            canAutoRecover: strategy.canAutoRecover,
           },
           "Detected interrupted update - repository index may be inconsistent"
         );
@@ -136,7 +143,7 @@ async function main(): Promise<void> {
           count: detectionResult.interrupted.length,
           repositories: detectionResult.interrupted.map((i) => i.repositoryName),
         },
-        "Interrupted updates detected. Run 'pk-mcp update <repo> --force' to re-index affected repositories."
+        "Interrupted updates detected. Run 'pk-mcp reset-update <repo> --recover' for automatic recovery or 'pk-mcp update <repo> --force' to re-index."
       );
     } else {
       logger.debug("No interrupted updates detected");
