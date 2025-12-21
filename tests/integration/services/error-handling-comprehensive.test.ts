@@ -147,7 +147,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
       // Execute and verify ForcePushDetectedError
       try {
         await coordinator.updateRepository("test-repo");
-        expect(true).toBe(false); // Should not reach here
+        throw new Error("Should not reach here");
       } catch (error) {
         expect(error).toBeInstanceOf(ForcePushDetectedError);
 

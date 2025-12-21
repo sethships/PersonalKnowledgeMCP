@@ -190,6 +190,7 @@ describe("IncrementalUpdateCoordinator", () => {
       // Pipeline should be called with 500 files
       expect(mockUpdatePipeline.processChanges).toHaveBeenCalled();
     });
+
     it("should return no_changes when HEAD commit matches last indexed commit", async () => {
       const sameCommit: CommitInfo = {
         ...headCommit,
