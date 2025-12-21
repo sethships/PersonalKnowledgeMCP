@@ -202,14 +202,18 @@ export async function evaluateRecoveryStrategy(
  *
  * @param path - Path to check
  * @returns true if path exists and is accessible
+ *
+ * @remarks
+ * Uses Node.js fs.stat for cross-platform compatibility.
+ * Returns false for any error (permission denied, not found, etc.)
  */
 async function checkLocalPathAccessible(path: string): Promise<boolean> {
   try {
-    // For directories, we need to check if it exists
+    // Use Node.js fs.stat for cross-platform directory check
     // Bun.file().exists() works for files, but for directories we need stat
-    const proc = Bun.spawn(["test", "-d", path], { stdout: "ignore", stderr: "ignore" });
-    const exitCode = await proc.exited;
-    return exitCode === 0;
+    const { stat } = await import("node:fs/promises");
+    const stats = await stat(path);
+    return stats.isDirectory();
   } catch {
     return false;
   }
@@ -541,15 +545,9 @@ export async function recoverMultiple(
   for (const interrupted of interruptedList) {
     const strategy = await evaluateRecoveryStrategy(interrupted);
 
-    // Only execute if auto-recovery is possible
-    if (strategy.canAutoRecover) {
-      const result = await executeRecovery(interrupted, strategy, deps);
-      results.push(result);
-    } else {
-      // For manual_required, still execute to clear flag and set status
-      const result = await executeRecovery(interrupted, strategy, deps);
-      results.push(result);
-    }
+    // Execute recovery for all strategies (including manual_required to clear flag)
+    const result = await executeRecovery(interrupted, strategy, deps);
+    results.push(result);
   }
 
   const durationMs = Date.now() - startTime;
