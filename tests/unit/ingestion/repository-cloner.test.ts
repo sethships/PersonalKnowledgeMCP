@@ -14,6 +14,17 @@ import type { RepositoryClonerConfig } from "../../../src/ingestion/types.js";
 import { MockSimpleGit, MOCK_GIT_ERRORS } from "../../helpers/simple-git-mock.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
+/**
+ * Retry config that disables retries for tests expecting immediate failure.
+ * Network error tests would otherwise timeout waiting for retry delays.
+ */
+const NO_RETRY_CONFIG = {
+  maxRetries: 0,
+  initialDelayMs: 0,
+  maxDelayMs: 0,
+  backoffMultiplier: 1,
+};
+
 describe("RepositoryCloner", () => {
   let testDir: string;
   let config: RepositoryClonerConfig;
@@ -163,8 +174,13 @@ describe("RepositoryCloner", () => {
     test("should never log PAT in error messages", async () => {
       expect.assertions(3);
       const pat = "ghp_secret_token_should_never_appear_in_logs";
-      config.githubPat = pat;
-      cloner = new RepositoryCloner(config);
+      // Disable retries to prevent test timeout on network errors
+      const noRetryConfig: RepositoryClonerConfig = {
+        clonePath: testDir,
+        githubPat: pat,
+        retry: NO_RETRY_CONFIG,
+      };
+      cloner = new RepositoryCloner(noRetryConfig);
       // @ts-expect-error - Accessing private property for testing
       cloner.git = mockGit;
 
@@ -331,12 +347,21 @@ describe("RepositoryCloner", () => {
 
     test("should throw CloneError for network errors", async () => {
       expect.assertions(3);
+      // Disable retries to prevent test timeout on network errors
+      const noRetryConfig: RepositoryClonerConfig = {
+        clonePath: testDir,
+        retry: NO_RETRY_CONFIG,
+      };
+      const noRetryCloner = new RepositoryCloner(noRetryConfig);
+      // @ts-expect-error - Accessing private property for testing
+      noRetryCloner.git = mockGit;
+
       mockGit.setShouldFailClone(MOCK_GIT_ERRORS.NETWORK_ERROR);
 
       const url = "https://github.com/user/repo";
 
       try {
-        await cloner.clone(url);
+        await noRetryCloner.clone(url);
       } catch (error) {
         expect(error).toBeInstanceOf(CloneError);
         if (error instanceof CloneError) {
@@ -348,12 +373,21 @@ describe("RepositoryCloner", () => {
 
     test("should throw CloneError for host resolution errors", async () => {
       expect.assertions(1);
+      // Disable retries to prevent test timeout on network errors
+      const noRetryConfig: RepositoryClonerConfig = {
+        clonePath: testDir,
+        retry: NO_RETRY_CONFIG,
+      };
+      const noRetryCloner = new RepositoryCloner(noRetryConfig);
+      // @ts-expect-error - Accessing private property for testing
+      noRetryCloner.git = mockGit;
+
       mockGit.setShouldFailClone(MOCK_GIT_ERRORS.HOST_RESOLUTION_ERROR);
 
       const url = "https://github.com/user/repo";
 
       try {
-        await cloner.clone(url);
+        await noRetryCloner.clone(url);
       } catch (error) {
         expect(error).toBeInstanceOf(CloneError);
       }

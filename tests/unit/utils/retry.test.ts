@@ -8,11 +8,17 @@
 /* eslint-disable @typescript-eslint/await-thenable */
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
 import {
   withRetry,
   defaultExponentialBackoff,
+  createRetryConfigFromEnv,
+  createExponentialBackoff,
+  createRetryLogger,
+  createRetryOptions,
+  DEFAULT_RETRY_CONFIG,
   type RetryOptions,
+  type RetryConfig,
 } from "../../../src/utils/retry.js";
 
 describe("defaultExponentialBackoff", () => {
@@ -356,5 +362,417 @@ describe("withRetry - type safety", () => {
       expect(error).toBeInstanceOf(CustomError);
       expect((error as CustomError).message).toBe("Custom");
     }
+  });
+});
+
+describe("DEFAULT_RETRY_CONFIG", () => {
+  test("has expected default values", () => {
+    expect(DEFAULT_RETRY_CONFIG).toEqual({
+      maxRetries: 3,
+      initialDelayMs: 1000,
+      maxDelayMs: 60000,
+      backoffMultiplier: 2,
+    });
+  });
+});
+
+describe("createRetryConfigFromEnv", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    // Clear relevant env variables before each test
+    delete Bun.env["MAX_RETRIES"];
+    delete Bun.env["RETRY_INITIAL_DELAY_MS"];
+    delete Bun.env["RETRY_MAX_DELAY_MS"];
+    delete Bun.env["RETRY_BACKOFF_MULTIPLIER"];
+  });
+
+  afterEach(() => {
+    // Restore original env after each test
+    Object.keys(Bun.env).forEach((key) => {
+      if (key.startsWith("MAX_RETRIES") || key.startsWith("RETRY_")) {
+        delete Bun.env[key];
+      }
+    });
+    Object.assign(process.env, originalEnv);
+  });
+
+  test("returns defaults when no env vars set", () => {
+    const config = createRetryConfigFromEnv();
+
+    expect(config.maxRetries).toBe(3);
+    expect(config.initialDelayMs).toBe(1000);
+    expect(config.maxDelayMs).toBe(60000);
+    expect(config.backoffMultiplier).toBe(2);
+  });
+
+  test("reads MAX_RETRIES from environment", () => {
+    Bun.env["MAX_RETRIES"] = "5";
+
+    const config = createRetryConfigFromEnv();
+
+    expect(config.maxRetries).toBe(5);
+  });
+
+  test("reads RETRY_INITIAL_DELAY_MS from environment", () => {
+    Bun.env["RETRY_INITIAL_DELAY_MS"] = "500";
+
+    const config = createRetryConfigFromEnv();
+
+    expect(config.initialDelayMs).toBe(500);
+  });
+
+  test("reads RETRY_MAX_DELAY_MS from environment", () => {
+    Bun.env["RETRY_MAX_DELAY_MS"] = "120000";
+
+    const config = createRetryConfigFromEnv();
+
+    expect(config.maxDelayMs).toBe(120000);
+  });
+
+  test("reads RETRY_BACKOFF_MULTIPLIER from environment", () => {
+    Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "1.5";
+
+    const config = createRetryConfigFromEnv();
+
+    expect(config.backoffMultiplier).toBe(1.5);
+  });
+
+  test("reads all env vars when set", () => {
+    Bun.env["MAX_RETRIES"] = "10";
+    Bun.env["RETRY_INITIAL_DELAY_MS"] = "2000";
+    Bun.env["RETRY_MAX_DELAY_MS"] = "300000";
+    Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "3";
+
+    const config = createRetryConfigFromEnv();
+
+    expect(config).toEqual({
+      maxRetries: 10,
+      initialDelayMs: 2000,
+      maxDelayMs: 300000,
+      backoffMultiplier: 3,
+    });
+  });
+
+  describe("invalid environment variable handling", () => {
+    test("falls back to default for NaN maxRetries", () => {
+      Bun.env["MAX_RETRIES"] = "not-a-number";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(DEFAULT_RETRY_CONFIG.maxRetries);
+    });
+
+    test("falls back to default for negative maxRetries", () => {
+      Bun.env["MAX_RETRIES"] = "-5";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(DEFAULT_RETRY_CONFIG.maxRetries);
+    });
+
+    test("allows zero for maxRetries (disables retry)", () => {
+      Bun.env["MAX_RETRIES"] = "0";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(0);
+    });
+
+    test("falls back to default for NaN initialDelayMs", () => {
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "abc";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+    });
+
+    test("falls back to default for negative initialDelayMs", () => {
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "-1000";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+    });
+
+    test("falls back to default for NaN maxDelayMs", () => {
+      Bun.env["RETRY_MAX_DELAY_MS"] = "invalid";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxDelayMs).toBe(DEFAULT_RETRY_CONFIG.maxDelayMs);
+    });
+
+    test("falls back to default for negative maxDelayMs", () => {
+      Bun.env["RETRY_MAX_DELAY_MS"] = "-60000";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxDelayMs).toBe(DEFAULT_RETRY_CONFIG.maxDelayMs);
+    });
+
+    test("falls back to default for NaN backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "xyz";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for zero backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "0";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for negative backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "-2";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for empty string values", () => {
+      Bun.env["MAX_RETRIES"] = "";
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "";
+      Bun.env["RETRY_MAX_DELAY_MS"] = "";
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config).toEqual(DEFAULT_RETRY_CONFIG);
+    });
+
+    test("handles mixed valid and invalid values", () => {
+      Bun.env["MAX_RETRIES"] = "5"; // Valid
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "invalid"; // Invalid - should use default
+      Bun.env["RETRY_MAX_DELAY_MS"] = "30000"; // Valid
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "-1"; // Invalid - should use default
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(5);
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+      expect(config.maxDelayMs).toBe(30000);
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+  });
+});
+
+describe("createExponentialBackoff", () => {
+  test("calculates backoff using configured initial delay", () => {
+    const config: Pick<RetryConfig, "initialDelayMs" | "maxDelayMs" | "backoffMultiplier"> = {
+      initialDelayMs: 500,
+      maxDelayMs: 60000,
+      backoffMultiplier: 2,
+    };
+
+    const calculateBackoff = createExponentialBackoff(config);
+
+    expect(calculateBackoff(0, new Error())).toBe(500); // 500 * 2^0 = 500
+    expect(calculateBackoff(1, new Error())).toBe(1000); // 500 * 2^1 = 1000
+    expect(calculateBackoff(2, new Error())).toBe(2000); // 500 * 2^2 = 2000
+  });
+
+  test("uses configured backoff multiplier", () => {
+    const config: Pick<RetryConfig, "initialDelayMs" | "maxDelayMs" | "backoffMultiplier"> = {
+      initialDelayMs: 1000,
+      maxDelayMs: 60000,
+      backoffMultiplier: 3,
+    };
+
+    const calculateBackoff = createExponentialBackoff(config);
+
+    expect(calculateBackoff(0, new Error())).toBe(1000); // 1000 * 3^0 = 1000
+    expect(calculateBackoff(1, new Error())).toBe(3000); // 1000 * 3^1 = 3000
+    expect(calculateBackoff(2, new Error())).toBe(9000); // 1000 * 3^2 = 9000
+  });
+
+  test("caps delay at maxDelayMs", () => {
+    const config: Pick<RetryConfig, "initialDelayMs" | "maxDelayMs" | "backoffMultiplier"> = {
+      initialDelayMs: 1000,
+      maxDelayMs: 5000,
+      backoffMultiplier: 2,
+    };
+
+    const calculateBackoff = createExponentialBackoff(config);
+
+    expect(calculateBackoff(0, new Error())).toBe(1000); // 1000
+    expect(calculateBackoff(1, new Error())).toBe(2000); // 2000
+    expect(calculateBackoff(2, new Error())).toBe(4000); // 4000
+    expect(calculateBackoff(3, new Error())).toBe(5000); // 8000 -> capped at 5000
+    expect(calculateBackoff(4, new Error())).toBe(5000); // 16000 -> capped at 5000
+  });
+
+  test("handles fractional backoff multiplier", () => {
+    const config: Pick<RetryConfig, "initialDelayMs" | "maxDelayMs" | "backoffMultiplier"> = {
+      initialDelayMs: 1000,
+      maxDelayMs: 60000,
+      backoffMultiplier: 1.5,
+    };
+
+    const calculateBackoff = createExponentialBackoff(config);
+
+    expect(calculateBackoff(0, new Error())).toBe(1000); // 1000 * 1.5^0 = 1000
+    expect(calculateBackoff(1, new Error())).toBe(1500); // 1000 * 1.5^1 = 1500
+    expect(calculateBackoff(2, new Error())).toBe(2250); // 1000 * 1.5^2 = 2250
+  });
+});
+
+describe("createRetryLogger", () => {
+  test("calls logger.warn with structured retry info", () => {
+    const warnCalls: Array<{ data: unknown; message: string }> = [];
+    const mockLogger = {
+      warn: mock((data: unknown, message: string) => {
+        warnCalls.push({ data, message });
+      }),
+    };
+
+    const onRetry = createRetryLogger(mockLogger as never, "test-operation", 3);
+    const error = new Error("Test error");
+
+    onRetry(0, error, 1000);
+
+    expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+    expect(warnCalls[0]!.message).toBe("Retrying test-operation");
+    expect(warnCalls[0]!.data).toEqual({
+      attempt: 1, // 1-based for readability
+      maxRetries: 3,
+      delayMs: 1000,
+      error: "Test error",
+      errorType: "Error",
+    });
+  });
+
+  test("logs correct attempt number (1-based)", () => {
+    const warnCalls: Array<{ data: unknown }> = [];
+    const mockLogger = {
+      warn: mock((data: unknown, _message: string) => {
+        warnCalls.push({ data });
+      }),
+    };
+
+    const onRetry = createRetryLogger(mockLogger as never, "operation", 5);
+
+    onRetry(0, new Error(), 1000);
+    onRetry(1, new Error(), 2000);
+    onRetry(2, new Error(), 4000);
+
+    expect((warnCalls[0]!.data as { attempt: number }).attempt).toBe(1);
+    expect((warnCalls[1]!.data as { attempt: number }).attempt).toBe(2);
+    expect((warnCalls[2]!.data as { attempt: number }).attempt).toBe(3);
+  });
+
+  test("includes error type in log", () => {
+    class CustomNetworkError extends Error {
+      constructor() {
+        super("Network failed");
+        this.name = "CustomNetworkError";
+      }
+    }
+
+    const warnCalls: Array<{ data: unknown }> = [];
+    const mockLogger = {
+      warn: mock((data: unknown, _message: string) => {
+        warnCalls.push({ data });
+      }),
+    };
+
+    const onRetry = createRetryLogger(mockLogger as never, "network-call", 3);
+    onRetry(0, new CustomNetworkError(), 1000);
+
+    expect((warnCalls[0]!.data as { errorType: string }).errorType).toBe("CustomNetworkError");
+  });
+});
+
+describe("createRetryOptions", () => {
+  test("creates options from config with calculateBackoff", () => {
+    const config: RetryConfig = {
+      maxRetries: 5,
+      initialDelayMs: 500,
+      maxDelayMs: 10000,
+      backoffMultiplier: 2,
+    };
+
+    const options = createRetryOptions(config);
+
+    expect(options.maxRetries).toBe(5);
+    expect(options.calculateBackoff).toBeDefined();
+
+    // Verify backoff calculation works correctly
+    const backoff = options.calculateBackoff!;
+    expect(backoff(0, new Error())).toBe(500);
+    expect(backoff(1, new Error())).toBe(1000);
+    expect(backoff(2, new Error())).toBe(2000);
+  });
+
+  test("allows overriding shouldRetry", () => {
+    const config = DEFAULT_RETRY_CONFIG;
+    const shouldRetry = (error: Error) => error.message.includes("retry");
+
+    const options = createRetryOptions(config, { shouldRetry });
+
+    expect(options.shouldRetry).toBe(shouldRetry);
+    expect(options.shouldRetry!(new Error("please retry"))).toBe(true);
+    expect(options.shouldRetry!(new Error("do not try again"))).toBe(false);
+  });
+
+  test("allows overriding onRetry", () => {
+    const config = DEFAULT_RETRY_CONFIG;
+    const onRetry = mock(() => {});
+
+    const options = createRetryOptions(config, { onRetry });
+
+    expect(options.onRetry).toBe(onRetry);
+  });
+
+  test("allows overriding calculateBackoff", () => {
+    const config = DEFAULT_RETRY_CONFIG;
+    const customBackoff = mock(() => 999);
+
+    const options = createRetryOptions(config, { calculateBackoff: customBackoff });
+
+    expect(options.calculateBackoff).toBe(customBackoff);
+  });
+
+  test("merges multiple overrides", () => {
+    const config = DEFAULT_RETRY_CONFIG;
+    const shouldRetry = () => true;
+    const onRetry = mock(() => {});
+
+    const options = createRetryOptions(config, { shouldRetry, onRetry });
+
+    expect(options.maxRetries).toBe(config.maxRetries);
+    expect(options.shouldRetry).toBe(shouldRetry);
+    expect(options.onRetry).toBe(onRetry);
+    expect(options.calculateBackoff).toBeDefined(); // From config
+  });
+
+  test("works with withRetry function", async () => {
+    let attempts = 0;
+    const operation = mock(async () => {
+      attempts++;
+      if (attempts <= 2) throw new Error("Fail");
+      return "success";
+    });
+
+    const config: RetryConfig = {
+      maxRetries: 3,
+      initialDelayMs: 10, // Fast for testing
+      maxDelayMs: 100,
+      backoffMultiplier: 2,
+    };
+
+    const options = createRetryOptions(config, {
+      shouldRetry: () => true,
+    });
+
+    const result = await withRetry(operation, options);
+
+    expect(result).toBe("success");
+    expect(operation).toHaveBeenCalledTimes(3);
   });
 });

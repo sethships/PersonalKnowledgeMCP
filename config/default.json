@@ -11,9 +11,13 @@
     "provider": "openai",
     "model": "${EMBEDDING_MODEL:text-embedding-3-small}",
     "dimensions": "${EMBEDDING_DIMENSIONS:1536}",
-    "batchSize": "${EMBEDDING_BATCH_SIZE:100}",
+    "batchSize": "${EMBEDDING_BATCH_SIZE:100}"
+  },
+  "retry": {
     "maxRetries": "${MAX_RETRIES:3}",
-    "timeoutMs": "${REQUEST_TIMEOUT_MS:30000}"
+    "initialDelayMs": "${RETRY_INITIAL_DELAY_MS:1000}",
+    "maxDelayMs": "${RETRY_MAX_DELAY_MS:60000}",
+    "backoffMultiplier": "${RETRY_BACKOFF_MULTIPLIER:2}"
   },
   "ingestion": {
     "repoClonePath": "${REPO_CLONE_PATH:./data/repos}",

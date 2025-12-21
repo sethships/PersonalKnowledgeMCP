@@ -5,6 +5,12 @@
  * handling all interactions with the ChromaDB vector database including connection
  * management, collection operations, document storage, and similarity search.
  *
+ * Features:
+ * - Automatic retry with exponential backoff for transient failures
+ * - Connection management and health checking
+ * - Collection caching for performance
+ * - Comprehensive error handling
+ *
  * @module storage/chroma-client
  */
 
@@ -29,8 +35,16 @@ import {
   InvalidParametersError,
   DocumentOperationError,
   SearchOperationError,
+  isRetryableStorageError,
 } from "./errors.js";
 import { getComponentLogger } from "../logging/index.js";
+import {
+  withRetry,
+  createRetryOptions,
+  createRetryLogger,
+  DEFAULT_RETRY_CONFIG,
+  type RetryConfig,
+} from "../utils/retry.js";
 
 /**
  * Implementation of the ChromaStorageClient interface
@@ -71,6 +85,7 @@ import { getComponentLogger } from "../logging/index.js";
 export class ChromaStorageClientImpl implements ChromaStorageClient {
   private client: ChromaClient | null = null;
   private config: ChromaConfig;
+  private retryConfig: RetryConfig;
   private logger = getComponentLogger("storage:chromadb");
 
   /**
@@ -84,19 +99,42 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   /**
    * Create a new ChromaDB storage client
    *
-   * @param config - Connection configuration
+   * @param config - Connection configuration (including optional retry settings)
    */
   constructor(config: ChromaConfig) {
     this.config = config;
+    this.retryConfig = config.retry ?? DEFAULT_RETRY_CONFIG;
+  }
+
+  /**
+   * Execute an operation with retry logic for transient failures
+   *
+   * Wraps the operation with exponential backoff retry for network and server errors.
+   *
+   * @param operation - Async operation to execute
+   * @param operationName - Human-readable name for logging
+   * @returns Promise resolving to the operation result
+   */
+  private async withRetryWrapper<T>(
+    operation: () => Promise<T>,
+    operationName: string
+  ): Promise<T> {
+    const options = createRetryOptions(this.retryConfig, {
+      shouldRetry: (error) => isRetryableStorageError(error),
+      onRetry: createRetryLogger(this.logger, operationName, this.retryConfig.maxRetries),
+    });
+
+    return withRetry(operation, options);
   }
 
   /**
    * Initialize connection to ChromaDB server
    *
    * Creates the HTTP client connection to the ChromaDB instance.
+   * Uses retry logic with exponential backoff for transient connection failures.
    * This must be called before any other operations.
    *
-   * @throws {StorageConnectionError} If connection initialization fails
+   * @throws {StorageConnectionError} If connection initialization fails after all retries
    */
   async connect(): Promise<void> {
     const startTime = Date.now();
@@ -106,8 +144,13 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const path = `http://${this.config.host}:${this.config.port}`;
       this.client = new ChromaClient({ path });
 
-      // Verify connection by making a test call
-      await this.healthCheck();
+      // Verify connection by making a test call with retry
+      await this.withRetryWrapper(async () => {
+        const healthy = await this.performHealthCheck();
+        if (!healthy) {
+          throw new StorageConnectionError("ChromaDB health check failed - server not responding");
+        }
+      }, "ChromaDB connection");
 
       const durationMs = Date.now() - startTime;
       this.logger.info(
@@ -132,6 +175,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         },
         "Failed to connect to ChromaDB"
       );
+
+      // Re-throw StorageConnectionError directly, wrap other errors
+      if (error instanceof StorageConnectionError) {
+        throw error;
+      }
       throw new StorageConnectionError(
         `Failed to connect to ChromaDB at ${this.config.host}:${this.config.port}: ${errorMessage}`,
         error instanceof Error ? error : undefined
@@ -140,9 +188,27 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   }
 
   /**
+   * Internal health check implementation (used by retry wrapper)
+   *
+   * @returns true if healthy, false otherwise
+   */
+  private async performHealthCheck(): Promise<boolean> {
+    if (!this.client) {
+      return false;
+    }
+    try {
+      await this.client.heartbeat();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Check if ChromaDB server is reachable and healthy
    *
    * Pings the ChromaDB /api/v2/heartbeat endpoint to verify connectivity.
+   * This method does NOT use retry - it's a simple health check.
    *
    * @returns True if ChromaDB is healthy, false if not reachable
    */
@@ -152,16 +218,13 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       return false;
     }
 
-    try {
-      // ChromaDB heartbeat() returns timestamp if healthy
-      await this.client.heartbeat();
+    const healthy = await this.performHealthCheck();
+    if (healthy) {
       this.logger.debug("ChromaDB health check passed");
-      return true;
-    } catch (error) {
-      // Heartbeat failed - server not healthy
-      this.logger.warn({ err: error }, "ChromaDB health check failed");
-      return false;
+    } else {
+      this.logger.warn("ChromaDB health check failed");
     }
+    return healthy;
   }
 
   /**
@@ -390,12 +453,17 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         return chromaMeta;
       });
 
-      await collection.add({
-        ids,
-        embeddings,
-        metadatas: chromaMetadatas,
-        documents: docsContent,
-      });
+      // Add documents with retry for transient failures
+      await this.withRetryWrapper(
+        () =>
+          collection.add({
+            ids,
+            embeddings,
+            metadatas: chromaMetadatas,
+            documents: docsContent,
+          }),
+        "ChromaDB add documents"
+      );
 
       const durationMs = Date.now() - startTime;
       this.logger.info(
@@ -500,11 +568,15 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
             continue;
           }
 
-          // Query the collection
-          const queryResult = await collection.query({
-            queryEmbeddings: [query.embedding],
-            nResults: query.limit,
-          });
+          // Query the collection with retry for transient failures
+          const queryResult = await this.withRetryWrapper(
+            () =>
+              collection.query({
+                queryEmbeddings: [query.embedding],
+                nResults: query.limit,
+              }),
+            `ChromaDB query ${collectionName}`
+          );
 
           // Process results
           if (queryResult.ids && queryResult.ids[0] && queryResult.ids[0].length > 0) {
@@ -702,13 +774,17 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         return chromaMeta;
       });
 
-      // Upsert to ChromaDB (idempotent - updates existing, adds new)
-      await collection.upsert({
-        ids,
-        embeddings,
-        metadatas: chromaMetadatas,
-        documents: chromaDocuments,
-      });
+      // Upsert to ChromaDB with retry for transient failures (idempotent - updates existing, adds new)
+      await this.withRetryWrapper(
+        () =>
+          collection.upsert({
+            ids,
+            embeddings,
+            metadatas: chromaMetadatas,
+            documents: chromaDocuments,
+          }),
+        "ChromaDB upsert documents"
+      );
 
       const durationMs = Date.now() - startTime;
 
@@ -807,8 +883,8 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         throw new CollectionNotFoundError(collectionName);
       }
 
-      // Delete from ChromaDB (idempotent - non-existent IDs are silently ignored)
-      await collection.delete({ ids });
+      // Delete from ChromaDB with retry for transient failures (idempotent - non-existent IDs are silently ignored)
+      await this.withRetryWrapper(() => collection.delete({ ids }), "ChromaDB delete documents");
 
       const durationMs = Date.now() - startTime;
 
@@ -908,12 +984,16 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         include.push("embeddings");
       }
 
-      // Query ChromaDB
-      const result = await collection.get({
-        where: where as Record<string, unknown>,
-        // @ts-expect-error - String literals are compatible with IncludeEnum
-        include: include,
-      });
+      // Query ChromaDB with retry for transient failures
+      const result = await this.withRetryWrapper(
+        () =>
+          collection.get({
+            where: where as Record<string, unknown>,
+            // @ts-expect-error - String literals are compatible with IncludeEnum
+            include: include,
+          }),
+        "ChromaDB get by metadata"
+      );
 
       // Map ChromaDB response to DocumentQueryResult
       const documents: DocumentQueryResult[] = [];

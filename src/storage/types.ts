@@ -7,6 +7,8 @@
 
 import type { Collection } from "chromadb";
 
+import type { RetryConfig } from "../utils/retry.js";
+
 /**
  * Configuration for ChromaDB client connection
  */
@@ -15,6 +17,8 @@ export interface ChromaConfig {
   host: string;
   /** ChromaDB server port (default: 8000) */
   port: number;
+  /** Optional retry configuration for transient failures */
+  retry?: RetryConfig;
 }
 
 /**

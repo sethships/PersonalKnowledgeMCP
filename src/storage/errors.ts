@@ -27,17 +27,32 @@ export class StorageError extends Error {
   public override readonly cause?: Error;
 
   /**
+   * Whether this error is transient and the operation should be retried
+   *
+   * Default is false (most errors are not retryable).
+   * Subclasses can override this based on their error semantics.
+   */
+  public readonly retryable: boolean;
+
+  /**
    * Create a new StorageError
    *
    * @param message - Human-readable error message
    * @param code - Error code for categorization (default: 'STORAGE_ERROR')
    * @param cause - Original error that caused this error
+   * @param retryable - Whether the operation can be retried (default: false)
    */
-  constructor(message: string, code: string = "STORAGE_ERROR", cause?: Error) {
+  constructor(
+    message: string,
+    code: string = "STORAGE_ERROR",
+    cause?: Error,
+    retryable: boolean = false
+  ) {
     super(message);
     this.name = "StorageError";
     this.code = code;
     this.cause = cause;
+    this.retryable = retryable;
 
     // Maintain proper stack trace for where our error was thrown (V8 only)
     if (Error.captureStackTrace) {
@@ -57,6 +72,8 @@ export class StorageError extends Error {
  * This error indicates that the ChromaDB server is unreachable,
  * not responding, or refusing connections.
  *
+ * This error is RETRYABLE by default, as connection issues are often transient.
+ *
  * Common causes:
  * - ChromaDB Docker container not running
  * - Network connectivity issues
@@ -75,8 +92,8 @@ export class StorageError extends Error {
  * ```
  */
 export class StorageConnectionError extends StorageError {
-  constructor(message: string, cause?: Error) {
-    super(message, "CONNECTION_ERROR", cause);
+  constructor(message: string, cause?: Error, retryable: boolean = true) {
+    super(message, "CONNECTION_ERROR", cause, retryable);
     this.name = "StorageConnectionError";
   }
 }
@@ -171,9 +188,10 @@ export class DocumentOperationError extends StorageError {
     operation: "add" | "update" | "delete",
     message: string,
     documentIds?: string[],
-    cause?: Error
+    cause?: Error,
+    retryable: boolean = false
   ) {
-    super(message, "DOCUMENT_OPERATION_ERROR", cause);
+    super(message, "DOCUMENT_OPERATION_ERROR", cause, retryable);
     this.name = "DocumentOperationError";
     this.operation = operation;
     this.documentIds = documentIds;
@@ -197,9 +215,67 @@ export class SearchOperationError extends StorageError {
    */
   public readonly collections?: string[];
 
-  constructor(message: string, collections?: string[], cause?: Error) {
-    super(message, "SEARCH_OPERATION_ERROR", cause);
+  constructor(message: string, collections?: string[], cause?: Error, retryable: boolean = false) {
+    super(message, "SEARCH_OPERATION_ERROR", cause, retryable);
     this.name = "SearchOperationError";
     this.collections = collections;
   }
+}
+
+/**
+ * Error thrown when a storage operation times out
+ *
+ * This error is RETRYABLE by default, as timeouts are often transient.
+ */
+export class StorageTimeoutError extends StorageError {
+  constructor(message: string, cause?: Error) {
+    super(message, "TIMEOUT_ERROR", cause, true);
+    this.name = "StorageTimeoutError";
+  }
+}
+
+/**
+ * Determine if an error is retryable based on its type and characteristics
+ *
+ * Used to decide whether to retry an operation after a failure.
+ * This handles both our custom error classes and native errors.
+ *
+ * @param error - The error to check
+ * @returns true if the operation should be retried
+ */
+export function isRetryableStorageError(error: unknown): boolean {
+  // Check our custom error types first
+  if (error instanceof StorageError) {
+    return error.retryable;
+  }
+
+  // For native errors, check for network/connection related messages
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+
+    // Network errors that are typically transient
+    const retryablePatterns = [
+      "econnrefused",
+      "econnreset",
+      "etimedout",
+      "enotfound",
+      "enetunreach",
+      "socket hang up",
+      "network error",
+      "connection refused",
+      "connection reset",
+      "timeout",
+      "failed to fetch",
+      "fetch failed",
+      "503",
+      "502",
+      "504",
+      "500",
+    ];
+
+    return retryablePatterns.some((pattern) => message.includes(pattern));
+  }
+
+  // Unknown error types are not retryable by default
+  return false;
 }

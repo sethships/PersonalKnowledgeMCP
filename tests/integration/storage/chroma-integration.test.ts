@@ -102,6 +102,13 @@ describe("ChromaDB Integration Tests", () => {
       const badConfig: ChromaConfig = {
         host: "localhost",
         port: 9999, // Wrong port
+        // Disable retries to prevent test timeout on connection errors
+        retry: {
+          maxRetries: 0,
+          initialDelayMs: 0,
+          maxDelayMs: 0,
+          backoffMultiplier: 1,
+        },
       };
 
       const newClient = new ChromaStorageClientImpl(badConfig);
