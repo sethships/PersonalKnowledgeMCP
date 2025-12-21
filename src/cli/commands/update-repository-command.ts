@@ -10,10 +10,12 @@ import chalk from "chalk";
 import ora from "ora";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
+import type { FileProcessingError } from "../../services/incremental-update-types.js";
 import {
   clearInterruptedUpdateFlag,
   formatElapsedTime,
 } from "../../services/interrupted-update-detector.js";
+import { getErrorGuidance } from "../utils/error-guidance.js";
 
 /**
  * Update repository command options
@@ -21,6 +23,7 @@ import {
 export interface UpdateCommandOptions {
   force?: boolean;
   json?: boolean;
+  verbose?: boolean;
 }
 
 /**
@@ -83,9 +86,44 @@ function formatUpdateResultJson(
       : result.commitSha?.substring(0, 7),
     commitMessage: result.commitMessage,
     stats: result.stats,
-    errors: result.errors.map((e) => ({ path: e.path, error: e.error })),
+    errors: result.errors.map((e) => ({
+      path: e.path,
+      error: e.error,
+      guidance: getErrorGuidance(e.error),
+    })),
     durationMs: result.durationMs,
   };
+}
+
+/**
+ * Display file processing errors with optional guidance
+ *
+ * Shows errors with actionable guidance when available.
+ * In verbose mode, shows all errors; otherwise truncates.
+ *
+ * @param errors - Array of file processing errors
+ * @param verbose - Whether to show all errors (no truncation)
+ * @param maxErrors - Maximum errors to show when not verbose
+ */
+function displayErrors(
+  errors: FileProcessingError[],
+  verbose: boolean,
+  maxErrors: number = 3
+): void {
+  const errorsToShow = verbose ? errors : errors.slice(0, maxErrors);
+
+  for (const error of errorsToShow) {
+    console.log(chalk.gray(`    • ${error.path}: ${error.error}`));
+    const guidance = getErrorGuidance(error.error);
+    if (guidance) {
+      console.log(chalk.cyan(`      → ${guidance}`));
+    }
+  }
+
+  if (!verbose && errors.length > maxErrors) {
+    console.log(chalk.gray(`    ... and ${errors.length - maxErrors} more`));
+    console.log(chalk.cyan(`    Use --verbose to see all errors`));
+  }
 }
 
 /**
@@ -240,13 +278,8 @@ export async function updateRepositoryCommand(
           chalk.yellow(`\n⚠ Update completed with ${result.errors.length} file error(s)`)
         );
         if (!options.json) {
-          console.log(chalk.gray("  First few errors:"));
-          for (const error of result.errors.slice(0, 3)) {
-            console.log(chalk.gray(`    • ${error.path}: ${error.error}`));
-          }
-          if (result.errors.length > 3) {
-            console.log(chalk.gray(`    ... and ${result.errors.length - 3} more`));
-          }
+          console.log(chalk.gray("  Errors:"));
+          displayErrors(result.errors, options.verbose ?? false, 3);
         }
       }
       return;
@@ -266,13 +299,8 @@ export async function updateRepositoryCommand(
         );
       } else {
         console.log(chalk.red(`\n${result.errors.length} error(s) occurred during update`));
-        console.log(chalk.gray("  First few errors:"));
-        for (const error of result.errors.slice(0, 5)) {
-          console.log(chalk.gray(`    • ${error.path}: ${error.error}`));
-        }
-        if (result.errors.length > 5) {
-          console.log(chalk.gray(`    ... and ${result.errors.length - 5} more`));
-        }
+        console.log(chalk.gray("  Errors:"));
+        displayErrors(result.errors, options.verbose ?? false, 5);
       }
 
       throw new Error(`Update failed with ${result.errors.length} errors`);
