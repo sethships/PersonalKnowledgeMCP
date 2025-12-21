@@ -195,9 +195,14 @@ export class IncrementalUpdateCoordinator {
       "Starting incremental update"
     );
 
+    // Track whether we've set the in-progress flag (for cleanup in finally)
+    let inProgressFlagSet = false;
+    // Keep reference to loaded repository for finally block
+    let repo: RepositoryInfo | null = null;
+
     try {
       // Step 1: Load repository metadata
-      const repo = await this.repositoryService.getRepository(repositoryName);
+      repo = await this.repositoryService.getRepository(repositoryName);
       if (!repo) {
         throw new RepositoryNotFoundError(repositoryName);
       }
@@ -211,6 +216,21 @@ export class IncrementalUpdateCoordinator {
       if (!repo.lastIndexedCommitSha) {
         throw new MissingCommitShaError(repositoryName);
       }
+
+      // Step 1b: Mark update as in-progress BEFORE doing any work
+      // This allows detection of interrupted updates if service crashes
+      const updateStartedAt = new Date().toISOString();
+      await this.repositoryService.updateRepository({
+        ...repo,
+        updateInProgress: true,
+        updateStartedAt,
+      });
+      inProgressFlagSet = true;
+
+      logger.debug(
+        { operation: "coordinator_set_in_progress", repository: repositoryName, updateStartedAt },
+        "Update marked as in-progress"
+      );
 
       // Step 2: Parse GitHub owner/repo from URL
       const { owner, repo: repoName } = this.parseGitHubUrl(repo.url);
@@ -245,6 +265,8 @@ export class IncrementalUpdateCoordinator {
           "No changes detected - repository is up-to-date"
         );
 
+        // Note: inProgressFlagSet remains true, so the finally block will clear the
+        // updateInProgress flag. This ensures consistent cleanup even for early returns.
         return {
           status: "no_changes",
           commitSha: headCommit.sha,
@@ -410,9 +432,13 @@ export class IncrementalUpdateCoordinator {
           pipelineResult.errors.length > 0
             ? `Incremental update completed with ${pipelineResult.errors.length} error(s)`
             : undefined,
+        // Clear the in-progress flag (update completed successfully or with partial errors)
+        updateInProgress: false,
+        updateStartedAt: undefined,
       };
 
       await this.repositoryService.updateRepository(updatedMetadata);
+      inProgressFlagSet = false; // Flag cleared in metadata
 
       logger.info(
         { repository: repositoryName, newCommitSha: headCommit.sha.substring(0, 7) },
@@ -455,6 +481,34 @@ export class IncrementalUpdateCoordinator {
 
       // Re-throw known coordinator errors and other errors
       throw error;
+    } finally {
+      // Always clear the in-progress flag if we set it, even on error
+      // This prevents false "interrupted update" detection for handled errors
+      if (inProgressFlagSet && repo) {
+        try {
+          // Re-fetch current metadata to avoid overwriting any changes made during processing.
+          // This is necessary because the main try block may have already updated metadata
+          // (e.g., for successful updates), and we don't want to revert those changes.
+          const currentRepo = await this.repositoryService.getRepository(repositoryName);
+          if (currentRepo && currentRepo.updateInProgress) {
+            await this.repositoryService.updateRepository({
+              ...currentRepo,
+              updateInProgress: false,
+              updateStartedAt: undefined,
+            });
+            logger.debug({ repository: repositoryName }, "Cleared in-progress flag after error");
+          }
+        } catch (cleanupError) {
+          // Log but don't throw - the original error is more important
+          logger.warn(
+            {
+              repository: repositoryName,
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            },
+            "Failed to clear in-progress flag during error cleanup. Manual verification recommended."
+          );
+        }
+      }
     }
   }
 

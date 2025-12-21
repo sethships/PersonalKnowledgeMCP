@@ -153,6 +153,16 @@ describe("IncrementalUpdateCoordinator", () => {
       };
       mockGitHubClient.getHeadCommit = mock(async () => sameCommit);
 
+      // Track in-progress state for stateful mock behavior
+      let currentInProgressState = false;
+      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
+        currentInProgressState = repo.updateInProgress ?? false;
+      });
+      mockRepositoryService.getRepository = mock(async () => ({
+        ...testRepo,
+        updateInProgress: currentInProgressState,
+      }));
+
       const result = await coordinator.updateRepository("test-repo");
 
       expect(result.status).toBe("no_changes");
@@ -165,8 +175,14 @@ describe("IncrementalUpdateCoordinator", () => {
       // Verify pipeline was NOT called
       expect(mockUpdatePipeline.processChanges).not.toHaveBeenCalled();
 
-      // Verify metadata was NOT updated
-      expect(mockRepositoryService.updateRepository).not.toHaveBeenCalled();
+      // Verify updateInProgress was set and then cleared (even for no_changes)
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      expect(updateCalls.length).toBe(2); // Set flag, then clear flag
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(updateCalls[0]?.[0]?.updateInProgress).toBe(true); // First call sets flag
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(updateCalls[1]?.[0]?.updateInProgress).toBe(false); // Second call clears flag
     });
 
     it("should throw ForcePushDetectedError when base commit not found", async () => {
@@ -179,8 +195,13 @@ describe("IncrementalUpdateCoordinator", () => {
         ForcePushDetectedError
       );
 
-      // Verify metadata was NOT updated
-      expect(mockRepositoryService.updateRepository).not.toHaveBeenCalled();
+      // Verify updateInProgress was set and then cleared in finally block
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+      // First call sets updateInProgress=true
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(updateCalls[0]?.[0]?.updateInProgress).toBe(true);
     });
 
     it("should throw ChangeThresholdExceededError when changes exceed 500 files", async () => {
@@ -198,8 +219,13 @@ describe("IncrementalUpdateCoordinator", () => {
         ChangeThresholdExceededError
       );
 
-      // Verify metadata was NOT updated
-      expect(mockRepositoryService.updateRepository).not.toHaveBeenCalled();
+      // Verify updateInProgress was set and then cleared in finally block
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+      // First call sets updateInProgress=true
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(updateCalls[0]?.[0]?.updateInProgress).toBe(true);
     });
 
     it("should successfully process normal incremental update", async () => {
@@ -245,8 +271,11 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // Verify metadata was updated
       expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
+      const updateCalls = (mockRepositoryService.updateRepository as any).mock.calls;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0];
       expect(updatedRepo).toBeDefined();
       if (updatedRepo) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -259,6 +288,8 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(updatedRepo.chunkCount).toBe(510); // 500 + 15 upserted - 5 deleted
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(updatedRepo.status).toBe("ready");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        expect(updatedRepo.updateInProgress).toBe(false); // Should be cleared
       }
     });
 
@@ -289,8 +320,11 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // Verify metadata was still updated with new commit SHA
       expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
+      const updateCalls = (mockRepositoryService.updateRepository as any).mock.calls;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0];
       expect(updatedRepo).toBeDefined();
       if (updatedRepo) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -299,6 +333,8 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(updatedRepo.status).toBe("error");
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         expect(updatedRepo.errorMessage).toMatch(/2 error/i);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        expect(updatedRepo.updateInProgress).toBe(false); // Should be cleared
       }
     });
 
@@ -374,10 +410,16 @@ describe("IncrementalUpdateCoordinator", () => {
     it("should update incrementalUpdateCount correctly", async () => {
       // First update
       await coordinator.updateRepository("test-repo");
+      // Get the LAST call from first update (first call sets updateInProgress, last call has final metadata)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      let updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
+      let updateCalls = (mockRepositoryService.updateRepository as any).mock.calls;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      let updatedRepo = updateCalls[updateCalls.length - 1]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(1);
+
+      // Reset mock to track second update separately
+      (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mockClear();
 
       // Simulate second update
       const repoAfterFirstUpdate: RepositoryInfo = {
@@ -400,8 +442,11 @@ describe("IncrementalUpdateCoordinator", () => {
       mockGitHubClient.compareCommits = mock(async () => newComparison);
 
       await coordinator.updateRepository("test-repo");
+      // Get the LAST call from second update
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[1]?.[0];
+      updateCalls = (mockRepositoryService.updateRepository as any).mock.calls;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      updatedRepo = updateCalls[updateCalls.length - 1]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(2);
     });
@@ -415,8 +460,11 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await coordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      const updatedRepo = (mockRepositoryService.updateRepository as any).mock.calls[0]?.[0];
+      const updateCalls = (mockRepositoryService.updateRepository as any).mock.calls;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0];
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(updatedRepo?.incrementalUpdateCount).toBe(1);
     });
@@ -520,9 +568,10 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(result.status).toBe("updated");
       expect(mockRepositoryService.updateRepository).toHaveBeenCalled();
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       expect(updatedRepo).toBeDefined();
       expect(updatedRepo?.updateHistory).toBeDefined();
       expect(updatedRepo?.updateHistory).toHaveLength(1);
@@ -565,9 +614,10 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await coordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       const historyEntry = updatedRepo?.updateHistory?.[0];
       expect(historyEntry).toBeDefined();
       if (!historyEntry) throw new Error("History entry not found");
@@ -595,9 +645,10 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await coordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       const historyEntry = updatedRepo?.updateHistory?.[0];
       expect(historyEntry).toBeDefined();
       if (!historyEntry) throw new Error("History entry not found");
@@ -627,9 +678,10 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await coordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       expect(updatedRepo?.updateHistory).toHaveLength(2);
 
       // Newest should be first
@@ -669,9 +721,10 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await limitedCoordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       const history = updatedRepo?.updateHistory;
       expect(history).toBeDefined();
       if (!history) throw new Error("History not found");
@@ -705,6 +758,9 @@ describe("IncrementalUpdateCoordinator", () => {
         ],
       };
 
+      // Track state updates to simulate real behavior
+      let currentInProgressState = false;
+
       // Create new coordinator with mocks that return same commit
       const noChangeGitHubClient: GitHubClient = {
         getHeadCommit: mock(async () => ({
@@ -719,8 +775,13 @@ describe("IncrementalUpdateCoordinator", () => {
 
       const noChangeRepositoryService: RepositoryMetadataService = {
         listRepositories: mock(async () => [repoWithHistory]),
-        getRepository: mock(async () => repoWithHistory),
-        updateRepository: mock(async () => {}),
+        getRepository: mock(async () => ({
+          ...repoWithHistory,
+          updateInProgress: currentInProgressState,
+        })),
+        updateRepository: mock(async (repo: RepositoryInfo) => {
+          currentInProgressState = repo.updateInProgress ?? false;
+        }),
         removeRepository: mock(async () => {}),
       };
 
@@ -734,8 +795,20 @@ describe("IncrementalUpdateCoordinator", () => {
       const result = await noChangeCoordinator.updateRepository("test-repo");
 
       expect(result.status).toBe("no_changes");
-      // updateRepository should not be called for no_changes
-      expect(noChangeRepositoryService.updateRepository).not.toHaveBeenCalled();
+
+      // updateRepository IS called for no_changes (to set/clear the in-progress flag)
+      // but history should NOT be modified
+      const updateCalls = (noChangeRepositoryService.updateRepository as ReturnType<typeof mock>)
+        .mock.calls;
+
+      // Should be 2 calls: set flag, then clear flag (no history update)
+      expect(updateCalls.length).toBe(2);
+
+      // Verify second call (finally cleanup) doesn't add history
+      // History should remain unchanged from the original
+      const secondUpdate = updateCalls[1]?.[0] as RepositoryInfo | undefined;
+      // The cleanup call only clears the flag, doesn't touch history
+      expect(secondUpdate?.updateInProgress).toBe(false);
     });
 
     it("should respect custom updateHistoryLimit from config", async () => {
@@ -766,10 +839,252 @@ describe("IncrementalUpdateCoordinator", () => {
 
       await customCoordinator.updateRepository("test-repo");
 
+      // Get the LAST call (first call sets updateInProgress, last call has final metadata)
       const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
         .calls;
-      const updatedRepo = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
       expect(updatedRepo?.updateHistory).toHaveLength(customLimit); // Limit enforced
+    });
+  });
+
+  describe("Update In-Progress Flag Management", () => {
+    it("should set updateInProgress=true at start of update", async () => {
+      await coordinator.updateRepository("test-repo");
+
+      // First updateRepository call should set updateInProgress=true
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(firstUpdate).toBeDefined();
+      expect(firstUpdate?.updateInProgress).toBe(true);
+      expect(firstUpdate?.updateStartedAt).toBeDefined();
+    });
+
+    it("should clear updateInProgress=false after successful update", async () => {
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      expect(updateCalls.length).toBeGreaterThanOrEqual(2);
+
+      // Last update should clear the flag
+      const lastUpdate = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(lastUpdate).toBeDefined();
+      expect(lastUpdate?.updateInProgress).toBe(false);
+      expect(lastUpdate?.updateStartedAt).toBeUndefined();
+    });
+
+    it("should clear updateInProgress=false after partial failure", async () => {
+      // Mock pipeline with some errors
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 1,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 5,
+          chunksDeleted: 0,
+          durationMs: 1000,
+        },
+        errors: [{ path: "file.ts", error: "Parse error" }],
+      }));
+
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const lastUpdate = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(lastUpdate?.updateInProgress).toBe(false);
+      expect(lastUpdate?.updateStartedAt).toBeUndefined();
+    });
+
+    it("should clear updateInProgress=false in finally block after error", async () => {
+      // Track state updates to simulate real behavior
+      let currentInProgressState = false;
+      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
+        currentInProgressState = repo.updateInProgress ?? false;
+      });
+      mockRepositoryService.getRepository = mock(async () => ({
+        ...testRepo,
+        updateInProgress: currentInProgressState,
+      }));
+
+      // Mock git pull to throw an error
+      const errorCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {
+            throw new Error("Git pull failed");
+          }),
+        }
+      );
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(errorCoordinator.updateRepository("test-repo")).rejects.toThrow(GitPullError);
+
+      // Verify updateInProgress was set then cleared
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+
+      // Should have 2 calls: set flag, then clear flag
+      expect(updateCalls.length).toBe(2);
+
+      // First call sets the flag
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(firstUpdate?.updateInProgress).toBe(true);
+
+      // Last call should clear the flag (in finally block)
+      const lastUpdate = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(lastUpdate?.updateInProgress).toBe(false);
+    });
+
+    it("should set and clear updateInProgress for 'no_changes' result", async () => {
+      // Track state updates to simulate real behavior
+      let currentInProgressState = false;
+      const noChangeMockRepositoryService: RepositoryMetadataService = {
+        listRepositories: mock(async () => [testRepo]),
+        getRepository: mock(async () => ({
+          ...testRepo,
+          updateInProgress: currentInProgressState,
+        })),
+        updateRepository: mock(async (repo: RepositoryInfo) => {
+          currentInProgressState = repo.updateInProgress ?? false;
+        }),
+        removeRepository: mock(async () => {}),
+      };
+
+      // Mock to return same commit (no changes)
+      const sameCommit: CommitInfo = {
+        ...headCommit,
+        sha: testRepo.lastIndexedCommitSha!,
+      };
+      const noChangeGitHubClient: GitHubClient = {
+        getHeadCommit: mock(async () => sameCommit),
+        compareCommits: mock(async () => comparison),
+        healthCheck: mock(async () => true),
+      };
+
+      const noChangeCoordinator = new IncrementalUpdateCoordinator(
+        noChangeGitHubClient,
+        noChangeMockRepositoryService,
+        mockUpdatePipeline,
+        { customGitPull: mock(async () => {}) }
+      );
+
+      const result = await noChangeCoordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("no_changes");
+
+      // The in-progress flag IS set before the no_changes check, then cleared in finally
+      // So there should be 2 calls: set flag, then clear flag
+      const updateCalls = (
+        noChangeMockRepositoryService.updateRepository as ReturnType<typeof mock>
+      ).mock.calls;
+
+      // Due to the current implementation flow, the flag IS set before no_changes check
+      // and then cleared by the finally block
+      // First call sets updateInProgress=true, second call clears it
+      expect(updateCalls.length).toBe(2);
+
+      // First call sets the flag
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(firstUpdate?.updateInProgress).toBe(true);
+
+      // Second call clears the flag (in finally)
+      const secondUpdate = updateCalls[1]?.[0] as RepositoryInfo | undefined;
+      expect(secondUpdate?.updateInProgress).toBe(false);
+    });
+
+    it("should clear updateInProgress=false when ForcePushDetectedError occurs", async () => {
+      // Track state updates to simulate real behavior
+      let currentInProgressState = false;
+      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
+        currentInProgressState = repo.updateInProgress ?? false;
+      });
+      mockRepositoryService.getRepository = mock(async () => ({
+        ...testRepo,
+        updateInProgress: currentInProgressState,
+      }));
+
+      mockGitHubClient.compareCommits = mock(async () => {
+        throw new GitHubNotFoundError("Commit not found", "https://api.github.com/...");
+      });
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
+        ForcePushDetectedError
+      );
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+
+      // Should have 2 calls: set flag, then clear flag in finally
+      expect(updateCalls.length).toBe(2);
+
+      // First call sets the flag
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(firstUpdate?.updateInProgress).toBe(true);
+
+      // Last call should clear the flag
+      const lastUpdate = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(lastUpdate?.updateInProgress).toBe(false);
+    });
+
+    it("should clear updateInProgress=false when ChangeThresholdExceededError occurs", async () => {
+      // Track state updates to simulate real behavior
+      let currentInProgressState = false;
+      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
+        currentInProgressState = repo.updateInProgress ?? false;
+      });
+      mockRepositoryService.getRepository = mock(async () => ({
+        ...testRepo,
+        updateInProgress: currentInProgressState,
+      }));
+
+      const largeComparison: CommitComparison = {
+        ...comparison,
+        files: Array.from({ length: 501 }, (_, i) => ({
+          path: `file${i}.ts`,
+          status: "added" as const,
+        })),
+      };
+      mockGitHubClient.compareCommits = mock(async () => largeComparison);
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
+        ChangeThresholdExceededError
+      );
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+
+      // Should have 2 calls: set flag, then clear flag in finally
+      expect(updateCalls.length).toBe(2);
+
+      // First call sets the flag
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+      expect(firstUpdate?.updateInProgress).toBe(true);
+
+      // Last call should clear the flag
+      const lastUpdate = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(lastUpdate?.updateInProgress).toBe(false);
+    });
+
+    it("should have updateStartedAt as valid ISO 8601 timestamp", async () => {
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const firstUpdate = updateCalls[0]?.[0] as RepositoryInfo | undefined;
+
+      expect(firstUpdate?.updateStartedAt).toBeDefined();
+      // Validate ISO 8601 format
+      const updateStartedAt = firstUpdate!.updateStartedAt as string;
+      const date = new Date(updateStartedAt);
+      expect(date.toISOString()).toBe(updateStartedAt);
     });
   });
 });

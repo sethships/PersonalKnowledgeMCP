@@ -10,6 +10,10 @@ import chalk from "chalk";
 import ora from "ora";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
+import {
+  clearInterruptedUpdateFlag,
+  formatElapsedTime,
+} from "../../services/interrupted-update-detector.js";
 
 /**
  * Update repository command options
@@ -110,6 +114,19 @@ export async function updateRepositoryCommand(
 
   // Handle force re-index
   if (options.force) {
+    // Check if this is recovering from an interrupted update
+    if (repo.updateInProgress) {
+      const elapsed = repo.updateStartedAt
+        ? formatElapsedTime(Date.now() - new Date(repo.updateStartedAt).getTime())
+        : "unknown time";
+
+      console.log(chalk.yellow(`⚠ Recovering from interrupted update (started ${elapsed} ago)`));
+
+      // Clear the interrupted flag before re-indexing
+      await clearInterruptedUpdateFlag(deps.repositoryService, repositoryName);
+      console.log(chalk.gray("  Cleared interrupted update flag"));
+    }
+
     const spinner = ora({
       text: `Force re-indexing ${chalk.cyan(repositoryName)}...`,
       spinner: "dots",
@@ -157,6 +174,15 @@ export async function updateRepositoryCommand(
       throw error;
     }
     return;
+  }
+
+  // Check for existing interrupted update and warn user
+  if (repo.updateInProgress) {
+    const elapsed = repo.updateStartedAt
+      ? formatElapsedTime(Date.now() - new Date(repo.updateStartedAt).getTime())
+      : "unknown time";
+    console.log(chalk.yellow(`⚠ Repository has an interrupted update from ${elapsed} ago.`));
+    console.log(chalk.yellow(`  Use --force to clear and re-index, or proceed with caution.`));
   }
 
   // Handle incremental update
