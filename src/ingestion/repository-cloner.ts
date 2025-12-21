@@ -10,7 +10,20 @@ import { resolve, normalize } from "node:path";
 import type pino from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { CloneOptions, CloneResult, RepositoryClonerConfig } from "./types.js";
-import { ValidationError, CloneError, AuthenticationError } from "./errors.js";
+import {
+  ValidationError,
+  CloneError,
+  AuthenticationError,
+  NetworkError,
+  isRetryableCloneError,
+} from "./errors.js";
+import {
+  withRetry,
+  createRetryOptions,
+  createRetryLogger,
+  DEFAULT_RETRY_CONFIG,
+  type RetryConfig,
+} from "../utils/retry.js";
 
 /**
  * Git clone option flags and defaults.
@@ -45,6 +58,7 @@ const CLONE_OPTIONS = {
 export class RepositoryCloner {
   private readonly config: RepositoryClonerConfig;
   private readonly git: SimpleGit;
+  private readonly retryConfig: RetryConfig;
   private _logger: pino.Logger | null = null;
 
   /**
@@ -65,11 +79,18 @@ export class RepositoryCloner {
   constructor(config: RepositoryClonerConfig) {
     this.config = config;
     this.git = simpleGit();
+    this.retryConfig = config.retry ?? DEFAULT_RETRY_CONFIG;
 
     this.logger.debug(
       {
         clonePath: config.clonePath,
         hasGithubPat: !!config.githubPat,
+        retryConfig: {
+          maxRetries: this.retryConfig.maxRetries,
+          initialDelayMs: this.retryConfig.initialDelayMs,
+          maxDelayMs: this.retryConfig.maxDelayMs,
+          backoffMultiplier: this.retryConfig.backoffMultiplier,
+        },
       },
       "RepositoryCloner initialized"
     );
@@ -175,7 +196,11 @@ export class RepositoryCloner {
         "Executing git clone"
       );
 
-      await this.git.clone(cloneUrl, targetPath, cloneOptions);
+      // Use retry wrapper for network resilience
+      await this.withRetryWrapper(
+        () => this.git.clone(cloneUrl, targetPath, cloneOptions),
+        `git.clone(${repoName})`
+      );
 
       // Step 9: Detect actual branch name if not specified
       const actualBranch = branch || (await this.detectCurrentBranch(targetPath));
@@ -232,15 +257,24 @@ export class RepositoryCloner {
           );
         }
 
-        // Network errors
+        // Network errors (retryable)
         if (
           errorMessage.includes("could not resolve host") ||
           errorMessage.includes("failed to connect") ||
-          errorMessage.includes("network")
+          errorMessage.includes("network") ||
+          errorMessage.includes("econnrefused") ||
+          errorMessage.includes("econnreset") ||
+          errorMessage.includes("etimedout") ||
+          errorMessage.includes("enotfound") ||
+          errorMessage.includes("enetunreach") ||
+          errorMessage.includes("socket hang up") ||
+          errorMessage.includes("connection refused") ||
+          errorMessage.includes("connection reset") ||
+          errorMessage.includes("timeout")
         ) {
           // Sanitize error message to prevent URL leakage
           const sanitizedMessage = this.sanitizeErrorMessage(error.message);
-          throw new CloneError(
+          throw new NetworkError(
             `Network error while cloning repository: ${sanitizedMessage}`,
             this.sanitizeUrl(url),
             targetPath,
@@ -380,6 +414,28 @@ export class RepositoryCloner {
   private sanitizeErrorMessage(message: string): string {
     // Replace patterns like https://token:x-oauth-basic@github.com with https://***@github.com
     return message.replace(/https:\/\/[^:]+:[^@]+@/g, "https://***@");
+  }
+
+  /**
+   * Execute a git operation with retry logic.
+   *
+   * Wraps operations with exponential backoff retry for transient network failures.
+   * Only network-related errors are retried - authentication failures fail immediately.
+   *
+   * @param operation - Async operation to execute with retry
+   * @param operationName - Name of the operation for logging
+   * @returns Result of the operation
+   */
+  private async withRetryWrapper<T>(
+    operation: () => Promise<T>,
+    operationName: string
+  ): Promise<T> {
+    const options = createRetryOptions(this.retryConfig, {
+      shouldRetry: (error) => isRetryableCloneError(error),
+      onRetry: createRetryLogger(this.logger, operationName, this.retryConfig.maxRetries),
+    });
+
+    return withRetry(operation, options);
   }
 
   /**

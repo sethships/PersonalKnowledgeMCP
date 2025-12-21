@@ -3,11 +3,157 @@
  *
  * Provides a reusable retry mechanism for async operations with:
  * - Configurable retry attempts
- * - Exponential backoff strategy (1s → 2s → 4s → ...)
+ * - Exponential backoff strategy (configurable multiplier)
  * - Conditional retry based on error type
  * - Support for retry-after headers
  * - Type-safe error handling
+ * - Environment-based configuration
  */
+
+import type pino from "pino";
+
+/**
+ * Configuration for retry behavior with exponential backoff
+ *
+ * @example
+ * ```typescript
+ * const config: RetryConfig = {
+ *   maxRetries: 3,
+ *   initialDelayMs: 1000,
+ *   maxDelayMs: 60000,
+ *   backoffMultiplier: 2,
+ * };
+ * // Delays: 1s → 2s → 4s (capped at 60s)
+ * ```
+ */
+export interface RetryConfig {
+  /**
+   * Maximum number of retry attempts (0 = no retries, just initial attempt)
+   * @default 3
+   */
+  maxRetries: number;
+
+  /**
+   * Initial delay in milliseconds before the first retry
+   * @default 1000
+   */
+  initialDelayMs: number;
+
+  /**
+   * Maximum delay in milliseconds (caps exponential growth)
+   * @default 60000
+   */
+  maxDelayMs: number;
+
+  /**
+   * Multiplier applied to delay after each retry attempt
+   * @default 2
+   */
+  backoffMultiplier: number;
+}
+
+/**
+ * Default retry configuration values
+ */
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  initialDelayMs: 1000,
+  maxDelayMs: 60000,
+  backoffMultiplier: 2,
+};
+
+/**
+ * Load retry configuration from environment variables
+ *
+ * Reads the following environment variables:
+ * - MAX_RETRIES: Maximum retry attempts (default: 3)
+ * - RETRY_INITIAL_DELAY_MS: Initial delay in ms (default: 1000)
+ * - RETRY_MAX_DELAY_MS: Maximum delay cap in ms (default: 60000)
+ * - RETRY_BACKOFF_MULTIPLIER: Backoff multiplier (default: 2)
+ *
+ * @returns RetryConfig with values from environment or defaults
+ */
+export function createRetryConfigFromEnv(): RetryConfig {
+  return {
+    maxRetries: parseInt(Bun.env["MAX_RETRIES"] || String(DEFAULT_RETRY_CONFIG.maxRetries), 10),
+    initialDelayMs: parseInt(
+      Bun.env["RETRY_INITIAL_DELAY_MS"] || String(DEFAULT_RETRY_CONFIG.initialDelayMs),
+      10
+    ),
+    maxDelayMs: parseInt(
+      Bun.env["RETRY_MAX_DELAY_MS"] || String(DEFAULT_RETRY_CONFIG.maxDelayMs),
+      10
+    ),
+    backoffMultiplier: parseFloat(
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] || String(DEFAULT_RETRY_CONFIG.backoffMultiplier)
+    ),
+  };
+}
+
+/**
+ * Create an exponential backoff calculator from retry configuration
+ *
+ * Calculates delay using the formula:
+ * delay = min(initialDelayMs * (backoffMultiplier ^ attempt), maxDelayMs)
+ *
+ * @param config - Retry configuration with backoff parameters
+ * @returns A function that calculates backoff delay for each attempt
+ *
+ * @example
+ * ```typescript
+ * const config = { initialDelayMs: 1000, maxDelayMs: 60000, backoffMultiplier: 2 };
+ * const calculateBackoff = createExponentialBackoff(config);
+ * // attempt 0: 1000ms
+ * // attempt 1: 2000ms
+ * // attempt 2: 4000ms
+ * ```
+ */
+export function createExponentialBackoff(
+  config: Pick<RetryConfig, "initialDelayMs" | "maxDelayMs" | "backoffMultiplier">
+): (attempt: number, error: Error) => number {
+  const { initialDelayMs, maxDelayMs, backoffMultiplier } = config;
+
+  return (attempt: number, _error: Error): number => {
+    const delay = initialDelayMs * Math.pow(backoffMultiplier, attempt);
+    return Math.min(delay, maxDelayMs);
+  };
+}
+
+/**
+ * Create a standardized retry logger callback
+ *
+ * Produces consistent, structured log output for retry attempts.
+ *
+ * @param logger - Logger instance to use for output
+ * @param operation - Human-readable name of the operation being retried
+ * @param maxRetries - Maximum number of retries (for context in log message)
+ * @returns An onRetry callback function for use with withRetry
+ *
+ * @example
+ * ```typescript
+ * const onRetry = createRetryLogger(logger, "ChromaDB query", 3);
+ * await withRetry(operation, { maxRetries: 3, onRetry });
+ * // Logs: { attempt: 1, maxRetries: 3, delayMs: 1000, ... } "Retrying ChromaDB query"
+ * ```
+ */
+export function createRetryLogger(
+  logger: pino.Logger,
+  operation: string,
+  maxRetries: number
+): (attempt: number, error: Error, delayMs: number) => void {
+  return (attempt: number, error: Error, delayMs: number): void => {
+    logger.warn(
+      {
+        attempt: attempt + 1, // 1-based for human readability
+        maxRetries,
+        delayMs,
+        error: error.message,
+        errorType: error.constructor.name,
+      },
+      `Retrying ${operation}`
+    );
+  };
+}
 
 /**
  * Options for retry behavior
@@ -153,4 +299,34 @@ export async function withRetry<T>(operation: () => Promise<T>, options: RetryOp
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Create RetryOptions from RetryConfig with optional overrides
+ *
+ * Convenience function to build complete RetryOptions from configuration.
+ *
+ * @param config - Retry configuration
+ * @param overrides - Optional overrides for shouldRetry, onRetry, etc.
+ * @returns Complete RetryOptions ready for use with withRetry
+ *
+ * @example
+ * ```typescript
+ * const config = createRetryConfigFromEnv();
+ * const options = createRetryOptions(config, {
+ *   shouldRetry: (error) => error instanceof NetworkError,
+ *   onRetry: createRetryLogger(logger, "API call", config.maxRetries),
+ * });
+ * await withRetry(operation, options);
+ * ```
+ */
+export function createRetryOptions(
+  config: RetryConfig,
+  overrides?: Partial<Omit<RetryOptions, "maxRetries">>
+): RetryOptions {
+  return {
+    maxRetries: config.maxRetries,
+    calculateBackoff: createExponentialBackoff(config),
+    ...overrides,
+  };
 }

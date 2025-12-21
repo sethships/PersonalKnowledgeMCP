@@ -15,12 +15,19 @@
 export class RepositoryError extends Error {
   public readonly code: string;
   public override readonly cause?: Error;
+  public readonly retryable: boolean;
 
-  constructor(message: string, code: string = "REPOSITORY_ERROR", cause?: Error) {
+  constructor(
+    message: string,
+    code: string = "REPOSITORY_ERROR",
+    cause?: Error,
+    retryable: boolean = false
+  ) {
     super(message);
     this.name = "RepositoryError";
     this.code = code;
     this.cause = cause;
+    this.retryable = retryable;
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -56,11 +63,34 @@ export class CloneError extends RepositoryError {
   public readonly url: string;
   public readonly targetPath?: string;
 
-  constructor(message: string, url: string, targetPath?: string, cause?: Error) {
-    super(message, "CLONE_ERROR", cause);
+  constructor(
+    message: string,
+    url: string,
+    targetPath?: string,
+    cause?: Error,
+    retryable: boolean = false
+  ) {
+    super(message, "CLONE_ERROR", cause, retryable);
     this.name = "CloneError";
     this.url = url;
     this.targetPath = targetPath;
+  }
+}
+
+/**
+ * Error thrown when a network failure occurs during clone.
+ *
+ * This error is RETRYABLE by default, as network issues are often transient.
+ * Common causes include:
+ * - DNS resolution failures (ENOTFOUND)
+ * - Connection refused (ECONNREFUSED)
+ * - Connection reset (ECONNRESET)
+ * - Timeouts (ETIMEDOUT)
+ */
+export class NetworkError extends CloneError {
+  constructor(message: string, url: string, targetPath?: string, cause?: Error) {
+    super(message, url, targetPath, cause, true);
+    this.name = "NetworkError";
   }
 }
 
@@ -137,4 +167,63 @@ export class ChunkingError extends RepositoryError {
     this.name = "ChunkingError";
     this.filePath = filePath;
   }
+}
+
+/**
+ * Determine if an error is a retryable clone error based on its type and characteristics.
+ *
+ * Used to decide whether to retry a git clone operation after a failure.
+ * Only network-related errors are retryable - authentication failures are not.
+ *
+ * @param error - The error to check
+ * @returns true if the clone operation should be retried
+ */
+export function isRetryableCloneError(error: unknown): boolean {
+  // Check our custom error types first
+  if (error instanceof RepositoryError) {
+    return error.retryable;
+  }
+
+  // For native errors, check for network-related messages
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+
+    // Network errors that are typically transient
+    const retryablePatterns = [
+      "econnrefused",
+      "econnreset",
+      "etimedout",
+      "enotfound",
+      "enetunreach",
+      "socket hang up",
+      "network",
+      "could not resolve host",
+      "failed to connect",
+      "connection refused",
+      "connection reset",
+      "timeout",
+    ];
+
+    // Non-retryable patterns (authentication, not found)
+    const nonRetryablePatterns = [
+      "authentication failed",
+      "could not read username",
+      "not found",
+      "403",
+      "401",
+      "permission denied",
+      "invalid credentials",
+    ];
+
+    // If it matches a non-retryable pattern, don't retry
+    if (nonRetryablePatterns.some((pattern) => message.includes(pattern))) {
+      return false;
+    }
+
+    // If it matches a retryable pattern, retry
+    return retryablePatterns.some((pattern) => message.includes(pattern));
+  }
+
+  // Unknown error types are not retryable by default
+  return false;
 }

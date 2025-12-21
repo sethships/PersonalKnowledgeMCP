@@ -4,6 +4,8 @@
  * @module ingestion/types
  */
 
+import type { RetryConfig } from "../utils/retry.js";
+
 /**
  * Options for cloning a repository.
  */
@@ -88,6 +90,14 @@ export interface RepositoryClonerConfig {
    * @default 300000 (5 minutes)
    */
   cloneTimeoutMs?: number;
+
+  /**
+   * Retry configuration for transient network failures.
+   *
+   * If not provided, defaults will be used.
+   * Only network errors are retried - authentication failures fail immediately.
+   */
+  retry?: RetryConfig;
 }
 
 /**
