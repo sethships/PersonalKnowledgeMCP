@@ -615,4 +615,191 @@ describe("Update Repository Command", () => {
       // This is implicitly tested by the fact that the error is re-thrown
     });
   });
+
+  describe("Error guidance display", () => {
+    it("should show actionable guidance for known error patterns", async () => {
+      const resultWithKnownError: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [{ path: "src/deleted.ts", error: "ENOENT: no such file or directory" }],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithKnownError);
+
+      const options: UpdateCommandOptions = {};
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      // Verify guidance is displayed for ENOENT error
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("File was deleted between pull and processing")
+      );
+    });
+
+    it("should show guidance for rate limit errors", async () => {
+      const resultWithRateLimitError: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [{ path: "src/file.ts", error: "Request failed with status 429" }],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithRateLimitError);
+
+      const options: UpdateCommandOptions = {};
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Rate limited by API"));
+    });
+
+    it("should include guidance in JSON output", async () => {
+      const resultWithKnownError: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [{ path: "src/syntax.ts", error: "SyntaxError: Unexpected token" }],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithKnownError);
+
+      const options: UpdateCommandOptions = { json: true };
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
+        try {
+          JSON.parse(call[0]);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
+      expect(jsonOutput.errors[0]!.guidance).toBe(
+        "Source file has syntax errors. Fix the file and retry."
+      );
+    });
+  });
+
+  describe("Verbose flag behavior", () => {
+    it("should show all errors when --verbose is set", async () => {
+      const resultWithManyErrors: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [
+          { path: "error1.ts", error: "Error 1" },
+          { path: "error2.ts", error: "Error 2" },
+          { path: "error3.ts", error: "Error 3" },
+          { path: "error4.ts", error: "Error 4" },
+          { path: "error5.ts", error: "Error 5" },
+        ],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithManyErrors);
+
+      const options: UpdateCommandOptions = { verbose: true };
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      // All 5 errors should be displayed
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error1.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error2.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error3.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error4.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error5.ts"));
+
+      // Should NOT show "and X more" message
+      const andMoreCalls = consoleLogSpy.mock.calls.filter(
+        (call) => String(call[0]).includes("and") && String(call[0]).includes("more")
+      );
+      expect(andMoreCalls.length).toBe(0);
+    });
+
+    it("should truncate errors when --verbose is not set", async () => {
+      const resultWithManyErrors: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [
+          { path: "error1.ts", error: "Error 1" },
+          { path: "error2.ts", error: "Error 2" },
+          { path: "error3.ts", error: "Error 3" },
+          { path: "error4.ts", error: "Error 4" },
+          { path: "error5.ts", error: "Error 5" },
+        ],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithManyErrors);
+
+      const options: UpdateCommandOptions = {}; // verbose is not set
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      // First 3 errors should be displayed
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error1.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error2.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("error3.ts"));
+
+      // Should show "and 2 more" message
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("and 2 more"));
+    });
+
+    it("should suggest using --verbose when errors are truncated", async () => {
+      const resultWithManyErrors: CoordinatorResult = {
+        ...SAMPLE_UPDATED_WITH_ERRORS_RESULT,
+        errors: [
+          { path: "error1.ts", error: "Error 1" },
+          { path: "error2.ts", error: "Error 2" },
+          { path: "error3.ts", error: "Error 3" },
+          { path: "error4.ts", error: "Error 4" },
+        ],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(resultWithManyErrors);
+
+      const options: UpdateCommandOptions = {}; // verbose is not set
+
+      await updateRepositoryCommand("test-repo", options, mockDeps);
+
+      // Should suggest --verbose
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("--verbose"));
+    });
+
+    it("should show all errors with guidance in verbose mode for failed updates", async () => {
+      const failedResult: CoordinatorResult = {
+        ...SAMPLE_FAILED_RESULT,
+        errors: [
+          { path: "file1.ts", error: "ENOENT: no such file" },
+          { path: "file2.ts", error: "SyntaxError: Unexpected token" },
+          { path: "file3.ts", error: "EACCES: permission denied" },
+          { path: "file4.ts", error: "File too large" },
+          { path: "file5.ts", error: "rate limit exceeded" },
+          { path: "file6.ts", error: "Connection refused to ChromaDB" },
+        ],
+      };
+
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(failedResult);
+
+      const options: UpdateCommandOptions = { verbose: true };
+
+      try {
+        await updateRepositoryCommand("test-repo", options, mockDeps);
+      } catch {
+        // Expected to throw
+      }
+
+      // All 6 errors should be displayed
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("file1.ts"));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("file6.ts"));
+
+      // Guidance should be shown for known patterns
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("File was deleted between pull and processing")
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Source file has syntax errors")
+      );
+    });
+  });
 });

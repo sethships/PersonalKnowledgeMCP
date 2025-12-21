@@ -393,4 +393,145 @@ describe("IncrementalUpdatePipeline", () => {
       expect(Array.isArray(result.errors)).toBe(true);
     });
   });
+
+  describe("partial failure handling", () => {
+    const baseOptions: UpdateOptions = {
+      repository: "test-repo",
+      localPath: "",
+      collectionName: "test_collection",
+      includeExtensions: [".ts", ".js", ".md"],
+      excludePatterns: ["node_modules/**", "dist/**"],
+    };
+
+    it("should collect all errors from multiple file failures", async () => {
+      // No files created - all will fail with ENOENT
+      const changes: FileChange[] = [
+        { path: "src/missing1.ts", status: "added" },
+        { path: "src/missing2.ts", status: "added" },
+        { path: "src/missing3.ts", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // All three files should have errors
+      expect(result.errors).toHaveLength(3);
+      expect(result.errors.map((e) => e.path)).toContain("src/missing1.ts");
+      expect(result.errors.map((e) => e.path)).toContain("src/missing2.ts");
+      expect(result.errors.map((e) => e.path)).toContain("src/missing3.ts");
+
+      // Stats should reflect no successful processing
+      expect(result.stats.filesAdded).toBe(0);
+      expect(result.stats.chunksUpserted).toBe(0);
+    });
+
+    it("should process successful files even when others fail", async () => {
+      // Create only some of the files
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/success1.ts"), "export const a = 1;");
+      await writeFile(join(testDir, "src/success2.ts"), "export const b = 2;");
+
+      const changes: FileChange[] = [
+        { path: "src/success1.ts", status: "added" },
+        { path: "src/missing.ts", status: "added" }, // This will fail
+        { path: "src/success2.ts", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // Two files succeeded, one failed
+      expect(result.stats.filesAdded).toBe(2);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.path).toBe("src/missing.ts");
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+    });
+
+    it("should include descriptive error messages in errors array", async () => {
+      const changes: FileChange[] = [{ path: "src/nonexistent.ts", status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toHaveProperty("path", "src/nonexistent.ts");
+      expect(result.errors[0]).toHaveProperty("error");
+      // Error message should be descriptive (ENOENT or similar)
+      expect(result.errors[0]?.error).toMatch(/ENOENT|No such file/);
+    });
+
+    it("should handle mixed success and failure across change types", async () => {
+      // Create some files, leave others missing
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/added-success.ts"), "export const x = 1;");
+      await writeFile(join(testDir, "src/modified-success.ts"), "export const y = 2;");
+      // src/added-fail.ts is intentionally not created
+      // src/renamed-success.ts will have a valid previousPath
+      await writeFile(join(testDir, "src/renamed-success.ts"), "export const z = 3;");
+
+      const changes: FileChange[] = [
+        { path: "src/added-success.ts", status: "added" },
+        { path: "src/added-fail.ts", status: "added" }, // File doesn't exist
+        { path: "src/modified-success.ts", status: "modified" },
+        { path: "src/deleted.ts", status: "deleted" }, // Deletes always succeed
+        { path: "src/renamed-success.ts", status: "renamed", previousPath: "src/old.ts" },
+        { path: "src/renamed-fail.ts", status: "renamed" }, // Missing previousPath
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // Verify successes
+      expect(result.stats.filesAdded).toBe(1); // added-success
+      expect(result.stats.filesModified).toBe(2); // modified-success + renamed-success
+      expect(result.stats.filesDeleted).toBe(1); // deleted
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // Verify failures are collected with correct paths
+      expect(result.errors).toHaveLength(2);
+      const errorPaths = result.errors.map((e) => e.path);
+      expect(errorPaths).toContain("src/added-fail.ts");
+      expect(errorPaths).toContain("src/renamed-fail.ts");
+    });
+
+    it("should return stats with durationMs even when all files fail", async () => {
+      const changes: FileChange[] = [
+        { path: "src/fail1.ts", status: "added" },
+        { path: "src/fail2.ts", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // All files failed
+      expect(result.errors).toHaveLength(2);
+      expect(result.stats.filesAdded).toBe(0);
+
+      // But duration should still be tracked
+      expect(result.stats.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should handle embedding provider failure gracefully", async () => {
+      // Create a file that will be processed
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/test.ts"), "export const x = 1;");
+
+      // Make embedding provider throw an error
+      mockEmbeddingProvider.generateEmbeddings = mock(async () => {
+        throw new Error("OpenAI API rate limit exceeded");
+      });
+
+      const changes: FileChange[] = [{ path: "src/test.ts", status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // File was "added" in stats but embedding failed
+      expect(result.stats.filesAdded).toBe(1);
+      // Error should be captured
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.path).toBe("(batch embedding/storage)");
+      expect(result.errors[0]?.error).toContain("rate limit");
+    });
+  });
 });

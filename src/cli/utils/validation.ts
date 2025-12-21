@@ -73,6 +73,7 @@ export const RemoveCommandOptionsSchema = z.object({
 export const UpdateCommandOptionsSchema = z.object({
   force: z.boolean().optional(),
   json: z.boolean().optional(),
+  verbose: z.boolean().optional(),
 });
 
 /**

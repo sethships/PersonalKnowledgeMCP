@@ -135,6 +135,7 @@ program
   .argument("<repository>", "Repository name to update")
   .option("-f, --force", "Force full re-index instead of incremental update")
   .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Show all errors with actionable guidance")
   .action(async (repository: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = UpdateCommandOptionsSchema.parse(options);
