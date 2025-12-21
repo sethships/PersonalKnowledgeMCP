@@ -11,9 +11,7 @@
     "provider": "openai",
     "model": "${EMBEDDING_MODEL:text-embedding-3-small}",
     "dimensions": "${EMBEDDING_DIMENSIONS:1536}",
-    "batchSize": "${EMBEDDING_BATCH_SIZE:100}",
-    "maxRetries": "${MAX_RETRIES:3}",
-    "timeoutMs": "${REQUEST_TIMEOUT_MS:30000}"
+    "batchSize": "${EMBEDDING_BATCH_SIZE:100}"
   },
   "retry": {
     "maxRetries": "${MAX_RETRIES:3}",

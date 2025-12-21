@@ -453,6 +453,113 @@ describe("createRetryConfigFromEnv", () => {
       backoffMultiplier: 3,
     });
   });
+
+  describe("invalid environment variable handling", () => {
+    test("falls back to default for NaN maxRetries", () => {
+      Bun.env["MAX_RETRIES"] = "not-a-number";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(DEFAULT_RETRY_CONFIG.maxRetries);
+    });
+
+    test("falls back to default for negative maxRetries", () => {
+      Bun.env["MAX_RETRIES"] = "-5";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(DEFAULT_RETRY_CONFIG.maxRetries);
+    });
+
+    test("allows zero for maxRetries (disables retry)", () => {
+      Bun.env["MAX_RETRIES"] = "0";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(0);
+    });
+
+    test("falls back to default for NaN initialDelayMs", () => {
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "abc";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+    });
+
+    test("falls back to default for negative initialDelayMs", () => {
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "-1000";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+    });
+
+    test("falls back to default for NaN maxDelayMs", () => {
+      Bun.env["RETRY_MAX_DELAY_MS"] = "invalid";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxDelayMs).toBe(DEFAULT_RETRY_CONFIG.maxDelayMs);
+    });
+
+    test("falls back to default for negative maxDelayMs", () => {
+      Bun.env["RETRY_MAX_DELAY_MS"] = "-60000";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxDelayMs).toBe(DEFAULT_RETRY_CONFIG.maxDelayMs);
+    });
+
+    test("falls back to default for NaN backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "xyz";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for zero backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "0";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for negative backoffMultiplier", () => {
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "-2";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+
+    test("falls back to default for empty string values", () => {
+      Bun.env["MAX_RETRIES"] = "";
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "";
+      Bun.env["RETRY_MAX_DELAY_MS"] = "";
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "";
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config).toEqual(DEFAULT_RETRY_CONFIG);
+    });
+
+    test("handles mixed valid and invalid values", () => {
+      Bun.env["MAX_RETRIES"] = "5"; // Valid
+      Bun.env["RETRY_INITIAL_DELAY_MS"] = "invalid"; // Invalid - should use default
+      Bun.env["RETRY_MAX_DELAY_MS"] = "30000"; // Valid
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"] = "-1"; // Invalid - should use default
+
+      const config = createRetryConfigFromEnv();
+
+      expect(config.maxRetries).toBe(5);
+      expect(config.initialDelayMs).toBe(DEFAULT_RETRY_CONFIG.initialDelayMs);
+      expect(config.maxDelayMs).toBe(30000);
+      expect(config.backoffMultiplier).toBe(DEFAULT_RETRY_CONFIG.backoffMultiplier);
+    });
+  });
 });
 
 describe("createExponentialBackoff", () => {

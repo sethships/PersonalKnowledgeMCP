@@ -63,6 +63,46 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 /**
+ * Parse an environment variable as a non-negative integer
+ *
+ * Returns the default value if:
+ * - The environment variable is not set
+ * - The parsed value is NaN
+ * - The parsed value is negative
+ *
+ * @param value - Environment variable value (may be undefined)
+ * @param defaultVal - Default value to use if parsing fails
+ * @returns Parsed non-negative integer or default
+ */
+function parseNonNegativeInt(value: string | undefined, defaultVal: number): number {
+  if (value === undefined || value === "") {
+    return defaultVal;
+  }
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) || parsed < 0 ? defaultVal : parsed;
+}
+
+/**
+ * Parse an environment variable as a positive float
+ *
+ * Returns the default value if:
+ * - The environment variable is not set
+ * - The parsed value is NaN
+ * - The parsed value is zero or negative
+ *
+ * @param value - Environment variable value (may be undefined)
+ * @param defaultVal - Default value to use if parsing fails
+ * @returns Parsed positive float or default
+ */
+function parsePositiveFloat(value: string | undefined, defaultVal: number): number {
+  if (value === undefined || value === "") {
+    return defaultVal;
+  }
+  const parsed = parseFloat(value);
+  return isNaN(parsed) || parsed <= 0 ? defaultVal : parsed;
+}
+
+/**
  * Load retry configuration from environment variables
  *
  * Reads the following environment variables:
@@ -71,21 +111,21 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
  * - RETRY_MAX_DELAY_MS: Maximum delay cap in ms (default: 60000)
  * - RETRY_BACKOFF_MULTIPLIER: Backoff multiplier (default: 2)
  *
+ * Invalid values (NaN, negative, zero for multiplier) fall back to defaults.
+ *
  * @returns RetryConfig with values from environment or defaults
  */
 export function createRetryConfigFromEnv(): RetryConfig {
   return {
-    maxRetries: parseInt(Bun.env["MAX_RETRIES"] || String(DEFAULT_RETRY_CONFIG.maxRetries), 10),
-    initialDelayMs: parseInt(
-      Bun.env["RETRY_INITIAL_DELAY_MS"] || String(DEFAULT_RETRY_CONFIG.initialDelayMs),
-      10
+    maxRetries: parseNonNegativeInt(Bun.env["MAX_RETRIES"], DEFAULT_RETRY_CONFIG.maxRetries),
+    initialDelayMs: parseNonNegativeInt(
+      Bun.env["RETRY_INITIAL_DELAY_MS"],
+      DEFAULT_RETRY_CONFIG.initialDelayMs
     ),
-    maxDelayMs: parseInt(
-      Bun.env["RETRY_MAX_DELAY_MS"] || String(DEFAULT_RETRY_CONFIG.maxDelayMs),
-      10
-    ),
-    backoffMultiplier: parseFloat(
-      Bun.env["RETRY_BACKOFF_MULTIPLIER"] || String(DEFAULT_RETRY_CONFIG.backoffMultiplier)
+    maxDelayMs: parseNonNegativeInt(Bun.env["RETRY_MAX_DELAY_MS"], DEFAULT_RETRY_CONFIG.maxDelayMs),
+    backoffMultiplier: parsePositiveFloat(
+      Bun.env["RETRY_BACKOFF_MULTIPLIER"],
+      DEFAULT_RETRY_CONFIG.backoffMultiplier
     ),
   };
 }
