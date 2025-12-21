@@ -12,6 +12,7 @@ This guide helps resolve common issues when using Personal Knowledge MCP with Cl
 - [OpenAI API Issues](#openai-api-issues)
 - [Docker and ChromaDB Issues](#docker-and-chromadb-issues)
 - [Log Analysis](#log-analysis)
+- [Common Incremental Update Errors - Quick Reference](#common-incremental-update-errors---quick-reference)
 
 ---
 
@@ -1051,6 +1052,124 @@ LOG_LEVEL=debug bun run dist/index.js
 
 ---
 
+## Common Incremental Update Errors - Quick Reference
+
+This section provides quick solutions to the most common incremental update errors. For detailed tracing and debugging, see [Troubleshooting Update Operations](#troubleshooting-update-operations) above.
+
+### Error: "Incremental updates require lastIndexedCommitSha"
+
+**Cause:** Repository was indexed before the incremental updates feature was added, or the initial indexing didn't record the commit SHA.
+
+**Quick Solution:**
+```bash
+# Force full re-index to record commit SHA
+bun run cli index <repository-url> --force
+```
+
+**Alternative (Manual Fix):**
+1. Get current commit SHA: `cd data/repositories/<repo-name> && git rev-parse HEAD`
+2. Add to `data/repositories.json`:
+   ```json
+   {
+     "repositories": {
+       "repo-name": {
+         "lastIndexedCommitSha": "<sha-from-step-1>",
+         ...
+       }
+     }
+   }
+   ```
+
+### Error: "Force push detected - base commit not found"
+
+**Cause:** Repository history was rewritten (e.g., `git push --force`, rebased branch).
+
+**Solution:** This triggers automatic full re-index. No action needed - the system handles this gracefully.
+
+**Prevention:** Avoid force-pushing to indexed branches. If force push is necessary, run `update --force` afterward.
+
+### Error: "GitHub API rate limit exceeded"
+
+**Cause:** Too many GitHub API requests in the current hour.
+
+**Quick Solution:**
+```bash
+# Check rate limit status and reset time
+curl -H "Authorization: token $GITHUB_PAT" https://api.github.com/rate_limit
+
+# Wait until reset time, then retry
+bun run cli update <repository-name>
+```
+
+**Prevention:**
+- Use authenticated requests (set `GITHUB_PAT`) for 5,000 requests/hour vs 60/hour unauthenticated
+- Batch updates with `update-all` instead of many individual updates
+
+### Error: "Change count exceeds threshold (>500 files)"
+
+**Cause:** More than 500 files changed since last index (e.g., major refactoring, initial setup after long gap).
+
+**Solution:** Full re-index is triggered automatically for efficiency. No action needed.
+
+**Note:** This is intentional behavior - incremental updates are less efficient than full re-index for massive changes.
+
+### Error: "Git pull failed" or Local Clone Issues
+
+**Cause:** Local repository clone is corrupted or has conflicts.
+
+**Quick Solution:**
+```bash
+# Remove and re-clone
+bun run cli remove <repository-name> --force --delete-files
+bun run cli index <repository-url>
+```
+
+### Error: "Repository not found" in Update
+
+**Cause:** Repository was removed or renamed, or name doesn't match.
+
+**Quick Solution:**
+```bash
+# List indexed repositories to verify name
+bun run cli status
+
+# Use exact name from status output
+bun run cli update <exact-repository-name>
+```
+
+### Update Completes but Search Returns Stale Results
+
+**Cause:** Update may have completed with partial errors, or ChromaDB cache issues.
+
+**Diagnosis:**
+```bash
+# Check update history for errors
+bun run cli history <repository-name>
+
+# Verify chunk count matches expectations
+bun run cli status
+```
+
+**Solution:**
+```bash
+# Force full re-index to ensure consistency
+bun run cli update <repository-name> --force
+```
+
+### Common Error Resolution Summary
+
+| Error | Quick Fix Command |
+|-------|-------------------|
+| Missing lastIndexedCommitSha | `bun run cli index <url> --force` |
+| Force push detected | Automatic - no action needed |
+| Rate limit exceeded | Wait for reset, ensure `GITHUB_PAT` is set |
+| >500 files changed | Automatic full re-index |
+| Git pull failed | `bun run cli remove <name> --force --delete-files && bun run cli index <url>` |
+| Repository not found | `bun run cli status` to verify name |
+| Stale search results | `bun run cli update <name> --force` |
+
+---
+
 ## Getting Help
 
 If issues persist after trying these solutions:
@@ -1073,4 +1192,4 @@ bun run cli health > diagnostics.txt
 
 ---
 
-**Last Updated**: 2025-12-12
+**Last Updated**: 2025-12-21

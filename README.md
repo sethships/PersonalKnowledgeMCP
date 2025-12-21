@@ -282,6 +282,43 @@ Where is the database connection logic implemented?
 Find all implementations of rate limiting across my projects
 ```
 
+### Incremental Update Workflow
+
+After merging a PR to an indexed repository, update your index to include the latest changes:
+
+**Typical Post-PR Workflow:**
+```bash
+# 1. After PR is merged, update the index
+bun run cli update my-project
+
+# 2. Verify update completed
+bun run cli status
+
+# 3. (Optional) View update history
+bun run cli history my-project
+```
+
+**Daily Sync for Multiple Projects:**
+```bash
+# Update all indexed repositories at once
+bun run cli update-all
+```
+
+**Handling Stale or Problematic Index:**
+```bash
+# If updates fail or index seems stale, force full re-index
+bun run cli update my-project --force
+
+# Or re-index from scratch
+bun run cli index https://github.com/user/my-project --force
+```
+
+**Agent Integration:**
+When using Claude Code or other AI assistants, the agent can automatically trigger updates after completing PR-related tasks:
+```
+After merging this PR, please update the repository index.
+```
+
 ### Performance
 
 The MCP integration is optimized for fast response times:
@@ -478,6 +515,89 @@ pk-mcp health
 
 > **Note:** The OpenAI API health check verifies authentication (API key validity) but cannot detect quota exceeded or billing issues. These will only surface during actual embedding generation.
 
+#### update - Update Repository Index
+
+Incrementally update a repository's index with changes since last indexing. This is significantly faster than full re-indexing for typical PR changes.
+
+```bash
+pk-mcp update <repository-name> [options]
+```
+
+**Options:**
+- `-f, --force` - Force full re-index instead of incremental update
+- `--json` - Output as JSON
+- `-v, --verbose` - Show all errors with actionable guidance
+
+**Examples:**
+
+```bash
+# Incremental update after merging a PR
+pk-mcp update my-api
+
+# Force full re-index (e.g., after force push)
+pk-mcp update my-api --force
+```
+
+**Output:** Summary showing commit range, files changed (added/modified/deleted), chunks upserted/deleted, and duration. Reports any file-level errors encountered during processing.
+
+**When to use:**
+- After merging a PR to an indexed repository
+- When you want fresh index data without full re-indexing
+- Regular maintenance to keep indexes current
+
+**Automatic fallback to full re-index:**
+- Force push detected (base commit no longer exists)
+- More than 500 files changed (threshold for efficiency)
+
+#### update-all - Update All Repositories
+
+Update all indexed repositories sequentially.
+
+```bash
+pk-mcp update-all [options]
+```
+
+**Options:**
+- `--json` - Output as JSON
+
+**Examples:**
+
+```bash
+# Update all repositories at once
+pk-mcp update-all
+```
+
+**Output:** Progress through each repository with individual results. Continues to next repository if one fails.
+
+**Use case:** Daily sync to keep all indexed repositories current.
+
+#### history - View Update History
+
+View the history of incremental updates for a repository.
+
+```bash
+pk-mcp history <repository-name> [options]
+```
+
+**Options:**
+- `-l, --limit <number>` - Number of updates to show (default: 10)
+- `--json` - Output as JSON
+
+**Examples:**
+
+```bash
+# View last 10 updates
+pk-mcp history my-api
+
+# View last 5 updates
+pk-mcp history my-api --limit 5
+
+# JSON output for scripting
+pk-mcp history my-api --json
+```
+
+**Output:** Table showing timestamp, commit range, files changed, chunks affected, duration, and status for each update.
+
 ### CLI Configuration
 
 The CLI uses the same environment variables as the MCP server:
@@ -640,6 +760,9 @@ bun run cli update <repository-name> --force
 
 # Update all repositories
 bun run cli update-all
+
+# View update history for a repository
+bun run cli history <repository-name> [--limit 10]
 
 # Remove a repository
 bun run cli remove <repository-name>
