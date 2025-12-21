@@ -24,6 +24,7 @@ import {
   ChangeThresholdExceededError,
   MissingCommitShaError,
   GitPullError,
+  ConcurrentUpdateError,
 } from "../../src/services/incremental-update-coordinator-errors.js";
 
 describe("IncrementalUpdateCoordinator", () => {
@@ -145,6 +146,50 @@ describe("IncrementalUpdateCoordinator", () => {
       );
     });
 
+    it("should throw ConcurrentUpdateError when update is already in progress", async () => {
+      const repoInProgress: RepositoryInfo = {
+        ...testRepo,
+        updateInProgress: true,
+        updateStartedAt: "2024-12-14T10:00:00.000Z",
+      };
+      mockRepositoryService.getRepository = mock(async () => repoInProgress);
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
+        ConcurrentUpdateError
+      );
+
+      // Verify the error message contains useful information
+      try {
+        await coordinator.updateRepository("test-repo");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConcurrentUpdateError);
+        const concurrentError = error as ConcurrentUpdateError;
+        expect(concurrentError.repositoryName).toBe("test-repo");
+        expect(concurrentError.updateStartedAt).toBe("2024-12-14T10:00:00.000Z");
+        expect(concurrentError.message).toContain("already in progress");
+        expect(concurrentError.message).toContain("test-repo");
+      }
+    });
+
+    it("should process update with exactly 500 files (at threshold boundary)", async () => {
+      // Exactly 500 files should NOT throw ChangeThresholdExceededError
+      const boundaryComparison: CommitComparison = {
+        ...comparison,
+        files: Array.from({ length: 500 }, (_, i) => ({
+          path: `file${i}.ts`,
+          status: "added" as const,
+        })),
+      };
+      mockGitHubClient.compareCommits = mock(async () => boundaryComparison);
+
+      // Should succeed (not throw)
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      // Pipeline should be called with 500 files
+      expect(mockUpdatePipeline.processChanges).toHaveBeenCalled();
+    });
     it("should return no_changes when HEAD commit matches last indexed commit", async () => {
       const sameCommit: CommitInfo = {
         ...headCommit,

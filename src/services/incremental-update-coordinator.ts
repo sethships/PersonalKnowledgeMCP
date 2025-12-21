@@ -31,6 +31,7 @@ import {
   ChangeThresholdExceededError,
   GitPullError,
   MissingCommitShaError,
+  ConcurrentUpdateError,
 } from "./incremental-update-coordinator-errors.js";
 
 /**
@@ -215,6 +216,11 @@ export class IncrementalUpdateCoordinator {
       // Check if repository has a commit SHA recorded
       if (!repo.lastIndexedCommitSha) {
         throw new MissingCommitShaError(repositoryName);
+      }
+
+      // Check if an update is already in progress (concurrent update prevention)
+      if (repo.updateInProgress && repo.updateStartedAt) {
+        throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
       }
 
       // Step 1b: Mark update as in-progress BEFORE doing any work

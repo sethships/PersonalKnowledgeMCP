@@ -160,3 +160,34 @@ export class MissingCommitShaError extends CoordinatorError {
     Object.setPrototypeOf(this, MissingCommitShaError.prototype);
   }
 }
+
+/**
+ * Error thrown when an update is already in progress for the repository.
+ *
+ * This prevents concurrent updates which could lead to data corruption
+ * or inconsistent index state. The caller should wait for the current
+ * update to complete or use --force to override.
+ *
+ * @example
+ * ```typescript
+ * throw new ConcurrentUpdateError(
+ *   "my-api",
+ *   "2024-12-14T10:00:00.000Z"
+ * );
+ * ```
+ */
+export class ConcurrentUpdateError extends CoordinatorError {
+  constructor(
+    public readonly repositoryName: string,
+    public readonly updateStartedAt: string
+  ) {
+    super(
+      `Update already in progress for repository '${repositoryName}' ` +
+        `(started at ${updateStartedAt}). ` +
+        `Wait for current update to complete or use --force to override.`,
+      false
+    );
+    this.name = "ConcurrentUpdateError";
+    Object.setPrototypeOf(this, ConcurrentUpdateError.prototype);
+  }
+}
