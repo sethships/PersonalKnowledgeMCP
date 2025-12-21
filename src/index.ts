@@ -12,6 +12,10 @@ import { ChromaStorageClientImpl } from "./storage/chroma-client.js";
 import { createEmbeddingProvider } from "./providers/factory.js";
 import { RepositoryMetadataStoreImpl } from "./repositories/metadata-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "./logging/index.js";
+import {
+  detectInterruptedUpdates,
+  formatElapsedTime,
+} from "./services/interrupted-update-detector.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -106,6 +110,37 @@ async function main(): Promise<void> {
     logger.info("Initializing repository metadata service");
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.info("Repository metadata service initialized");
+
+    // Step 4b: Check for interrupted updates from previous service crashes
+    logger.debug("Checking for interrupted updates");
+    const detectionResult = await detectInterruptedUpdates(repositoryService);
+
+    if (detectionResult.interrupted.length > 0) {
+      // Log each interrupted update with details
+      for (const interrupted of detectionResult.interrupted) {
+        logger.warn(
+          {
+            repository: interrupted.repositoryName,
+            updateStartedAt: interrupted.updateStartedAt,
+            elapsed: formatElapsedTime(interrupted.elapsedMs),
+            lastKnownCommit: interrupted.lastKnownCommit?.substring(0, 7),
+            currentStatus: interrupted.status,
+          },
+          "Detected interrupted update - repository index may be inconsistent"
+        );
+      }
+
+      // Summary warning with recovery instructions
+      logger.warn(
+        {
+          count: detectionResult.interrupted.length,
+          repositories: detectionResult.interrupted.map((i) => i.repositoryName),
+        },
+        "Interrupted updates detected. Run 'pk-mcp update <repo> --force' to re-index affected repositories."
+      );
+    } else {
+      logger.debug("No interrupted updates detected");
+    }
 
     // Step 5: Initialize search service
     logger.info("Initializing search service");

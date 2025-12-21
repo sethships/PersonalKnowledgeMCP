@@ -222,6 +222,33 @@ export interface RepositoryInfo {
    * @example [{ timestamp: "2024-12-14T15:30:00.000Z", previousCommit: "abc...", newCommit: "def...", ... }]
    */
   updateHistory?: UpdateHistoryEntry[];
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Update State Tracking (for crash recovery)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether an update operation is currently in progress
+   *
+   * Set to `true` at the start of an update operation (incremental or full re-index),
+   * cleared to `false` (or removed) when the operation completes. If the service
+   * crashes during an update, this flag will remain `true` and can be detected
+   * on next startup to warn about potential data inconsistency.
+   *
+   * @example true (update in progress), false/undefined (no update in progress)
+   */
+  updateInProgress?: boolean;
+
+  /**
+   * ISO 8601 timestamp when the current update operation started
+   *
+   * Set when `updateInProgress` is set to `true`. Used to determine how long
+   * an update has been in progress and to identify stale/interrupted updates.
+   * Cleared when the update operation completes.
+   *
+   * @example "2024-12-14T15:30:00.000Z"
+   */
+  updateStartedAt?: string;
 }
 
 /**
