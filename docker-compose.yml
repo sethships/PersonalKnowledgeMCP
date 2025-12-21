@@ -5,25 +5,45 @@
 services:
   # ============================================================================
   # Vector Database (ChromaDB)
-  # Phase 1 - Active
+  # Phase 2 - Production Hardened
   # ============================================================================
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     container_name: pk-mcp-chromadb
     ports:
-      - "8000:8000" # HTTP API
+      - "127.0.0.1:8000:8000" # HTTP API - localhost only for security
     volumes:
       - chromadb-data:/chroma/chroma
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
-      - ALLOW_RESET=TRUE
+      - ALLOW_RESET=FALSE
     networks:
       - pk-mcp-network
     restart: unless-stopped
-    # Health check removed: ChromaDB container doesn't include curl/wget
-    # To monitor health, check http://localhost:8000/api/v2/heartbeat from host
-    # Or use: docker ps to verify container is running
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c ''import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v2/heartbeat")''',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ============================================================================
   # Graph Database (Neo4j Community) - Phase 4

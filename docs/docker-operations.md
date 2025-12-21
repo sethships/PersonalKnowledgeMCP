@@ -8,12 +8,16 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
 
 ### Containerized Services
 
-**Phase 1 (Current):**
+**Phase 2 (Current - Hardened):**
 - **ChromaDB** - Vector database for semantic search
-- Port: 8000
-- Volume: `chromadb-data`
+  - Image: `chromadb/chroma:0.6.3` (pinned version)
+  - Port: `127.0.0.1:8000` (localhost only)
+  - Volume: `chromadb-data`
+  - Resource limits: 2 CPU / 2GB RAM max
+  - Health checks enabled
+  - Log rotation configured
 
-**Phase 2 (Future):**
+**Phase 2 (Next):**
 - **PostgreSQL** - Document store for full artifacts (commented in docker-compose.yml)
 
 **Phase 4 (Future):**
@@ -114,24 +118,63 @@ docker-compose down -v
 
 ## Service Details
 
-### ChromaDB (Phase 1 - Active)
+### ChromaDB (Phase 2 - Production Hardened)
 
 **Purpose:** Vector database for semantic similarity search on code embeddings.
 
 **Configuration:**
-- **Image:** `chromadb/chroma:latest`
+- **Image:** `chromadb/chroma:0.6.3` (pinned stable version)
 - **Container Name:** `pk-mcp-chromadb`
-- **Port:** `8000:8000` (HTTP API)
+- **Port:** `127.0.0.1:8000:8000` (HTTP API - localhost only for security)
 - **Volume:** `chromadb-data:/chroma/chroma`
 - **Network:** `pk-mcp-network` (bridge mode)
 - **Restart Policy:** `unless-stopped`
 
+**Resource Limits:**
+- **CPU Limit:** 2 cores maximum
+- **Memory Limit:** 2GB maximum
+- **CPU Reserved:** 0.5 cores minimum
+- **Memory Reserved:** 512MB minimum
+
 **Environment Variables:**
 - `IS_PERSISTENT=TRUE` - Enable data persistence
 - `ANONYMIZED_TELEMETRY=FALSE` - Disable telemetry
-- `ALLOW_RESET=TRUE` - Allow database reset (development convenience)
+- `ALLOW_RESET=FALSE` - Prevent accidental data deletion in production
 
-**Health Monitoring:**
+**Health Check:**
+The container includes an automated health check that:
+- Tests the `/api/v2/heartbeat` endpoint every 30 seconds
+- Allows 40 seconds for initial startup
+- Times out after 10 seconds per check
+- Retries 3 times before marking unhealthy
+
+```bash
+# View container health status
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# Expected: pk-mcp-chromadb   Up X minutes (healthy)
+
+# Check detailed health status
+docker inspect pk-mcp-chromadb --format='{{.State.Health.Status}}'
+# Expected: healthy
+
+# View health check logs
+docker inspect pk-mcp-chromadb --format='{{range .State.Health.Log}}{{.Output}}{{end}}'
+```
+
+**Logging Configuration:**
+- **Driver:** json-file (structured logging)
+- **Max Size:** 10MB per log file
+- **Max Files:** 3 (automatic rotation)
+
+```bash
+# View logs with rotation info
+docker inspect pk-mcp-chromadb --format='{{.HostConfig.LogConfig}}'
+
+# Log files location (Docker manages automatically)
+docker logs pk-mcp-chromadb
+```
+
+**Manual Health Monitoring:**
 ```bash
 # Check if container is running
 docker ps | grep pk-mcp-chromadb
@@ -140,12 +183,14 @@ docker ps | grep pk-mcp-chromadb
 curl http://localhost:8000/api/v2/heartbeat
 # Expected: {"nanosecond heartbeat": <timestamp>}
 
-# Check container health (if configured)
-docker inspect pk-mcp-chromadb --format='{{.State.Status}}'
-# Expected: running
+# Check resource usage
+docker stats pk-mcp-chromadb --no-stream
 ```
 
-**Note:** Health check removed from docker-compose.yml because ChromaDB container doesn't include curl/wget. Monitor health by checking the API endpoint from the host or verifying container status with `docker ps`.
+**Security Notes:**
+- Port is bound to `127.0.0.1` only - not accessible from network
+- `ALLOW_RESET=FALSE` prevents accidental data deletion via API
+- Use VPN/Tailscale for remote access if needed
 
 ## Common Operations
 
@@ -685,15 +730,20 @@ Integration tests with ChromaDB are currently disabled (commented out) pending t
 **Custom Bridge Network:**
 
 ChromaDB runs in isolated `pk-mcp-network` bridge network:
-- Services only accessible from host by default
+- Services only accessible from localhost by default
 - Future services (PostgreSQL, Neo4j) will share this network
 - MCP service on host connects via localhost:8000
 
-**Port Exposure:**
-- Only port 8000 is exposed to host
-- No direct internet exposure by default
-- Use VPN/Tailscale for remote access (recommended)
-- For public exposure, add reverse proxy with authentication
+**Localhost-Only Port Binding (Phase 2 Security):**
+- Port 8000 is bound to `127.0.0.1` only - not exposed to network interfaces
+- This prevents access from other machines on the local network
+- Even without a firewall, the service is inaccessible from outside the host
+- This is the recommended configuration for development and single-user production
+
+**Remote Access Options:**
+- Use VPN/Tailscale for secure remote access (recommended)
+- For multi-user or public exposure, add reverse proxy with authentication
+- Never bind to `0.0.0.0` in production without authentication
 
 ### Environment Variable Management
 
