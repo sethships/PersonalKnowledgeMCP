@@ -662,6 +662,9 @@ bun run cli health
 - **[Architecture Plan](docs/architecture/incremental-updates-plan.md)** - Technical design for incremental index updates
 - **[Implementation Roadmap](docs/pm/incremental-updates-roadmap.md)** - Phased implementation plan with GitHub issues
 
+### Docker Containerization (Phase 3+)
+- **[Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md)** - Multi-transport MCP, security architecture, and deployment strategy
+
 ### Development
 - **[Project Configuration](.claude/CLAUDE.md)** - Development guidelines for Claude Code
 
@@ -730,17 +733,23 @@ The project maintains **90% minimum test coverage** across all components.
 - Local folder ingestion with file watcher
 - Markdown/PDF extraction
 
-### 📋 Phase 3: Multi-Instance + Azure DevOps
-- Multi-instance architecture
-- Authentication layer
+### 📋 Phase 3: Multi-Instance + Containerization + Azure DevOps
+- **Docker Compose Hardening** - Production-ready container configuration
+- **Multi-Transport MCP** - HTTP/SSE transport alongside stdio for cross-client support
+- **Bearer Token Authentication** - Secure HTTP endpoints for network access
+- Multi-instance architecture (Private/Work/Public security tiers)
 - Azure DevOps integration
 - Instance-specific routing
 
-### 📋 Phase 4: Graph Relationships + Automation
+See [Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md) for detailed requirements.
+
+### 📋 Phase 4: Graph Relationships + Automation + Enterprise
 - Neo4j graph database
 - Code dependency extraction
 - Automated update pipelines
 - GitHub webhook handler
+- **OpenID Connect (OIDC)** - Microsoft 365 integration for enterprise auth
+- **Kubernetes Deployment** - Helm charts for production scaling
 
 ## Contributing
 

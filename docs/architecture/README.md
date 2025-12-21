@@ -72,11 +72,18 @@ FastAPI-based service implementing the MCP protocol specification.
 
 ## Documentation Status
 
-- [ ] System Design Document (Phase 1)
+- [x] System Design Document (Phase 1) - [Phase1-System-Design-Document.md](Phase1-System-Design-Document.md)
+- [x] Incremental Updates Plan - [incremental-updates-plan.md](incremental-updates-plan.md)
+- [x] Docker Containerization PRD - [Docker-Containerization-PRD.md](../pm/Docker-Containerization-PRD.md)
 - [ ] ADR 0001: MCP Protocol Design
 - [ ] ADR 0002: Storage Backend Selection
 - [ ] ADR 0003: Multi-Instance Architecture
+- [ ] ADR 0004: Docker MCP Toolkit Decision (see Containerization PRD Appendix A)
 - [ ] Data flow diagrams
 - [ ] Deployment architecture diagrams
 
 Documentation will be added as architectural decisions are made during implementation.
+
+## Related Product Documentation
+
+- **[Docker Containerization PRD](../pm/Docker-Containerization-PRD.md)** - Containerization strategy, multi-transport MCP, and security architecture for Phases 3-4
