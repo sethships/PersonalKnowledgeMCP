@@ -9,6 +9,7 @@
  * - remove: Remove a repository from index
  * - update: Update a repository with latest changes
  * - update-all: Update all repositories
+ * - reset-update: Reset stuck update state
  * - health: Health check
  */
 
@@ -24,6 +25,7 @@ import { healthCommand } from "./commands/health-command.js";
 import { updateRepositoryCommand } from "./commands/update-repository-command.js";
 import { updateAllCommand } from "./commands/update-all-command.js";
 import { historyCommand } from "./commands/history-command.js";
+import { resetUpdateCommand } from "./commands/reset-update-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -32,6 +34,7 @@ import {
   UpdateCommandOptionsSchema,
   UpdateAllCommandOptionsSchema,
   HistoryCommandOptionsSchema,
+  ResetUpdateCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -169,6 +172,24 @@ program
       const validatedOptions = HistoryCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await historyCommand(repository, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Reset-update command
+program
+  .command("reset-update")
+  .description("Reset stuck update state for a repository")
+  .argument("<repository>", "Repository name to reset")
+  .option("-f, --force", "Skip confirmation prompt")
+  .option("-r, --recover", "Attempt automatic recovery")
+  .option("--json", "Output as JSON")
+  .action(async (repository: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ResetUpdateCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await resetUpdateCommand(repository, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

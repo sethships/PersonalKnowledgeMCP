@@ -113,3 +113,14 @@ export type ValidatedRemoveOptions = z.infer<typeof RemoveCommandOptionsSchema>;
 export type ValidatedUpdateOptions = z.infer<typeof UpdateCommandOptionsSchema>;
 export type ValidatedUpdateAllOptions = z.infer<typeof UpdateAllCommandOptionsSchema>;
 export type ValidatedHistoryOptions = z.infer<typeof HistoryCommandOptionsSchema>;
+
+/**
+ * Schema for reset-update command options
+ */
+export const ResetUpdateCommandOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  recover: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+export type ValidatedResetUpdateOptions = z.infer<typeof ResetUpdateCommandOptionsSchema>;
