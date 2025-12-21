@@ -99,6 +99,7 @@ export {
   ChangeThresholdExceededError,
   GitPullError,
   MissingCommitShaError,
+  ConcurrentUpdateError,
 } from "./incremental-update-coordinator-errors.js";
 
 // Metrics exports
