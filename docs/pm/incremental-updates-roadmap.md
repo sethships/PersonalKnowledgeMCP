@@ -1,7 +1,7 @@
 # Incremental Updates Implementation Roadmap
 
-**Version:** 1.4
-**Date:** December 16, 2025
+**Version:** 1.5
+**Date:** December 20, 2025
 **Status:** Phase 1 Foundation - In Progress (5/7 Complete), Phase 2 Observability - In Progress (1/5 Complete)
 **Parent Document:** [incremental-updates-plan.md](../architecture/incremental-updates-plan.md)
 **Project Phase:** Extension of Phase 1 (Core MCP + Vector Search)
@@ -730,6 +730,50 @@ Issues use existing labels plus:
 | 1.2 | 2025-12-15 | Claude Code | Marked Issue #45 (Incremental Update Pipeline) as completed via PR #65 |
 | 1.3 | 2025-12-15 | Claude Code | Marked Issue #46 (Update Coordinator Service) as completed via PR #66 |
 | 1.4 | 2025-12-16 | Claude Code | Marked Issue #51 (Enhanced Status Command) as completed via PR #72 |
+| 1.5 | 2025-12-20 | Claude Code | Added Related Work section linking to project roadmap and Docker Containerization PRD |
+
+---
+
+## Related Work: Project-Level Roadmap
+
+This Incremental Updates feature is part of the broader Personal Knowledge MCP project roadmap. The phases in this document (Foundation, Observability, Robustness) are sub-phases within **Project Phase 1: Core MCP + Vector Search**.
+
+### Project Phase Overview
+
+| Project Phase | Status | Key Features |
+|---------------|--------|--------------|
+| **Phase 1: Core MCP + Vector Search** | In Progress | MCP service, ChromaDB, semantic search, CLI, **Incremental Updates** |
+| **Phase 2: Code Intelligence + Local Files** | Planned | AST parsing, PostgreSQL, local folder ingestion |
+| **Phase 3: Multi-Instance + Containerization** | Planned | Docker hardening, multi-transport MCP, authentication, Azure DevOps |
+| **Phase 4: Graph Relationships + Enterprise** | Planned | Neo4j, OIDC, Kubernetes, automated pipelines |
+
+### Containerization Impact on Incremental Updates
+
+The [Docker Containerization PRD](Docker-Containerization-PRD.md) (Phase 3) will affect incremental updates in the following ways:
+
+| Containerization Feature | Impact on Incremental Updates |
+|--------------------------|------------------------------|
+| **Multi-Transport MCP** | Updates can be triggered via HTTP API (not just CLI/stdio) |
+| **Multi-Instance Architecture** | Each instance (Private/Work/Public) manages its own update state |
+| **Bearer Token Authentication** | HTTP-triggered updates require valid token with `write` scope |
+| **Docker Compose Hardening** | ChromaDB health checks ensure updates don't fail silently |
+
+### Future Enhancements (Post-Phase 3)
+
+Once containerization is complete, consider these enhancements to incremental updates:
+
+1. **Webhook-Triggered Updates** (Project Phase 4)
+   - GitHub webhooks trigger updates automatically on PR merge
+   - Requires HTTP transport from containerization work
+
+2. **Multi-Instance Update Coordination**
+   - Coordinate updates across Private/Work/Public instances
+   - Ensure consistent state when same repo is indexed in multiple instances
+
+3. **Update Queue with Persistence**
+   - Queue update requests for processing
+   - Survives container restarts
+   - Enables rate limiting and prioritization
 
 ---
 
