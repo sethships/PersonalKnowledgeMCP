@@ -1351,7 +1351,7 @@ bun run cli history my-api --limit 10 # Last 10 updates
 |---------|------|--------|---------|
 | 1.0 | 2025-12-13 | Claude Code | Initial draft |
 | 1.1 | 2025-12-14 | Claude Code | Incorporated stakeholder decisions, removed polling in favor of on-demand, added Decisions Summary section |
-| 1.2 | 2025-12-21 | Claude Code | Added Section 10.1 Implementation Status, updated Next Steps |
+| 1.2 | 2024-12-21 | Claude Code | Added Section 10.1 Implementation Status, updated Next Steps |
 
 ---
 

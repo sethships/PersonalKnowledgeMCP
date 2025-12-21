@@ -525,6 +525,8 @@ pk-mcp update <repository-name> [options]
 
 **Options:**
 - `-f, --force` - Force full re-index instead of incremental update
+- `--json` - Output as JSON
+- `-v, --verbose` - Show all errors with actionable guidance
 
 **Examples:**
 
@@ -552,8 +554,11 @@ pk-mcp update my-api --force
 Update all indexed repositories sequentially.
 
 ```bash
-pk-mcp update-all
+pk-mcp update-all [options]
 ```
+
+**Options:**
+- `--json` - Output as JSON
 
 **Examples:**
 
