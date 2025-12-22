@@ -308,92 +308,24 @@ docker volume inspect personalknowledgemcp_chromadb-data
 - Mountpoint: Physical location on host (WSL2 path on Windows)
 - Labels and metadata
 
-#### Volume Backup
+#### Volume Backup and Restore
 
-**Create Backup:**
+For automated backup and restore operations with retention policies, use the scripts in the `scripts/` directory. See [Backup and Restore Automation](#backup-and-restore-automation) section for detailed usage.
 
-**PowerShell (Windows):**
-```powershell
-# Backup to compressed archive
-docker run --rm `
-  -v personalknowledgemcp_chromadb-data:/data:ro `
-  -v "${PWD}:/backup" `
-  alpine `
-  sh -c "tar czf /backup/chromadb-backup-`$(date +%Y%m%d-%H%M%S).tar.gz -C /data ."
-```
+**Quick Commands:**
 
-**Bash (WSL/Git Bash):**
 ```bash
-# Backup to compressed archive
-docker run --rm \
-  -v personalknowledgemcp_chromadb-data:/data:ro \
-  -v "$(pwd)":/backup \
-  alpine \
-  tar czf /backup/chromadb-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
-```
+# Create backup with 30-day retention (Bash)
+./scripts/backup-chromadb.sh
 
-**What this does:**
-1. Runs temporary Alpine Linux container
-2. Mounts ChromaDB volume as read-only
-3. Mounts current directory for backup output
-4. Creates timestamped compressed archive
-5. Container auto-removes after completion
+# Create backup with 30-day retention (PowerShell)
+.\scripts\backup-chromadb.ps1
 
-**Expected output:**
-```
-chromadb-backup-20241210-183000.tar.gz
-```
+# Restore from backup (Bash)
+./scripts/restore-chromadb.sh ./backups/chromadb-backup-YYYYMMDD-HHMMSS.tar.gz
 
-#### Volume Restore
-
-**Prerequisites:**
-- Stop ChromaDB container
-- Have backup archive file
-
-**Restore Process:**
-
-**PowerShell (Windows):**
-```powershell
-# 1. Stop container
-docker-compose stop chromadb
-
-# 2. Clear existing data (OPTIONAL - DESTRUCTIVE)
-docker run --rm `
-  -v personalknowledgemcp_chromadb-data:/data `
-  alpine `
-  sh -c "rm -rf /data/*"
-
-# 3. Restore from backup (replace filename with your backup)
-docker run --rm `
-  -v personalknowledgemcp_chromadb-data:/data `
-  -v "${PWD}:/backup:ro" `
-  alpine `
-  tar xzf /backup/chromadb-backup-20241210-183000.tar.gz -C /data
-
-# 4. Restart container
-docker-compose up -d chromadb
-```
-
-**Bash (WSL/Git Bash):**
-```bash
-# 1. Stop container
-docker-compose stop chromadb
-
-# 2. Clear existing data (OPTIONAL - DESTRUCTIVE)
-docker run --rm \
-  -v personalknowledgemcp_chromadb-data:/data \
-  alpine \
-  sh -c "rm -rf /data/*"
-
-# 3. Restore from backup (replace filename with your backup)
-docker run --rm \
-  -v personalknowledgemcp_chromadb-data:/data \
-  -v "$(pwd)":/backup:ro \
-  alpine \
-  tar xzf /backup/chromadb-backup-20241210-183000.tar.gz -C /data
-
-# 4. Restart container
-docker-compose up -d chromadb
+# Restore from backup (PowerShell)
+.\scripts\restore-chromadb.ps1 -BackupFile ".\backups\chromadb-backup-YYYYMMDD-HHMMSS.tar.gz"
 ```
 
 #### Clean Reset (Delete All Data)
@@ -864,6 +796,276 @@ volumes:
     driver: local
   neo4j-logs:
     driver: local
+```
+
+## Backup and Restore Automation
+
+The `scripts/` directory contains automated backup and restore scripts with retention policies for ChromaDB data volumes. These scripts support both Bash (Linux, WSL, Git Bash) and PowerShell (Windows) environments.
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `backup-chromadb.sh` | Bash backup script with retention policy |
+| `backup-chromadb.ps1` | PowerShell backup script |
+| `restore-chromadb.sh` | Bash restore script with confirmation |
+| `restore-chromadb.ps1` | PowerShell restore script |
+| `test-backup-restore.sh` | Verification test script |
+
+### Creating Backups
+
+**Bash (Linux/WSL/Git Bash):**
+```bash
+# Basic usage - creates backup in ./backups with 30-day retention
+./scripts/backup-chromadb.sh
+
+# Custom backup directory and retention
+./scripts/backup-chromadb.sh --backup-dir /mnt/backups --retention 7
+
+# Using environment variables
+BACKUP_DIR=/backups RETENTION_DAYS=14 ./scripts/backup-chromadb.sh
+```
+
+**PowerShell (Windows):**
+```powershell
+# Basic usage
+.\scripts\backup-chromadb.ps1
+
+# Custom backup directory and retention
+.\scripts\backup-chromadb.ps1 -BackupDir "D:\Backups" -RetentionDays 7
+
+# Quiet mode (minimal output)
+.\scripts\backup-chromadb.ps1 -Quiet
+```
+
+**Backup Features:**
+- Automatic volume detection (finds ChromaDB volume)
+- Timestamped archives: `chromadb-backup-YYYYMMDD-HHMMSS.tar.gz`
+- Configurable retention policy (default: 30 days)
+- Cross-platform compatibility
+- Exit codes for scripting integration
+
+### Restoring from Backup
+
+**Bash (Linux/WSL/Git Bash):**
+```bash
+# Interactive restore (prompts for confirmation)
+./scripts/restore-chromadb.sh ./backups/chromadb-backup-20241221-120000.tar.gz
+
+# Non-interactive restore (skip confirmation)
+./scripts/restore-chromadb.sh ./backups/chromadb-backup-20241221-120000.tar.gz --yes
+```
+
+**PowerShell (Windows):**
+```powershell
+# Interactive restore
+.\scripts\restore-chromadb.ps1 -BackupFile ".\backups\chromadb-backup-20241221-120000.tar.gz"
+
+# Non-interactive restore
+.\scripts\restore-chromadb.ps1 -BackupFile ".\backups\chromadb-backup-20241221-120000.tar.gz" -Force
+```
+
+**Restore Process:**
+1. Validates backup file exists and is readable
+2. Prompts for confirmation (unless `--yes`/`-Force` flag)
+3. Stops ChromaDB container
+4. Clears existing volume data
+5. Extracts backup to volume
+6. Restarts container and waits for health
+7. Provides verification commands
+
+### Verifying Backup/Restore
+
+Run the verification test script to ensure backup and restore work correctly:
+
+```bash
+# Run full verification test
+./scripts/test-backup-restore.sh
+
+# Verbose output
+./scripts/test-backup-restore.sh --verbose
+
+# Keep test artifacts for inspection
+./scripts/test-backup-restore.sh --keep
+```
+
+**Test Process:**
+1. Verifies ChromaDB is running
+2. Creates test collection with sample data
+3. Creates backup
+4. Deletes test collection (simulates data loss)
+5. Restores from backup
+6. Verifies data integrity
+7. Cleans up test artifacts
+
+### Scheduled Backups
+
+**Linux/macOS (cron):**
+```bash
+# Edit crontab
+crontab -e
+
+# Add daily backup at 2 AM
+0 2 * * * /path/to/project/scripts/backup-chromadb.sh --quiet >> /var/log/chromadb-backup.log 2>&1
+```
+
+**Windows (Task Scheduler):**
+```powershell
+# Create scheduled task for daily backup at 2 AM
+$action = New-ScheduledTaskAction -Execute "PowerShell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\path\to\project\scripts\backup-chromadb.ps1 -Quiet"
+$trigger = New-ScheduledTaskTrigger -Daily -At 2:00AM
+Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "ChromaDB Daily Backup"
+```
+
+### Pre-Upgrade Backup Reminder
+
+**IMPORTANT:** Always create a backup before upgrading ChromaDB or making significant changes:
+
+```bash
+# Before any upgrade
+./scripts/backup-chromadb.sh --backup-dir ./pre-upgrade-backups
+
+# Verify backup was created
+ls -la ./pre-upgrade-backups/
+
+# Then proceed with upgrade
+docker-compose pull chromadb
+docker-compose up -d chromadb
+```
+
+### Disaster Recovery Procedure
+
+In case of data loss or corruption:
+
+1. **Stop the service** (if not already stopped):
+   ```bash
+   docker-compose stop chromadb
+   ```
+
+2. **Identify latest backup**:
+   ```bash
+   ls -lt ./backups/chromadb-backup-*.tar.gz | head -5
+   ```
+
+3. **Restore from backup**:
+   ```bash
+   ./scripts/restore-chromadb.sh ./backups/chromadb-backup-YYYYMMDD-HHMMSS.tar.gz --yes
+   ```
+
+4. **Verify restoration**:
+   ```bash
+   curl http://localhost:8000/api/v2/heartbeat
+   curl http://localhost:8000/api/v2/collections
+   ```
+
+5. **Document the incident** for future reference.
+
+## Multi-Instance Deployment
+
+The Personal Knowledge MCP supports running multiple isolated ChromaDB instances for different security tiers. This enables separation of Private, Work, and Public knowledge bases.
+
+### Use Cases
+
+- **Private Instance**: Personal notes, financial data, health records
+- **Work Instance**: Company code, internal documentation, proprietary knowledge
+- **Public Instance**: Open source projects, public documentation, shared resources
+
+### Instance Configuration
+
+Each instance requires unique settings for ports, volumes, and container names.
+
+**Example: Running Three Isolated Instances**
+
+Create separate compose files or use environment variables to differentiate instances:
+
+```bash
+# Private instance (port 8000)
+INSTANCE_NAME=private CHROMADB_PORT=8000 docker-compose -f docker-compose.private.yml up -d
+
+# Work instance (port 8001)
+INSTANCE_NAME=work CHROMADB_PORT=8001 docker-compose -f docker-compose.work.yml up -d
+
+# Public instance (port 8002)
+INSTANCE_NAME=public CHROMADB_PORT=8002 docker-compose -f docker-compose.public.yml up -d
+```
+
+**docker-compose.private.yml Example:**
+```yaml
+services:
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    container_name: pk-mcp-chromadb-private
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - chromadb-data-private:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=FALSE
+    restart: unless-stopped
+
+volumes:
+  chromadb-data-private:
+    driver: local
+```
+
+### Backup Strategy for Multi-Instance
+
+Use the `--volume` flag to specify which instance to backup:
+
+```bash
+# Backup private instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-private \
+    --backup-dir ./backups/private
+
+# Backup work instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-work \
+    --backup-dir ./backups/work
+
+# Backup public instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-public \
+    --backup-dir ./backups/public
+```
+
+### Restore to Specific Instance
+
+```bash
+# Restore to private instance
+./scripts/restore-chromadb.sh ./backups/private/chromadb-backup-*.tar.gz \
+    --volume personalknowledgemcp_chromadb-data-private
+```
+
+### Security Considerations
+
+- **Network Isolation**: Each instance should bind to localhost only
+- **Volume Separation**: Use distinct volume names to prevent data mixing
+- **Access Control**: Consider using different authentication tokens per instance (Phase 3+)
+- **Backup Separation**: Store backups in separate directories with appropriate permissions
+- **Firewall Rules**: Ensure each port is appropriately protected
+
+### MCP Service Configuration
+
+Configure the MCP service to connect to the appropriate instance:
+
+```json
+{
+  "instances": {
+    "private": {
+      "chromadb_url": "http://localhost:8000",
+      "collections_prefix": "private_"
+    },
+    "work": {
+      "chromadb_url": "http://localhost:8001",
+      "collections_prefix": "work_"
+    },
+    "public": {
+      "chromadb_url": "http://localhost:8002",
+      "collections_prefix": "public_"
+    }
+  }
+}
 ```
 
 ## Additional Resources
