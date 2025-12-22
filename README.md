@@ -824,6 +824,57 @@ The project maintains **90% minimum test coverage** across all components.
 - **GitHub PAT**: Secure private repository access
 - **No Credential Logging**: API keys and tokens never logged or exposed in errors
 
+### ChromaDB Authentication (Phase 2)
+
+ChromaDB supports optional token-based authentication to secure the vector database from unauthorized access. This is recommended for any deployment beyond local development.
+
+#### Enabling Authentication
+
+1. **Generate a secure token**:
+   ```bash
+   # Generate a 64-character hex token (256-bit)
+   openssl rand -hex 32
+   ```
+
+2. **Configure the token** in your `.env` file:
+   ```bash
+   CHROMADB_AUTH_TOKEN=your-generated-token-here
+   ```
+
+3. **Restart the services**:
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+#### How It Works
+
+- **When `CHROMADB_AUTH_TOKEN` is set**: ChromaDB requires a valid Bearer token for all API requests. The MCP service and CLI automatically include the token in requests.
+- **When `CHROMADB_AUTH_TOKEN` is empty or unset**: ChromaDB accepts unauthenticated requests (suitable for local development).
+
+This design maintains backward compatibility while allowing production deployments to enable security.
+
+#### Token Rotation
+
+To rotate the authentication token:
+
+1. Generate a new token: `openssl rand -hex 32`
+2. Update the token in your `.env` file
+3. Restart all services: `docker-compose down && docker-compose up -d`
+
+**Note**: During token rotation, there will be brief downtime while services restart.
+
+#### Troubleshooting Authentication
+
+**"Unauthorized" or "401" errors**:
+- Verify `CHROMADB_AUTH_TOKEN` in `.env` matches what ChromaDB was started with
+- Ensure you've restarted the MCP service after changing the token
+- Check container logs: `docker-compose logs chromadb`
+
+**Connection works locally but fails remotely**:
+- Verify the auth token is configured in the remote environment
+- Check that the token is being passed correctly in the client configuration
+
 ## Roadmap
 
 ### ✅ Phase 0: Planning and Design (Complete)

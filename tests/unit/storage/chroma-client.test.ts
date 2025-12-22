@@ -62,6 +62,77 @@ describe("ChromaStorageClientImpl", () => {
       const newClient = new ChromaStorageClientImpl(testConfig);
       expect(newClient).toBeDefined();
     });
+
+    test("should create instance with auth token config", () => {
+      const configWithAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+        authToken: "test-secret-token",
+      };
+      const newClient = new ChromaStorageClientImpl(configWithAuth);
+      expect(newClient).toBeDefined();
+    });
+
+    test("should create instance with undefined auth token (backward compatible)", () => {
+      const configWithoutAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+        authToken: undefined,
+      };
+      const newClient = new ChromaStorageClientImpl(configWithoutAuth);
+      expect(newClient).toBeDefined();
+    });
+
+    test("should create instance with empty auth token (no auth enabled)", () => {
+      const configWithEmptyAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+        authToken: "",
+      };
+      const newClient = new ChromaStorageClientImpl(configWithEmptyAuth);
+      expect(newClient).toBeDefined();
+    });
+  });
+
+  describe("Authentication Configuration", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
+    test("should store auth token in config", () => {
+      const authToken = "my-secret-token-123";
+      const configWithAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+        authToken: authToken,
+      };
+      const newClient = new ChromaStorageClientImpl(configWithAuth);
+      expect(newClient).toBeDefined();
+      // @ts-expect-error - Accessing private property for testing
+      expect(newClient.config.authToken).toBe(authToken);
+    });
+
+    test("should have undefined auth token when not provided", () => {
+      const configWithoutAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+      };
+      const newClient = new ChromaStorageClientImpl(configWithoutAuth);
+      // @ts-expect-error - Accessing private property for testing
+      expect(newClient.config.authToken).toBeUndefined();
+    });
+
+    test("should treat empty string auth token as falsy (no auth)", () => {
+      const configWithEmptyAuth: ChromaConfig = {
+        host: "localhost",
+        port: 8000,
+        authToken: "",
+      };
+      const newClient = new ChromaStorageClientImpl(configWithEmptyAuth);
+      // @ts-expect-error - Accessing private property for testing
+      // Empty string is falsy, so connect() will not add auth to client options
+      expect(newClient.config.authToken).toBe("");
+    });
   });
 
   describe("connect()", () => {
