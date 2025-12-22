@@ -12,6 +12,7 @@
 #   -d, --backup-dir DIR    Backup directory (default: ./backups or BACKUP_DIR env)
 #   -r, --retention DAYS    Retention period in days (default: 30 or RETENTION_DAYS env)
 #   -v, --volume NAME       Volume name override (auto-detected by default)
+#   -n, --dry-run           Show what would be done without making changes
 #   -q, --quiet             Suppress non-error output
 #   -h, --help              Show this help message
 #
@@ -49,6 +50,7 @@ BACKUP_DIR="${BACKUP_DIR:-$DEFAULT_BACKUP_DIR}"
 RETENTION_DAYS="${RETENTION_DAYS:-$DEFAULT_RETENTION_DAYS}"
 VOLUME_NAME="${VOLUME_NAME:-}"
 QUIET=false
+DRY_RUN=false
 
 # =============================================================================
 # Color Output (if terminal supports it)
@@ -163,6 +165,78 @@ ensure_backup_dir() {
     BACKUP_DIR=$(cd "$BACKUP_DIR" && pwd)
 }
 
+# Generate SHA256 checksum for backup file
+generate_checksum() {
+    local backup_path="$1"
+    local checksum_path="${backup_path}.sha256"
+
+    log_info "Generating SHA256 checksum..."
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$backup_path" | cut -d' ' -f1 > "$checksum_path"
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$backup_path" | cut -d' ' -f1 > "$checksum_path"
+    else
+        log_warn "No checksum tool available (sha256sum or shasum)"
+        return 1
+    fi
+
+    if [[ -f "$checksum_path" ]]; then
+        local checksum
+        checksum=$(cat "$checksum_path")
+        log_info "Checksum: ${checksum:0:16}... (saved to $(basename "$checksum_path"))"
+        return 0
+    else
+        log_warn "Failed to create checksum file"
+        return 1
+    fi
+}
+
+# Generate metadata JSON file for backup
+generate_metadata() {
+    local backup_path="$1"
+    local metadata_path="${backup_path%.tar.gz}.metadata.json"
+
+    log_info "Generating backup metadata..."
+
+    local size_bytes
+    size_bytes=$(stat -c%s "$backup_path" 2>/dev/null || stat -f%z "$backup_path" 2>/dev/null || echo "0")
+
+    local size_human
+    size_human=$(du -h "$backup_path" | cut -f1)
+
+    local checksum=""
+    if [[ -f "${backup_path}.sha256" ]]; then
+        checksum=$(cat "${backup_path}.sha256")
+    fi
+
+    local hostname
+    hostname=$(hostname 2>/dev/null || echo "unknown")
+
+    cat > "$metadata_path" << EOF
+{
+  "backup_file": "$(basename "$backup_path")",
+  "created_at": "$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)",
+  "volume_name": "$VOLUME_NAME",
+  "size_bytes": $size_bytes,
+  "size_human": "$size_human",
+  "sha256": "$checksum",
+  "hostname": "$hostname",
+  "backup_dir": "$BACKUP_DIR",
+  "retention_days": $RETENTION_DAYS,
+  "script_version": "1.1.0"
+}
+EOF
+
+    if [[ -f "$metadata_path" ]]; then
+        log_info "Metadata saved to $(basename "$metadata_path")"
+        return 0
+    else
+        log_warn "Failed to create metadata file"
+        return 1
+    fi
+}
+
 # Create the backup
 create_backup() {
     local timestamp
@@ -173,6 +247,15 @@ create_backup() {
     log_info "Creating backup: $backup_file"
     log_info "Volume: $VOLUME_NAME"
     log_info "Destination: $BACKUP_DIR"
+
+    # Dry-run mode - show what would happen
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN] Would create backup: $backup_path"
+        log_info "[DRY-RUN] Would generate checksum: ${backup_path}.sha256"
+        log_info "[DRY-RUN] Would generate metadata: ${backup_path%.tar.gz}.metadata.json"
+        echo "$backup_path"
+        return 0
+    fi
 
     # Run backup using Alpine container
     # Mount volume as read-only for safety
@@ -188,6 +271,11 @@ create_backup() {
             local size
             size=$(du -h "$backup_path" | cut -f1)
             log_success "Backup created: $backup_path ($size)"
+
+            # Generate checksum and metadata
+            generate_checksum "$backup_path" || true
+            generate_metadata "$backup_path" || true
+
             echo "$backup_path"
         else
             log_error "Backup file was not created"
@@ -208,18 +296,61 @@ apply_retention() {
 
     log_info "Applying retention policy: keeping backups from last $RETENTION_DAYS days"
 
-    # Find and delete old backups
+    # Find old backups
     local deleted_count=0
+    local total_freed=0
     while IFS= read -r old_backup; do
         if [[ -n "$old_backup" ]]; then
-            log_info "Removing old backup: $(basename "$old_backup")"
-            rm -f "$old_backup"
+            local backup_name
+            backup_name=$(basename "$old_backup")
+
+            # Calculate age in days
+            local mod_time
+            mod_time=$(stat -c %Y "$old_backup" 2>/dev/null || stat -f %m "$old_backup" 2>/dev/null || echo "0")
+            local now
+            now=$(date +%s)
+            local age_days=$(( (now - mod_time) / 86400 ))
+
+            # Get file size
+            local size
+            size=$(du -h "$old_backup" | cut -f1)
+            local size_bytes
+            size_bytes=$(stat -c%s "$old_backup" 2>/dev/null || stat -f%z "$old_backup" 2>/dev/null || echo "0")
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+                log_info "[DRY-RUN] Would remove: $backup_name (${age_days} days old, $size)"
+            else
+                log_info "Removing: $backup_name (${age_days} days old, $size)"
+                rm -f "$old_backup"
+
+                # Also remove associated checksum and metadata files
+                rm -f "${old_backup}.sha256" 2>/dev/null || true
+                rm -f "${old_backup%.tar.gz}.metadata.json" 2>/dev/null || true
+            fi
+
             ((deleted_count++)) || true
+            ((total_freed += size_bytes)) || true
         fi
     done < <(find "$BACKUP_DIR" -name "chromadb-backup-*.tar.gz" -type f -mtime +$RETENTION_DAYS 2>/dev/null || true)
 
     if [[ $deleted_count -gt 0 ]]; then
-        log_info "Removed $deleted_count old backup(s)"
+        # Convert bytes to human-readable
+        local freed_human
+        if [[ $total_freed -gt 1073741824 ]]; then
+            freed_human="$(echo "scale=2; $total_freed / 1073741824" | bc 2>/dev/null || echo "$((total_freed / 1073741824))")GB"
+        elif [[ $total_freed -gt 1048576 ]]; then
+            freed_human="$(echo "scale=2; $total_freed / 1048576" | bc 2>/dev/null || echo "$((total_freed / 1048576))")MB"
+        else
+            freed_human="${total_freed}B"
+        fi
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "[DRY-RUN] Would remove $deleted_count old backup(s), freeing ~$freed_human"
+        else
+            log_info "Removed $deleted_count old backup(s), freed ~$freed_human"
+        fi
+    else
+        log_info "No old backups to remove"
     fi
 }
 
@@ -262,6 +393,10 @@ parse_args() {
                 QUIET=true
                 shift
                 ;;
+            -n|--dry-run)
+                DRY_RUN=true
+                shift
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -285,6 +420,10 @@ main() {
     log_info "ChromaDB Backup Script"
     log_info "======================"
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY-RUN MODE] No changes will be made"
+    fi
+
     # Pre-flight checks
     check_docker
     detect_volume
@@ -300,7 +439,11 @@ main() {
     # Show summary
     list_backups
 
-    log_success "Backup completed successfully"
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_success "Dry-run completed - no changes were made"
+    else
+        log_success "Backup completed successfully"
+    fi
 }
 
 main "$@"

@@ -51,6 +51,9 @@ param(
     [string]$VolumeName = $null,
 
     [Parameter(Mandatory = $false)]
+    [switch]$DryRun,
+
+    [Parameter(Mandatory = $false)]
     [switch]$Quiet
 )
 
@@ -165,6 +168,74 @@ function New-BackupDirectory {
     return (Resolve-Path -Path $Path).Path
 }
 
+function New-BackupChecksum {
+    param([string]$BackupPath)
+
+    $checksumPath = "$BackupPath.sha256"
+    Write-Info "Generating SHA256 checksum..."
+
+    try {
+        $hash = Get-FileHash -Path $BackupPath -Algorithm SHA256
+        $hash.Hash.ToLower() | Out-File -FilePath $checksumPath -NoNewline -Encoding ASCII
+
+        if (Test-Path -Path $checksumPath) {
+            $checksum = Get-Content -Path $checksumPath
+            Write-Info "Checksum: $($checksum.Substring(0, 16))... (saved to $(Split-Path -Path $checksumPath -Leaf))"
+            return $true
+        }
+    }
+    catch {
+        Write-Warn "Failed to create checksum: $_"
+    }
+
+    return $false
+}
+
+function New-BackupMetadata {
+    param(
+        [string]$BackupPath,
+        [string]$Volume,
+        [int]$Retention
+    )
+
+    $metadataPath = $BackupPath -replace '\.tar\.gz$', '.metadata.json'
+    Write-Info "Generating backup metadata..."
+
+    try {
+        $fileInfo = Get-Item -Path $BackupPath
+        $checksum = ""
+        $checksumPath = "$BackupPath.sha256"
+        if (Test-Path -Path $checksumPath) {
+            $checksum = Get-Content -Path $checksumPath
+        }
+
+        $metadata = @{
+            backup_file    = $fileInfo.Name
+            created_at     = (Get-Date -Format "o")
+            volume_name    = $Volume
+            size_bytes     = $fileInfo.Length
+            size_human     = "{0:N2} MB" -f ($fileInfo.Length / 1MB)
+            sha256         = $checksum
+            hostname       = $env:COMPUTERNAME
+            backup_dir     = Split-Path -Path $BackupPath -Parent
+            retention_days = $Retention
+            script_version = "1.1.0"
+        }
+
+        $metadata | ConvertTo-Json -Depth 2 | Out-File -FilePath $metadataPath -Encoding UTF8
+
+        if (Test-Path -Path $metadataPath) {
+            Write-Info "Metadata saved to $(Split-Path -Path $metadataPath -Leaf)"
+            return $true
+        }
+    }
+    catch {
+        Write-Warn "Failed to create metadata: $_"
+    }
+
+    return $false
+}
+
 function New-Backup {
     param(
         [string]$Volume,
@@ -178,6 +249,14 @@ function New-Backup {
     Write-Info "Creating backup: $backupFile"
     Write-Info "Volume: $Volume"
     Write-Info "Destination: $BackupPath"
+
+    # Dry-run mode - show what would happen
+    if ($DryRun) {
+        Write-Info "[DRY-RUN] Would create backup: $fullBackupPath"
+        Write-Info "[DRY-RUN] Would generate checksum: $fullBackupPath.sha256"
+        Write-Info "[DRY-RUN] Would generate metadata: $($fullBackupPath -replace '\.tar\.gz$', '.metadata.json')"
+        return $fullBackupPath
+    }
 
     # Convert Windows path to Docker-compatible path
     $dockerBackupPath = $BackupPath -replace '\\', '/' -replace '^([A-Za-z]):', '/$1'
@@ -204,6 +283,11 @@ function New-Backup {
     $sizeFormatted = "{0:N2} MB" -f ($fileInfo.Length / 1MB)
 
     Write-Success "Backup created: $fullBackupPath ($sizeFormatted)"
+
+    # Generate checksum and metadata
+    $null = New-BackupChecksum -BackupPath $fullBackupPath
+    $null = New-BackupMetadata -BackupPath $fullBackupPath -Volume $Volume -Retention $RetentionDays
+
     return $fullBackupPath
 }
 
@@ -225,14 +309,50 @@ function Remove-OldBackups {
         Where-Object { $_.LastWriteTime -lt $cutoffDate }
 
     $deletedCount = 0
+    $totalFreed = 0
+
     foreach ($backup in $oldBackups) {
-        Write-Info "Removing old backup: $($backup.Name)"
-        Remove-Item -Path $backup.FullName -Force
+        $ageDays = [math]::Floor(((Get-Date) - $backup.LastWriteTime).TotalDays)
+        $sizeFormatted = "{0:N2} MB" -f ($backup.Length / 1MB)
+
+        if ($DryRun) {
+            Write-Info "[DRY-RUN] Would remove: $($backup.Name) ($ageDays days old, $sizeFormatted)"
+        }
+        else {
+            Write-Info "Removing: $($backup.Name) ($ageDays days old, $sizeFormatted)"
+            Remove-Item -Path $backup.FullName -Force
+
+            # Also remove associated checksum and metadata files
+            $checksumPath = "$($backup.FullName).sha256"
+            $metadataPath = $backup.FullName -replace '\.tar\.gz$', '.metadata.json'
+            if (Test-Path -Path $checksumPath) { Remove-Item -Path $checksumPath -Force }
+            if (Test-Path -Path $metadataPath) { Remove-Item -Path $metadataPath -Force }
+        }
+
         $deletedCount++
+        $totalFreed += $backup.Length
     }
 
     if ($deletedCount -gt 0) {
-        Write-Info "Removed $deletedCount old backup(s)"
+        $freedFormatted = if ($totalFreed -gt 1GB) {
+            "{0:N2} GB" -f ($totalFreed / 1GB)
+        }
+        elseif ($totalFreed -gt 1MB) {
+            "{0:N2} MB" -f ($totalFreed / 1MB)
+        }
+        else {
+            "{0:N0} bytes" -f $totalFreed
+        }
+
+        if ($DryRun) {
+            Write-Info "[DRY-RUN] Would remove $deletedCount old backup(s), freeing ~$freedFormatted"
+        }
+        else {
+            Write-Info "Removed $deletedCount old backup(s), freed ~$freedFormatted"
+        }
+    }
+    else {
+        Write-Info "No old backups to remove"
     }
 }
 
@@ -259,6 +379,10 @@ function Show-ExistingBackups {
 function Main {
     Write-Info "ChromaDB Backup Script (PowerShell)"
     Write-Info "===================================="
+
+    if ($DryRun) {
+        Write-Info "[DRY-RUN MODE] No changes will be made"
+    }
 
     # Pre-flight checks
     if (-not (Test-DockerAvailable)) {
@@ -300,7 +424,12 @@ function Main {
     # Show summary
     Show-ExistingBackups -BackupPath $BackupDir
 
-    Write-Success "Backup completed successfully"
+    if ($DryRun) {
+        Write-Success "Dry-run completed - no changes were made"
+    }
+    else {
+        Write-Success "Backup completed successfully"
+    }
 
     # Return the backup path for scripting
     return $backupPath

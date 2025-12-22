@@ -137,6 +137,43 @@ function Test-BackupFile {
     return (Resolve-Path -Path $Path).Path
 }
 
+function Test-BackupChecksum {
+    param([string]$BackupPath)
+
+    $checksumPath = "$BackupPath.sha256"
+
+    if (-not (Test-Path -Path $checksumPath -PathType Leaf)) {
+        Write-Warn "No checksum file found ($checksumPath)"
+        Write-Warn "Skipping integrity verification - backup may not have been created with checksums"
+        return $true
+    }
+
+    Write-Info "Verifying backup integrity..."
+
+    try {
+        $expectedChecksum = (Get-Content -Path $checksumPath -Raw).Trim()
+        $actualHash = Get-FileHash -Path $BackupPath -Algorithm SHA256
+        $actualChecksum = $actualHash.Hash.ToLower()
+
+        if ($expectedChecksum -eq $actualChecksum) {
+            Write-Info "Checksum verified: $($actualChecksum.Substring(0, 16))..."
+            return $true
+        }
+        else {
+            Write-Err "Checksum mismatch!"
+            Write-Err "Expected: $expectedChecksum"
+            Write-Err "Actual:   $actualChecksum"
+            Write-Err "The backup file may be corrupted. Aborting restore."
+            exit 4
+        }
+    }
+    catch {
+        Write-Warn "Failed to verify checksum: $_"
+        Write-Warn "Proceeding with restore..."
+        return $true
+    }
+}
+
 function Get-ChromaDBVolume {
     param([string]$Pattern)
 
@@ -357,6 +394,9 @@ function Main {
     # Validate backup file
     $BackupFile = Test-BackupFile -Path $BackupFile
     Write-Info "Backup file validated: $BackupFile"
+
+    # Verify backup integrity
+    $null = Test-BackupChecksum -BackupPath $BackupFile
 
     # Detect or validate volume
     if ([string]::IsNullOrEmpty($VolumeName)) {

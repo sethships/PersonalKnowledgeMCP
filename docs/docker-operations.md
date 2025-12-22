@@ -961,6 +961,113 @@ In case of data loss or corruption:
 
 5. **Document the incident** for future reference.
 
+## Multi-Instance Deployment
+
+The Personal Knowledge MCP supports running multiple isolated ChromaDB instances for different security tiers. This enables separation of Private, Work, and Public knowledge bases.
+
+### Use Cases
+
+- **Private Instance**: Personal notes, financial data, health records
+- **Work Instance**: Company code, internal documentation, proprietary knowledge
+- **Public Instance**: Open source projects, public documentation, shared resources
+
+### Instance Configuration
+
+Each instance requires unique settings for ports, volumes, and container names.
+
+**Example: Running Three Isolated Instances**
+
+Create separate compose files or use environment variables to differentiate instances:
+
+```bash
+# Private instance (port 8000)
+INSTANCE_NAME=private CHROMADB_PORT=8000 docker-compose -f docker-compose.private.yml up -d
+
+# Work instance (port 8001)
+INSTANCE_NAME=work CHROMADB_PORT=8001 docker-compose -f docker-compose.work.yml up -d
+
+# Public instance (port 8002)
+INSTANCE_NAME=public CHROMADB_PORT=8002 docker-compose -f docker-compose.public.yml up -d
+```
+
+**docker-compose.private.yml Example:**
+```yaml
+services:
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    container_name: pk-mcp-chromadb-private
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - chromadb-data-private:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=FALSE
+    restart: unless-stopped
+
+volumes:
+  chromadb-data-private:
+    driver: local
+```
+
+### Backup Strategy for Multi-Instance
+
+Use the `--volume` flag to specify which instance to backup:
+
+```bash
+# Backup private instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-private \
+    --backup-dir ./backups/private
+
+# Backup work instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-work \
+    --backup-dir ./backups/work
+
+# Backup public instance
+./scripts/backup-chromadb.sh --volume personalknowledgemcp_chromadb-data-public \
+    --backup-dir ./backups/public
+```
+
+### Restore to Specific Instance
+
+```bash
+# Restore to private instance
+./scripts/restore-chromadb.sh ./backups/private/chromadb-backup-*.tar.gz \
+    --volume personalknowledgemcp_chromadb-data-private
+```
+
+### Security Considerations
+
+- **Network Isolation**: Each instance should bind to localhost only
+- **Volume Separation**: Use distinct volume names to prevent data mixing
+- **Access Control**: Consider using different authentication tokens per instance (Phase 3+)
+- **Backup Separation**: Store backups in separate directories with appropriate permissions
+- **Firewall Rules**: Ensure each port is appropriately protected
+
+### MCP Service Configuration
+
+Configure the MCP service to connect to the appropriate instance:
+
+```json
+{
+  "instances": {
+    "private": {
+      "chromadb_url": "http://localhost:8000",
+      "collections_prefix": "private_"
+    },
+    "work": {
+      "chromadb_url": "http://localhost:8001",
+      "collections_prefix": "work_"
+    },
+    "public": {
+      "chromadb_url": "http://localhost:8002",
+      "collections_prefix": "public_"
+    }
+  }
+}
+```
+
 ## Additional Resources
 
 - [Docker Compose Documentation](https://docs.docker.com/compose/)

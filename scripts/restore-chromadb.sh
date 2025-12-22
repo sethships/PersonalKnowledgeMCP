@@ -158,6 +158,43 @@ validate_backup_file() {
     log_info "Backup file validated: $BACKUP_FILE"
 }
 
+# Verify backup checksum if available
+verify_checksum() {
+    local checksum_file="${BACKUP_FILE}.sha256"
+
+    if [[ ! -f "$checksum_file" ]]; then
+        log_warn "No checksum file found (${checksum_file})"
+        log_warn "Skipping integrity verification - backup may not have been created with checksums"
+        return 0
+    fi
+
+    log_info "Verifying backup integrity..."
+
+    local expected_checksum
+    expected_checksum=$(cat "$checksum_file")
+
+    local actual_checksum
+    if command -v sha256sum &>/dev/null; then
+        actual_checksum=$(sha256sum "$BACKUP_FILE" | cut -d' ' -f1)
+    elif command -v shasum &>/dev/null; then
+        actual_checksum=$(shasum -a 256 "$BACKUP_FILE" | cut -d' ' -f1)
+    else
+        log_warn "No checksum tool available (sha256sum or shasum) - skipping verification"
+        return 0
+    fi
+
+    if [[ "$expected_checksum" == "$actual_checksum" ]]; then
+        log_info "Checksum verified: ${actual_checksum:0:16}..."
+        return 0
+    else
+        log_error "Checksum mismatch!"
+        log_error "Expected: $expected_checksum"
+        log_error "Actual:   $actual_checksum"
+        log_error "The backup file may be corrupted. Aborting restore."
+        exit 4
+    fi
+}
+
 # Auto-detect ChromaDB volume name
 detect_volume() {
     if [[ -n "$VOLUME_NAME" ]]; then
@@ -391,6 +428,7 @@ main() {
     # Pre-flight checks
     check_docker
     validate_backup_file
+    verify_checksum
     detect_volume
     verify_volume
 
