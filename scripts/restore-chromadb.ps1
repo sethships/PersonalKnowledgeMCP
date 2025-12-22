@@ -163,6 +163,32 @@ function Get-ChromaDBContainers {
     return $containers | Where-Object { $_ -match $CONTAINER_PATTERN }
 }
 
+function ConvertTo-DockerPath {
+    <#
+    .SYNOPSIS
+        Converts a Windows path to Docker-compatible path format.
+    .DESCRIPTION
+        Docker on Windows requires paths in Unix-like format (e.g., /c/path instead of C:\path).
+        This function handles the conversion consistently across the script.
+    .PARAMETER Path
+        The Windows path to convert.
+    .EXAMPLE
+        ConvertTo-DockerPath -Path "C:\Users\data\backup.tar.gz"
+        Returns: /c/Users/data/backup.tar.gz
+    #>
+    param([string]$Path)
+
+    # Get the absolute path
+    $absolutePath = (Resolve-Path -Path $Path).Path
+
+    # Convert Windows path separators to forward slashes
+    # and convert drive letter format (C:\ to /c/)
+    $dockerPath = $absolutePath -replace '\\', '/'
+    $dockerPath = $dockerPath -replace '^([A-Za-z]):', '/$1'
+
+    return $dockerPath
+}
+
 function Stop-ChromaDBContainer {
     $containers = Get-ChromaDBContainers
 
@@ -281,13 +307,12 @@ function Restore-BackupData {
         [string]$Volume
     )
 
-    $backupDir = Split-Path -Path $BackupPath -Parent
     $backupName = Split-Path -Path $BackupPath -Leaf
 
     Write-Info "Restoring data from backup..."
 
-    # Convert Windows path to Docker-compatible path
-    $dockerBackupDir = $backupDir -replace '\\', '/' -replace '^([A-Za-z]):', '/$1'
+    # Convert Windows path to Docker-compatible path using helper function
+    $dockerBackupDir = ConvertTo-DockerPath -Path (Split-Path -Path $BackupPath -Parent)
 
     docker run --rm `
         -v "${Volume}:/data" `

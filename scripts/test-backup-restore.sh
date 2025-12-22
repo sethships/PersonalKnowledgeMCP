@@ -140,7 +140,7 @@ show_help() {
 check_chromadb() {
     log_step "Checking ChromaDB availability"
 
-    if ! curl -sf "${CHROMADB_URL}/api/v2/heartbeat" &>/dev/null; then
+    if ! chromadb_curl GET "/api/v2/heartbeat" &>/dev/null; then
         log_fail "ChromaDB is not accessible at ${CHROMADB_URL}"
         echo "Please ensure the ChromaDB container is running:"
         echo "  docker compose up -d chromadb"
@@ -185,9 +185,8 @@ create_test_collection() {
 
     # Create collection
     local create_response
-    create_response=$(curl -sf -X POST "${CHROMADB_URL}/api/v2/collections" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\": \"${TEST_COLLECTION_NAME}\", \"metadata\": {\"test\": true}}" 2>&1) || {
+    create_response=$(chromadb_curl POST "/api/v2/collections" \
+        "{\"name\": \"${TEST_COLLECTION_NAME}\", \"metadata\": {\"test\": true}}" 2>&1) || {
         log_fail "Failed to create test collection"
         log_verbose "Response: $create_response"
         return 1
@@ -208,13 +207,8 @@ create_test_collection() {
 
     # Add test documents
     local add_response
-    add_response=$(curl -sf -X POST "${CHROMADB_URL}/api/v2/collections/${collection_id}/add" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "ids": ["test-doc-1", "test-doc-2", "test-doc-3"],
-            "documents": ["Test document one", "Test document two", "Test document three"],
-            "metadatas": [{"index": 1}, {"index": 2}, {"index": 3}]
-        }' 2>&1) || {
+    add_response=$(chromadb_curl POST "/api/v2/collections/${collection_id}/add" \
+        '{"ids": ["test-doc-1", "test-doc-2", "test-doc-3"], "documents": ["Test document one", "Test document two", "Test document three"], "metadatas": [{"index": 1}, {"index": 2}, {"index": 3}]}' 2>&1) || {
         log_fail "Failed to add test documents"
         log_verbose "Response: $add_response"
         return 1
@@ -232,7 +226,7 @@ verify_test_collection() {
 
     # Check collection exists
     local collections_response
-    collections_response=$(curl -sf "${CHROMADB_URL}/api/v2/collections" 2>&1) || {
+    collections_response=$(chromadb_curl GET "/api/v2/collections" 2>&1) || {
         log_fail "Failed to list collections"
         return 1
     }
@@ -249,7 +243,7 @@ verify_test_collection() {
 
     if [[ -z "$collection_id" ]]; then
         # Try alternative extraction
-        collection_id=$(curl -sf "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" 2>&1 | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+        collection_id=$(chromadb_curl GET "/api/v2/collections/${TEST_COLLECTION_NAME}" 2>&1 | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
     fi
 
     if [[ -z "$collection_id" ]]; then
@@ -259,7 +253,7 @@ verify_test_collection() {
 
     # Get document count
     local count_response
-    count_response=$(curl -sf "${CHROMADB_URL}/api/v2/collections/${collection_id}/count" 2>&1) || {
+    count_response=$(chromadb_curl GET "/api/v2/collections/${collection_id}/count" 2>&1) || {
         log_fail "Failed to get document count"
         return 1
     }
@@ -304,7 +298,7 @@ delete_test_collection() {
 
     # Get collection ID first
     local collection_response
-    collection_response=$(curl -sf "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" 2>&1) || {
+    collection_response=$(chromadb_curl GET "/api/v2/collections/${TEST_COLLECTION_NAME}" 2>&1) || {
         log_warn "Test collection not found (may have already been deleted)"
         return 0
     }
@@ -313,11 +307,11 @@ delete_test_collection() {
     collection_id=$(echo "$collection_response" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
 
     if [[ -n "$collection_id" ]]; then
-        curl -sf -X DELETE "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null || true
+        chromadb_curl DELETE "/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null || true
     fi
 
     # Verify deletion
-    if curl -sf "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null; then
+    if chromadb_curl GET "/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null; then
         log_fail "Failed to delete test collection"
         return 1
     fi
@@ -342,7 +336,7 @@ restore_backup() {
     # Wait for ChromaDB to be ready after restore
     local max_wait=30
     local waited=0
-    while ! curl -sf "${CHROMADB_URL}/api/v2/heartbeat" &>/dev/null; do
+    while ! chromadb_curl GET "/api/v2/heartbeat" &>/dev/null; do
         if [[ $waited -ge $max_wait ]]; then
             log_fail "ChromaDB did not become healthy after restore"
             return 1
@@ -366,7 +360,7 @@ cleanup() {
     log_step "Cleaning up test artifacts"
 
     # Delete test collection if it exists
-    curl -sf -X DELETE "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null || true
+    chromadb_curl DELETE "/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null || true
 
     # Delete backup file
     if [[ -n "$BACKUP_FILE" ]] && [[ -f "$BACKUP_FILE" ]]; then
@@ -440,7 +434,7 @@ main() {
 
     # Verify collection is actually gone
     log_step "Verifying data loss"
-    if curl -sf "${CHROMADB_URL}/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null; then
+    if chromadb_curl GET "/api/v2/collections/${TEST_COLLECTION_NAME}" &>/dev/null; then
         log_fail "Collection still exists after deletion"
         TEST_PASSED=false
     else
