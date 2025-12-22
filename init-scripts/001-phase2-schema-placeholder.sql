@@ -14,14 +14,15 @@
 -- Initialization marker table
 CREATE TABLE IF NOT EXISTS _schema_info (
     id SERIAL PRIMARY KEY,
-    schema_version VARCHAR(50) NOT NULL,
+    schema_version VARCHAR(50) NOT NULL UNIQUE,
     applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     description TEXT
 );
 
--- Insert initialization record
+-- Insert initialization record (idempotent - safe to run multiple times)
 INSERT INTO _schema_info (schema_version, description)
-VALUES ('0.0.1-placeholder', 'Initial schema placeholder for Phase 2 document store');
+VALUES ('0.0.1-placeholder', 'Initial schema placeholder for Phase 2 document store')
+ON CONFLICT (schema_version) DO NOTHING;
 
 -- Grant permissions (if needed for future app user)
 -- Note: Actual role setup will be done in Phase 2
