@@ -17,7 +17,11 @@ export interface ChromaConfig {
   host: string;
   /** ChromaDB server port (default: 8000) */
   port: number;
-  /** Optional authentication token for ChromaDB server (uses Bearer token in Authorization header) */
+  /**
+   * Optional authentication token for ChromaDB server.
+   * Uses Bearer token in Authorization header when set to a non-empty string.
+   * When undefined or empty string, authentication is disabled (backward compatible).
+   */
   authToken?: string;
   /** Optional retry configuration for transient failures */
   retry?: RetryConfig;
