@@ -379,7 +379,7 @@ docker-compose logs --tail=100 chromadb
 docker-compose logs --since="1h"
 
 # Since specific time (if needed)
-docker-compose logs --since="2024-01-01T00:00:00"
+docker-compose logs --since="YYYY-MM-DDT00:00:00"
 
 # Follow logs from now
 docker-compose logs -f chromadb
@@ -995,7 +995,7 @@ Extract specific information from logs using structured queries:
 docker logs pk-mcp-chromadb --details 2>&1 | head -50
 
 # Filter logs by time range
-docker-compose logs --since="2024-01-01T00:00:00" --until="2024-01-01T12:00:00" chromadb
+docker-compose logs --since="YYYY-MM-DDT00:00:00" --until="YYYY-MM-DDT12:00:00" chromadb
 
 # Count errors in last hour
 docker-compose logs --since="1h" chromadb 2>&1 | grep -ci "error"
@@ -1173,9 +1173,7 @@ curl http://localhost:8000/api/v2/version 2>/dev/null || echo "Version endpoint 
 **Minor Version Upgrade (17.x to 17.y):**
 
 ```bash
-# 1. Backup
-./scripts/backup-postgres.sh --backup-dir ./pre-upgrade-backup  # If script exists
-# Or manual backup:
+# 1. Backup (manual - PostgreSQL backup scripts planned for future)
 docker-compose exec postgres pg_dump -U pk_mcp personal_knowledge > ./pre-upgrade-backup/postgres-dump.sql
 
 # 2. Update version in docker-compose.yml
@@ -1291,8 +1289,8 @@ cat > ./DOCKER_VERSIONS.md << 'EOF'
 
 | Service    | Current Version      | Last Updated | Notes           |
 |------------|---------------------|--------------|-----------------|
-| ChromaDB   | chromadb/chroma:0.6.3 | 2024-12-20 | Stable release |
-| PostgreSQL | postgres:17.2-alpine  | 2024-12-20 | Phase 2 ready  |
+| ChromaDB   | chromadb/chroma:0.6.3 | 2025-12-22 | Stable release |
+| PostgreSQL | postgres:17.2-alpine  | 2025-12-22 | Phase 2 ready  |
 EOF
 ```
 
@@ -1554,7 +1552,7 @@ environment:
 
 **Windows with WSL2:**
 - Volume data stored in WSL2 filesystem
-- Access via: `\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes\`
+- Access via: `\\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes\`
 
 **Permission best practices:**
 - Don't manually modify volume data from host
