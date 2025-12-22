@@ -142,7 +142,30 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     try {
       const path = `http://${this.config.host}:${this.config.port}`;
-      this.client = new ChromaClient({ path });
+
+      // Build client options with optional authentication
+      // When authToken is provided, use Bearer token authentication via Authorization header
+      type ChromaClientOptions = {
+        path: string;
+        auth?: {
+          provider: "token";
+          credentials: string;
+          tokenHeaderType: "AUTHORIZATION";
+        };
+      };
+
+      const clientOptions: ChromaClientOptions = { path };
+
+      if (this.config.authToken) {
+        clientOptions.auth = {
+          provider: "token",
+          credentials: this.config.authToken,
+          tokenHeaderType: "AUTHORIZATION",
+        };
+        this.logger.info("ChromaDB authentication enabled");
+      }
+
+      this.client = new ChromaClient(clientOptions);
 
       // Verify connection by making a test call with retry
       await this.withRetryWrapper(async () => {

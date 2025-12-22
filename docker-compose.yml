@@ -22,6 +22,11 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
       # ALLOW_RESET: FALSE for production safety, override with CHROMADB_ALLOW_RESET=TRUE for development
       - ALLOW_RESET=${CHROMADB_ALLOW_RESET:-FALSE}
+      # Authentication: When CHROMADB_AUTH_TOKEN is set, require token authentication
+      # Leave CHROMADB_AUTH_TOKEN unset/empty for unauthenticated access (development only)
+      - CHROMA_SERVER_AUTHN_PROVIDER=${CHROMADB_AUTH_TOKEN:+chromadb.auth.token_authn.TokenAuthenticationServerProvider}
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_AUTH_TOKEN:-}
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
     networks:
       - pk-mcp-network
     restart: unless-stopped

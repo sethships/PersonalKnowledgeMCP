@@ -89,6 +89,84 @@ describe("ChromaDB Integration Tests", () => {
     }
   });
 
+  describe("Authentication Configuration", () => {
+    test("should accept auth token in configuration", async () => {
+      const configWithAuth: ChromaConfig = {
+        host: process.env["CHROMADB_HOST"] || "localhost",
+        port: parseInt(process.env["CHROMADB_PORT"] || "8000"),
+        authToken: "test-token-for-config",
+      };
+
+      const clientWithAuth = new ChromaStorageClientImpl(configWithAuth);
+      expect(clientWithAuth).toBeDefined();
+    });
+
+    test("should connect successfully without auth token to unauthenticated server", async () => {
+      // Test default behavior: no auth token configured, connecting to server without auth
+      const configWithoutAuth: ChromaConfig = {
+        host: process.env["CHROMADB_HOST"] || "localhost",
+        port: parseInt(process.env["CHROMADB_PORT"] || "8000"),
+        // No authToken - backward compatible mode
+      };
+
+      const clientWithoutAuth = new ChromaStorageClientImpl(configWithoutAuth);
+      await clientWithoutAuth.connect();
+
+      const isHealthy = await clientWithoutAuth.healthCheck();
+      expect(isHealthy).toBe(true);
+    });
+
+    test("should connect with empty auth token to unauthenticated server", async () => {
+      // Empty auth token should be treated as no auth (backward compatible)
+      const configWithEmptyAuth: ChromaConfig = {
+        host: process.env["CHROMADB_HOST"] || "localhost",
+        port: parseInt(process.env["CHROMADB_PORT"] || "8000"),
+        authToken: "", // Empty string - no auth
+      };
+
+      const clientWithEmptyAuth = new ChromaStorageClientImpl(configWithEmptyAuth);
+      await clientWithEmptyAuth.connect();
+
+      const isHealthy = await clientWithEmptyAuth.healthCheck();
+      expect(isHealthy).toBe(true);
+    });
+
+    /**
+     * NOTE: The following test requires ChromaDB to be configured with authentication.
+     * To test auth rejection, start ChromaDB with:
+     *   CHROMA_SERVER_AUTHN_PROVIDER=chromadb.auth.token_authn.TokenAuthenticationServerProvider
+     *   CHROMA_SERVER_AUTHN_CREDENTIALS=test-secret-token
+     *   CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
+     *
+     * Then this test would verify that:
+     * 1. Connection without token fails when server requires auth
+     * 2. Connection with invalid token fails
+     * 3. Connection with valid token succeeds
+     *
+     * For now, this serves as documentation of the expected behavior.
+     */
+    test.skip("should reject connection without valid auth token when server requires auth", async () => {
+      // This test is skipped by default as it requires auth-enabled ChromaDB
+      // See test comment above for setup instructions
+      const configWithoutAuth: ChromaConfig = {
+        host: process.env["CHROMADB_HOST"] || "localhost",
+        port: parseInt(process.env["CHROMADB_PORT"] || "8000"),
+        // No auth token - should fail against auth-enabled server
+        retry: { maxRetries: 0, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1 },
+      };
+
+      const clientWithoutAuth = new ChromaStorageClientImpl(configWithoutAuth);
+
+      // Should throw due to authentication failure
+      try {
+        await clientWithoutAuth.connect();
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error).toBeDefined();
+      }
+    });
+  });
+
   describe("Connection and Health", () => {
     test("should connect to ChromaDB successfully", async () => {
       const newClient = new ChromaStorageClientImpl(testConfig);

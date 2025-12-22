@@ -97,6 +97,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
         port: parseIntEnv("CHROMADB_PORT", 8000),
+        authToken: Bun.env["CHROMADB_AUTH_TOKEN"],
       },
       embedding: {
         provider: "openai",
@@ -138,6 +139,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     const chromaClient = new ChromaStorageClientImpl({
       host: config.chromadb.host,
       port: config.chromadb.port,
+      authToken: config.chromadb.authToken,
     });
 
     // Connect to ChromaDB
