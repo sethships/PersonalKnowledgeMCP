@@ -17,8 +17,14 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
   - Health checks enabled
   - Log rotation configured
 
-**Phase 2 (Next):**
-- **PostgreSQL** - Document store for full artifacts (commented in docker-compose.yml)
+**Phase 2 (Ready):**
+- **PostgreSQL** - Document store for full artifacts
+  - Image: `postgres:17.2-alpine` (pinned version)
+  - Port: `127.0.0.1:5432` (localhost only)
+  - Volume: `postgres-data`
+  - Resource limits: 2 CPU / 1GB RAM max
+  - Health checks enabled (pg_isready)
+  - Init scripts: `./init-scripts:/docker-entrypoint-initdb.d`
 
 **Phase 4 (Future):**
 - **Neo4j** - Graph database for relationships (commented in docker-compose.yml)
@@ -737,34 +743,59 @@ secrets:
 
 ## Future Services (Phase 2+)
 
-### PostgreSQL (Phase 2)
+### PostgreSQL (Phase 2 - Ready)
 
 **Purpose:** Document store for full file artifacts and metadata.
 
-**Uncomment in docker-compose.yml:**
-```yaml
-postgres:
-  image: postgres:17.2-alpine
-  container_name: pk-mcp-postgres
-  ports:
-    - "5432:5432"
-  volumes:
-    - postgres-data:/var/lib/postgresql/data
-  environment:
-    - POSTGRES_USER=${POSTGRES_USER:-pk_mcp_user}
-    - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-    - POSTGRES_DB=${POSTGRES_DATABASE:-personal_knowledge}
-  networks:
-    - pk-mcp-network
-  restart: unless-stopped
+**Status:** Configured and ready for use. Already enabled in `docker-compose.yml`.
+
+**Configuration:**
+- **Image:** `postgres:17.2-alpine` (pinned stable version)
+- **Container Name:** `pk-mcp-postgres`
+- **Port:** `127.0.0.1:5432:5432` (localhost only for security)
+- **Volume:** `postgres-data:/var/lib/postgresql/data`
+- **Init Scripts:** `./init-scripts:/docker-entrypoint-initdb.d:ro`
+- **Network:** `pk-mcp-network` (bridge mode)
+- **Restart Policy:** `unless-stopped`
+
+**Resource Limits:**
+- **CPU Limit:** 2 cores maximum
+- **Memory Limit:** 1GB maximum
+- **CPU Reserved:** 0.25 cores minimum
+- **Memory Reserved:** 256MB minimum
+
+**Environment Variables (from .env):**
+- `POSTGRES_USER` - Database user (default: `pk_mcp`)
+- `POSTGRES_PASSWORD` - **Required** - Database password (no default, must be set)
+- `POSTGRES_DB` - Database name (default: `personal_knowledge`)
+
+**Health Check:**
+- Uses `pg_isready` to verify database accepts connections
+- Checks every 30 seconds with 10-second timeout
+- 3 retries before marking unhealthy
+- 30-second start period for initialization
+
+**Starting PostgreSQL:**
+```bash
+# Set password in .env file first
+echo "POSTGRES_PASSWORD=your-secure-password" >> .env
+
+# Start the container
+docker-compose up -d postgres
+
+# Check health status
+docker-compose ps postgres
+
+# Verify connection
+docker-compose exec postgres pg_isready -U pk_mcp -d personal_knowledge
 ```
 
-**Add volume definition:**
-```yaml
-volumes:
-  postgres-data:
-    driver: local
-```
+**Init Scripts:**
+
+PostgreSQL automatically runs SQL scripts from `./init-scripts/` on first startup:
+- Scripts run in alphanumeric order (001-*, 002-*, etc.)
+- Currently includes placeholder schema for Phase 2 document store
+- Add migration scripts with numbered prefixes as needed
 
 ### Neo4j (Phase 4)
 
