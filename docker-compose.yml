@@ -90,7 +90,7 @@ services:
       - ./init-scripts:/docker-entrypoint-initdb.d:ro
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-pk_mcp}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - POSTGRES_DB=${POSTGRES_DB:-personal_knowledge}
     networks:
       - pk-mcp-network

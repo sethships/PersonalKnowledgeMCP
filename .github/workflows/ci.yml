@@ -38,6 +38,10 @@ jobs:
 
       - name: Start ChromaDB
         run: docker compose up -d chromadb
+        env:
+          # Required for docker-compose.yml parsing (postgres service requires password)
+          # This is a dummy value - postgres isn't started in CI, but compose needs to parse the file
+          POSTGRES_PASSWORD: ci-dummy-not-used
 
       - name: Wait for ChromaDB to be ready
         run: |
@@ -53,6 +57,9 @@ jobs:
           echo "❌ ChromaDB failed to start after 120 seconds"
           docker compose logs chromadb
           exit 1
+        env:
+          # Required for docker-compose.yml parsing (postgres service requires password)
+          POSTGRES_PASSWORD: ci-dummy-not-used
 
       - name: Run tests with coverage
         run: bun test --coverage --coverage-reporter=lcov
@@ -71,3 +78,6 @@ jobs:
       - name: Stop ChromaDB
         if: always()
         run: docker compose down
+        env:
+          # Required for docker-compose.yml parsing (postgres service requires password)
+          POSTGRES_PASSWORD: ci-dummy-not-used
