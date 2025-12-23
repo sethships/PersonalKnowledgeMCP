@@ -1,62 +1,138 @@
-# Personal Knowledge MCP - Docker Compose Configuration (Phase 2)
-# Phase 2: ChromaDB with production hardening
+# Personal Knowledge MCP - Docker Compose Configuration (Phase 3)
+# Phase 3: Multi-Instance Support with ChromaDB Production Hardening
 # MCP service runs on host (not containerized) due to stdio transport requirement
+#
+# Usage:
+#   docker compose --profile default up -d     # Single instance (backwards compatible)
+#   docker compose --profile private up -d     # Private instance only
+#   docker compose --profile work up -d        # Work instance only
+#   docker compose --profile public up -d      # Public instance only
+#   docker compose --profile all up -d         # All instances
 #
 # NOTE: Resource limits (deploy.resources) require Docker Compose v2.
 # Use 'docker compose' (v2) or 'docker-compose --compatibility' for limits to apply.
 
+# Common ChromaDB configuration template (YAML anchor)
+x-chromadb-common: &chromadb-common
+  image: chromadb/chroma:0.6.3
+  networks:
+    - pk-mcp-network
+  restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        cpus: "2"
+        memory: 2G
+      reservations:
+        cpus: "0.5"
+        memory: 512M
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        'python -c ''import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v2/heartbeat")''',
+      ]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   # ============================================================================
-  # Vector Database (ChromaDB)
-  # Phase 2 - Production Hardened
+  # ChromaDB - Default Single Instance (Backwards Compatible)
+  # Use profile "default" for single-instance deployments
   # ============================================================================
   chromadb:
-    image: chromadb/chroma:0.6.3
+    <<: *chromadb-common
     container_name: pk-mcp-chromadb
+    profiles:
+      - default
     ports:
-      - "127.0.0.1:8000:8000" # HTTP API - localhost only for security
+      - "127.0.0.1:8000:8000"
     volumes:
       - chromadb-data:/chroma/chroma
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
-      # ALLOW_RESET: FALSE for production safety, override with CHROMADB_ALLOW_RESET=TRUE for development
       - ALLOW_RESET=${CHROMADB_ALLOW_RESET:-FALSE}
-      # Authentication: When CHROMADB_AUTH_TOKEN is set, require token authentication
-      # Leave CHROMADB_AUTH_TOKEN unset/empty for unauthenticated access (development only)
       - CHROMA_SERVER_AUTHN_PROVIDER=${CHROMADB_AUTH_TOKEN:+chromadb.auth.token_authn.TokenAuthenticationServerProvider}
       - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_AUTH_TOKEN:-}
       - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
-    networks:
-      - pk-mcp-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'python -c ''import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v2/heartbeat")''',
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+
+  # ============================================================================
+  # ChromaDB - Private Instance (Port 8000)
+  # For personal/sensitive knowledge base
+  # ============================================================================
+  chromadb-private:
+    <<: *chromadb-common
+    container_name: pk-mcp-chromadb-private
+    profiles:
+      - private
+      - all
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - chromadb-private-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=${CHROMADB_ALLOW_RESET:-FALSE}
+      - CHROMA_SERVER_AUTHN_PROVIDER=${CHROMADB_PRIVATE_AUTH_TOKEN:+chromadb.auth.token_authn.TokenAuthenticationServerProvider}
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_PRIVATE_AUTH_TOKEN:-}
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
+
+  # ============================================================================
+  # ChromaDB - Work Instance (Port 8001)
+  # For work-related repositories
+  # ============================================================================
+  chromadb-work:
+    <<: *chromadb-common
+    container_name: pk-mcp-chromadb-work
+    profiles:
+      - work
+      - all
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - chromadb-work-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=${CHROMADB_ALLOW_RESET:-FALSE}
+      - CHROMA_SERVER_AUTHN_PROVIDER=${CHROMADB_WORK_AUTH_TOKEN:+chromadb.auth.token_authn.TokenAuthenticationServerProvider}
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_WORK_AUTH_TOKEN:-}
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
+
+  # ============================================================================
+  # ChromaDB - Public Instance (Port 8002)
+  # For public/OSS repositories
+  # ============================================================================
+  chromadb-public:
+    <<: *chromadb-common
+    container_name: pk-mcp-chromadb-public
+    profiles:
+      - public
+      - all
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - chromadb-public-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=${CHROMADB_ALLOW_RESET:-FALSE}
+      - CHROMA_SERVER_AUTHN_PROVIDER=${CHROMADB_PUBLIC_AUTH_TOKEN:+chromadb.auth.token_authn.TokenAuthenticationServerProvider}
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_PUBLIC_AUTH_TOKEN:-}
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
 
   # ============================================================================
   # Graph Database (Neo4j Community) - Phase 4
-  # Disabled for Phase 1, uncomment for Phase 4
+  # Disabled for Phase 3, uncomment for Phase 4
   # ============================================================================
   # neo4j:
   #   image: neo4j:5.25.1-community
@@ -83,8 +159,11 @@ services:
   postgres:
     image: postgres:17.2-alpine
     container_name: pk-mcp-postgres
+    profiles:
+      - default
+      - all
     ports:
-      - "127.0.0.1:5432:5432" # Localhost only for security
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d:ro
@@ -124,8 +203,17 @@ networks:
     driver: bridge
 
 volumes:
+  # Default single-instance volume (backwards compatible)
   chromadb-data:
     driver: local
+  # Multi-instance volumes
+  chromadb-private-data:
+    driver: local
+  chromadb-work-data:
+    driver: local
+  chromadb-public-data:
+    driver: local
+  # PostgreSQL
   postgres-data:
     driver: local
   # neo4j-data:

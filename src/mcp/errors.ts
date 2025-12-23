@@ -15,6 +15,7 @@ import {
   NoRepositoriesAvailableError,
   SearchOperationError,
 } from "../services/errors.js";
+import { InstanceAccessDeniedError } from "../auth/errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
 /**
@@ -43,6 +44,18 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  */
 export function mapToMCPError(error: unknown): McpError {
   const log = getLogger();
+
+  // Handle instance access errors (authorization)
+  if (error instanceof InstanceAccessDeniedError) {
+    log.warn(
+      { required: error.requiredAccess, present: error.presentAccess },
+      "Instance access denied"
+    );
+    return new McpError(
+      ErrorCode.InvalidRequest,
+      `Access denied to requested instance. Token lacks required access.`
+    );
+  }
 
   // Handle SearchService errors
   if (error instanceof SearchValidationError) {

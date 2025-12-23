@@ -11,7 +11,6 @@
 import "dotenv/config";
 import { PersonalKnowledgeMCPServer } from "./mcp/server.js";
 import { SearchServiceImpl } from "./services/search-service.js";
-import { ChromaStorageClientImpl } from "./storage/chroma-client.js";
 import { createEmbeddingProvider } from "./providers/factory.js";
 import { RepositoryMetadataStoreImpl } from "./repositories/metadata-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "./logging/index.js";
@@ -27,6 +26,8 @@ import {
   startSessionCleanup,
   startStreamableSessionCleanup,
 } from "./http/index.js";
+import { loadInstanceConfig, getEnabledInstances } from "./config/index.js";
+import { createInstanceRouter } from "./mcp/instance-router.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -73,6 +74,10 @@ async function main(): Promise<void> {
       },
     };
 
+    // Step 1b: Load multi-instance configuration
+    const instanceConfig = loadInstanceConfig();
+    const enabledInstances = getEnabledInstances(instanceConfig);
+
     // Log safe subset explicitly (avoid accidentally logging sensitive fields)
     logger.info(
       {
@@ -82,6 +87,11 @@ async function main(): Promise<void> {
           dimensions: config.embedding.dimensions,
         },
         data: { path: config.data.path },
+        instances: {
+          enabled: enabledInstances,
+          default: instanceConfig.defaultInstance,
+          requireAuth: instanceConfig.requireAuthForDefaultInstance,
+        },
       },
       "Configuration loaded"
     );
@@ -98,27 +108,26 @@ async function main(): Promise<void> {
       "Embedding provider initialized"
     );
 
-    // Step 3: Initialize ChromaDB storage client
-    logger.info("Initializing ChromaDB storage client");
-    const chromaClient = new ChromaStorageClientImpl({
-      host: config.chromadb.host,
-      port: config.chromadb.port,
-      authToken: config.chromadb.authToken,
-    });
+    // Step 3: Initialize instance router and ChromaDB storage client
+    logger.info("Initializing instance router");
+    const instanceRouter = createInstanceRouter(instanceConfig);
 
-    // Connect to ChromaDB
+    // Get storage client for default instance (backward compatible for stdio transport)
     logger.info(
-      { host: config.chromadb.host, port: config.chromadb.port },
-      "Connecting to ChromaDB"
+      { defaultInstance: instanceConfig.defaultInstance },
+      "Connecting to default ChromaDB instance"
     );
-    await chromaClient.connect();
+    const chromaClient = await instanceRouter.getStorageClient();
 
     // Verify connection health
     const isHealthy = await chromaClient.healthCheck();
     if (!isHealthy) {
-      throw new Error("ChromaDB health check failed");
+      throw new Error("ChromaDB health check failed for default instance");
     }
-    logger.info("ChromaDB connection established and healthy");
+    logger.info(
+      { instance: instanceConfig.defaultInstance },
+      "ChromaDB connection established and healthy"
+    );
 
     // Step 4: Initialize repository metadata service (singleton)
     logger.info("Initializing repository metadata service");
@@ -175,6 +184,12 @@ async function main(): Promise<void> {
       capabilities: {
         tools: true,
       },
+    });
+
+    // Register instance router shutdown hook
+    mcpServer.registerPreShutdownHook(async () => {
+      logger.info("Shutting down instance router");
+      await instanceRouter.shutdown();
     });
     logger.info("MCP server created");
 
