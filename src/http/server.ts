@@ -10,7 +10,13 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server as HttpServer } from "node:http";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { requestLogging, errorHandler, notFoundHandler } from "./middleware/index.js";
-import { createHealthRouter, createSseRouter, closeAllSessions } from "./routes/index.js";
+import {
+  createHealthRouter,
+  createSseRouter,
+  closeAllSessions,
+  createStreamableHttpRouter,
+  closeAllStreamableSessions,
+} from "./routes/index.js";
 import type { HttpTransportConfig } from "../mcp/types.js";
 import type { HttpServerInstance } from "./types.js";
 import { getComponentLogger } from "../logging/index.js";
@@ -33,6 +39,9 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
 export interface HttpServerDependencies {
   /** Factory to create MCP server instances for SSE sessions */
   createServerForSse: () => McpServer;
+
+  /** Factory to create MCP server instances for Streamable HTTP sessions */
+  createServerForStreamableHttp: () => McpServer;
 
   /** Health check function for ChromaDB */
   checkChromaDb: () => Promise<boolean>;
@@ -86,11 +95,19 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
     })
   );
 
-  // SSE transport endpoints under /api/v1
+  // SSE transport endpoints under /api/v1 (legacy transport)
   app.use(
     "/api/v1",
     createSseRouter({
       createServerForSse: deps.createServerForSse,
+    })
+  );
+
+  // Streamable HTTP transport endpoints under /api/v1 (modern transport)
+  app.use(
+    "/api/v1",
+    createStreamableHttpRouter({
+      createServerForStreamableHttp: deps.createServerForStreamableHttp,
     })
   );
 
@@ -132,6 +149,9 @@ export async function startHttpServer(
 
             // Close all SSE sessions first
             await closeAllSessions();
+
+            // Close all Streamable HTTP sessions
+            await closeAllStreamableSessions();
 
             // Then close the HTTP server
             return new Promise((resolveClose, rejectClose) => {

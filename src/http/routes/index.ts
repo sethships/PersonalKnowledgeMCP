@@ -14,3 +14,13 @@ export {
   stopSessionCleanup,
   type SseRouteDependencies,
 } from "./sse.js";
+
+export {
+  createStreamableHttpRouter,
+  getActiveStreamableSessionCount,
+  getMaxStreamableSessions,
+  closeAllStreamableSessions,
+  startStreamableSessionCleanup,
+  stopStreamableSessionCleanup,
+  type StreamableHttpRouteDependencies,
+} from "./streamable-http.js";
