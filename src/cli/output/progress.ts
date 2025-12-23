@@ -153,3 +153,94 @@ export function completeRemoveSpinner(spinner: Ora, success: boolean, deletedFil
     spinner.fail(chalk.red("Failed to remove repository"));
   }
 }
+
+// ============================================================================
+// Token Operation Spinners
+// ============================================================================
+
+/**
+ * Create a spinner for token creation operation
+ *
+ * @param tokenName - Name of the token being created
+ * @returns Ora spinner instance
+ */
+export function createTokenSpinner(tokenName: string): Ora {
+  const spinner = ora({
+    text: `Creating token ${chalk.cyan(tokenName)}...`,
+    color: "cyan",
+  }).start();
+
+  return spinner;
+}
+
+/**
+ * Complete token creation spinner
+ *
+ * @param spinner - Ora spinner instance
+ * @param success - Whether the operation succeeded
+ */
+export function completeTokenSpinner(spinner: Ora, success: boolean): void {
+  if (success) {
+    spinner.succeed(chalk.green("Token created successfully!"));
+  } else {
+    spinner.fail(chalk.red("Failed to create token"));
+  }
+}
+
+/**
+ * Create a spinner for token rotation operation
+ *
+ * @param tokenName - Name of the token being rotated
+ * @returns Ora spinner instance
+ */
+export function createRotateSpinner(tokenName: string): Ora {
+  const spinner = ora({
+    text: `Rotating token ${chalk.cyan(tokenName)}...`,
+    color: "cyan",
+  }).start();
+
+  return spinner;
+}
+
+/**
+ * Complete token rotation spinner
+ *
+ * @param spinner - Ora spinner instance
+ * @param success - Whether the operation succeeded
+ */
+export function completeRotateSpinner(spinner: Ora, success: boolean): void {
+  if (success) {
+    spinner.succeed(chalk.green("Token rotated successfully!"));
+  } else {
+    spinner.fail(chalk.red("Failed to rotate token"));
+  }
+}
+
+/**
+ * Create a spinner for token revocation operation
+ *
+ * @param tokenName - Name of the token being revoked
+ * @returns Ora spinner instance
+ */
+export function createRevokeSpinner(tokenName: string): Ora {
+  const spinner = ora({
+    text: `Revoking token ${chalk.cyan(tokenName)}...`,
+    color: "yellow",
+  }).start();
+
+  return spinner;
+}
+
+/**
+ * Complete token revocation spinner
+ *
+ * @param spinner - Ora spinner instance
+ * @param success - Whether the operation succeeded
+ */
+export function completeRevokeSpinner(spinner: Ora, success: boolean): void {
+  if (success) {
+    spinner.succeed(chalk.green("Token revoked successfully!"));
+  } else {
+    spinner.fail(chalk.red("Failed to revoke token"));
+  }
+}

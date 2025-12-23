@@ -12,6 +12,7 @@ import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { SearchService } from "../../services/types.js";
 import type { IngestionService } from "../../services/ingestion-service.js";
 import type { GitHubClient } from "../../services/github-client-types.js";
+import type { TokenService } from "../../auth/types.js";
 import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
@@ -23,6 +24,8 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { GitHubClientImpl } from "../../services/github-client.js";
 import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import { TokenServiceImpl } from "../../auth/token-service.js";
+import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
 
 /**
@@ -70,6 +73,7 @@ export interface CliDependencies {
   githubClient: GitHubClient;
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
+  tokenService: TokenService;
   logger: Logger;
 }
 
@@ -230,6 +234,11 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       "Incremental update coordinator initialized"
     );
 
+    // Step 11: Initialize token service for authentication
+    const tokenStore = TokenStoreImpl.getInstance(config.data.path);
+    const tokenService = new TokenServiceImpl(tokenStore);
+    logger.debug("Token service initialized");
+
     return {
       embeddingProvider,
       chromaClient,
@@ -239,6 +248,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       githubClient,
       updatePipeline,
       updateCoordinator,
+      tokenService,
       logger,
     };
   } catch (error) {

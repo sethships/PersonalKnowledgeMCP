@@ -128,6 +128,19 @@ function createMockTokenService(
     }),
 
     deleteToken: mock(async (): Promise<boolean> => true),
+
+    findTokenByName: mock(async (name: string) => {
+      for (const [, metadata] of validTokens) {
+        if (metadata.name === name) {
+          return { hash: "a".repeat(64), metadata };
+        }
+      }
+      return undefined;
+    }),
+
+    findTokenByHashPrefix: mock(async () => []),
+
+    listAllTokens: mock(async () => []),
   };
 }
 

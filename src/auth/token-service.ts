@@ -434,4 +434,92 @@ export class TokenServiceImpl implements TokenService {
       valid ? "Token validated" : `Token validation failed: ${reason}`
     );
   }
+
+  /**
+   * Find a token by its name
+   *
+   * Searches active (non-revoked, non-expired) tokens by exact name match.
+   *
+   * @param name - Token name to search for
+   * @returns Token if found, undefined otherwise
+   */
+  async findTokenByName(name: string): Promise<TokenListItem | undefined> {
+    const tokens = await this.tokenStore.loadTokens();
+    const now = new Date();
+
+    for (const [hash, token] of tokens) {
+      // Skip revoked
+      if (token.revoked) continue;
+
+      // Skip expired
+      if (token.metadata.expiresAt && new Date(token.metadata.expiresAt) < now) {
+        continue;
+      }
+
+      // Match by name (case-sensitive)
+      if (token.metadata.name === name) {
+        return { hash, metadata: token.metadata };
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Find tokens by hash prefix
+   *
+   * Searches all tokens (including revoked/expired) by hash prefix.
+   * Returns array to handle potential ambiguity.
+   *
+   * @param prefix - Hash prefix (minimum 8 characters recommended)
+   * @returns Array of matching tokens (may be empty or have multiple matches)
+   */
+  async findTokenByHashPrefix(prefix: string): Promise<TokenListItem[]> {
+    const tokens = await this.tokenStore.loadTokens();
+    const matches: TokenListItem[] = [];
+    const lowerPrefix = prefix.toLowerCase();
+
+    for (const [hash, token] of tokens) {
+      if (hash.toLowerCase().startsWith(lowerPrefix)) {
+        matches.push({ hash, metadata: token.metadata });
+      }
+    }
+
+    return matches;
+  }
+
+  /**
+   * List all tokens including expired and revoked
+   *
+   * Returns all tokens with status flags for UI display.
+   *
+   * @returns Array of all tokens with status information
+   */
+  async listAllTokens(): Promise<
+    Array<TokenListItem & { isExpired: boolean; isRevoked: boolean }>
+  > {
+    const tokens = await this.tokenStore.loadTokens();
+    const now = new Date();
+    const result: Array<TokenListItem & { isExpired: boolean; isRevoked: boolean }> = [];
+
+    for (const [hash, token] of tokens) {
+      const isExpired = token.metadata.expiresAt ? new Date(token.metadata.expiresAt) < now : false;
+
+      result.push({
+        hash,
+        metadata: token.metadata,
+        isExpired,
+        isRevoked: token.revoked,
+      });
+    }
+
+    // Sort by created date, newest first
+    result.sort((a, b) => {
+      const dateA = new Date(a.metadata.createdAt);
+      const dateB = new Date(b.metadata.createdAt);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return result;
+  }
 }
