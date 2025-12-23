@@ -11,5 +11,7 @@ export {
   HttpError,
   badRequest,
   notFound,
+  unauthorized,
+  forbidden,
   internalError,
 } from "./error-handler.js";

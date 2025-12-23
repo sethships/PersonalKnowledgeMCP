@@ -85,3 +85,12 @@ export {
 // Implementation classes
 export { TokenServiceImpl } from "./token-service.js";
 export { TokenStoreImpl } from "./token-store.js";
+
+// Middleware
+export { createAuthMiddleware, type AuthMiddlewareFunctions } from "./middleware.js";
+export type {
+  AuthMiddleware,
+  ScopeMiddlewareFactory,
+  InstanceMiddlewareFactory,
+  AuthMiddlewareDependencies,
+} from "./middleware-types.js";
