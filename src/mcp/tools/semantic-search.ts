@@ -170,6 +170,8 @@ export function createSemanticSearchHandler(searchService: SearchService): ToolH
  * @returns MCP text content with formatted JSON
  */
 function formatSearchResponse(response: SearchResponse): TextContent {
+  // TODO: Add instance metadata when instance-aware search routing is implemented
+  // This will require passing instance context through the SearchService layer
   const output = {
     results: response.results.map((result) => ({
       content: result.content_snippet,
