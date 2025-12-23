@@ -1,7 +1,8 @@
 /**
  * HTTP Transport Module
  *
- * Provides HTTP/SSE transport for MCP clients like Cursor, VS Code, etc.
+ * Provides HTTP transports for MCP clients like Cursor, VS Code, etc.
+ * Supports both SSE (legacy) and Streamable HTTP (modern) transports.
  * Enables network-accessible MCP endpoints while maintaining stdio for Claude Code.
  */
 
@@ -22,7 +23,7 @@ export type {
   SseConnectionState,
 } from "./types.js";
 
-// Routes
+// Routes - SSE Transport (legacy)
 export {
   createHealthRouter,
   createSseRouter,
@@ -33,6 +34,17 @@ export {
   stopSessionCleanup,
   type HealthCheckDependencies,
   type SseRouteDependencies,
+} from "./routes/index.js";
+
+// Routes - Streamable HTTP Transport (modern)
+export {
+  createStreamableHttpRouter,
+  getActiveStreamableSessionCount,
+  getMaxStreamableSessions,
+  closeAllStreamableSessions,
+  startStreamableSessionCleanup,
+  stopStreamableSessionCleanup,
+  type StreamableHttpRouteDependencies,
 } from "./routes/index.js";
 
 // Middleware

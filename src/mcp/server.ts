@@ -3,7 +3,10 @@
  *
  * This module implements the main MCP server class that orchestrates the
  * Model Context Protocol communication with Claude Code and other MCP clients.
- * Supports multiple transport types: stdio (Claude Code) and HTTP/SSE (Cursor, VS Code).
+ * Supports multiple transport types:
+ * - stdio: For Claude Code integration
+ * - HTTP/SSE: For Cursor, VS Code (legacy transport)
+ * - Streamable HTTP: For modern MCP clients (2025-03-26 specification)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -35,7 +38,8 @@ const DEFAULT_CONFIG: MCPServerConfig = {
  *
  * Supports multiple transport types:
  * - stdio: For Claude Code integration (single connection)
- * - HTTP/SSE: For Cursor, VS Code, and other network clients (multiple sessions)
+ * - HTTP/SSE: For legacy network clients (multiple sessions)
+ * - Streamable HTTP: For modern MCP clients per 2025-03-26 spec (multiple sessions)
  */
 /**
  * Pre-shutdown hook type for coordinating multi-transport shutdown
@@ -302,6 +306,36 @@ export class PersonalKnowledgeMCPServer {
    */
   createServerForSse(): Server {
     this.logger.debug("Creating new server instance for SSE session");
+
+    const server = this.createSdkServer();
+    this.registerHandlersOnServer(server);
+
+    return server;
+  }
+
+  /**
+   * Create a new MCP Server instance for Streamable HTTP transport
+   *
+   * Each Streamable HTTP session requires its own Server instance connected to
+   * its own StreamableHTTPServerTransport. This method creates a new server
+   * with the same configuration and tool registry as the primary server.
+   *
+   * This is the modern transport per MCP 2025-03-26 specification.
+   *
+   * @returns New Server instance ready to be connected to a Streamable HTTP transport
+   *
+   * @example
+   * ```typescript
+   * // In Streamable HTTP route handler:
+   * const transport = new StreamableHTTPServerTransport({
+   *   sessionIdGenerator: () => randomUUID(),
+   * });
+   * const server = mcpServer.createServerForStreamableHttp();
+   * await server.connect(transport);
+   * ```
+   */
+  createServerForStreamableHttp(): Server {
+    this.logger.debug("Creating new server instance for Streamable HTTP session");
 
     const server = this.createSdkServer();
     this.registerHandlersOnServer(server);

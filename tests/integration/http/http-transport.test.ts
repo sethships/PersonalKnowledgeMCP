@@ -53,8 +53,17 @@ describe("HTTP Transport Integration", () => {
   let baseUrl: string;
   const port = 3099; // Use a non-standard port for tests
 
-  // Mock MCP server factory
+  // Mock MCP server factory for SSE
   const mockCreateServerForSse = mock((): McpServer => {
+    return {
+      connect: mock(async () => {}),
+      close: mock(async () => {}),
+      setRequestHandler: mock(() => {}),
+    } as unknown as McpServer;
+  });
+
+  // Mock MCP server factory for Streamable HTTP
+  const mockCreateServerForStreamableHttp = mock((): McpServer => {
     return {
       connect: mock(async () => {}),
       close: mock(async () => {}),
@@ -68,6 +77,7 @@ describe("HTTP Transport Integration", () => {
   beforeAll(async () => {
     const app = createHttpApp({
       createServerForSse: mockCreateServerForSse,
+      createServerForStreamableHttp: mockCreateServerForStreamableHttp,
       checkChromaDb: mockCheckChromaDb,
     });
 

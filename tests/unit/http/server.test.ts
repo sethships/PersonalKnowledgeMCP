@@ -154,12 +154,21 @@ describe("HTTP App Creation", () => {
     } as unknown as McpServer;
   });
 
+  const mockCreateServerForStreamableHttp = mock((): McpServer => {
+    return {
+      connect: mock(async () => {}),
+      close: mock(async () => {}),
+      setRequestHandler: mock(() => {}),
+    } as unknown as McpServer;
+  });
+
   const mockCheckChromaDb = mock(async () => true);
 
   test("should create Express app without throwing", () => {
     expect(() =>
       createHttpApp({
         createServerForSse: mockCreateServerForSse,
+        createServerForStreamableHttp: mockCreateServerForStreamableHttp,
         checkChromaDb: mockCheckChromaDb,
       })
     ).not.toThrow();
@@ -168,6 +177,7 @@ describe("HTTP App Creation", () => {
   test("should return an Express app with use method", () => {
     const app = createHttpApp({
       createServerForSse: mockCreateServerForSse,
+      createServerForStreamableHttp: mockCreateServerForStreamableHttp,
       checkChromaDb: mockCheckChromaDb,
     });
 

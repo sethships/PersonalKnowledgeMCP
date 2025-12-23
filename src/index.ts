@@ -4,7 +4,8 @@
  * This is the MCP server entry point that initializes all dependencies
  * and starts the MCP server. Supports multiple transport types:
  * - stdio: For Claude Code integration (always enabled)
- * - HTTP/SSE: For Cursor, VS Code, and other network clients (configurable)
+ * - HTTP/SSE: For legacy network clients (configurable)
+ * - Streamable HTTP: For modern MCP clients per 2025-03-26 spec (configurable)
  */
 
 import "dotenv/config";
@@ -24,6 +25,7 @@ import {
   startHttpServer,
   loadHttpConfig,
   startSessionCleanup,
+  startStreamableSessionCleanup,
 } from "./http/index.js";
 
 // Initialize logger at application startup
@@ -184,13 +186,15 @@ async function main(): Promise<void> {
 
       const app = createHttpApp({
         createServerForSse: () => mcpServer.createServerForSse(),
+        createServerForStreamableHttp: () => mcpServer.createServerForStreamableHttp(),
         checkChromaDb: () => chromaClient.healthCheck(),
       });
 
       const httpServer = await startHttpServer(app, httpConfig);
 
-      // Start session cleanup timer for stale SSE sessions
-      startSessionCleanup();
+      // Start session cleanup timers for stale sessions
+      startSessionCleanup(); // SSE transport
+      startStreamableSessionCleanup(); // Streamable HTTP transport
 
       // Register HTTP shutdown as pre-shutdown hook for coordinated graceful shutdown
       mcpServer.registerPreShutdownHook(async () => {
