@@ -126,6 +126,8 @@ function createAuthenticateRequest(tokenService: TokenService): AuthMiddleware {
       }
 
       // Attach token metadata to request for downstream middleware/handlers
+      // SECURITY NOTE: rawToken is attached for downstream middleware (scope/instance checks).
+      // Ensure logging middleware never serializes full request objects to avoid token exposure.
       req.tokenMetadata = result.metadata;
       req.rawToken = rawToken;
 

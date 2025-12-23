@@ -7,7 +7,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import type { TokenMetadata, TokenScope, InstanceAccess, TokenService } from "./types.js";
+import type { TokenMetadata, TokenScope, InstanceAccess } from "./types.js";
 
 /**
  * Extend Express Request to include token metadata after authentication
@@ -49,11 +49,4 @@ export interface AuthMiddlewareFunctions {
 
   /** Factory for instance access-checking middleware */
   requireInstanceAccess: InstanceMiddlewareFactory;
-}
-
-/**
- * Dependencies for auth middleware
- */
-export interface AuthMiddlewareDependencies {
-  tokenService: TokenService;
 }

@@ -140,7 +140,6 @@ describe("Authentication Middleware Integration", () => {
   const validToken = "pk_mcp_validtoken123456789012345";
   const expiredToken = "pk_mcp_expiredtoken12345678901234";
   const revokedToken = "pk_mcp_revokedtoken12345678901234";
-  const limitedScopeToken = "pk_mcp_limitedtoken12345678901234";
 
   // Mock MCP server factory for SSE
   const mockCreateServerForSse = mock((): McpServer => {
@@ -169,10 +168,6 @@ describe("Authentication Middleware Integration", () => {
       [
         validToken,
         createValidTokenMetadata({ scopes: ["read", "write"], instanceAccess: ["public", "work"] }),
-      ],
-      [
-        limitedScopeToken,
-        createValidTokenMetadata({ scopes: ["read"], instanceAccess: ["public"] }),
       ],
     ]),
     expiredTokens: new Set([expiredToken]),

@@ -92,5 +92,4 @@ export type {
   AuthMiddleware,
   ScopeMiddlewareFactory,
   InstanceMiddlewareFactory,
-  AuthMiddlewareDependencies,
 } from "./middleware-types.js";
