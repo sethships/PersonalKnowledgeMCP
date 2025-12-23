@@ -1,6 +1,6 @@
 # Docker Operations Guide
 
-Comprehensive guide for managing Docker services in the Personal Knowledge MCP project.
+Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring for Phase 2 containerized services.
 
 ## Overview
 
@@ -33,7 +33,128 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
 
 The MCP service uses stdio transport to communicate with Claude Code, which requires it to run as a native process on the host machine rather than in a container. Only the storage backends are containerized.
 
-For architecture details, see [Phase 1 System Design Document](architecture/Phase1-System-Design-Document.md).
+For architecture details, see:
+- [Phase 1 System Design Document](architecture/Phase1-System-Design-Document.md)
+- [Docker Containerization PRD](pm/Docker-Containerization-PRD.md)
+
+---
+
+## Quick Reference Commands
+
+This section provides commonly-used commands for daily operations. For detailed explanations, see the relevant sections below.
+
+### Service Lifecycle
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Start specific service
+docker-compose up -d chromadb
+
+# Stop all services (preserve data)
+docker-compose down
+
+# Stop specific service
+docker-compose stop chromadb
+
+# Restart service
+docker-compose restart chromadb
+
+# Stop and DELETE all data (DESTRUCTIVE)
+docker-compose down -v
+```
+
+### Health Checks
+
+```bash
+# Quick status check
+docker-compose ps
+
+# Detailed health status
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# ChromaDB API health
+curl http://localhost:8000/api/v2/heartbeat
+
+# PostgreSQL health
+docker-compose exec postgres pg_isready -U pk_mcp -d personal_knowledge
+
+# Container health details
+docker inspect pk-mcp-chromadb --format='{{.State.Health.Status}}'
+```
+
+### Logs
+
+```bash
+# Follow all logs
+docker-compose logs -f
+
+# Last 50 lines from specific service
+docker-compose logs --tail=50 chromadb
+
+# Logs with timestamps
+docker-compose logs -f --timestamps
+
+# Logs since last hour
+docker-compose logs --since="1h"
+```
+
+### Backup and Restore
+
+```bash
+# Create backup (Bash)
+./scripts/backup-chromadb.sh
+
+# Create backup (PowerShell)
+.\scripts\backup-chromadb.ps1
+
+# Restore from backup (Bash)
+./scripts/restore-chromadb.sh ./backups/chromadb-backup-YYYYMMDD-HHMMSS.tar.gz
+
+# Restore from backup (PowerShell)
+.\scripts\restore-chromadb.ps1 -BackupFile ".\backups\chromadb-backup-YYYYMMDD-HHMMSS.tar.gz"
+
+# List available backups
+ls -lt ./backups/chromadb-backup-*.tar.gz | head -5
+```
+
+### Monitoring
+
+```bash
+# Real-time resource usage
+docker stats
+
+# One-shot resource stats
+docker stats --no-stream
+
+# Disk usage summary
+docker system df
+
+# Volume inspection
+docker volume ls | grep -E "(chromadb|postgres)"
+```
+
+### Troubleshooting
+
+```bash
+# Check if Docker is running
+docker info > /dev/null 2>&1 && echo "Docker OK" || echo "Docker not running"
+
+# Check port availability
+netstat -an | grep -E ":(8000|5432)"
+
+# Enter container shell
+docker exec -it pk-mcp-chromadb bash
+
+# View container processes
+docker exec pk-mcp-chromadb ps aux
+
+# Full container inspection
+docker inspect pk-mcp-chromadb
+```
+
+---
 
 ## Prerequisites
 
@@ -258,7 +379,7 @@ docker-compose logs --tail=100 chromadb
 docker-compose logs --since="1h"
 
 # Since specific time (if needed)
-docker-compose logs --since="2024-01-01T00:00:00"
+docker-compose logs --since="YYYY-MM-DDT00:00:00"
 
 # Follow logs from now
 docker-compose logs -f chromadb
@@ -374,7 +495,219 @@ curl http://localhost:8000/api/v2/heartbeat
 docker exec pk-mcp-chromadb ping pk-mcp-postgres
 ```
 
+---
+
 ## Troubleshooting
+
+This section provides diagnostic procedures for common issues with containerized services.
+
+### Health Check Failure Debugging
+
+When a container reports unhealthy status, use this diagnostic decision tree:
+
+```
+Container shows "unhealthy" or "starting" for extended time
+│
+├─→ Step 1: Check if container is running
+│   $ docker ps -a | grep pk-mcp
+│   └─→ If "Exited": See "Container Won't Start" section
+│   └─→ If "Up" but unhealthy: Continue to Step 2
+│
+├─→ Step 2: View health check logs
+│   $ docker inspect pk-mcp-chromadb --format='{{range .State.Health.Log}}{{.ExitCode}} {{.Output}}{{end}}'
+│   └─→ Exit code 0 = health check passed
+│   └─→ Exit code 1 = health check failed (see output for details)
+│   └─→ Exit code 7 = connection refused (service not listening)
+│
+├─→ Step 3: Test endpoint manually
+│   $ curl -v http://localhost:8000/api/v2/heartbeat
+│   └─→ "Connection refused": Service not listening on port
+│   └─→ "Empty reply": Service starting, wait and retry
+│   └─→ HTTP 200: Health check issue, not service issue
+│
+├─→ Step 4: Check container logs for errors
+│   $ docker-compose logs --tail=100 chromadb
+│   └─→ Look for: "ERROR", "Exception", "Failed"
+│   └─→ Common: Permission errors, disk space, memory limits
+│
+└─→ Step 5: Verify resources
+    $ docker stats pk-mcp-chromadb --no-stream
+    └─→ Memory near limit: Increase memory allocation
+    └─→ CPU at 100%: Resource contention or infinite loop
+```
+
+**ChromaDB-Specific Health Check Issues:**
+
+```bash
+# Check if ChromaDB API is responding
+curl -s http://localhost:8000/api/v2/heartbeat | jq .
+
+# List collections (validates database functionality)
+curl -s http://localhost:8000/api/v2/collections | jq .
+
+# Check internal database status
+docker exec pk-mcp-chromadb ls -la /chroma/chroma/
+```
+
+**PostgreSQL-Specific Health Check Issues:**
+
+```bash
+# Check pg_isready status
+docker-compose exec postgres pg_isready -U pk_mcp -d personal_knowledge
+
+# Test database connection
+docker-compose exec postgres psql -U pk_mcp -d personal_knowledge -c "SELECT 1;"
+
+# View PostgreSQL logs
+docker-compose logs --tail=50 postgres
+```
+
+### Volume Permission Issues
+
+Volume permission problems are common, especially on Windows with WSL2.
+
+**Symptoms:**
+- Container logs show "Permission denied" errors
+- Data not persisting after restart
+- Cannot write to mounted volume
+
+**Windows/WSL2 Path Issues:**
+
+```bash
+# Check volume mount points
+docker inspect pk-mcp-chromadb --format='{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'
+
+# Verify volume exists and has data
+docker run --rm -v personalknowledgemcp_chromadb-data:/data:ro alpine ls -la /data
+
+# Check WSL2 filesystem permissions
+wsl ls -la /var/lib/docker/volumes/
+```
+
+**Common Fixes:**
+
+1. **Reset volume permissions:**
+   ```bash
+   # Stop container
+   docker-compose stop chromadb
+
+   # Fix permissions using alpine container
+   docker run --rm -v personalknowledgemcp_chromadb-data:/data alpine chmod -R 755 /data
+
+   # Restart container
+   docker-compose start chromadb
+   ```
+
+2. **Recreate volume (data loss!):**
+   ```bash
+   # Backup first!
+   ./scripts/backup-chromadb.sh
+
+   # Remove and recreate
+   docker-compose down -v
+   docker-compose up -d
+
+   # Restore data
+   ./scripts/restore-chromadb.sh ./backups/latest-backup.tar.gz
+   ```
+
+3. **WSL2 integration issues:**
+   ```bash
+   # Restart WSL2 (PowerShell as Admin)
+   wsl --shutdown
+
+   # Restart Docker Desktop
+   # Then restart containers
+   docker-compose up -d
+   ```
+
+**Git Bash Path Conversion:**
+
+Git Bash on Windows converts Unix paths automatically, which can break Docker volume mounts:
+
+```bash
+# Problem: Git Bash converts /data to C:/Program Files/Git/data
+docker run -v /data:/container/data alpine ls
+
+# Solution: Use MSYS_NO_PATHCONV environment variable
+MSYS_NO_PATHCONV=1 docker run -v /data:/container/data alpine ls
+
+# Or use double slashes
+docker run -v //data://container/data alpine ls
+```
+
+### Container Restart Loops
+
+When a container continuously restarts, diagnose systematically:
+
+**Symptoms:**
+- `docker ps` shows container restarting every few seconds
+- Status alternates between "Up" and "Restarting"
+- Service never becomes healthy
+
+**Diagnosis Steps:**
+
+```bash
+# Step 1: Check restart count
+docker inspect pk-mcp-chromadb --format='{{.RestartCount}}'
+
+# Step 2: View exit code from last run
+docker inspect pk-mcp-chromadb --format='{{.State.ExitCode}}'
+# Exit codes: 0=normal, 1=error, 137=OOM killed, 139=segfault
+
+# Step 3: Check logs from before crash
+docker logs pk-mcp-chromadb --tail=200
+
+# Step 4: Check if OOM (Out of Memory) killed
+docker inspect pk-mcp-chromadb --format='{{.State.OOMKilled}}'
+# true = container was killed due to memory limit
+
+# Step 5: Review events
+docker events --filter container=pk-mcp-chromadb --since="1h"
+```
+
+**Common Causes and Fixes:**
+
+1. **Memory Exhaustion (Exit 137, OOMKilled=true):**
+   ```yaml
+   # Increase memory limit in docker-compose.yml
+   deploy:
+     resources:
+       limits:
+         memory: 4G  # Was 2G
+   ```
+
+2. **Configuration Error (Exit 1):**
+   ```bash
+   # Check for config issues in logs
+   docker logs pk-mcp-chromadb 2>&1 | grep -i "error\|config\|invalid"
+
+   # Validate environment variables
+   docker inspect pk-mcp-chromadb --format='{{range .Config.Env}}{{println .}}{{end}}'
+   ```
+
+3. **Dependency Not Ready:**
+   ```bash
+   # Check if dependent services are healthy
+   docker-compose ps
+
+   # Add health check dependency in compose file
+   depends_on:
+     postgres:
+       condition: service_healthy
+   ```
+
+4. **Corrupt Data:**
+   ```bash
+   # Backup current state
+   ./scripts/backup-chromadb.sh --backup-dir ./corrupt-backup
+
+   # Try clean restart
+   docker-compose down -v
+   docker-compose up -d
+
+   # If works, selectively restore data
+   ```
 
 ### Container Won't Start
 
@@ -598,6 +931,516 @@ docker system prune -a --volumes
 # Increase Docker Desktop disk allocation
 # Settings → Resources → Disk image size
 ```
+
+---
+
+## Monitoring and Observability
+
+This section covers log analysis, metrics collection, and observability patterns for containerized services.
+
+### Log Patterns and Interpretation
+
+Understanding log patterns helps quickly identify issues.
+
+**ChromaDB Log Patterns:**
+
+```bash
+# Healthy startup sequence
+docker-compose logs chromadb 2>&1 | grep -E "(Starting|Running|Ready)"
+# Expected: "Running Chroma", "Uvicorn running on http://0.0.0.0:8000"
+
+# Error detection
+docker-compose logs chromadb 2>&1 | grep -iE "(error|exception|failed|fatal)"
+
+# Warning detection
+docker-compose logs chromadb 2>&1 | grep -iE "(warn|warning)"
+
+# Collection operations
+docker-compose logs chromadb 2>&1 | grep -iE "(collection|create|delete)"
+```
+
+**PostgreSQL Log Patterns:**
+
+```bash
+# Connection events
+docker-compose logs postgres 2>&1 | grep -E "(connection|LOG:.*connection)"
+
+# Query errors
+docker-compose logs postgres 2>&1 | grep -E "(ERROR|FATAL)"
+
+# Slow queries (if logging enabled)
+docker-compose logs postgres 2>&1 | grep -E "duration:"
+
+# Startup/shutdown
+docker-compose logs postgres 2>&1 | grep -E "(ready|shutdown|accepting)"
+```
+
+**Common Log Patterns to Watch:**
+
+| Pattern | Meaning | Action |
+|---------|---------|--------|
+| `OOM` or `killed` | Out of memory | Increase memory limit |
+| `connection refused` | Service not ready | Wait or check health |
+| `permission denied` | File access issue | Check volume permissions |
+| `disk full` | No space | Clean up or expand disk |
+| `timeout` | Slow response | Check resources, network |
+| `authentication failed` | Bad credentials | Verify env variables |
+
+### Structured Log Querying
+
+Extract specific information from logs using structured queries:
+
+```bash
+# Get logs in JSON format for parsing
+docker logs pk-mcp-chromadb --details 2>&1 | head -50
+
+# Filter logs by time range
+docker-compose logs --since="YYYY-MM-DDT00:00:00" --until="YYYY-MM-DDT12:00:00" chromadb
+
+# Count errors in last hour
+docker-compose logs --since="1h" chromadb 2>&1 | grep -ci "error"
+
+# Extract timestamps and error messages
+docker-compose logs chromadb 2>&1 | grep -E "error|ERROR" | awk '{print $1, $2, $0}'
+```
+
+**Using jq for JSON Logs:**
+
+```bash
+# If logs are in JSON format
+docker logs pk-mcp-chromadb 2>&1 | jq -r 'select(.level == "error") | .message' 2>/dev/null
+
+# Parse health check output
+docker inspect pk-mcp-chromadb --format='{{json .State.Health.Log}}' | jq '.[-1]'
+```
+
+### Real-Time Monitoring
+
+**Live Resource Dashboard:**
+
+```bash
+# Watch all container stats
+watch -n 5 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"'
+
+# Monitor specific containers
+docker stats pk-mcp-chromadb pk-mcp-postgres --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+```
+
+**Health Status Monitoring:**
+
+```bash
+# Continuous health check monitoring
+watch -n 10 'docker ps --format "table {{.Names}}\t{{.Status}}" | grep pk-mcp'
+
+# Alert on unhealthy (script example)
+while true; do
+  STATUS=$(docker inspect pk-mcp-chromadb --format='{{.State.Health.Status}}' 2>/dev/null)
+  if [ "$STATUS" != "healthy" ]; then
+    echo "ALERT: ChromaDB is $STATUS at $(date)"
+  fi
+  sleep 30
+done
+```
+
+### Disk Space Monitoring
+
+```bash
+# Docker disk usage breakdown
+docker system df -v
+
+# Volume sizes
+docker system df --format "{{.Type}}\t{{.Size}}\t{{.Reclaimable}}"
+
+# Monitor volume growth
+watch -n 60 'docker run --rm -v personalknowledgemcp_chromadb-data:/data alpine du -sh /data'
+```
+
+---
+
+## Upgrade Procedures
+
+This section covers safe upgrade procedures for containerized services with rollback capabilities.
+
+### Pre-Upgrade Checklist
+
+Before upgrading any service, complete this checklist:
+
+- [ ] **Create backup** of all data volumes
+- [ ] **Verify backup integrity** by listing backup contents
+- [ ] **Document current versions** of all images
+- [ ] **Check release notes** for breaking changes
+- [ ] **Verify disk space** for new images (minimum 5GB free)
+- [ ] **Schedule maintenance window** if production system
+- [ ] **Notify users** if applicable
+- [ ] **Test upgrade** in non-production environment first
+
+```bash
+# Pre-upgrade verification script
+echo "=== Pre-Upgrade Checklist ==="
+
+# 1. Create backup
+echo "Creating backup..."
+./scripts/backup-chromadb.sh --backup-dir ./pre-upgrade-backup
+
+# 2. Verify backup
+echo "Verifying backup..."
+ls -la ./pre-upgrade-backup/chromadb-backup-*.tar.gz
+
+# 3. Document current versions
+echo "Current versions:"
+docker-compose images
+
+# 4. Check disk space
+echo "Disk space:"
+docker system df
+
+# 5. Verify services are healthy
+echo "Service health:"
+docker-compose ps
+```
+
+### ChromaDB Upgrade Steps
+
+**Step 1: Backup Current Data**
+
+```bash
+# Create timestamped backup
+./scripts/backup-chromadb.sh --backup-dir ./pre-upgrade-backup
+
+# Verify backup was created
+ls -la ./pre-upgrade-backup/
+```
+
+**Step 2: Update Image Version**
+
+```yaml
+# In docker-compose.yml, update version
+services:
+  chromadb:
+    image: chromadb/chroma:0.6.4  # Update from 0.6.3
+```
+
+**Step 3: Pull New Image**
+
+```bash
+# Pull without starting
+docker-compose pull chromadb
+
+# Verify new image downloaded
+docker images | grep chromadb
+```
+
+**Step 4: Stop Current Container**
+
+```bash
+# Graceful stop
+docker-compose stop chromadb
+
+# Verify stopped
+docker-compose ps chromadb
+```
+
+**Step 5: Start with New Image**
+
+```bash
+# Start container with new image
+docker-compose up -d chromadb
+
+# Watch startup logs
+docker-compose logs -f chromadb
+```
+
+**Step 6: Verify Upgrade**
+
+```bash
+# Wait for healthy status
+timeout 60 bash -c 'until docker inspect pk-mcp-chromadb --format="{{.State.Health.Status}}" | grep -q healthy; do sleep 2; done'
+
+# Verify API responds
+curl http://localhost:8000/api/v2/heartbeat
+
+# Verify data integrity
+curl http://localhost:8000/api/v2/collections
+
+# Check version (if available in API)
+curl http://localhost:8000/api/v2/version 2>/dev/null || echo "Version endpoint not available"
+```
+
+### PostgreSQL Upgrade Steps
+
+**IMPORTANT:** PostgreSQL major version upgrades require data migration. Minor version upgrades (e.g., 17.2 to 17.3) are simpler.
+
+**Minor Version Upgrade (17.x to 17.y):**
+
+```bash
+# 1. Backup (manual - PostgreSQL backup scripts planned for future)
+docker-compose exec postgres pg_dump -U pk_mcp personal_knowledge > ./pre-upgrade-backup/postgres-dump.sql
+
+# 2. Update version in docker-compose.yml
+# Change: postgres:17.2-alpine → postgres:17.3-alpine
+
+# 3. Pull and restart
+docker-compose pull postgres
+docker-compose stop postgres
+docker-compose up -d postgres
+
+# 4. Verify
+docker-compose exec postgres psql -U pk_mcp -d personal_knowledge -c "SELECT version();"
+```
+
+**Major Version Upgrade (16.x to 17.x):**
+
+Major version upgrades require `pg_upgrade` or dump/restore:
+
+```bash
+# 1. Full backup
+docker-compose exec postgres pg_dumpall -U pk_mcp > ./pre-upgrade-backup/postgres-full-dump.sql
+
+# 2. Stop and remove old container
+docker-compose stop postgres
+docker-compose rm postgres
+
+# 3. Remove old volume (data will be restored)
+docker volume rm personalknowledgemcp_postgres-data
+
+# 4. Update version and start
+# Change version in docker-compose.yml
+docker-compose up -d postgres
+
+# 5. Restore data
+docker-compose exec -T postgres psql -U pk_mcp -d postgres < ./pre-upgrade-backup/postgres-full-dump.sql
+
+# 6. Verify
+docker-compose exec postgres psql -U pk_mcp -d personal_knowledge -c "SELECT COUNT(*) FROM _schema_info;"
+```
+
+### Rollback Procedures
+
+If an upgrade fails, follow these rollback steps:
+
+**ChromaDB Rollback:**
+
+```bash
+# 1. Stop the new container
+docker-compose stop chromadb
+
+# 2. Revert docker-compose.yml to previous version
+# Change: chromadb/chroma:0.6.4 → chromadb/chroma:0.6.3
+
+# 3. Remove the container (not the volume)
+docker-compose rm chromadb
+
+# 4. If data is corrupted, restore from backup
+./scripts/restore-chromadb.sh ./pre-upgrade-backup/chromadb-backup-YYYYMMDD-HHMMSS.tar.gz
+
+# 5. Start with old version
+docker-compose up -d chromadb
+
+# 6. Verify
+curl http://localhost:8000/api/v2/heartbeat
+```
+
+**PostgreSQL Rollback:**
+
+```bash
+# 1. Stop new container
+docker-compose stop postgres
+
+# 2. Revert version in docker-compose.yml
+
+# 3. If data migration occurred, restore from backup
+docker-compose rm postgres
+docker volume rm personalknowledgemcp_postgres-data
+docker-compose up -d postgres
+docker-compose exec -T postgres psql -U pk_mcp -d postgres < ./pre-upgrade-backup/postgres-full-dump.sql
+
+# 4. Verify
+docker-compose exec postgres psql -U pk_mcp -d personal_knowledge -c "SELECT 1;"
+```
+
+### Version Pinning Best Practices
+
+Always pin versions to avoid unexpected upgrades:
+
+```yaml
+# GOOD: Pinned versions
+services:
+  chromadb:
+    image: chromadb/chroma:0.6.3
+  postgres:
+    image: postgres:17.2-alpine
+
+# BAD: Floating tags (avoid these)
+services:
+  chromadb:
+    image: chromadb/chroma:latest  # Don't use
+  postgres:
+    image: postgres:17  # Risky - minor version changes
+```
+
+**Version Documentation:**
+
+Maintain a versions file for tracking:
+
+```bash
+# Create/update versions record
+cat > ./DOCKER_VERSIONS.md << 'EOF'
+# Docker Image Versions
+
+| Service    | Current Version      | Last Updated | Notes           |
+|------------|---------------------|--------------|-----------------|
+| ChromaDB   | chromadb/chroma:0.6.3 | 2025-12-22 | Stable release |
+| PostgreSQL | postgres:17.2-alpine  | 2025-12-22 | Phase 2 ready  |
+EOF
+```
+
+---
+
+## Windows-Specific Notes
+
+This section consolidates Windows-specific considerations for Docker operations.
+
+### Docker Desktop Configuration
+
+**Recommended Settings:**
+
+1. **General:**
+   - Enable "Use the WSL 2 based engine" (significant performance improvement)
+   - Enable "Start Docker Desktop when you log in" (optional)
+
+2. **Resources:**
+   - Memory: 4-6GB minimum (8GB recommended for multiple services)
+   - CPUs: 4+ cores recommended
+   - Disk image size: 60GB minimum
+   - Disk image location: SSD preferred
+
+3. **WSL Integration:**
+   - Enable integration with your default WSL2 distro
+   - Enable for specific distros you use for development
+
+### WSL2 Memory Configuration
+
+WSL2 can consume excessive memory. Configure limits:
+
+```ini
+# Create/edit: %USERPROFILE%\.wslconfig
+[wsl2]
+memory=6GB
+processors=4
+swap=2GB
+localhostForwarding=true
+```
+
+After editing, restart WSL2:
+```powershell
+wsl --shutdown
+```
+
+### Path Handling Differences
+
+**Git Bash Path Conversion:**
+
+Git Bash automatically converts Unix-style paths to Windows paths, which breaks Docker volume mounts:
+
+```bash
+# Problem scenario
+docker run -v /c/Users/me/data:/data alpine ls
+# Git Bash converts /c/Users to C:\Users internally
+
+# Solution 1: MSYS_NO_PATHCONV environment variable
+MSYS_NO_PATHCONV=1 docker run -v //c/Users/me/data:/data alpine ls
+
+# Solution 2: Use Windows-style paths with forward slashes
+docker run -v "C:/Users/me/data:/data" alpine ls
+
+# Solution 3: Use double slashes
+docker run -v "//c/Users/me/data://data" alpine ls
+```
+
+**The backup scripts handle this automatically:**
+```bash
+# In backup-chromadb.sh
+MSYS_NO_PATHCONV=1 docker run --rm \
+  -v "${VOLUME_NAME}:/data:ro" \
+  -v "${BACKUP_DIR}:/backup" \
+  alpine tar czf "/backup/${backup_file}" -C /data .
+```
+
+### PowerShell vs Git Bash
+
+**PowerShell:**
+- Native Windows paths work directly
+- Use `.ps1` script versions
+- Execution policy may need adjustment: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+**Git Bash:**
+- Unix-style commands and paths
+- Use `.sh` script versions
+- Watch for path conversion issues (see above)
+- Mintty terminal may have display issues with `docker logs -f`
+
+**Command Differences:**
+
+| Operation | PowerShell | Git Bash |
+|-----------|-----------|----------|
+| Backup | `.\scripts\backup-chromadb.ps1` | `./scripts/backup-chromadb.sh` |
+| Environment vars | `$env:VAR="value"` | `export VAR="value"` |
+| Path separator | `\` or `/` | `/` |
+| Grep equivalent | `Select-String` | `grep` |
+| Find files | `Get-ChildItem -Recurse` | `find` |
+
+### Windows Firewall Considerations
+
+Docker Desktop manages firewall rules automatically, but for localhost binding:
+
+- Ports bound to `127.0.0.1` are NOT accessible from network
+- No additional firewall rules needed for localhost-only services
+- If binding to `0.0.0.0`, Windows Firewall may prompt
+
+### Hyper-V vs WSL2 Backend
+
+**WSL2 (Recommended):**
+- Better file I/O performance
+- Lower memory overhead
+- Faster container startup
+- Linux kernel for better compatibility
+
+**Hyper-V:**
+- Required for Windows containers
+- More isolation
+- Higher resource usage
+- Slower file operations with bind mounts
+
+Check current backend:
+```powershell
+# PowerShell
+docker info | Select-String "OSType"
+```
+
+### Common Windows Issues
+
+**"Docker Desktop - WSL distro terminated abruptly":**
+```powershell
+# Restart WSL
+wsl --shutdown
+# Restart Docker Desktop
+```
+
+**"Cannot connect to Docker daemon":**
+```powershell
+# Ensure Docker Desktop is running
+# Check system tray for Docker icon
+# Restart Docker Desktop if needed
+```
+
+**"Error: volume path invalid":**
+```bash
+# Check for path conversion issues
+# Use MSYS_NO_PATHCONV=1 prefix in Git Bash
+# Or use PowerShell with native paths
+```
+
+---
 
 ## Development vs Production
 
@@ -1110,5 +1953,6 @@ Configure the MCP service to connect to the appropriate instance:
 
 **For project-specific details:**
 - [High-Level PRD](High-level-Personal-Knowledge-MCP-PRD.md)
+- [Docker Containerization PRD](pm/Docker-Containerization-PRD.md)
 - [Phase 1 System Design](architecture/Phase1-System-Design-Document.md)
 - [README - Getting Started](../README.md#getting-started)
