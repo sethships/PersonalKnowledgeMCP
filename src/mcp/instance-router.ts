@@ -324,12 +324,15 @@ export class InstanceRouterImpl implements InstanceRouter {
             connection.lastHealthCheck = Date.now();
             results[instanceName] = healthy;
           } else {
-            // Try to establish connection for health check
-            const instanceConfig = this.config.instances[instanceName];
-            const client = this.createStorageClient(instanceConfig);
-            await client.connect();
-            const healthy = await client.healthCheck();
-            results[instanceName] = healthy;
+            // Establish connection via getOrCreateConnection to ensure proper pooling
+            try {
+              const client = await this.getOrCreateConnection(instanceName);
+              const healthy = await client.healthCheck();
+              results[instanceName] = healthy;
+            } catch {
+              // Connection failed - mark as unhealthy
+              results[instanceName] = false;
+            }
           }
         } catch (error) {
           log.warn({ instance: instanceName, error }, "Health check failed for instance");

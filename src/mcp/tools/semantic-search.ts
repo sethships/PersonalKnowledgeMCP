@@ -167,10 +167,11 @@ export function createSemanticSearchHandler(searchService: SearchService): ToolH
  * readability in Claude Code's interface.
  *
  * @param response - Search response from SearchService
- * @param instance - The instance that was queried (private, work, or public)
  * @returns MCP text content with formatted JSON
  */
-function formatSearchResponse(response: SearchResponse, instance?: string): TextContent {
+function formatSearchResponse(response: SearchResponse): TextContent {
+  // TODO: Add instance metadata when instance-aware search routing is implemented
+  // This will require passing instance context through the SearchService layer
   const output = {
     results: response.results.map((result) => ({
       content: result.content_snippet,
@@ -190,8 +191,6 @@ function formatSearchResponse(response: SearchResponse, instance?: string): Text
       embedding_time_ms: response.metadata.embedding_time_ms,
       search_time_ms: response.metadata.search_time_ms,
       repositories_searched: response.metadata.repositories_searched,
-      // Include instance info for multi-instance deployments
-      instance: instance ?? "default",
     },
   };
 
