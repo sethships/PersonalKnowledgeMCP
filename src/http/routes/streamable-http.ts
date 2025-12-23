@@ -29,26 +29,52 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
 }
 
 /**
+ * Parse and validate a positive integer environment variable
+ * Returns the default value if the env var is invalid or not set
+ */
+function parsePositiveIntEnv(
+  envVar: string | undefined,
+  defaultValue: number,
+  name: string
+): number {
+  if (!envVar) {
+    return defaultValue;
+  }
+  const value = parseInt(envVar, 10);
+  if (isNaN(value) || value < 1) {
+    console.warn(`Invalid ${name}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  return value;
+}
+
+/**
  * Maximum concurrent Streamable HTTP sessions (prevent resource exhaustion)
  * Configurable via HTTP_MAX_STREAMABLE_SESSIONS environment variable
  */
-const MAX_SESSIONS = parseInt(Bun.env["HTTP_MAX_STREAMABLE_SESSIONS"] || "100", 10);
+const MAX_SESSIONS = parsePositiveIntEnv(
+  Bun.env["HTTP_MAX_STREAMABLE_SESSIONS"],
+  100,
+  "HTTP_MAX_STREAMABLE_SESSIONS"
+);
 
 /**
  * Session TTL in milliseconds (default 30 minutes)
  * Sessions with no activity beyond this time are considered stale
  */
-const SESSION_TTL_MS = parseInt(
-  Bun.env["HTTP_STREAMABLE_SESSION_TTL_MS"] || String(30 * 60 * 1000),
-  10
+const SESSION_TTL_MS = parsePositiveIntEnv(
+  Bun.env["HTTP_STREAMABLE_SESSION_TTL_MS"],
+  30 * 60 * 1000,
+  "HTTP_STREAMABLE_SESSION_TTL_MS"
 );
 
 /**
  * Stale session cleanup interval in milliseconds (default 5 minutes)
  */
-const CLEANUP_INTERVAL_MS = parseInt(
-  Bun.env["HTTP_STREAMABLE_CLEANUP_INTERVAL_MS"] || String(5 * 60 * 1000),
-  10
+const CLEANUP_INTERVAL_MS = parsePositiveIntEnv(
+  Bun.env["HTTP_STREAMABLE_CLEANUP_INTERVAL_MS"],
+  5 * 60 * 1000,
+  "HTTP_STREAMABLE_CLEANUP_INTERVAL_MS"
 );
 
 /**
@@ -73,10 +99,17 @@ const sessions: Map<string, StreamableSessionEntry> = new Map();
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
+ * Counter for sessions currently being initialized
+ * Prevents race condition where concurrent requests exceed session limit
+ */
+let pendingSessionCount = 0;
+
+/**
  * Check if server can accept a new Streamable HTTP session
+ * Includes both active sessions and pending (initializing) sessions
  */
 function canAcceptNewSession(): boolean {
-  return sessions.size < MAX_SESSIONS;
+  return sessions.size + pendingSessionCount < MAX_SESSIONS;
 }
 
 /**
@@ -269,37 +302,55 @@ export function createStreamableHttpRouter(deps: StreamableHttpRouteDependencies
         "Streamable HTTP session limit reached, rejecting connection"
       );
       res.status(503).json({
+        jsonrpc: "2.0",
         error: {
+          code: -32002,
           message: "Server at capacity, try again later",
-          code: "TOO_MANY_SESSIONS",
         },
+        id: null,
       });
       return;
     }
+
+    // Increment pending counter to prevent race condition
+    pendingSessionCount++;
+
+    // Track whether session initialization callback was invoked
+    let sessionInitialized = false;
 
     // Create new transport for initialization
     try {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: async (newSessionId: string) => {
-          // Create MCP server and connect to transport
-          const server = deps.createServerForStreamableHttp();
+          // Mark as initialized so catch block knows not to decrement
+          sessionInitialized = true;
 
-          // Store session with metadata
-          const now = Date.now();
-          sessions.set(newSessionId, {
-            transport,
-            server,
-            createdAt: now,
-            lastActivity: now,
-          });
+          try {
+            // Create MCP server and connect to transport
+            const server = deps.createServerForStreamableHttp();
 
-          await server.connect(transport);
+            // Connect server to transport BEFORE storing session
+            // This prevents resource leak if connect() fails
+            await server.connect(transport);
 
-          getLogger().info(
-            { requestId, sessionId: newSessionId, activeSessions: sessions.size },
-            "Streamable HTTP session initialized"
-          );
+            // Store session with metadata only after successful connection
+            const now = Date.now();
+            sessions.set(newSessionId, {
+              transport,
+              server,
+              createdAt: now,
+              lastActivity: now,
+            });
+
+            getLogger().info(
+              { requestId, sessionId: newSessionId, activeSessions: sessions.size },
+              "Streamable HTTP session initialized"
+            );
+          } finally {
+            // Decrement pending counter regardless of success/failure
+            pendingSessionCount--;
+          }
         },
         onsessionclosed: (closedSessionId: string) => {
           const entry = sessions.get(closedSessionId);
@@ -335,6 +386,12 @@ export function createStreamableHttpRouter(deps: StreamableHttpRouteDependencies
         req.body
       );
     } catch (error) {
+      // Only decrement if onsessioninitialized wasn't called
+      // (it handles its own decrement in its finally block)
+      if (!sessionInitialized) {
+        pendingSessionCount--;
+      }
+
       getLogger().error({ requestId, error }, "Failed to initialize Streamable HTTP session");
 
       if (!res.headersSent) {
