@@ -276,15 +276,16 @@ export async function tokenRotateCommand(
       throw new Error(`Failed to revoke existing token '${options.name}'.`);
     }
 
-    // Create new token with same metadata (except expiration)
-    // Note: We preserve scopes and instances, but reset expiration
-    // Users can specify new expiration when calling token create directly if needed
+    // Create new token with same metadata, preserving original expiration duration
     const result = await deps.tokenService.generateToken({
       name: existingToken.metadata.name,
       scopes: existingToken.metadata.scopes,
       instanceAccess: existingToken.metadata.instanceAccess,
-      // Reset expiration - if original had expiration, keep same duration from now
-      expiresInSeconds: calculateExpirationSeconds(existingToken.metadata.expiresAt),
+      // Preserve original expiration duration (time from creation to expiry)
+      expiresInSeconds: calculateExpirationSeconds(
+        existingToken.metadata.createdAt,
+        existingToken.metadata.expiresAt
+      ),
     });
 
     completeRotateSpinner(spinner, true);
@@ -298,26 +299,33 @@ export async function tokenRotateCommand(
 }
 
 /**
- * Calculate expiration seconds to maintain similar expiration duration
+ * Calculate expiration seconds to preserve the original token's duration
  *
  * If the original token had no expiration, return null.
- * Otherwise, calculate the original duration and apply it to the new token.
+ * Otherwise, calculate the original duration (expiresAt - createdAt) and
+ * apply the same duration to the new token from the current time.
  *
+ * @param createdAt - Original token creation timestamp
  * @param expiresAt - Original expiration timestamp or null
  * @returns Expiration in seconds or null
  */
-function calculateExpirationSeconds(expiresAt: string | null): number | null {
+function calculateExpirationSeconds(createdAt: string, expiresAt: string | null): number | null {
   if (!expiresAt) {
     return null; // Never expires
   }
 
-  // For rotated tokens, we don't try to preserve the remaining time
-  // Instead, we could either:
-  // 1. Give the same duration as the original (requires createdAt)
-  // 2. Use a default duration
-  // 3. Set to never expires
-  //
-  // For simplicity and security, rotated tokens get no expiration by default.
-  // Users can create a new token with specific expiration if needed.
-  return null;
+  // Calculate the original duration (how long the token was meant to live)
+  const createdDate = new Date(createdAt);
+  const expiresDate = new Date(expiresAt);
+  const originalDurationMs = expiresDate.getTime() - createdDate.getTime();
+
+  // Ensure positive duration (handle any edge cases with expired tokens)
+  if (originalDurationMs <= 0) {
+    // Original token was already expired or invalid duration
+    // Default to a safe 30-day expiration
+    return 30 * 24 * 60 * 60; // 30 days in seconds
+  }
+
+  // Return duration in seconds
+  return Math.ceil(originalDurationMs / 1000);
 }

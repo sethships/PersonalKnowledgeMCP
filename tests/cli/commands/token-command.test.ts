@@ -25,6 +25,7 @@ import {
   type TokenRevokeOptions,
   type TokenRotateOptions,
 } from "../../../src/cli/commands/token-command.js";
+import * as prompts from "../../../src/cli/utils/prompts.js";
 import type { CliDependencies } from "../../../src/cli/utils/dependency-init.js";
 import type {
   TokenService,
@@ -469,14 +470,89 @@ describe("Token Commands", () => {
 
       await expect(tokenRevokeCommand(options, deps)).rejects.toThrow("Failed to revoke token");
     });
+
+    it("should prompt for confirmation and revoke when user confirms", async () => {
+      // Mock the confirm function to return true (user confirms)
+      const confirmSpy = vi.spyOn(prompts, "confirm").mockResolvedValue(true);
+
+      const mockFindTokenByName = vi.fn().mockResolvedValue({
+        hash: "a".repeat(64),
+        metadata: createTestMetadata({ name: "Confirm Token" }),
+      } as TokenListItem);
+
+      const mockRevokeToken = vi.fn().mockResolvedValue(true);
+
+      const tokenService = createMockTokenService({
+        findTokenByName: mockFindTokenByName,
+        revokeToken: mockRevokeToken,
+      });
+      const deps = createMockDeps(tokenService);
+
+      const options: TokenRevokeOptions = {
+        name: "Confirm Token",
+        force: false, // No --force, should prompt for confirmation
+      };
+
+      await tokenRevokeCommand(options, deps);
+
+      // Should display confirmation prompt
+      expect(confirmSpy).toHaveBeenCalledWith("Type 'yes' to confirm:");
+
+      // Should proceed with revocation after confirmation
+      expect(mockRevokeToken).toHaveBeenCalledWith("a".repeat(64));
+
+      // Should show success message
+      const output = capturedLogs.join("\n");
+      expect(output).toContain("revoked");
+
+      confirmSpy.mockRestore();
+    });
+
+    it("should prompt for confirmation and cancel when user declines", async () => {
+      // Mock the confirm function to return false (user declines)
+      const confirmSpy = vi.spyOn(prompts, "confirm").mockResolvedValue(false);
+
+      const mockFindTokenByName = vi.fn().mockResolvedValue({
+        hash: "a".repeat(64),
+        metadata: createTestMetadata({ name: "Cancel Token" }),
+      } as TokenListItem);
+
+      const mockRevokeToken = vi.fn().mockResolvedValue(true);
+
+      const tokenService = createMockTokenService({
+        findTokenByName: mockFindTokenByName,
+        revokeToken: mockRevokeToken,
+      });
+      const deps = createMockDeps(tokenService);
+
+      const options: TokenRevokeOptions = {
+        name: "Cancel Token",
+        force: false, // No --force, should prompt for confirmation
+      };
+
+      await tokenRevokeCommand(options, deps);
+
+      // Should display confirmation prompt
+      expect(confirmSpy).toHaveBeenCalledWith("Type 'yes' to confirm:");
+
+      // Should NOT proceed with revocation after user declines
+      expect(mockRevokeToken).not.toHaveBeenCalled();
+
+      // Should show cancellation message
+      const output = capturedLogs.join("\n");
+      expect(output).toContain("cancelled");
+
+      confirmSpy.mockRestore();
+    });
   });
 
   describe("tokenRotateCommand", () => {
-    it("should rotate a token successfully", async () => {
+    it("should rotate a token with no expiration successfully", async () => {
       const oldMetadata = createTestMetadata({
         name: "Rotate Token",
         scopes: ["read", "write"],
         instanceAccess: ["work", "public"],
+        expiresAt: null, // No expiration
       });
 
       const mockFindTokenByName = vi.fn().mockResolvedValue({
@@ -515,18 +591,71 @@ describe("Token Commands", () => {
       // Should revoke the old token
       expect(mockRevokeToken).toHaveBeenCalledWith("old".repeat(21) + "d");
 
-      // Should create a new token with the same metadata
+      // Should create a new token with the same metadata (no expiration)
       expect(mockGenerateToken).toHaveBeenCalledWith({
         name: "Rotate Token",
         scopes: ["read", "write"],
         instanceAccess: ["work", "public"],
-        expiresInSeconds: null, // Expiration reset on rotation
+        expiresInSeconds: null, // No expiration preserved
       });
 
       // Should output the new token
       expect(capturedLogs.length).toBeGreaterThan(0);
       const output = capturedLogs.join("\n");
       expect(output).toContain("pk_mcp_newtoken12345678901234567");
+    });
+
+    it("should preserve original expiration duration when rotating", async () => {
+      // Token created at 2024-12-01 00:00:00 with 30-day expiration (2024-12-31 00:00:00)
+      const oldMetadata = createTestMetadata({
+        name: "Expiring Token",
+        scopes: ["read"],
+        instanceAccess: ["public"],
+        createdAt: "2024-12-01T00:00:00Z",
+        expiresAt: "2024-12-31T00:00:00Z", // 30 days from creation
+      });
+
+      const mockFindTokenByName = vi.fn().mockResolvedValue({
+        hash: "old".repeat(21) + "d",
+        metadata: oldMetadata,
+      } as TokenListItem);
+
+      const mockRevokeToken = vi.fn().mockResolvedValue(true);
+
+      const mockGenerateToken = vi.fn().mockResolvedValue({
+        rawToken: "pk_mcp_rotatedtoken123456789012",
+        tokenHash: "new".repeat(21) + "w",
+        metadata: createTestMetadata({
+          name: "Expiring Token",
+          scopes: ["read"],
+          instanceAccess: ["public"],
+          expiresAt: "2025-01-30T00:00:00Z", // New 30-day expiration
+        }),
+      } as GeneratedToken);
+
+      const tokenService = createMockTokenService({
+        findTokenByName: mockFindTokenByName,
+        revokeToken: mockRevokeToken,
+        generateToken: mockGenerateToken,
+      });
+      const deps = createMockDeps(tokenService);
+
+      const options: TokenRotateOptions = {
+        name: "Expiring Token",
+      };
+
+      await tokenRotateCommand(options, deps);
+
+      // Should calculate the original duration (30 days = 2592000 seconds)
+      // and apply it to the new token
+      expect(mockGenerateToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Expiring Token",
+          scopes: ["read"],
+          instanceAccess: ["public"],
+          expiresInSeconds: 30 * 24 * 60 * 60, // 30 days in seconds
+        })
+      );
     });
 
     it("should throw error when token to rotate not found", async () => {
