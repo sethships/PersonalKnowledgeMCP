@@ -22,7 +22,12 @@ import type {
   StoredToken,
   TokenListItem,
 } from "./types.js";
-import { GenerateTokenParamsSchema, RawTokenSchema, TOKEN_PREFIX } from "./validation.js";
+import {
+  GenerateTokenParamsSchema,
+  RawTokenSchema,
+  TokenHashSchema,
+  TOKEN_PREFIX,
+} from "./validation.js";
 import { TokenValidationError, TokenGenerationError } from "./errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
@@ -289,6 +294,16 @@ export class TokenServiceImpl implements TokenService {
    * @returns True if token was found and revoked
    */
   async revokeToken(tokenHash: string): Promise<boolean> {
+    // Validate hash format before processing
+    const hashResult = TokenHashSchema.safeParse(tokenHash);
+    if (!hashResult.success) {
+      this.logger.warn(
+        { tokenHashPrefix: tokenHash.substring(0, 8) },
+        "Invalid token hash format for revocation"
+      );
+      return false;
+    }
+
     const tokens = await this.tokenStore.loadTokens();
     const token = tokens.get(tokenHash);
 
@@ -346,6 +361,16 @@ export class TokenServiceImpl implements TokenService {
    * @returns True if token was found and deleted
    */
   async deleteToken(tokenHash: string): Promise<boolean> {
+    // Validate hash format before processing
+    const hashResult = TokenHashSchema.safeParse(tokenHash);
+    if (!hashResult.success) {
+      this.logger.warn(
+        { tokenHashPrefix: tokenHash.substring(0, 8) },
+        "Invalid token hash format for deletion"
+      );
+      return false;
+    }
+
     const tokens = await this.tokenStore.loadTokens();
 
     if (!tokens.has(tokenHash)) {
@@ -363,6 +388,16 @@ export class TokenServiceImpl implements TokenService {
 
   /**
    * Update token usage statistics (fire-and-forget)
+   *
+   * **Known Limitation (MVP):** This method has a race condition under concurrent
+   * token validations. Multiple simultaneous validations of the same token may
+   * overwrite each other's usage count updates, potentially losing increments.
+   * This is acceptable for MVP scope where usage stats are informational only.
+   *
+   * For production use cases requiring accurate usage counts, consider:
+   * - Using a separate counter store with atomic operations
+   * - Implementing optimistic locking with version numbers
+   * - Using database-backed storage with atomic increment
    *
    * @param tokenHash - Token hash to update
    * @param tokens - Current tokens map
@@ -388,7 +423,7 @@ export class TokenServiceImpl implements TokenService {
    * @param reason - Failure reason if invalid
    */
   private logValidation(startTime: number, valid: boolean, reason?: string): void {
-    const durationMs = performance.now() - startTime;
+    const durationMs = Math.round(performance.now() - startTime);
     this.logger.debug(
       {
         metric: "token.validate_ms",
