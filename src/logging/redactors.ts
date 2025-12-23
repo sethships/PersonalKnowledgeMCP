@@ -53,6 +53,10 @@ export const REDACT_PATHS = [
   "query.token",
   "query.apiKey",
   "query.api_key",
+
+  // Authentication token fields
+  "*.rawToken",
+  "*.raw_token",
 ];
 
 /**
@@ -116,6 +120,12 @@ export const SECRET_PATTERNS = {
    * @example 32+ character strings that look like keys
    */
   genericApiKey: /^[A-Za-z0-9_-]{32,}$/,
+
+  /**
+   * PersonalKnowledgeMCP bearer token format: pk_mcp_<32 hex chars>
+   * @example "pk_mcp_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+   */
+  pkMcpToken: /^pk_mcp_[a-f0-9]{32}$/,
 } as const;
 
 /**
