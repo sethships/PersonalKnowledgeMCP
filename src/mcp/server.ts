@@ -3,6 +3,7 @@
  *
  * This module implements the main MCP server class that orchestrates the
  * Model Context Protocol communication with Claude Code and other MCP clients.
+ * Supports multiple transport types: stdio (Claude Code) and HTTP/SSE (Cursor, VS Code).
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -15,6 +16,13 @@ import { createToolRegistry, getToolDefinitions, getToolHandler } from "./tools/
 import { createMethodNotFoundError } from "./errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
+/** Default server configuration */
+const DEFAULT_CONFIG: MCPServerConfig = {
+  name: "personal-knowledge-mcp",
+  version: "1.0.0",
+  capabilities: { tools: true },
+};
+
 /**
  * Personal Knowledge MCP Server
  *
@@ -24,10 +32,15 @@ import { getComponentLogger } from "../logging/index.js";
  * - Tool discovery (ListTools requests)
  * - Tool execution (CallTool requests)
  * - Error handling and logging
+ *
+ * Supports multiple transport types:
+ * - stdio: For Claude Code integration (single connection)
+ * - HTTP/SSE: For Cursor, VS Code, and other network clients (multiple sessions)
  */
 export class PersonalKnowledgeMCPServer {
   private server: Server;
   private toolRegistry: ToolRegistry;
+  private config: MCPServerConfig;
   private logger = getComponentLogger("mcp:server");
   private isShuttingDown = false;
   private shutdownHandlersRegistered = false;
@@ -54,32 +67,20 @@ export class PersonalKnowledgeMCPServer {
   constructor(
     searchService: SearchService,
     repositoryService: RepositoryMetadataService,
-    config: MCPServerConfig = {
-      name: "personal-knowledge-mcp",
-      version: "1.0.0",
-      capabilities: { tools: true },
-    }
+    config: MCPServerConfig = DEFAULT_CONFIG
   ) {
-    // Initialize MCP SDK server
-    this.server = new Server(
-      {
-        name: config.name,
-        version: config.version,
-      },
-      {
-        capabilities: {
-          tools: config.capabilities?.tools ? {} : undefined,
-          resources: config.capabilities?.resources ? {} : undefined,
-          prompts: config.capabilities?.prompts ? {} : undefined,
-        },
-      }
-    );
+    // Store config for creating additional server instances (SSE sessions)
+    this.config = config;
+
+    // Initialize primary MCP SDK server (used for stdio transport)
+    this.server = this.createSdkServer();
 
     // Create tool registry with all available tools
+    // This is shared between all transports/sessions
     this.toolRegistry = createToolRegistry(searchService, repositoryService);
 
-    // Register request handlers
-    this.registerHandlers();
+    // Register request handlers on primary server
+    this.registerHandlersOnServer(this.server);
 
     this.logger.info(
       {
@@ -92,15 +93,40 @@ export class PersonalKnowledgeMCPServer {
   }
 
   /**
-   * Registers MCP protocol request handlers
+   * Create a new MCP SDK Server instance with current configuration
+   *
+   * Used internally and for creating server instances for SSE sessions.
+   *
+   * @returns New MCP SDK Server instance
+   */
+  private createSdkServer(): Server {
+    return new Server(
+      {
+        name: this.config.name,
+        version: this.config.version,
+      },
+      {
+        capabilities: {
+          tools: this.config.capabilities?.tools ? {} : undefined,
+          resources: this.config.capabilities?.resources ? {} : undefined,
+          prompts: this.config.capabilities?.prompts ? {} : undefined,
+        },
+      }
+    );
+  }
+
+  /**
+   * Registers MCP protocol request handlers on a server instance
    *
    * Sets up handlers for:
    * - ListTools: Returns available tool definitions
    * - CallTool: Routes to appropriate tool handler
+   *
+   * @param server - MCP SDK Server instance to register handlers on
    */
-  private registerHandlers(): void {
+  private registerHandlersOnServer(server: Server): void {
     // Handle ListTools request
-    this.server.setRequestHandler(ListToolsRequestSchema, () => {
+    server.setRequestHandler(ListToolsRequestSchema, () => {
       this.logger.debug("Handling ListTools request");
 
       const tools = getToolDefinitions(this.toolRegistry);
@@ -114,7 +140,7 @@ export class PersonalKnowledgeMCPServer {
     });
 
     // Handle CallTool request
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name: toolName, arguments: args } = request.params;
 
       this.logger.info({ toolName, args }, "Handling CallTool request");
@@ -172,8 +198,27 @@ export class PersonalKnowledgeMCPServer {
    * - Blocks until server is closed
    *
    * @throws {Error} If server fails to start or connect
+   *
+   * @deprecated Use startStdio() instead. This method is kept for backward compatibility.
    */
   async start(): Promise<void> {
+    return this.startStdio();
+  }
+
+  /**
+   * Starts the MCP server with stdio transport
+   *
+   * Use this for Claude Code integration. For HTTP/SSE transport,
+   * use createServerForSse() instead.
+   *
+   * This method:
+   * - Creates stdio transport for Claude Code communication
+   * - Connects the primary server to the transport
+   * - Sets up signal handlers for graceful shutdown
+   *
+   * @throws {Error} If server fails to start or connect
+   */
+  async startStdio(): Promise<void> {
     this.logger.info("Starting MCP server with stdio transport");
 
     const transport = new StdioServerTransport();
@@ -208,6 +253,33 @@ export class PersonalKnowledgeMCPServer {
       this.logger.fatal({ error }, "Failed to start MCP server");
       throw error;
     }
+  }
+
+  /**
+   * Create a new MCP Server instance for SSE transport
+   *
+   * Each SSE session requires its own Server instance connected to
+   * its own SSEServerTransport. This method creates a new server
+   * with the same configuration and tool registry as the primary server.
+   *
+   * @returns New Server instance ready to be connected to an SSE transport
+   *
+   * @example
+   * ```typescript
+   * // In SSE route handler:
+   * const transport = new SSEServerTransport('/api/v1/sse', res);
+   * const server = mcpServer.createServerForSse();
+   * await server.connect(transport);
+   * await transport.start();
+   * ```
+   */
+  createServerForSse(): Server {
+    this.logger.debug("Creating new server instance for SSE session");
+
+    const server = this.createSdkServer();
+    this.registerHandlersOnServer(server);
+
+    return server;
   }
 
   /**

@@ -87,3 +87,20 @@ export interface SemanticSearchArgs {
   /** Optional repository name filter */
   repository?: string;
 }
+
+/**
+ * HTTP transport configuration
+ *
+ * Configuration options for the HTTP/SSE transport layer that enables
+ * network-accessible MCP clients like Cursor, VS Code, etc.
+ */
+export interface HttpTransportConfig {
+  /** Whether HTTP transport is enabled (default: false) */
+  enabled: boolean;
+
+  /** HTTP server port (default: 3001) */
+  port: number;
+
+  /** HTTP server host (default: 127.0.0.1) */
+  host: string;
+}

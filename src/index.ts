@@ -2,7 +2,9 @@
  * Personal Knowledge MCP - Main Entry Point
  *
  * This is the MCP server entry point that initializes all dependencies
- * and starts the MCP server to connect with Claude Code via stdio transport.
+ * and starts the MCP server. Supports multiple transport types:
+ * - stdio: For Claude Code integration (always enabled)
+ * - HTTP/SSE: For Cursor, VS Code, and other network clients (configurable)
  */
 
 import "dotenv/config";
@@ -17,6 +19,7 @@ import {
   formatElapsedTime,
 } from "./services/interrupted-update-detector.js";
 import { evaluateRecoveryStrategy } from "./services/interrupted-update-recovery.js";
+import { createHttpApp, startHttpServer, loadHttpConfig } from "./http/index.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -36,7 +39,8 @@ const logger = getComponentLogger("main");
  * 4. Repository metadata service (singleton)
  * 5. Search service (wires provider + storage + metadata)
  * 6. MCP server (wires search service)
- * 7. Start server with stdio transport
+ * 7a. Start stdio transport (always, for Claude Code)
+ * 7b. Start HTTP transport (if enabled, for Cursor/VS Code)
  */
 async function main(): Promise<void> {
   logger.info("Initializing Personal Knowledge MCP Server");
@@ -167,9 +171,26 @@ async function main(): Promise<void> {
     });
     logger.info("MCP server created");
 
-    // Step 7: Start server with stdio transport
-    logger.info("Starting MCP server");
-    await mcpServer.start();
+    // Step 7a: Start HTTP transport (if enabled)
+    // Must start before stdio to avoid blocking
+    const httpConfig = loadHttpConfig();
+    if (httpConfig.enabled) {
+      logger.info({ host: httpConfig.host, port: httpConfig.port }, "Starting HTTP transport");
+
+      const app = createHttpApp({
+        createServerForSse: () => mcpServer.createServerForSse(),
+        checkChromaDb: () => chromaClient.healthCheck(),
+      });
+
+      await startHttpServer(app, httpConfig);
+      logger.info("HTTP transport started");
+    } else {
+      logger.debug("HTTP transport disabled");
+    }
+
+    // Step 7b: Start stdio transport (always enabled for Claude Code)
+    logger.info("Starting stdio transport");
+    await mcpServer.startStdio();
 
     // Server is now running and will block until shutdown signal
     logger.info("Personal Knowledge MCP Server is running");
