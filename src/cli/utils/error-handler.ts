@@ -29,6 +29,12 @@ import {
   GitPullError,
   MissingCommitShaError,
 } from "../../services/incremental-update-coordinator-errors.js";
+import {
+  TokenValidationError,
+  TokenNotFoundError,
+  TokenStorageError,
+  TokenGenerationError,
+} from "../../auth/errors.js";
 
 /**
  * Handle command errors and exit with appropriate status code
@@ -232,6 +238,62 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error("  • Trigger full re-index: " + chalk.gray("pk-mcp index <url> --force"));
     console.error(
       "  • Or remove and re-index: " + chalk.gray("pk-mcp remove <repo> && pk-mcp index <url>")
+    );
+    process.exit(1);
+  }
+
+  // Handle authentication/token errors
+  if (error instanceof TokenValidationError) {
+    console.error(chalk.red("✗ Invalid Token Parameters"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Valid token parameters:"));
+    console.error("  • Name: 1-100 characters (alphanumeric, space, _, -, .)");
+    console.error("  • Scopes: read, write, admin");
+    console.error("  • Instances: private, work, public");
+    console.error("  • Expires: 30d, 1y, 12h, 2w, 3m, or never");
+    console.error("\n" + chalk.bold("Example:"));
+    console.error(
+      "  " + chalk.gray('pk-mcp token create -n "Cursor IDE" -s read,write -i work -e 1y')
+    );
+    process.exit(1);
+  }
+
+  if (error instanceof TokenNotFoundError) {
+    console.error(chalk.red("✗ Token Not Found"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • List available tokens: " + chalk.gray("pk-mcp token list"));
+    console.error("  • Include all tokens: " + chalk.gray("pk-mcp token list --all"));
+    console.error("  • Create a new token: " + chalk.gray('pk-mcp token create -n "My Token"'));
+    process.exit(1);
+  }
+
+  if (error instanceof TokenStorageError) {
+    console.error(chalk.red("✗ Token Storage Error"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Common causes:"));
+    console.error("  • DATA_PATH directory does not exist or is not writable");
+    console.error("  • tokens.json file is corrupted");
+    console.error("  • Insufficient disk space");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Verify DATA_PATH in .env file (default: ./data)");
+    console.error("  • Check file permissions on the data directory");
+    console.error("  • Enable verbose logging: " + chalk.gray("LOG_LEVEL=debug pk-mcp token list"));
+    process.exit(1);
+  }
+
+  if (error instanceof TokenGenerationError) {
+    console.error(chalk.red("✗ Token Generation Failed"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Common causes:"));
+    console.error("  • Insufficient system entropy for random generation");
+    console.error("  • DATA_PATH directory not writable");
+    console.error("  • Internal error during token creation");
+    console.error("\n" + chalk.bold("Next steps:"));
+    console.error("  • Check DATA_PATH permissions");
+    console.error("  • Try again (transient issues may resolve)");
+    console.error(
+      "  • Enable verbose logging: " + chalk.gray("LOG_LEVEL=debug pk-mcp token create")
     );
     process.exit(1);
   }

@@ -11,6 +11,7 @@
  * - update-all: Update all repositories
  * - reset-update: Reset stuck update state
  * - health: Health check
+ * - token: Manage authentication tokens (create, list, revoke, rotate)
  */
 
 import "dotenv/config";
@@ -27,6 +28,12 @@ import { updateAllCommand } from "./commands/update-all-command.js";
 import { historyCommand } from "./commands/history-command.js";
 import { resetUpdateCommand } from "./commands/reset-update-command.js";
 import {
+  tokenCreateCommand,
+  tokenListCommand,
+  tokenRevokeCommand,
+  tokenRotateCommand,
+} from "./commands/token-command.js";
+import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
   StatusCommandOptionsSchema,
@@ -35,6 +42,10 @@ import {
   UpdateAllCommandOptionsSchema,
   HistoryCommandOptionsSchema,
   ResetUpdateCommandOptionsSchema,
+  TokenCreateCommandOptionsSchema,
+  TokenListCommandOptionsSchema,
+  TokenRevokeCommandOptionsSchema,
+  TokenRotateCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -191,6 +202,75 @@ program
       const validatedOptions = ResetUpdateCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await resetUpdateCommand(repository, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Token command group
+const tokenProgram = program.command("token").description("Manage authentication tokens");
+
+// Token create subcommand
+tokenProgram
+  .command("create")
+  .description("Create a new authentication token")
+  .requiredOption("-n, --name <name>", "Token name (e.g., 'Cursor IDE')")
+  .option("-s, --scopes <scopes>", "Permission scopes: read,write,admin", "read")
+  .option("-i, --instances <instances>", "Instance access: private,work,public", "public")
+  .option("-e, --expires <duration>", "Expiration: 30d, 1y, 12h, 2w, 3m, or never", "never")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TokenCreateCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tokenCreateCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Token list subcommand
+tokenProgram
+  .command("list")
+  .description("List all tokens")
+  .option("--json", "Output as JSON")
+  .option("--all", "Include expired and revoked tokens")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TokenListCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tokenListCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Token revoke subcommand
+tokenProgram
+  .command("revoke")
+  .description("Revoke a token")
+  .option("-n, --name <name>", "Revoke by token name")
+  .option("--id <prefix>", "Revoke by hash prefix (8+ characters)")
+  .option("-f, --force", "Skip confirmation prompt")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TokenRevokeCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tokenRevokeCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Token rotate subcommand
+tokenProgram
+  .command("rotate")
+  .description("Rotate a token (revoke old, create new with same metadata)")
+  .requiredOption("-n, --name <name>", "Token name to rotate")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TokenRotateCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tokenRotateCommand(validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

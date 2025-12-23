@@ -236,6 +236,36 @@ export interface TokenService {
    * @returns True if token was found and deleted
    */
   deleteToken(tokenHash: string): Promise<boolean>;
+
+  /**
+   * Find a token by its name
+   *
+   * Searches active (non-revoked, non-expired) tokens by exact name match.
+   *
+   * @param name - Token name to search for
+   * @returns Token if found, undefined otherwise
+   */
+  findTokenByName(name: string): Promise<TokenListItem | undefined>;
+
+  /**
+   * Find tokens by hash prefix
+   *
+   * Searches all tokens (including revoked/expired) by hash prefix.
+   * Returns array to handle potential ambiguity.
+   *
+   * @param prefix - Hash prefix (minimum 8 characters recommended)
+   * @returns Array of matching tokens (may be empty or have multiple matches)
+   */
+  findTokenByHashPrefix(prefix: string): Promise<TokenListItem[]>;
+
+  /**
+   * List all tokens including expired and revoked
+   *
+   * Returns all tokens with status flags for UI display.
+   *
+   * @returns Array of all tokens with status information
+   */
+  listAllTokens(): Promise<Array<TokenListItem & { isExpired: boolean; isRevoked: boolean }>>;
 }
 
 /**
