@@ -116,7 +116,13 @@ describe("createListRepositoriesHandler", () => {
   let handler: ReturnType<typeof createListRepositoriesHandler>;
 
   beforeEach(() => {
-    initializeLogger({ level: "silent", format: "json" });
+    // Initialize logger with try-catch for parallel test execution safety
+    try {
+      initializeLogger({ level: "silent", format: "json" });
+    } catch {
+      // Logger already initialized, continue
+    }
+
     mockRepositoryService = {
       listRepositories: mock(() => Promise.resolve([])),
       getRepository: mock(),
