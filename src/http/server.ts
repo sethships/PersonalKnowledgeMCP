@@ -20,6 +20,8 @@ import {
 import type { HttpTransportConfig } from "../mcp/types.js";
 import type { HttpServerInstance } from "./types.js";
 import { getComponentLogger } from "../logging/index.js";
+import type { TokenService } from "../auth/types.js";
+import { createAuthMiddleware } from "../auth/middleware.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -45,6 +47,9 @@ export interface HttpServerDependencies {
 
   /** Health check function for ChromaDB */
   checkChromaDb: () => Promise<boolean>;
+
+  /** Token service for authentication (optional for backward compatibility) */
+  tokenService?: TokenService;
 }
 
 /**
@@ -88,12 +93,20 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Request logging (must be early in middleware chain)
   app.use(requestLogging);
 
-  // Health check endpoint (unauthenticated)
+  // Health check endpoint (UNAUTHENTICATED - before auth middleware)
   app.use(
     createHealthRouter({
       checkChromaDb: deps.checkChromaDb,
     })
   );
+
+  // Create auth middleware if token service is provided
+  const authMiddleware = deps.tokenService ? createAuthMiddleware(deps.tokenService) : null;
+
+  // Apply authentication to /api/v1 routes if available
+  if (authMiddleware) {
+    app.use("/api/v1", authMiddleware.authenticateRequest);
+  }
 
   // SSE transport endpoints under /api/v1 (legacy transport)
   app.use(

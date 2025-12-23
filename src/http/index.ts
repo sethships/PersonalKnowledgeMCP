@@ -55,5 +55,7 @@ export {
   HttpError,
   badRequest,
   notFound,
+  unauthorized,
+  forbidden,
   internalError,
 } from "./middleware/index.js";

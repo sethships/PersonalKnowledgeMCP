@@ -49,6 +49,20 @@ export function notFound(message: string, code?: string): HttpError {
 }
 
 /**
+ * Create a 401 Unauthorized error
+ */
+export function unauthorized(message: string, code?: string): HttpError {
+  return new HttpError(401, message, code);
+}
+
+/**
+ * Create a 403 Forbidden error
+ */
+export function forbidden(message: string, code?: string): HttpError {
+  return new HttpError(403, message, code);
+}
+
+/**
  * Create a 500 Internal Server Error
  */
 export function internalError(message: string, code?: string): HttpError {
