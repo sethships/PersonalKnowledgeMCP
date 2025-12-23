@@ -27,7 +27,10 @@ export {
   createHealthRouter,
   createSseRouter,
   getActiveSessionCount,
+  getMaxSessions,
   closeAllSessions,
+  startSessionCleanup,
+  stopSessionCleanup,
   type HealthCheckDependencies,
   type SseRouteDependencies,
 } from "./routes/index.js";

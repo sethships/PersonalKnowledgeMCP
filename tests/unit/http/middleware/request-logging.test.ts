@@ -23,18 +23,21 @@ describe("requestLogging middleware", () => {
   let finishHandler: (() => void) | undefined;
 
   beforeEach(() => {
+    // Mock Request.get() with proper overload typing for Express
+    const getMock = mock((header: string): string | undefined => {
+      const headers: Record<string, string> = {
+        "User-Agent": "Test Agent",
+        "Content-Type": "application/json",
+      };
+      return headers[header];
+    });
+
     mockRequest = {
       method: "GET",
       path: "/test",
       query: { foo: "bar" },
       headers: {},
-      get: mock((header: string) => {
-        const headers: Record<string, string> = {
-          "User-Agent": "Test Agent",
-          "Content-Type": "application/json",
-        };
-        return headers[header];
-      }),
+      get: getMock as Request["get"],
     };
 
     mockResponse = {

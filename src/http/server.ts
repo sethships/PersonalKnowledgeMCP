@@ -47,6 +47,32 @@ export interface HttpServerDependencies {
 export function createHttpApp(deps: HttpServerDependencies): Express {
   const app = express();
 
+  // ============================================================================
+  // Security Middleware (TODO: Enable before allowing non-localhost binding)
+  // ============================================================================
+  // When HTTP_HOST is set to 0.0.0.0 for network access, enable these:
+  //
+  // 1. Helmet - Security headers (X-Content-Type-Options, X-Frame-Options, etc.)
+  //    import helmet from "helmet";
+  //    app.use(helmet());
+  //
+  // 2. Rate Limiting - Prevent abuse and DoS
+  //    import rateLimit from "express-rate-limit";
+  //    const limiter = rateLimit({
+  //      windowMs: 15 * 60 * 1000, // 15 minutes
+  //      max: 100, // limit each IP to 100 requests per windowMs
+  //      standardHeaders: true,
+  //      legacyHeaders: false,
+  //    });
+  //    app.use(limiter);
+  //
+  // 3. CORS - Cross-Origin Resource Sharing (if needed for browser clients)
+  //    import cors from "cors";
+  //    app.use(cors({ origin: ["http://localhost:3000"] }));
+  //
+  // See Issue #95 (CORS configuration) and #94 (Rate Limiting) for implementation
+  // ============================================================================
+
   // Parse JSON bodies for POST requests
   app.use(express.json());
 
@@ -146,11 +172,31 @@ export async function startHttpServer(
  * Load HTTP transport configuration from environment
  *
  * @returns HTTP transport configuration
+ * @throws Error if configuration is invalid
  */
 export function loadHttpConfig(): HttpTransportConfig {
+  const portStr = Bun.env["HTTP_PORT"] || "3001";
+  const port = parseInt(portStr, 10);
+
+  // Validate port is a valid number in valid range
+  if (isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid HTTP_PORT: "${portStr}". Must be a number between 1 and 65535.`);
+  }
+
+  const host = Bun.env["HTTP_HOST"] || "127.0.0.1";
+
+  // Warn if exposing to network without additional security
+  if (host === "0.0.0.0" && Bun.env["HTTP_TRANSPORT_ENABLED"] === "true") {
+    getLogger().warn(
+      { host },
+      "HTTP server binding to all interfaces (0.0.0.0). " +
+        "Ensure appropriate security measures (firewall, rate limiting, authentication) are in place."
+    );
+  }
+
   return {
     enabled: Bun.env["HTTP_TRANSPORT_ENABLED"] === "true",
-    port: parseInt(Bun.env["HTTP_PORT"] || "3001", 10),
-    host: Bun.env["HTTP_HOST"] || "127.0.0.1",
+    port,
+    host,
   };
 }

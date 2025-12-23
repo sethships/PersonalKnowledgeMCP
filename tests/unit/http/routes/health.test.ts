@@ -3,12 +3,31 @@
  */
 
 import { describe, test, expect, beforeEach, beforeAll, mock } from "bun:test";
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
+import type { Router } from "express";
 import { initializeLogger } from "../../../../src/logging/index.js";
 import {
   createHealthRouter,
   type HealthCheckDependencies,
 } from "../../../../src/http/routes/health.js";
+
+/**
+ * Type for Express route handler extracted from router stack
+ */
+type RouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+
+/**
+ * Extract the handler for a specific route path from an Express router
+ */
+function getRouteHandler(router: Router, path: string): RouteHandler {
+  const route = router.stack.find(
+    (layer: { route?: { path: string } }) => layer.route?.path === path
+  );
+  if (!route?.route?.stack?.[0]?.handle) {
+    throw new Error(`Route ${path} not found in router`);
+  }
+  return route.route.stack[0].handle as RouteHandler;
+}
 
 // Initialize logger before tests (wrapped in try-catch for parallel test execution)
 beforeAll(() => {
@@ -61,13 +80,10 @@ describe("Health Route", () => {
 
   test("should return 200 when ChromaDB is healthy", async () => {
     const router = createHealthRouter(deps);
+    const handler = getRouteHandler(router, "/health");
+    const mockNext = mock(() => {}) as unknown as NextFunction;
 
-    // Get the route handler
-    const route = router.stack.find((layer) => layer.route?.path === "/health");
-    expect(route).toBeDefined();
-
-    const handler = route!.route!.stack[0].handle;
-    await handler(mockRequest as Request, mockResponse as Response);
+    await handler(mockRequest as Request, mockResponse as Response, mockNext);
 
     expect(statusCode).toBe(200);
     expect(jsonData).toMatchObject({
@@ -82,10 +98,10 @@ describe("Health Route", () => {
   test("should return 503 when ChromaDB is unhealthy", async () => {
     deps.checkChromaDb = mock(async () => false);
     const router = createHealthRouter(deps);
+    const handler = getRouteHandler(router, "/health");
+    const mockNext = mock(() => {}) as unknown as NextFunction;
 
-    const route = router.stack.find((layer) => layer.route?.path === "/health");
-    const handler = route!.route!.stack[0].handle;
-    await handler(mockRequest as Request, mockResponse as Response);
+    await handler(mockRequest as Request, mockResponse as Response, mockNext);
 
     expect(statusCode).toBe(503);
     expect(jsonData).toMatchObject({
@@ -101,10 +117,10 @@ describe("Health Route", () => {
       throw new Error("Connection refused");
     });
     const router = createHealthRouter(deps);
+    const handler = getRouteHandler(router, "/health");
+    const mockNext = mock(() => {}) as unknown as NextFunction;
 
-    const route = router.stack.find((layer) => layer.route?.path === "/health");
-    const handler = route!.route!.stack[0].handle;
-    await handler(mockRequest as Request, mockResponse as Response);
+    await handler(mockRequest as Request, mockResponse as Response, mockNext);
 
     expect(statusCode).toBe(503);
     expect(jsonData).toMatchObject({
@@ -117,10 +133,10 @@ describe("Health Route", () => {
 
   test("should include uptime in response", async () => {
     const router = createHealthRouter(deps);
+    const handler = getRouteHandler(router, "/health");
+    const mockNext = mock(() => {}) as unknown as NextFunction;
 
-    const route = router.stack.find((layer) => layer.route?.path === "/health");
-    const handler = route!.route!.stack[0].handle;
-    await handler(mockRequest as Request, mockResponse as Response);
+    await handler(mockRequest as Request, mockResponse as Response, mockNext);
 
     const response = jsonData as { uptime: number };
     expect(typeof response.uptime).toBe("number");
@@ -129,10 +145,10 @@ describe("Health Route", () => {
 
   test("should include timestamp in ISO format", async () => {
     const router = createHealthRouter(deps);
+    const handler = getRouteHandler(router, "/health");
+    const mockNext = mock(() => {}) as unknown as NextFunction;
 
-    const route = router.stack.find((layer) => layer.route?.path === "/health");
-    const handler = route!.route!.stack[0].handle;
-    await handler(mockRequest as Request, mockResponse as Response);
+    await handler(mockRequest as Request, mockResponse as Response, mockNext);
 
     const response = jsonData as { timestamp: string };
     expect(typeof response.timestamp).toBe("string");

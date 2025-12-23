@@ -191,10 +191,13 @@ describe("Error Handler Middleware", () => {
     });
 
     test("should include method in error message", () => {
-      mockRequest.method = "POST";
-      mockRequest.path = "/api/v1/resource";
+      // Create a new request object since path is read-only
+      const postRequest: Partial<Request> = {
+        method: "POST",
+        path: "/api/v1/resource",
+      };
 
-      notFoundHandler(mockRequest as Request, mockResponse as Response);
+      notFoundHandler(postRequest as Request, mockResponse as Response);
 
       expect(jsonData).toEqual({
         error: {

@@ -25,10 +25,134 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
 }
 
 /**
- * Active SSE transport sessions
- * Maps session ID to transport instance
+ * Maximum concurrent SSE sessions (prevent resource exhaustion)
+ * Configurable via HTTP_MAX_SSE_SESSIONS environment variable
  */
-const sessions: Map<string, SSEServerTransport> = new Map();
+const MAX_SESSIONS = parseInt(Bun.env["HTTP_MAX_SSE_SESSIONS"] || "100", 10);
+
+/**
+ * Session TTL in milliseconds (default 30 minutes)
+ * Sessions with no activity beyond this time are considered stale
+ */
+const SESSION_TTL_MS = parseInt(Bun.env["HTTP_SSE_SESSION_TTL_MS"] || String(30 * 60 * 1000), 10);
+
+/**
+ * Stale session cleanup interval in milliseconds (default 5 minutes)
+ */
+const CLEANUP_INTERVAL_MS = parseInt(
+  Bun.env["HTTP_SSE_CLEANUP_INTERVAL_MS"] || String(5 * 60 * 1000),
+  10
+);
+
+/**
+ * Session metadata for tracking and cleanup
+ */
+interface SessionEntry {
+  transport: SSEServerTransport;
+  createdAt: number;
+  lastActivity: number;
+}
+
+/**
+ * Active SSE transport sessions
+ * Maps session ID to session entry with metadata
+ */
+const sessions: Map<string, SessionEntry> = new Map();
+
+/**
+ * Cleanup interval timer reference
+ */
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Check if server can accept a new SSE session
+ */
+function canAcceptNewSession(): boolean {
+  return sessions.size < MAX_SESSIONS;
+}
+
+/**
+ * Clean up stale sessions that have exceeded TTL
+ * Sessions are considered stale if no activity for SESSION_TTL_MS
+ */
+async function cleanupStaleSessions(): Promise<number> {
+  const now = Date.now();
+  const staleSessionIds: string[] = [];
+
+  for (const [sessionId, entry] of sessions) {
+    const idleTime = now - entry.lastActivity;
+    if (idleTime > SESSION_TTL_MS) {
+      staleSessionIds.push(sessionId);
+    }
+  }
+
+  if (staleSessionIds.length === 0) {
+    return 0;
+  }
+
+  getLogger().info(
+    { staleCount: staleSessionIds.length, activeSessions: sessions.size },
+    "Cleaning up stale SSE sessions"
+  );
+
+  const closePromises: Promise<void>[] = [];
+
+  for (const sessionId of staleSessionIds) {
+    const entry = sessions.get(sessionId);
+    if (entry) {
+      getLogger().debug(
+        { sessionId, idleMs: now - entry.lastActivity },
+        "Closing stale SSE session"
+      );
+      closePromises.push(
+        entry.transport.close().catch((error: unknown) => {
+          getLogger().warn({ sessionId, error }, "Error closing stale SSE session");
+        })
+      );
+      sessions.delete(sessionId);
+    }
+  }
+
+  await Promise.all(closePromises);
+
+  getLogger().info(
+    { closedCount: staleSessionIds.length, remainingSessions: sessions.size },
+    "Stale session cleanup complete"
+  );
+
+  return staleSessionIds.length;
+}
+
+/**
+ * Start the periodic stale session cleanup timer
+ */
+export function startSessionCleanup(): void {
+  if (cleanupTimer) {
+    return; // Already running
+  }
+
+  getLogger().info(
+    { intervalMs: CLEANUP_INTERVAL_MS, ttlMs: SESSION_TTL_MS },
+    "Starting SSE session cleanup timer"
+  );
+
+  cleanupTimer = setInterval(() => {
+    cleanupStaleSessions().catch((error: unknown) => {
+      getLogger().error({ error }, "Error during stale session cleanup");
+    });
+  }, CLEANUP_INTERVAL_MS);
+}
+
+/**
+ * Stop the periodic stale session cleanup timer
+ */
+export function stopSessionCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+    getLogger().info("Stopped SSE session cleanup timer");
+  }
+}
 
 /**
  * SSE route dependencies
@@ -66,14 +190,34 @@ export function createSseRouter(deps: SseRouteDependencies): Router {
 
     getLogger().info({ requestId }, "New SSE connection request");
 
+    // Check session limit before accepting new connections
+    if (!canAcceptNewSession()) {
+      getLogger().warn(
+        { requestId, activeSessions: sessions.size, maxSessions: MAX_SESSIONS },
+        "SSE session limit reached, rejecting connection"
+      );
+      res.status(503).json({
+        error: {
+          message: "Server at capacity, try again later",
+          code: "TOO_MANY_SESSIONS",
+        },
+      });
+      return;
+    }
+
     try {
       // Create SSE transport
       // The endpoint path tells the client where to POST messages
       const transport = new SSEServerTransport("/api/v1/sse", res);
 
-      // Store session for POST request routing
+      // Store session with metadata for tracking and cleanup
       const sessionId = transport.sessionId;
-      sessions.set(sessionId, transport);
+      const now = Date.now();
+      sessions.set(sessionId, {
+        transport,
+        createdAt: now,
+        lastActivity: now,
+      });
 
       getLogger().info(
         { requestId, sessionId, activeSessions: sessions.size },
@@ -88,6 +232,8 @@ export function createSseRouter(deps: SseRouteDependencies): Router {
 
       transport.onerror = (error: Error): void => {
         getLogger().error({ sessionId, error }, "SSE transport error");
+        // Also clean up session on error to prevent orphaned sessions
+        sessions.delete(sessionId);
       };
 
       // Create and connect MCP server for this session
@@ -128,19 +274,22 @@ export function createSseRouter(deps: SseRouteDependencies): Router {
       throw badRequest("Missing mcp-session-id header", "MISSING_SESSION_ID");
     }
 
-    const transport = sessions.get(sessionId);
+    const sessionEntry = sessions.get(sessionId);
 
-    if (!transport) {
+    if (!sessionEntry) {
       getLogger().warn({ requestId, sessionId }, "POST for unknown session");
       throw badRequest("Invalid or expired session", "INVALID_SESSION");
     }
+
+    // Update last activity timestamp
+    sessionEntry.lastActivity = Date.now();
 
     getLogger().debug({ requestId, sessionId, bodyType: typeof req.body }, "Handling POST message");
 
     try {
       // Handle the incoming message
       // The transport expects the parsed JSON body
-      await transport.handlePostMessage(req, res, req.body);
+      await sessionEntry.transport.handlePostMessage(req, res, req.body);
 
       getLogger().debug({ requestId, sessionId }, "POST message handled");
     } catch (error) {
@@ -164,14 +313,17 @@ export function getActiveSessionCount(): number {
  * Used during graceful shutdown
  */
 export async function closeAllSessions(): Promise<void> {
+  // Stop the cleanup timer first
+  stopSessionCleanup();
+
   getLogger().info({ count: sessions.size }, "Closing all SSE sessions");
 
   const closePromises: Promise<void>[] = [];
 
-  for (const [sessionId, transport] of sessions) {
+  for (const [sessionId, sessionEntry] of sessions) {
     getLogger().debug({ sessionId }, "Closing SSE session");
     closePromises.push(
-      transport.close().catch((error: unknown) => {
+      sessionEntry.transport.close().catch((error: unknown) => {
         getLogger().warn({ sessionId, error }, "Error closing SSE session");
       })
     );
@@ -181,4 +333,11 @@ export async function closeAllSessions(): Promise<void> {
   sessions.clear();
 
   getLogger().info("All SSE sessions closed");
+}
+
+/**
+ * Get the maximum allowed SSE sessions
+ */
+export function getMaxSessions(): number {
+  return MAX_SESSIONS;
 }

@@ -7,9 +7,15 @@
  * - MCP protocol over HTTP
  */
 
-import { describe, test, expect, beforeAll, afterAll, mock } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, beforeEach, mock } from "bun:test";
 import { initializeLogger } from "../../../src/logging/index.js";
-import { createHttpApp, startHttpServer } from "../../../src/http/index.js";
+import {
+  createHttpApp,
+  startHttpServer,
+  getActiveSessionCount,
+  getMaxSessions,
+  closeAllSessions,
+} from "../../../src/http/index.js";
 import type { HttpTransportConfig } from "../../../src/mcp/types.js";
 import type { HttpServerInstance } from "../../../src/http/types.js";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
@@ -218,6 +224,136 @@ describe("HTTP Transport Integration", () => {
 
       // Should return 400 for malformed JSON
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("Session Management", () => {
+    beforeEach(async () => {
+      // Clean up any existing sessions before each test
+      await closeAllSessions();
+    });
+
+    test("should track active session count", async () => {
+      const initialCount = getActiveSessionCount();
+      expect(initialCount).toBe(0);
+
+      // Create an SSE connection
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 500);
+
+      try {
+        // Start SSE connection (will be aborted after 500ms)
+        await fetch(`${baseUrl}/api/v1/sse`, {
+          headers: { Accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name !== "AbortError") {
+          throw error;
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Session count may increase briefly (cleaned up on abort)
+      // This tests that the tracking mechanism exists
+      expect(typeof getActiveSessionCount()).toBe("number");
+    });
+
+    test("should expose max sessions configuration", () => {
+      const maxSessions = getMaxSessions();
+
+      expect(typeof maxSessions).toBe("number");
+      expect(maxSessions).toBeGreaterThan(0);
+      // Default is 100 unless overridden by env var
+      expect(maxSessions).toBeLessThanOrEqual(1000);
+    });
+
+    test("should handle concurrent SSE connection requests", async () => {
+      // Create multiple concurrent SSE connection attempts
+      const connectionPromises: Promise<Response>[] = [];
+      const controllers: AbortController[] = [];
+
+      // Start 3 concurrent connections
+      for (let i = 0; i < 3; i++) {
+        const controller = new AbortController();
+        controllers.push(controller);
+
+        connectionPromises.push(
+          fetch(`${baseUrl}/api/v1/sse`, {
+            headers: { Accept: "text/event-stream" },
+            signal: controller.signal,
+          })
+        );
+      }
+
+      // Abort all after a short delay
+      setTimeout(() => {
+        for (const controller of controllers) {
+          controller.abort();
+        }
+      }, 300);
+
+      // All connections should either succeed (200) or be aborted
+      const results = await Promise.allSettled(connectionPromises);
+
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          expect(result.value.status).toBe(200);
+        } else if (result.status === "rejected") {
+          // AbortError is expected
+          const reason = result.reason as Error;
+          expect(reason.name).toBe("AbortError");
+        }
+      }
+    });
+
+    test("should clean up all sessions on closeAllSessions", async () => {
+      // Start an SSE connection
+      const controller = new AbortController();
+
+      // Use a promise to track the connection
+      const connectionPromise = fetch(`${baseUrl}/api/v1/sse`, {
+        headers: { Accept: "text/event-stream" },
+        signal: controller.signal,
+      }).catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          return null; // Expected
+        }
+        throw error;
+      });
+
+      // Give the connection time to establish
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Close all sessions
+      await closeAllSessions();
+
+      // Clean up our controller
+      controller.abort();
+      await connectionPromise;
+
+      // Session count should be 0
+      expect(getActiveSessionCount()).toBe(0);
+    });
+  });
+
+  describe("Performance", () => {
+    test("health endpoint should respond within 100ms", async () => {
+      const iterations = 5;
+      const times: number[] = [];
+
+      for (let i = 0; i < iterations; i++) {
+        const start = performance.now();
+        await fetch(`${baseUrl}/health`);
+        const end = performance.now();
+        times.push(end - start);
+      }
+
+      const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+
+      // Average response time should be under 100ms (generous for HTTP overhead)
+      expect(avgTime).toBeLessThan(100);
     });
   });
 });

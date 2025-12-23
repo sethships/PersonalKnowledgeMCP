@@ -37,6 +37,11 @@ const DEFAULT_CONFIG: MCPServerConfig = {
  * - stdio: For Claude Code integration (single connection)
  * - HTTP/SSE: For Cursor, VS Code, and other network clients (multiple sessions)
  */
+/**
+ * Pre-shutdown hook type for coordinating multi-transport shutdown
+ */
+export type PreShutdownHook = () => Promise<void>;
+
 export class PersonalKnowledgeMCPServer {
   private server: Server;
   private toolRegistry: ToolRegistry;
@@ -44,6 +49,7 @@ export class PersonalKnowledgeMCPServer {
   private logger = getComponentLogger("mcp:server");
   private isShuttingDown = false;
   private shutdownHandlersRegistered = false;
+  private preShutdownHooks: PreShutdownHook[] = [];
 
   /**
    * Creates a new MCP server instance
@@ -90,6 +96,27 @@ export class PersonalKnowledgeMCPServer {
       },
       "MCP server initialized"
     );
+  }
+
+  /**
+   * Register a pre-shutdown hook for coordinated multi-transport shutdown
+   *
+   * Hooks are called in order before the MCP server closes. Use this to
+   * close HTTP server, SSE sessions, and other resources gracefully.
+   *
+   * @param hook - Async function to call before shutdown
+   *
+   * @example
+   * ```typescript
+   * mcpServer.registerPreShutdownHook(async () => {
+   *   await closeAllSessions();
+   *   await httpServer.close();
+   * });
+   * ```
+   */
+  registerPreShutdownHook(hook: PreShutdownHook): void {
+    this.preShutdownHooks.push(hook);
+    this.logger.debug({ hookCount: this.preShutdownHooks.length }, "Pre-shutdown hook registered");
   }
 
   /**
@@ -285,13 +312,33 @@ export class PersonalKnowledgeMCPServer {
   /**
    * Gracefully shuts down the MCP server
    *
-   * Closes the server connection and exits the process. Called automatically
-   * on SIGINT/SIGTERM signals.
+   * Executes pre-shutdown hooks (for HTTP/SSE cleanup), then closes the
+   * server connection and exits the process. Called automatically on
+   * SIGINT/SIGTERM signals.
    */
   async shutdown(): Promise<void> {
     this.logger.info("Shutting down MCP server");
 
     try {
+      // Execute pre-shutdown hooks (e.g., close HTTP server, SSE sessions)
+      if (this.preShutdownHooks.length > 0) {
+        this.logger.info(
+          { hookCount: this.preShutdownHooks.length },
+          "Executing pre-shutdown hooks"
+        );
+
+        for (const hook of this.preShutdownHooks) {
+          try {
+            await hook();
+          } catch (hookError) {
+            this.logger.warn({ error: hookError }, "Pre-shutdown hook failed, continuing shutdown");
+          }
+        }
+
+        this.logger.debug("Pre-shutdown hooks completed");
+      }
+
+      // Close the primary MCP server
       await this.server.close();
       this.logger.info("MCP server shut down successfully");
       process.exit(0);

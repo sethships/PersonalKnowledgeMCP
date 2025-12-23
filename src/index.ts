@@ -19,7 +19,12 @@ import {
   formatElapsedTime,
 } from "./services/interrupted-update-detector.js";
 import { evaluateRecoveryStrategy } from "./services/interrupted-update-recovery.js";
-import { createHttpApp, startHttpServer, loadHttpConfig } from "./http/index.js";
+import {
+  createHttpApp,
+  startHttpServer,
+  loadHttpConfig,
+  startSessionCleanup,
+} from "./http/index.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -182,7 +187,17 @@ async function main(): Promise<void> {
         checkChromaDb: () => chromaClient.healthCheck(),
       });
 
-      await startHttpServer(app, httpConfig);
+      const httpServer = await startHttpServer(app, httpConfig);
+
+      // Start session cleanup timer for stale SSE sessions
+      startSessionCleanup();
+
+      // Register HTTP shutdown as pre-shutdown hook for coordinated graceful shutdown
+      mcpServer.registerPreShutdownHook(async () => {
+        logger.info("Closing HTTP transport via pre-shutdown hook");
+        await httpServer.close();
+      });
+
       logger.info("HTTP transport started");
     } else {
       logger.debug("HTTP transport disabled");

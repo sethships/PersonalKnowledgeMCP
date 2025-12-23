@@ -8,6 +8,9 @@ export { createHealthRouter, type HealthCheckDependencies } from "./health.js";
 export {
   createSseRouter,
   getActiveSessionCount,
+  getMaxSessions,
   closeAllSessions,
+  startSessionCleanup,
+  stopSessionCleanup,
   type SseRouteDependencies,
 } from "./sse.js";
