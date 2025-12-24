@@ -15,3 +15,15 @@ export {
   forbidden,
   internalError,
 } from "./error-handler.js";
+export {
+  createRateLimitMiddleware,
+  loadRateLimitConfig,
+  DEFAULT_RATE_LIMIT_CONFIG,
+} from "./rate-limit.js";
+export type {
+  RateLimitConfig,
+  RateLimitMiddleware,
+  OperationRateLimits,
+  RateLimitWindow,
+  RateLimitErrorResponse,
+} from "./rate-limit-types.js";

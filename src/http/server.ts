@@ -9,7 +9,14 @@ import express from "express";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server as HttpServer } from "node:http";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
-import { requestLogging, errorHandler, notFoundHandler } from "./middleware/index.js";
+import {
+  requestLogging,
+  errorHandler,
+  notFoundHandler,
+  createRateLimitMiddleware,
+  loadRateLimitConfig,
+} from "./middleware/index.js";
+import type { RateLimitConfig } from "./middleware/index.js";
 import {
   createHealthRouter,
   createSseRouter,
@@ -50,6 +57,9 @@ export interface HttpServerDependencies {
 
   /** Token service for authentication (optional for backward compatibility) */
   tokenService?: TokenService;
+
+  /** Rate limit configuration (optional, uses defaults if not provided) */
+  rateLimitConfig?: RateLimitConfig;
 }
 
 /**
@@ -70,21 +80,11 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   //    import helmet from "helmet";
   //    app.use(helmet());
   //
-  // 2. Rate Limiting - Prevent abuse and DoS
-  //    import rateLimit from "express-rate-limit";
-  //    const limiter = rateLimit({
-  //      windowMs: 15 * 60 * 1000, // 15 minutes
-  //      max: 100, // limit each IP to 100 requests per windowMs
-  //      standardHeaders: true,
-  //      legacyHeaders: false,
-  //    });
-  //    app.use(limiter);
-  //
-  // 3. CORS - Cross-Origin Resource Sharing (if needed for browser clients)
+  // 2. CORS - Cross-Origin Resource Sharing (if needed for browser clients)
   //    import cors from "cors";
   //    app.use(cors({ origin: ["http://localhost:3000"] }));
   //
-  // See Issue #95 (CORS configuration) and #94 (Rate Limiting) for implementation
+  // See Issue #95 (CORS configuration) for implementation
   // ============================================================================
 
   // Parse JSON bodies for POST requests
@@ -93,7 +93,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Request logging (must be early in middleware chain)
   app.use(requestLogging);
 
-  // Health check endpoint (UNAUTHENTICATED - before auth middleware)
+  // Health check endpoint (UNAUTHENTICATED - before auth and rate limiting middleware)
   app.use(
     createHealthRouter({
       checkChromaDb: deps.checkChromaDb,
@@ -106,6 +106,15 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Apply authentication to /api/v1 routes if available
   if (authMiddleware) {
     app.use("/api/v1", authMiddleware.authenticateRequest);
+  }
+
+  // Apply rate limiting to /api/v1 routes (after auth so we can use per-token limits)
+  // Rate limiting is applied after authentication so we can use token hash for per-token limits
+  // and check for admin scope to enable bypass
+  const rateLimitConfig = deps.rateLimitConfig || loadRateLimitConfig();
+  const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig);
+  if (rateLimitMiddleware) {
+    app.use("/api/v1", rateLimitMiddleware);
   }
 
   // SSE transport endpoints under /api/v1 (legacy transport)

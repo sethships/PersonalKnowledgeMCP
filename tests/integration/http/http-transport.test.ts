@@ -51,7 +51,7 @@ try {
 describe("HTTP Transport Integration", () => {
   let serverInstance: HttpServerInstance | null = null;
   let baseUrl: string;
-  const port = 3099; // Use a non-standard port for tests
+  const port = 3097; // Use a unique port (different from streamable-http tests on 3099 and auth tests on 3098)
 
   // Mock MCP server factory for SSE
   const mockCreateServerForSse = mock((): McpServer => {
@@ -75,6 +75,8 @@ describe("HTTP Transport Integration", () => {
   const mockCheckChromaDb = mock(async () => true);
 
   beforeAll(async () => {
+    // Note: Using default rate limit config (like streamable-http tests)
+    // Default limits (60 reads/min, 30 writes/min) are sufficient for these tests
     const app = createHttpApp({
       createServerForSse: mockCreateServerForSse,
       createServerForStreamableHttp: mockCreateServerForStreamableHttp,
