@@ -2,6 +2,24 @@
 
 This guide explains how to configure MCP clients to connect to Personal Knowledge MCP using the HTTP transport layer.
 
+## Table of Contents
+
+- [Transport Options](#transport-options)
+- [Prerequisites](#prerequisites)
+- [Claude Code (Stdio Transport)](#claude-code-stdio-transport)
+- [HTTP Transport Clients](#http-transport-clients)
+  - [Authentication Setup](#authentication-setup)
+  - [Cursor Configuration](#cursor-configuration)
+  - [VS Code Continue Extension](#vs-code-continue-extension)
+  - [Generic HTTP Client](#generic-http-client)
+  - [TypeScript/JavaScript Client Example](#typescriptjavascript-client-example)
+  - [Python Client Example](#python-client-example)
+- [Multi-Instance Configuration](#multi-instance-configuration)
+- [Troubleshooting](#troubleshooting)
+- [Security Best Practices](#security-best-practices)
+
+---
+
 ## Transport Options
 
 Personal Knowledge MCP supports two HTTP transport types:
@@ -891,11 +909,7 @@ bun run cli token list --json
 bun run cli token list --all
 ```
 
-Enable debug logging for security auditing:
-
-```bash
-LOG_LEVEL=info  # Logs all authentication events
-```
+For authentication event logging, see [Debug Logging](#debug-logging) in the Troubleshooting section.
 
 ---
 
