@@ -10,6 +10,7 @@
         "chromadb": "^1.8.1",
         "cli-table3": "0.6.5",
         "commander": "^12.1.0",
+        "cors": "2.8.5",
         "dotenv": "^16.4.5",
         "express": "5.2.1",
         "express-rate-limit": "8.2.1",
@@ -24,6 +25,7 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/cors": "2.8.19",
         "@types/express": "5.0.6",
         "@types/node": "^20.11.19",
         "@typescript-eslint/eslint-plugin": "^7.0.1",
@@ -81,6 +83,8 @@
     "@types/bun": ["@types/bun@1.3.4", "", { "dependencies": { "bun-types": "1.3.4" } }, "sha512-EEPTKXHP+zKGPkhRLv+HI0UEX8/o+65hqARxLy8Ov5rIxMBPNTjeZww00CIihrIQGEQBYg+0roO5qOnS/7boGA=="],
 
     "@types/connect": ["@types/connect@3.4.38", "", { "dependencies": { "@types/node": "*" } }, "sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug=="],
+
+    "@types/cors": ["@types/cors@2.8.19", "", { "dependencies": { "@types/node": "*" } }, "sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg=="],
 
     "@types/express": ["@types/express@5.0.6", "", { "dependencies": { "@types/body-parser": "*", "@types/express-serve-static-core": "^5.0.0", "@types/serve-static": "^2" } }, "sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA=="],
 

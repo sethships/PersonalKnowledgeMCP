@@ -15,8 +15,10 @@ import {
   notFoundHandler,
   createRateLimitMiddleware,
   loadRateLimitConfig,
+  createCorsMiddleware,
+  loadCorsConfig,
 } from "./middleware/index.js";
-import type { RateLimitConfig } from "./middleware/index.js";
+import type { RateLimitConfig, CorsConfig } from "./middleware/index.js";
 import {
   createHealthRouter,
   createSseRouter,
@@ -60,6 +62,9 @@ export interface HttpServerDependencies {
 
   /** Rate limit configuration (optional, uses defaults if not provided) */
   rateLimitConfig?: RateLimitConfig;
+
+  /** CORS configuration (optional, uses defaults if not provided) */
+  corsConfig?: CorsConfig;
 }
 
 /**
@@ -72,7 +77,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   const app = express();
 
   // ============================================================================
-  // Security Middleware (TODO: Enable before allowing non-localhost binding)
+  // Security Middleware
   // ============================================================================
   // When HTTP_HOST is set to 0.0.0.0 for network access, enable these:
   //
@@ -80,11 +85,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   //    import helmet from "helmet";
   //    app.use(helmet());
   //
-  // 2. CORS - Cross-Origin Resource Sharing (if needed for browser clients)
-  //    import cors from "cors";
-  //    app.use(cors({ origin: ["http://localhost:3000"] }));
-  //
-  // See Issue #95 (CORS configuration) for implementation
+  // 2. CORS - Configured below via CORS middleware (Issue #95)
   // ============================================================================
 
   // Parse JSON bodies for POST requests
@@ -92,6 +93,14 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
 
   // Request logging (must be early in middleware chain)
   app.use(requestLogging);
+
+  // CORS middleware (early in chain to handle preflight requests)
+  // Must be before routes to properly respond to OPTIONS requests
+  const corsConfig = deps.corsConfig || loadCorsConfig();
+  const corsMiddleware = createCorsMiddleware(corsConfig);
+  if (corsMiddleware) {
+    app.use(corsMiddleware);
+  }
 
   // Health check endpoint (UNAUTHENTICATED - before auth and rate limiting middleware)
   app.use(

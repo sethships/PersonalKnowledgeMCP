@@ -27,3 +27,5 @@ export type {
   RateLimitWindow,
   RateLimitErrorResponse,
 } from "./rate-limit-types.js";
+export { createCorsMiddleware, loadCorsConfig, DEFAULT_CORS_CONFIG } from "./cors.js";
+export type { CorsConfig, CorsMiddleware } from "./cors-types.js";
