@@ -75,17 +75,12 @@ describe("HTTP Transport Integration", () => {
   const mockCheckChromaDb = mock(async () => true);
 
   beforeAll(async () => {
+    // Note: Using default rate limit config (like streamable-http tests)
+    // Default limits (60 reads/min, 30 writes/min) are sufficient for these tests
     const app = createHttpApp({
       createServerForSse: mockCreateServerForSse,
       createServerForStreamableHttp: mockCreateServerForStreamableHttp,
       checkChromaDb: mockCheckChromaDb,
-      // Disable rate limiting for these tests - rate limiting is tested in rate-limiting.test.ts
-      rateLimitConfig: {
-        enabled: false,
-        readLimits: { perMinute: 0, perHour: 0 },
-        writeLimits: { perMinute: 0, perHour: 0 },
-        adminBypass: false,
-      },
     });
 
     const config: HttpTransportConfig = {
