@@ -79,6 +79,13 @@ describe("HTTP Transport Integration", () => {
       createServerForSse: mockCreateServerForSse,
       createServerForStreamableHttp: mockCreateServerForStreamableHttp,
       checkChromaDb: mockCheckChromaDb,
+      // Disable rate limiting for these tests - rate limiting is tested in rate-limiting.test.ts
+      rateLimitConfig: {
+        enabled: false,
+        readLimits: { perMinute: 0, perHour: 0 },
+        writeLimits: { perMinute: 0, perHour: 0 },
+        adminBypass: false,
+      },
     });
 
     const config: HttpTransportConfig = {
