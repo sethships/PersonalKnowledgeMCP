@@ -10,7 +10,6 @@ import type { Request, Response } from "express";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { getComponentLogger } from "../../logging/index.js";
-import { badRequest } from "../middleware/error-handler.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -271,14 +270,30 @@ export function createSseRouter(deps: SseRouteDependencies): Router {
 
     if (!sessionId) {
       getLogger().warn({ requestId }, "POST without session ID");
-      throw badRequest("Missing mcp-session-id header", "MISSING_SESSION_ID");
+      // Use direct response instead of throw for async handler compatibility
+      res.status(400).json({
+        error: {
+          message: "Missing mcp-session-id header",
+          code: "MISSING_SESSION_ID",
+          statusCode: 400,
+        },
+      });
+      return;
     }
 
     const sessionEntry = sessions.get(sessionId);
 
     if (!sessionEntry) {
       getLogger().warn({ requestId, sessionId }, "POST for unknown session");
-      throw badRequest("Invalid or expired session", "INVALID_SESSION");
+      // Use direct response instead of throw for async handler compatibility
+      res.status(400).json({
+        error: {
+          message: "Invalid or expired session",
+          code: "INVALID_SESSION",
+          statusCode: 400,
+        },
+      });
+      return;
     }
 
     // Update last activity timestamp
@@ -294,7 +309,16 @@ export function createSseRouter(deps: SseRouteDependencies): Router {
       getLogger().debug({ requestId, sessionId }, "POST message handled");
     } catch (error) {
       getLogger().error({ requestId, sessionId, error }, "Failed to handle POST message");
-      throw error;
+      // Handle error directly instead of re-throwing
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: {
+            message: "Failed to handle message",
+            code: "MESSAGE_HANDLING_FAILED",
+            statusCode: 500,
+          },
+        });
+      }
     }
   });
 
