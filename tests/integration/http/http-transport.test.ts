@@ -51,7 +51,7 @@ try {
 describe("HTTP Transport Integration", () => {
   let serverInstance: HttpServerInstance | null = null;
   let baseUrl: string;
-  const port = 3099; // Use a non-standard port for tests
+  const port = 3097; // Use a unique port (different from streamable-http tests on 3099 and auth tests on 3098)
 
   // Mock MCP server factory for SSE
   const mockCreateServerForSse = mock((): McpServer => {
