@@ -40,7 +40,17 @@ function parseOrigins(originsStr: string): string[] {
   return originsStr
     .split(",")
     .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
+    .filter((origin) => {
+      if (origin.length === 0) return false;
+      // Warn about suspicious origins that may be misconfigured
+      if (!origin.startsWith("http://") && !origin.startsWith("https://")) {
+        getLogger().warn(
+          { origin },
+          "Origin may be invalid - missing protocol (http:// or https://)"
+        );
+      }
+      return true;
+    });
 }
 
 /**
@@ -75,6 +85,11 @@ function logCorsRequest(req: Request, origin: string | undefined, allowed: boole
 function createOriginValidator(
   allowedOrigins: string[]
 ): (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => void {
+  // Warn if no origins are configured - all cross-origin requests will be blocked
+  if (allowedOrigins.length === 0) {
+    getLogger().warn("No allowed origins configured - all cross-origin requests will be blocked");
+  }
+
   // Create a Set for efficient lookup
   const originsSet = new Set(allowedOrigins);
 

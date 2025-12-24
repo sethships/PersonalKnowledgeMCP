@@ -199,7 +199,7 @@ describe("CORS Integration", () => {
       expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     });
 
-    test("should handle POST requests with credentials", async () => {
+    test("should handle cross-origin SSE requests with credentials", async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1000);
 
