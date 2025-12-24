@@ -86,12 +86,20 @@ bun run cli token create --name "Cursor IDE" --scopes read --instances work
 bun run cli token create --name "Automation" --scopes read,write --instances public
 
 # Create an admin token with 30-day expiration
-bun run cli token create --name "Admin" --scopes admin --instances private,work,public --expires 2592000
+bun run cli token create --name "Admin" --scopes admin --instances private,work,public --expires 30d
 ```
 
 **Token Format**: `pk_mcp_<32 hex characters>` (e.g., `pk_mcp_a1b2c3d4e5f6789...`)
 
 **Important**: The token is displayed only once during creation. Store it securely immediately.
+
+**Expiration Formats**:
+- `30d` - 30 days
+- `1y` - 1 year
+- `12h` - 12 hours
+- `2w` - 2 weeks
+- `3m` - 3 months (30-day months)
+- `never` - Token never expires (default)
 
 ### Token Scopes
 
@@ -629,7 +637,8 @@ Configure multiple MCP servers in your client to access different instances:
 Example `docker-compose.yml` for running multiple instances:
 
 ```yaml
-version: "3.8"
+# NOTE: This example uses a single shared ChromaDB instance for all tiers.
+# For production with strict isolation, deploy separate ChromaDB containers per tier.
 
 services:
   chromadb:
@@ -747,11 +756,7 @@ Enable debug logging to troubleshoot connection issues:
 LOG_LEVEL=debug bun run start
 ```
 
-For authentication-specific debugging:
-
-```bash
-LOG_LEVEL=debug AUTH_DEBUG=true bun run start
-```
+Debug logging includes authentication events when `LOG_LEVEL=debug` is set.
 
 ### Session Limits
 
