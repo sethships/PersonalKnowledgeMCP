@@ -8,6 +8,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import type { TokenMetadata, TokenScope, InstanceAccess } from "./types.js";
+import type { OidcSession } from "./oidc/oidc-types.js";
 
 /**
  * Extend Express Request to include token metadata after authentication
@@ -19,6 +20,8 @@ declare module "express-serve-static-core" {
     tokenMetadata?: TokenMetadata;
     /** Raw token string (only present after authenticateRequest succeeds) */
     rawToken?: string;
+    /** OIDC session (only present when authenticated via OIDC) */
+    oidcSession?: OidcSession;
   }
 }
 

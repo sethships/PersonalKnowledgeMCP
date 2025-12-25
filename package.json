@@ -47,6 +47,7 @@
     "chromadb": "^1.8.1",
     "cli-table3": "0.6.5",
     "commander": "^12.1.0",
+    "cookie-parser": "1.4.7",
     "cors": "2.8.5",
     "dotenv": "^16.4.5",
     "express": "5.2.1",
@@ -54,6 +55,7 @@
     "glob": "^10.3.10",
     "ignore": "^5.3.1",
     "openai": "6.10.0",
+    "openid-client": "6.8.1",
     "ora": "9.0.0",
     "pino": "^8.19.0",
     "pino-pretty": "^10.3.1",
@@ -62,6 +64,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/cookie-parser": "1.4.10",
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/node": "^20.11.19",

@@ -6,6 +6,7 @@
  */
 
 import express from "express";
+import cookieParser from "cookie-parser";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server as HttpServer } from "node:http";
 import type { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
@@ -25,12 +26,15 @@ import {
   closeAllSessions,
   createStreamableHttpRouter,
   closeAllStreamableSessions,
+  createOidcRouter,
 } from "./routes/index.js";
 import type { HttpTransportConfig } from "../mcp/types.js";
 import type { HttpServerInstance } from "./types.js";
 import { getComponentLogger } from "../logging/index.js";
 import type { TokenService } from "../auth/types.js";
 import { createAuthMiddleware } from "../auth/middleware.js";
+import type { OidcProvider, OidcSessionStore } from "../auth/oidc/oidc-types.js";
+import { createOidcAuthMiddleware } from "../auth/oidc/oidc-middleware.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -65,6 +69,12 @@ export interface HttpServerDependencies {
 
   /** CORS configuration (optional, uses defaults if not provided) */
   corsConfig?: CorsConfig;
+
+  /** OIDC provider for SSO authentication (optional) */
+  oidcProvider?: OidcProvider;
+
+  /** OIDC session store (required if oidcProvider is provided) */
+  oidcSessionStore?: OidcSessionStore;
 }
 
 /**
@@ -91,6 +101,9 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Parse JSON bodies for POST requests
   app.use(express.json());
 
+  // Parse cookies for OIDC session management
+  app.use(cookieParser());
+
   // Request logging (must be early in middleware chain)
   app.use(requestLogging);
 
@@ -109,6 +122,37 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
     })
   );
 
+  // Apply rate limiting to OIDC routes BEFORE mounting them
+  // This prevents brute force attacks on authentication endpoints
+  const rateLimitConfig = deps.rateLimitConfig || loadRateLimitConfig();
+  const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig);
+  if (rateLimitMiddleware) {
+    app.use("/api/v1/oidc", rateLimitMiddleware);
+  }
+
+  // OIDC routes (UNAUTHENTICATED - handles OAuth callbacks)
+  // Must be before auth middleware to handle the callback flow
+  if (deps.oidcProvider && deps.oidcSessionStore) {
+    app.use(
+      "/api/v1/oidc",
+      createOidcRouter({
+        oidcProvider: deps.oidcProvider,
+        sessionStore: deps.oidcSessionStore,
+      })
+    );
+  }
+
+  // OIDC session middleware (before bearer token auth)
+  // Checks for OIDC session cookie and validates session
+  // Falls through to bearer token auth if no valid OIDC session
+  if (deps.oidcProvider && deps.oidcSessionStore) {
+    const oidcAuthMiddleware = createOidcAuthMiddleware({
+      oidcProvider: deps.oidcProvider,
+      sessionStore: deps.oidcSessionStore,
+    });
+    app.use("/api/v1", oidcAuthMiddleware);
+  }
+
   // Create auth middleware if token service is provided
   const authMiddleware = deps.tokenService ? createAuthMiddleware(deps.tokenService) : null;
 
@@ -120,8 +164,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Apply rate limiting to /api/v1 routes (after auth so we can use per-token limits)
   // Rate limiting is applied after authentication so we can use token hash for per-token limits
   // and check for admin scope to enable bypass
-  const rateLimitConfig = deps.rateLimitConfig || loadRateLimitConfig();
-  const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig);
+  // Note: rateLimitConfig and rateLimitMiddleware already created above for OIDC routes
   if (rateLimitMiddleware) {
     app.use("/api/v1", rateLimitMiddleware);
   }

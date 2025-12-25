@@ -22,7 +22,10 @@ describe("FileScanner Integration", () => {
   });
 
   afterEach(async () => {
-    await rm(testDir, { recursive: true, force: true });
+    // Guard against undefined testDir if beforeEach failed
+    if (testDir) {
+      await rm(testDir, { recursive: true, force: true });
+    }
     resetLogger();
   });
 
