@@ -78,12 +78,16 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     this.dimensions = config.dimensions;
 
     // Initialize OpenAI client with manual retry handling (maxRetries: 0)
+    // Explicit opt-out from data training via header
     this.client = new OpenAI({
       apiKey: config.apiKey,
       organization: config.organization,
       baseURL: config.baseURL,
       timeout: config.timeoutMs,
       maxRetries: 0, // We handle retries manually for better control
+      defaultHeaders: {
+        "X-OpenAI-Data-Usage": "off", // Explicit opt-out from data training
+      },
     });
   }
 
