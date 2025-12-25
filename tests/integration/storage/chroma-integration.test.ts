@@ -38,16 +38,27 @@ describe("ChromaDB Integration Tests", () => {
       format: "json",
     });
 
+    // Fast infrastructure check - fail immediately if ChromaDB is not reachable
+    const chromaUrl = `http://${testConfig.host}:${testConfig.port}/api/v2/heartbeat`;
+    try {
+      const response = await fetch(chromaUrl, {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!response.ok) {
+        throw new Error(`ChromaDB returned status ${response.status}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `INFRASTRUCTURE CHECK FAILED: ChromaDB is not available at ${testConfig.host}:${testConfig.port}\n` +
+          `  Error: ${message}\n` +
+          `  To fix: Start ChromaDB with 'docker-compose up -d'`
+      );
+    }
+
     // Create and connect client
     client = new ChromaStorageClientImpl(testConfig);
-
-    try {
-      await client.connect();
-    } catch (error) {
-      console.error("Failed to connect to ChromaDB. Ensure Docker container is running:");
-      console.error("  docker-compose up -d");
-      throw error;
-    }
+    await client.connect();
 
     // Verify ChromaDB is healthy
     const isHealthy = await client.healthCheck();

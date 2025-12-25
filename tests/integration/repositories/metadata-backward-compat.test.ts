@@ -27,7 +27,10 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
   afterEach(async () => {
     resetLogger();
     RepositoryMetadataStoreImpl.resetInstance();
-    await rm(tempDir, { recursive: true, force: true });
+    // Guard against undefined tempDir if beforeEach failed
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   describe("Loading Legacy Metadata", () => {

@@ -103,8 +103,11 @@ function createRootLogger(config: LoggerConfig): pino.Logger {
  * ```
  */
 export function initializeLogger(config: LoggerConfig): void {
+  // If logger is already initialized, skip silently.
+  // This makes initializeLogger safe to call from multiple test files
+  // running in parallel, while still ensuring the logger is initialized.
   if (rootLogger !== null) {
-    throw new Error("Logger already initialized. initializeLogger() should only be called once.");
+    return;
   }
 
   try {

@@ -67,8 +67,10 @@ describe("IncrementalUpdatePipeline", () => {
   });
 
   afterEach(async () => {
-    // Clean up test directory
-    await rm(testDir, { recursive: true, force: true });
+    // Clean up test directory (guard against undefined if beforeEach failed)
+    if (testDir) {
+      await rm(testDir, { recursive: true, force: true });
+    }
 
     // Reset logger for next test
     resetLogger();

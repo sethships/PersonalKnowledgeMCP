@@ -46,18 +46,23 @@ describe("Logger Factory", () => {
       expect(logger).toBeDefined();
     });
 
-    test("should throw error if initialized twice", () => {
+    test("should be idempotent when called multiple times", () => {
       initializeLogger({
         level: "info",
         format: "json",
       });
 
+      // Second call should not throw - just silently return
       expect(() => {
         initializeLogger({
           level: "debug",
           format: "json",
         });
-      }).toThrow("Logger already initialized");
+      }).not.toThrow();
+
+      // Logger should still be initialized
+      const logger = getRootLogger();
+      expect(logger).toBeDefined();
     });
 
     test("should accept all valid log levels", () => {
