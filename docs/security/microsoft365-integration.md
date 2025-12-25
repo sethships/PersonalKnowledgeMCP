@@ -144,22 +144,24 @@ OIDC_COOKIE_SECURE=false
 
 # Default permissions for authenticated users
 OIDC_DEFAULT_SCOPES=read,write
-OIDC_DEFAULT_INSTANCE_ACCESS=work,public
+OIDC_DEFAULT_INSTANCE_ACCESS=work
 ```
 
 ### Example Configuration (bibler.us tenant)
 
+> **Note**: Replace all placeholder values (`YOUR-TENANT-ID-HERE`, `YOUR-CLIENT-ID-HERE`) with your actual Azure AD values from Step 3.
+
 ```bash
 # Example for bibler.us Microsoft 365 tenant
 OIDC_ENABLED=true
-OIDC_ISSUER=https://login.microsoftonline.com/87654321-dcba-4321-hgfe-987654321xyz/v2.0
-OIDC_CLIENT_ID=12345678-abcd-1234-efgh-123456789abc
+OIDC_ISSUER=https://login.microsoftonline.com/YOUR-TENANT-ID-HERE/v2.0
+OIDC_CLIENT_ID=YOUR-CLIENT-ID-HERE
 OIDC_CLIENT_SECRET=your-secret-value-here
 OIDC_REDIRECT_URI=http://localhost:3001/api/v1/oidc/callback
 OIDC_SESSION_TTL_SECONDS=3600
 OIDC_COOKIE_SECURE=false
 OIDC_DEFAULT_SCOPES=read,write
-OIDC_DEFAULT_INSTANCE_ACCESS=work,public
+OIDC_DEFAULT_INSTANCE_ACCESS=work
 ```
 
 ## End-to-End Login Flow Testing
@@ -241,6 +243,7 @@ curl -v --cookie "pk_mcp_oidc_session=<session-id>" \
 - [ ] Callback processes without errors
 - [ ] Session cookie is set
 - [ ] User info endpoint returns correct data
+- [ ] Refresh endpoint works (`POST /api/v1/oidc/refresh`)
 - [ ] Logout endpoint clears session
 
 ## Token Refresh Verification
@@ -434,20 +437,20 @@ Personal Knowledge MCP returns structured error responses:
 
 ```json
 {
-  "error": "oidc_error",
-  "error_description": "Authentication failed: consent required",
-  "retry_possible": false
+  "error": "OIDC_CODE_EXCHANGE_FAILED",
+  "message": "Authentication failed: consent required",
+  "retryable": false
 }
 ```
 
 | Error Code | Description | Retry? |
 |------------|-------------|--------|
-| `oidc_not_configured` | OIDC not enabled | No |
-| `oidc_discovery_failed` | Cannot reach IdP | Yes |
-| `oidc_state_mismatch` | CSRF validation failed | No (re-login) |
-| `oidc_code_exchange_failed` | Token exchange failed | Depends |
-| `oidc_token_refresh_failed` | Refresh failed | Depends |
-| `oidc_session_not_found` | Session expired | No (re-login) |
+| `OIDC_NOT_CONFIGURED` | OIDC not enabled | No |
+| `OIDC_DISCOVERY_FAILED` | Cannot reach IdP | Yes |
+| `OIDC_STATE_VALIDATION_FAILED` | CSRF validation failed | No (re-login) |
+| `OIDC_CODE_EXCHANGE_FAILED` | Token exchange failed | Depends |
+| `OIDC_TOKEN_REFRESH_FAILED` | Refresh failed | Depends |
+| `OIDC_SESSION_NOT_FOUND` | Session expired | No (re-login) |
 
 ## Client Secret Management
 
@@ -550,6 +553,9 @@ Key events are logged for security monitoring:
 4. **Rotate secrets** - Follow rotation schedule
 5. **Limit permissions** - Only request needed scopes
 6. **HTTPS in production** - Never use HTTP in production
+7. **Configure named locations** - Set up named locations in Entra ID for trusted networks
+8. **Avoid application permissions** - Use only delegated permissions; avoid app-only permissions
+9. **Enable audit log retention** - Configure extended audit log retention in Azure AD for compliance
 
 ## Troubleshooting
 
