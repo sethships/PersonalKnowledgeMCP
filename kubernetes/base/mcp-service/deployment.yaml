@@ -1,0 +1,131 @@
+# Personal Knowledge MCP - MCP Service Deployment
+#
+# Deploys the MCP service with HTTP transport enabled for Kubernetes networking.
+# Uses init container to wait for ChromaDB to be ready before starting.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pk-mcp-service
+  labels:
+    app.kubernetes.io/component: mcp-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mcp-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: mcp-service
+      annotations:
+        # Force pod restart when configmap changes
+        checksum/config: '{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}'
+    spec:
+      serviceAccountName: pk-mcp-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      # Wait for ChromaDB to be ready before starting MCP service
+      initContainers:
+        - name: wait-for-chromadb
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for ChromaDB to be ready..."
+              until wget -q -O- http://chromadb:8000/api/v2/heartbeat 2>/dev/null; do
+                echo "ChromaDB not ready, waiting..."
+                sleep 2
+              done
+              echo "ChromaDB is ready!"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+      containers:
+        - name: mcp-service
+          image: pk-mcp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: pk-mcp-config
+            - secretRef:
+                name: pk-mcp-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+
+      # Prefer scheduling on different nodes for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: mcp-service
+                topologyKey: kubernetes.io/hostname
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+---
+# Service Account for MCP Service
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pk-mcp-service
+  labels:
+    app.kubernetes.io/component: mcp-service

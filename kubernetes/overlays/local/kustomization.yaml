@@ -1,0 +1,42 @@
+# Personal Knowledge MCP - Local Overlay
+#
+# Configuration for local development with K3s or minikube.
+# Uses local-path storage class and reduced resource limits.
+#
+# Deploy: kubectl apply -k kubernetes/overlays/local/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Inherit from base
+resources:
+  - ../../base
+
+# Add local-specific labels
+commonLabels:
+  environment: local
+
+# Patches for local environment
+patches:
+  # Use local-path storage class for K3s
+  - path: patches/storage-class-patch.yaml
+
+  # Reduce resource limits for local development
+  - path: patches/resource-limits-patch.yaml
+
+  # Use local image (not from registry)
+  - target:
+      kind: Deployment
+      name: pk-mcp-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+
+  # Override ingress host for local development
+  - target:
+      kind: Ingress
+      name: pk-mcp-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: localhost

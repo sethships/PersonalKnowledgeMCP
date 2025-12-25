@@ -1,0 +1,96 @@
+# Personal Knowledge MCP - Ingress Configuration
+#
+# Routes external traffic to the MCP service.
+# Supports both NGINX and Traefik ingress controllers.
+#
+# For TLS, create a secret named pk-mcp-tls with your certificate:
+#   kubectl -n pk-mcp create secret tls pk-mcp-tls \
+#     --cert=path/to/cert.pem \
+#     --key=path/to/key.pem
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pk-mcp-ingress
+  labels:
+    app.kubernetes.io/component: ingress
+  annotations:
+    # NGINX Ingress Controller annotations
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # Enable CORS (browser clients)
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, Mcp-Session-Id"
+    # Rate limiting (optional, adjust as needed)
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+    # SSL redirect (enable for production)
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    # Traefik annotations (K3s default ingress)
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    # traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  # Uncomment for NGINX ingress controller
+  # ingressClassName: nginx
+
+  # Uncomment for Traefik ingress controller (K3s default)
+  # ingressClassName: traefik
+
+  # TLS configuration (uncomment and configure for HTTPS)
+  # tls:
+  #   - hosts:
+  #       - pk-mcp.local
+  #     secretName: pk-mcp-tls
+
+  rules:
+    - host: pk-mcp.local
+      http:
+        paths:
+          # Health check endpoint (no authentication required)
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001
+
+          # API endpoints (all /api/v1/* routes)
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001
+
+          # Streamable HTTP MCP endpoint
+          - path: /api/v1/mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001
+
+          # SSE endpoint (legacy transport)
+          - path: /api/v1/sse
+            pathType: Prefix
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001
+
+          # OIDC authentication endpoints (Phase 4)
+          - path: /api/v1/oidc
+            pathType: Prefix
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001

@@ -1,0 +1,23 @@
+# Personal Knowledge MCP - Allow MCP to PostgreSQL Network Policy
+#
+# Allows MCP service pods to connect to PostgreSQL on port 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mcp-to-postgres
+  labels:
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: mcp-service
+      ports:
+        - protocol: TCP
+          port: 5432

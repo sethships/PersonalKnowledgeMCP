@@ -1,0 +1,59 @@
+# Resource limits patch for production
+#
+# Full resource allocation matching docker-compose.yml limits
+
+# MCP Service resources
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pk-mcp-service
+spec:
+  # Production runs 2 replicas for HA
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: mcp-service
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+---
+# ChromaDB resources (matching docker-compose.yml)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chromadb
+spec:
+  template:
+    spec:
+      containers:
+        - name: chromadb
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+---
+# PostgreSQL resources (matching docker-compose.yml)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "2"

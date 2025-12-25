@@ -1,0 +1,23 @@
+# Personal Knowledge MCP - Allow MCP to ChromaDB Network Policy
+#
+# Allows MCP service pods to connect to ChromaDB on port 8000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mcp-to-chromadb
+  labels:
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: chromadb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: mcp-service
+      ports:
+        - protocol: TCP
+          port: 8000

@@ -1,0 +1,20 @@
+# Personal Knowledge MCP - PostgreSQL Service
+#
+# Headless service for StatefulSet DNS resolution.
+# MCP service connects to postgres:5432 via internal cluster DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None # Headless service for StatefulSet
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: postgres

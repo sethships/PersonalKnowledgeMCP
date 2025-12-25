@@ -1,0 +1,15 @@
+# Personal Knowledge MCP - Kubernetes Namespace
+#
+# Default namespace for single-instance deployments.
+# Multi-instance deployments use separate namespaces (pk-mcp-private, pk-mcp-work, pk-mcp-public).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pk-mcp
+  labels:
+    app.kubernetes.io/name: personal-knowledge-mcp
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/part-of: pk-mcp
+    app.kubernetes.io/managed-by: kustomize
+  annotations:
+    description: "Personal Knowledge MCP - AI-first knowledge management service"

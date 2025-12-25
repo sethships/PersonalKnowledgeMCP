@@ -1,0 +1,70 @@
+# Personal Knowledge MCP - Private Instance Overlay
+#
+# Deploys a complete isolated instance for personal/sensitive knowledge.
+# Uses separate namespace, storage, and configuration.
+#
+# Deploy: kubectl apply -k kubernetes/multi-instance/private/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Override namespace for this instance
+namespace: pk-mcp-private
+
+# Inherit from base
+resources:
+  - ../../base
+
+# Instance-specific labels
+labels:
+  - pairs:
+      app.kubernetes.io/instance: private
+      security-tier: private
+    includeSelectors: false
+
+# Instance-specific configuration
+configMapGenerator:
+  - name: pk-mcp-config
+    behavior: merge
+    literals:
+      - DEFAULT_INSTANCE=private
+      - REQUIRE_AUTH_FOR_DEFAULT_INSTANCE=true
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+
+# Patches for private instance
+patches:
+  # Override namespace name
+  - target:
+      kind: Namespace
+      name: pk-mcp
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: pk-mcp-private
+      - op: add
+        path: /metadata/labels/app.kubernetes.io~1instance
+        value: private
+      - op: add
+        path: /metadata/labels/security-tier
+        value: private
+      - op: replace
+        path: /metadata/annotations/description
+        value: "Personal Knowledge MCP - Private instance for sensitive data"
+
+  # Use local-path storage for local deployment
+  - target:
+      kind: StatefulSet
+      name: chromadb
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: local-path
+
+  # Update ingress host
+  - target:
+      kind: Ingress
+      name: pk-mcp-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: pk-mcp-private.local

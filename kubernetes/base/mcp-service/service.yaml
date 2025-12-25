@@ -1,0 +1,19 @@
+# Personal Knowledge MCP - MCP Service Kubernetes Service
+#
+# Exposes the MCP service within the cluster on port 3001.
+# Ingress routes external traffic to this service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pk-mcp-service
+  labels:
+    app.kubernetes.io/component: mcp-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: mcp-service

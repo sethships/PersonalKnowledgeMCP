@@ -1,0 +1,45 @@
+# Personal Knowledge MCP - Allow Ingress to MCP Network Policy
+#
+# Allows ingress controller pods to connect to MCP service on port 3001.
+# Works with both NGINX and Traefik ingress controllers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-mcp
+  labels:
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: mcp-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from NGINX ingress controller (common namespace labels)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Allow from Traefik ingress controller (K3s default)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3001
+    # Allow from same namespace (for internal access, testing)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3001

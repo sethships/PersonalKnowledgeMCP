@@ -1,0 +1,41 @@
+# Personal Knowledge MCP - Production Overlay
+#
+# Configuration for production deployment.
+# Uses cloud storage classes and full resource limits.
+#
+# Deploy: kubectl apply -k kubernetes/overlays/production/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Inherit from base
+resources:
+  - ../../base
+
+# Add production-specific labels
+commonLabels:
+  environment: production
+
+# Add HPA for production (optional, uncomment to enable)
+# resources:
+#   - ../../base/mcp-service/hpa.yaml
+
+# Patches for production environment
+patches:
+  # Production resource limits (full allocation)
+  - path: patches/resource-limits-patch.yaml
+
+  # Use cloud storage class
+  - path: patches/storage-class-patch.yaml
+
+  # Production ingress with TLS
+  - path: patches/ingress-patch.yaml
+
+# ConfigMap overrides for production
+configMapGenerator:
+  - name: pk-mcp-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=warn
+      - LOG_FORMAT=json
+      - RATE_LIMIT_ENABLED=true
+      - CORS_ENABLED=true

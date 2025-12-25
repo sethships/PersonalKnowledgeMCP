@@ -1,0 +1,84 @@
+# Personal Knowledge MCP - MCP Service ConfigMap
+#
+# Non-sensitive configuration for the MCP service.
+# Sensitive values (API keys, passwords) go in secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pk-mcp-config
+  labels:
+    app.kubernetes.io/component: mcp-service
+data:
+  # ChromaDB connection (internal Kubernetes DNS)
+  CHROMADB_HOST: "chromadb"
+  CHROMADB_PORT: "8000"
+
+  # PostgreSQL connection (internal Kubernetes DNS)
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "personal_knowledge"
+  POSTGRES_USER: "pk_mcp"
+
+  # HTTP transport configuration (required for Kubernetes)
+  HTTP_TRANSPORT_ENABLED: "true"
+  HTTP_HOST: "0.0.0.0"
+  HTTP_PORT: "3001"
+
+  # Session configuration
+  HTTP_MAX_SSE_SESSIONS: "100"
+  HTTP_SSE_SESSION_TTL_MS: "1800000"
+  HTTP_SSE_CLEANUP_INTERVAL_MS: "300000"
+  HTTP_MAX_STREAMABLE_SESSIONS: "100"
+  HTTP_STREAMABLE_SESSION_TTL_MS: "1800000"
+  HTTP_STREAMABLE_CLEANUP_INTERVAL_MS: "300000"
+
+  # Logging (JSON for structured logging in K8s)
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  NODE_ENV: "production"
+
+  # Data paths
+  DATA_PATH: "/app/data"
+  REPO_CLONE_PATH: "/app/data/repos"
+
+  # Embedding configuration
+  EMBEDDING_MODEL: "text-embedding-3-small"
+  EMBEDDING_DIMENSIONS: "1536"
+  EMBEDDING_BATCH_SIZE: "100"
+
+  # Chunking configuration
+  CHUNK_MAX_TOKENS: "500"
+  CHUNK_OVERLAP_TOKENS: "50"
+
+  # Search configuration
+  DEFAULT_SEARCH_LIMIT: "10"
+  MAX_SEARCH_LIMIT: "50"
+  DEFAULT_SIMILARITY_THRESHOLD: "0.7"
+  SNIPPET_MAX_LENGTH: "500"
+
+  # Performance configuration
+  MAX_RETRIES: "3"
+  REQUEST_TIMEOUT_MS: "30000"
+  RETRY_INITIAL_DELAY_MS: "1000"
+  RETRY_MAX_DELAY_MS: "60000"
+  RETRY_BACKOFF_MULTIPLIER: "2"
+
+  # Multi-instance configuration
+  DEFAULT_INSTANCE: "public"
+  REQUIRE_AUTH_FOR_DEFAULT_INSTANCE: "false"
+
+  # Rate limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_READ_PER_MINUTE: "60"
+  RATE_LIMIT_READ_PER_HOUR: "1000"
+  RATE_LIMIT_WRITE_PER_MINUTE: "30"
+  RATE_LIMIT_WRITE_PER_HOUR: "500"
+  RATE_LIMIT_ADMIN_BYPASS: "true"
+
+  # CORS configuration
+  CORS_ENABLED: "true"
+  CORS_ORIGINS: "http://localhost:3000"
+  CORS_CREDENTIALS: "true"
+
+  # Authentication
+  AUTH_TRACK_TOKEN_USAGE: "true"
