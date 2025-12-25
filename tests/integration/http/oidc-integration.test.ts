@@ -292,7 +292,7 @@ describe("OIDC Integration Tests", () => {
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
       expect(sessionMatch).not.toBeNull();
 
-      if (sessionMatch) {
+      if (sessionMatch && sessionMatch[1]) {
         const sessionId = sessionMatch[1];
         const session = await sessionStore.getSession(sessionId);
         expect(session?.authFlowState?.originalUrl).toBe("/dashboard");
@@ -315,7 +315,7 @@ describe("OIDC Integration Tests", () => {
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
       expect(sessionMatch).not.toBeNull();
 
-      if (sessionMatch) {
+      if (sessionMatch && sessionMatch[1]) {
         const sessionId = sessionMatch[1];
         const session = await sessionStore.getSession(sessionId);
         expect(session?.authFlowState?.originalUrl).toBeUndefined();
@@ -335,12 +335,14 @@ describe("OIDC Integration Tests", () => {
       const cookies = authResponse.headers.get("set-cookie") || "";
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
       expect(sessionMatch).not.toBeNull();
-      const sessionId = sessionMatch![1];
+      if (!sessionMatch?.[1]) throw new Error("Session match failed");
+      const sessionId = sessionMatch[1];
 
       // Get session to get the state value
       const session = await sessionStore.getSession(sessionId);
       expect(session?.authFlowState).toBeDefined();
-      const state = session!.authFlowState!.state;
+      if (!session?.authFlowState) throw new Error("Session authFlowState missing");
+      const state = session.authFlowState.state;
 
       // Now call callback with code and state
       const callbackResponse = await fetch(
@@ -369,11 +371,13 @@ describe("OIDC Integration Tests", () => {
       // Extract session cookie
       const cookies = authResponse.headers.get("set-cookie") || "";
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
-      const sessionId = sessionMatch![1];
+      if (!sessionMatch?.[1]) throw new Error("Session match failed");
+      const sessionId = sessionMatch[1];
 
       // Get state from session
       const session = await sessionStore.getSession(sessionId);
-      const state = session!.authFlowState!.state;
+      if (!session?.authFlowState) throw new Error("Session authFlowState missing");
+      const state = session.authFlowState.state;
 
       // Call callback
       const callbackResponse = await fetch(
@@ -401,7 +405,8 @@ describe("OIDC Integration Tests", () => {
 
       const cookies = authResponse.headers.get("set-cookie") || "";
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
-      const sessionId = sessionMatch![1];
+      if (!sessionMatch?.[1]) throw new Error("Session match failed");
+      const sessionId = sessionMatch[1];
 
       // Call callback with wrong state
       const callbackResponse = await fetch(
@@ -427,7 +432,7 @@ describe("OIDC Integration Tests", () => {
       );
 
       expect(callbackResponse.status).toBe(400);
-      const body = await callbackResponse.json();
+      const body = (await callbackResponse.json()) as { code: string };
       expect(body.code).toBe("MISSING_SESSION");
     });
   });
@@ -445,10 +450,16 @@ describe("OIDC Integration Tests", () => {
 
       const cookies = authResponse.headers.get("set-cookie") || "";
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
-      const sessionId = sessionMatch![1];
+      if (!sessionMatch || !sessionMatch[1]) {
+        throw new Error("Session cookie not found in response");
+      }
+      const sessionId = sessionMatch[1];
 
       const session = await sessionStore.getSession(sessionId);
-      const state = session!.authFlowState!.state;
+      if (!session?.authFlowState) {
+        throw new Error("Session or authFlowState not found");
+      }
+      const state = session.authFlowState.state;
 
       // Complete callback
       await fetch(`${baseUrl}/api/v1/oidc/callback?code=mock-auth-code&state=${state}`, {
@@ -470,7 +481,7 @@ describe("OIDC Integration Tests", () => {
       });
 
       expect(response.status).toBe(200);
-      const body = await response.json();
+      const body = (await response.json()) as { sub: string; email: string; name: string };
       expect(body.sub).toBe("mock-user-123");
       expect(body.email).toBe("test@example.com");
       expect(body.name).toBe("Test User");
@@ -515,10 +526,12 @@ describe("OIDC Integration Tests", () => {
 
       const cookies = authResponse.headers.get("set-cookie") || "";
       const sessionMatch = cookies.match(new RegExp(`${OIDC_SESSION_COOKIE}=([^;]+)`));
-      const sessionId = sessionMatch![1];
+      if (!sessionMatch?.[1]) throw new Error("Session match failed");
+      const sessionId = sessionMatch[1];
 
       const session = await sessionStore.getSession(sessionId);
-      const state = session!.authFlowState!.state;
+      if (!session?.authFlowState) throw new Error("Session authFlowState missing");
+      const state = session.authFlowState.state;
 
       await fetch(`${baseUrl}/api/v1/oidc/callback?code=mock-auth-code&state=${state}`, {
         method: "GET",
@@ -536,7 +549,7 @@ describe("OIDC Integration Tests", () => {
       });
 
       expect(refreshResponse.status).toBe(200);
-      const body = await refreshResponse.json();
+      const body = (await refreshResponse.json()) as { success: boolean; expiresAt: string };
       expect(body.success).toBe(true);
       expect(body.expiresAt).toBeDefined();
     });
@@ -616,7 +629,7 @@ describe("OIDC Integration Tests", () => {
         });
 
         expect(response.status).toBe(400);
-        const body = await response.json();
+        const body = (await response.json()) as { message: string };
         expect(body.message).toContain("not enabled");
       } finally {
         await new Promise<void>((resolve) => disabledServer.close(() => resolve()));

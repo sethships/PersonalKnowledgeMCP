@@ -110,7 +110,7 @@ describe("OIDC Session Store", () => {
       const parsed = JSON.parse(content) as { sessions: Record<string, { sessionId: string }> };
 
       expect(parsed.sessions[session.sessionId]).toBeDefined();
-      expect(parsed.sessions[session.sessionId].sessionId).toBe(session.sessionId);
+      expect(parsed.sessions[session.sessionId]?.sessionId).toBe(session.sessionId);
     });
   });
 
@@ -296,7 +296,10 @@ describe("OIDC Session Store", () => {
       const parsed = JSON.parse(content) as {
         sessions: Record<string, { mappedScopes: string[] }>;
       };
-      parsed.sessions[session.sessionId].mappedScopes = ["admin"];
+      const sessionData = parsed.sessions[session.sessionId];
+      if (sessionData) {
+        sessionData.mappedScopes = ["admin"];
+      }
       await writeFile(store.getStoragePath(), JSON.stringify(parsed, null, 2));
 
       // Without invalidation, cache would return old value

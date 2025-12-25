@@ -131,7 +131,9 @@ describe("OIDC Middleware", () => {
       getSession: mock(() => Promise.resolve(createValidSession())),
       updateSession: mock(() => Promise.resolve()),
       deleteSession: mock(() => Promise.resolve()),
-      cleanExpiredSessions: mock(() => Promise.resolve()),
+      cleanExpiredSessions: mock(() => Promise.resolve(0)),
+      getStoragePath: mock(() => "/mock/path"),
+      invalidateCache: mock(() => {}),
       ...overrides,
     };
   }

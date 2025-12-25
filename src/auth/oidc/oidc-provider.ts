@@ -271,17 +271,25 @@ export class OidcProviderImpl implements OidcProvider {
       let userInfo: OidcUserInfo;
       try {
         const claims = tokens.claims();
+        const subClaim = claims?.sub;
+        if (!subClaim) {
+          throw new Error("No sub claim in token");
+        }
         const userInfoResponse = await client.fetchUserInfo(
           clientConfig,
           tokens.access_token,
-          claims?.sub
+          subClaim
         );
 
         userInfo = {
           sub: userInfoResponse.sub,
-          email: userInfoResponse.email,
-          name: userInfoResponse.name,
-          picture: userInfoResponse.picture,
+          email:
+            typeof userInfoResponse["email"] === "string" ? userInfoResponse["email"] : undefined,
+          name: typeof userInfoResponse["name"] === "string" ? userInfoResponse["name"] : undefined,
+          picture:
+            typeof userInfoResponse["picture"] === "string"
+              ? userInfoResponse["picture"]
+              : undefined,
         };
       } catch (error) {
         // If userinfo fails, try to get info from ID token claims
@@ -289,8 +297,8 @@ export class OidcProviderImpl implements OidcProvider {
         if (claims?.sub) {
           userInfo = {
             sub: claims.sub,
-            email: claims.email as string | undefined,
-            name: claims.name as string | undefined,
+            email: typeof claims["email"] === "string" ? claims["email"] : undefined,
+            name: typeof claims["name"] === "string" ? claims["name"] : undefined,
           };
           this.logger.warn(
             { err: error, sessionId },

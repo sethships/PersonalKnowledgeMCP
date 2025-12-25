@@ -69,7 +69,7 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       }
 
       // Get optional redirect URL from query parameter
-      const redirectTo = req.query.redirect_to;
+      const redirectTo = req.query["redirect_to"];
       let originalUrl: string | undefined;
       if (redirectTo && typeof redirectTo === "string") {
         // Validate the redirect URL to prevent open redirect vulnerabilities
