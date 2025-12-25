@@ -410,15 +410,33 @@ export class OidcProviderImpl implements OidcProvider {
       return session;
     } catch (error) {
       const durationMs = Math.round(performance.now() - startTime);
+
+      // Determine if error is retryable
+      // OAuth2 errors like invalid_grant (expired/revoked token) should NOT be retried
+      // These require re-authentication, not retry
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isAuthError =
+        errorMessage.includes("invalid_grant") ||
+        errorMessage.includes("invalid_token") ||
+        errorMessage.includes("expired") ||
+        errorMessage.includes("revoked");
+
+      const isRetryable = !isAuthError;
+
       this.logger.error(
-        { err: error, sessionId, metric: "oidc.refresh_ms", value: durationMs },
-        "Token refresh failed"
+        {
+          err: error,
+          sessionId,
+          metric: "oidc.refresh_ms",
+          value: durationMs,
+          isRetryable,
+        },
+        isRetryable
+          ? "Token refresh failed (transient error)"
+          : "Token refresh failed (re-auth required)"
       );
 
-      throw new OidcTokenRefreshError(
-        error instanceof Error ? error : undefined,
-        true // Retryable for transient errors
-      );
+      throw new OidcTokenRefreshError(error instanceof Error ? error : undefined, isRetryable);
     }
   }
 

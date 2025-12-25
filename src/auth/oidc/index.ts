@@ -58,6 +58,7 @@ export {
   OidcTokenRefreshError,
   OidcSessionNotFoundError,
   OidcUserInfoError,
+  OidcSessionVersionConflictError,
 } from "./oidc-errors.js";
 
 // Validation schemas
@@ -80,6 +81,7 @@ export { OidcSessionStoreImpl } from "./oidc-session-store.js";
 export {
   createOidcAuthMiddleware,
   sessionToTokenMetadata,
+  getOidcCookieOptions,
   OIDC_COOKIE_OPTIONS,
   type OidcAuthMiddlewareDeps,
 } from "./oidc-middleware.js";

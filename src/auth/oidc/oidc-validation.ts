@@ -78,6 +78,17 @@ export const OidcConfigSchema = z
       .boolean()
       .optional()
       .describe("Whether to set the Secure flag on OIDC session cookies"),
+
+    cookieName: z
+      .string()
+      .min(1, "Cookie name must not be empty")
+      .max(64, "Cookie name must not exceed 64 characters")
+      .regex(
+        /^[a-zA-Z0-9_-]+$/,
+        "Cookie name must only contain alphanumeric characters, hyphens, and underscores"
+      )
+      .default("pk_mcp_oidc_session")
+      .describe("Name of the OIDC session cookie"),
   })
   .refine(
     (data) => {

@@ -12,7 +12,7 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import type { Logger } from "pino";
 import type { OidcSession, OidcSessionStore, OidcSessionStoreFile } from "./oidc-types.js";
-import { OidcSessionStorageError } from "./oidc-errors.js";
+import { OidcSessionStorageError, OidcSessionVersionConflictError } from "./oidc-errors.js";
 import { OidcSessionStoreFileSchema } from "./oidc-validation.js";
 import { getComponentLogger } from "../../logging/index.js";
 
@@ -74,6 +74,11 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
   private readonly defaultSessionTtl: number;
 
   /**
+   * Automatic cleanup interval handle
+   */
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
    * Private constructor enforces singleton pattern
    *
    * @param dataPath - Base directory for data storage
@@ -133,7 +138,34 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
    * @internal
    */
   public static resetInstance(): void {
+    // Stop auto cleanup before resetting
+    if (OidcSessionStoreImpl.instance) {
+      OidcSessionStoreImpl.instance.stopAutoCleanup();
+    }
     OidcSessionStoreImpl.instance = null;
+  }
+
+  /**
+   * Get the singleton instance with auto-cleanup enabled
+   *
+   * Convenience method that returns the singleton and starts automatic
+   * session cleanup if not already running.
+   *
+   * @param dataPath - Optional data directory path
+   * @param sessionTtlSeconds - Default session TTL in seconds
+   * @param cleanupIntervalMs - Cleanup interval in milliseconds (default: 300000 = 5 minutes)
+   * @returns The singleton session store instance with auto-cleanup running
+   */
+  public static getInstanceWithAutoCleanup(
+    dataPath?: string,
+    sessionTtlSeconds: number = 3600,
+    cleanupIntervalMs: number = 300000
+  ): OidcSessionStoreImpl {
+    const instance = OidcSessionStoreImpl.getInstance(dataPath, sessionTtlSeconds);
+    if (!instance.isAutoCleanupRunning()) {
+      instance.startAutoCleanup(cleanupIntervalMs);
+    }
+    return instance;
   }
 
   /**
@@ -173,6 +205,7 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
       expiresAt: expiresAt.toISOString(),
       mappedScopes: [],
       mappedInstanceAccess: [],
+      version: 1, // Initial version for optimistic locking
     };
 
     // Load existing sessions and add new one
@@ -181,7 +214,7 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
     await this.saveSessions(sessions);
 
     this.logger.debug(
-      { sessionId: session.sessionId, expiresAt: session.expiresAt },
+      { sessionId: session.sessionId, expiresAt: session.expiresAt, version: session.version },
       "Created new OIDC session"
     );
 
@@ -225,12 +258,17 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
   /**
    * Update an existing session
    *
+   * Uses optimistic locking to detect concurrent modifications.
+   * If the session version doesn't match, throws OidcSessionVersionConflictError.
+   *
    * @param session - Session to update (must have valid sessionId)
+   * @throws OidcSessionVersionConflictError if version mismatch detected
    */
   async updateSession(session: OidcSession): Promise<void> {
     const sessions = await this.loadSessions();
+    const existingSession = sessions.get(session.sessionId);
 
-    if (!sessions.has(session.sessionId)) {
+    if (!existingSession) {
       throw new OidcSessionStorageError(
         "write",
         `Session not found: ${session.sessionId}`,
@@ -239,10 +277,39 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
       );
     }
 
-    sessions.set(session.sessionId, session);
+    // Check optimistic locking version
+    const existingVersion = existingSession.version ?? 0;
+    const incomingVersion = session.version ?? 0;
+
+    if (incomingVersion !== existingVersion) {
+      this.logger.warn(
+        {
+          sessionId: session.sessionId,
+          expectedVersion: incomingVersion,
+          actualVersion: existingVersion,
+        },
+        "Session version conflict detected"
+      );
+      throw new OidcSessionVersionConflictError(
+        session.sessionId,
+        incomingVersion,
+        existingVersion
+      );
+    }
+
+    // Increment version for next update
+    const updatedSession: OidcSession = {
+      ...session,
+      version: existingVersion + 1,
+    };
+
+    sessions.set(session.sessionId, updatedSession);
     await this.saveSessions(sessions);
 
-    this.logger.debug({ sessionId: session.sessionId }, "Updated OIDC session");
+    this.logger.debug(
+      { sessionId: session.sessionId, version: updatedSession.version },
+      "Updated OIDC session"
+    );
   }
 
   /**
@@ -288,6 +355,57 @@ export class OidcSessionStoreImpl implements OidcSessionStore {
     }
 
     return cleanedCount;
+  }
+
+  /**
+   * Start automatic session cleanup
+   *
+   * Schedules periodic cleanup of expired sessions.
+   * Default interval is 5 minutes (300000ms).
+   *
+   * @param intervalMs - Cleanup interval in milliseconds (default: 300000 = 5 minutes)
+   */
+  startAutoCleanup(intervalMs: number = 300000): void {
+    if (this.cleanupInterval) {
+      this.logger.debug("Automatic session cleanup already running");
+      return;
+    }
+
+    this.cleanupInterval = setInterval(() => {
+      void this.cleanExpiredSessions().catch((error: unknown) => {
+        this.logger.error({ err: error }, "Automatic session cleanup failed");
+      });
+    }, intervalMs);
+
+    // Prevent interval from keeping process alive if it's the only thing running
+    this.cleanupInterval.unref();
+
+    this.logger.info(
+      { intervalMs, intervalMinutes: Math.round(intervalMs / 60000) },
+      "Started automatic session cleanup"
+    );
+  }
+
+  /**
+   * Stop automatic session cleanup
+   *
+   * Cancels the periodic cleanup interval.
+   */
+  stopAutoCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      this.logger.info("Stopped automatic session cleanup");
+    }
+  }
+
+  /**
+   * Check if automatic cleanup is running
+   *
+   * @returns True if cleanup interval is active
+   */
+  isAutoCleanupRunning(): boolean {
+    return this.cleanupInterval !== null;
   }
 
   /**

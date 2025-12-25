@@ -122,6 +122,14 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
     })
   );
 
+  // Apply rate limiting to OIDC routes BEFORE mounting them
+  // This prevents brute force attacks on authentication endpoints
+  const rateLimitConfig = deps.rateLimitConfig || loadRateLimitConfig();
+  const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig);
+  if (rateLimitMiddleware) {
+    app.use("/api/v1/oidc", rateLimitMiddleware);
+  }
+
   // OIDC routes (UNAUTHENTICATED - handles OAuth callbacks)
   // Must be before auth middleware to handle the callback flow
   if (deps.oidcProvider && deps.oidcSessionStore) {
@@ -156,8 +164,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   // Apply rate limiting to /api/v1 routes (after auth so we can use per-token limits)
   // Rate limiting is applied after authentication so we can use token hash for per-token limits
   // and check for admin scope to enable bypass
-  const rateLimitConfig = deps.rateLimitConfig || loadRateLimitConfig();
-  const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig);
+  // Note: rateLimitConfig and rateLimitMiddleware already created above for OIDC routes
   if (rateLimitMiddleware) {
     app.use("/api/v1", rateLimitMiddleware);
   }

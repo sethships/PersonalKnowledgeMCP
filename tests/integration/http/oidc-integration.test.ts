@@ -187,6 +187,7 @@ describe("OIDC Integration Tests", () => {
     sessionTtlSeconds: 3600,
     refreshBeforeExpirySeconds: 300,
     cookieSecure: false, // For testing over HTTP
+    cookieName: "pk_mcp_oidc_session",
   };
 
   beforeAll(async () => {

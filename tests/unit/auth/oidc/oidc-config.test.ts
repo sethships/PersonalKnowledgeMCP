@@ -420,6 +420,7 @@ describe("OIDC Configuration", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       expect(isOidcConfigComplete(config)).toBe(true);
@@ -435,6 +436,7 @@ describe("OIDC Configuration", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       expect(isOidcConfigComplete(config)).toBe(false);
@@ -450,6 +452,7 @@ describe("OIDC Configuration", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       expect(isOidcConfigComplete(config)).toBe(false);
@@ -465,6 +468,7 @@ describe("OIDC Configuration", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       expect(isOidcConfigComplete(config)).toBe(false);
@@ -480,6 +484,7 @@ describe("OIDC Configuration", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       expect(isOidcConfigComplete(config)).toBe(false);

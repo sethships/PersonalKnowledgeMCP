@@ -11,7 +11,6 @@ import type { Request, Response, NextFunction } from "express";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../../logging/index.js";
 import type { OidcProvider, OidcSessionStore } from "../../auth/oidc/oidc-types.js";
-import { OIDC_SESSION_COOKIE } from "../../auth/oidc/oidc-types.js";
 import { getOidcCookieOptions } from "../../auth/oidc/oidc-middleware.js";
 import { badRequest, unauthorized } from "../middleware/error-handler.js";
 
@@ -75,20 +74,30 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
         // Validate the redirect URL to prevent open redirect vulnerabilities
         try {
           const url = new URL(redirectTo);
-          // Only allow same-origin redirects or relative paths
-          const requestHost = req.get("host") || "";
-          if (url.host === requestHost || redirectTo.startsWith("/")) {
+          // Only allow same-origin redirects (compare full origin, not just host)
+          const requestOrigin = `${req.protocol}://${req.get("host") || ""}`;
+          const redirectOrigin = url.origin;
+          if (redirectOrigin === requestOrigin) {
             originalUrl = redirectTo;
           } else {
             getLogger().warn(
-              { redirectTo, requestHost },
+              { redirectTo, requestOrigin, redirectOrigin },
               "Ignoring cross-origin redirect_to parameter"
             );
           }
         } catch {
-          // If it's not a valid URL, check if it's a relative path
-          if (redirectTo.startsWith("/")) {
+          // If it's not a valid URL, check if it's a safe relative path
+          // Block: protocol-relative URLs (//evil.com), embedded credentials (@),
+          // and ensure it starts with /
+          const isSafeRelativePath =
+            redirectTo.startsWith("/") &&
+            !redirectTo.startsWith("//") &&
+            !redirectTo.includes("@") &&
+            !redirectTo.includes("\\"); // Block backslash URL manipulation
+          if (isSafeRelativePath) {
             originalUrl = redirectTo;
+          } else {
+            getLogger().warn({ redirectTo }, "Ignoring unsafe redirect_to parameter");
           }
         }
       }
@@ -98,7 +107,7 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
 
       // Set session cookie
       const config = oidcProvider.getConfig();
-      res.cookie(OIDC_SESSION_COOKIE, session.sessionId, {
+      res.cookie(config.cookieName, session.sessionId, {
         ...getOidcCookieOptions(config),
         maxAge: config.sessionTtlSeconds * 1000,
       });
@@ -153,8 +162,9 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       }
 
       // Get session ID from cookie
+      const config = oidcProvider.getConfig();
       const cookies = req.cookies as Record<string, string> | undefined;
-      const sessionId = cookies?.[OIDC_SESSION_COOKIE];
+      const sessionId = cookies?.[config.cookieName];
       if (!sessionId || typeof sessionId !== "string") {
         throw badRequest(
           "Missing session cookie - please start authorization flow again",
@@ -169,9 +179,8 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       // Handle callback (this clears authFlowState)
       const session = await oidcProvider.handleCallback(sessionId, code, state);
 
-      // Update cookie with new expiry
-      const config = oidcProvider.getConfig();
-      res.cookie(OIDC_SESSION_COOKIE, session.sessionId, {
+      // Update cookie with new expiry (reuse config from above)
+      res.cookie(config.cookieName, session.sessionId, {
         ...getOidcCookieOptions(config),
         maxAge: config.sessionTtlSeconds * 1000,
       });
@@ -197,7 +206,8 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       }
     } catch (error) {
       // Clear cookie on error
-      res.clearCookie(OIDC_SESSION_COOKIE, getOidcCookieOptions(oidcProvider.getConfig()));
+      const errorConfig = oidcProvider.getConfig();
+      res.clearCookie(errorConfig.cookieName, getOidcCookieOptions(errorConfig));
       next(error);
     }
   });
@@ -209,8 +219,9 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
    */
   router.post("/logout", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const config = oidcProvider.getConfig();
       const cookies = req.cookies as Record<string, string> | undefined;
-      const sessionId = cookies?.[OIDC_SESSION_COOKIE];
+      const sessionId = cookies?.[config.cookieName];
 
       if (sessionId && typeof sessionId === "string") {
         await oidcProvider.logout(sessionId);
@@ -218,8 +229,8 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       }
 
       // Clear cookie
-      const cookieOptions = getOidcCookieOptions(oidcProvider.getConfig());
-      res.clearCookie(OIDC_SESSION_COOKIE, cookieOptions);
+      const cookieOptions = getOidcCookieOptions(config);
+      res.clearCookie(config.cookieName, cookieOptions);
 
       res.json({
         success: true,
@@ -227,7 +238,8 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       });
     } catch (error) {
       // Still clear cookie even on error
-      res.clearCookie(OIDC_SESSION_COOKIE, getOidcCookieOptions(oidcProvider.getConfig()));
+      const errorConfig = oidcProvider.getConfig();
+      res.clearCookie(errorConfig.cookieName, getOidcCookieOptions(errorConfig));
       next(error);
     }
   });
@@ -240,8 +252,9 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
    */
   router.get("/userinfo", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const config = oidcProvider.getConfig();
       const cookies = req.cookies as Record<string, string> | undefined;
-      const sessionId = cookies?.[OIDC_SESSION_COOKIE];
+      const sessionId = cookies?.[config.cookieName];
 
       if (!sessionId || typeof sessionId !== "string") {
         throw unauthorized("No active OIDC session", "NO_SESSION");
@@ -268,8 +281,9 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
    */
   router.post("/refresh", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const config = oidcProvider.getConfig();
       const cookies = req.cookies as Record<string, string> | undefined;
-      const sessionId = cookies?.[OIDC_SESSION_COOKIE];
+      const sessionId = cookies?.[config.cookieName];
 
       if (!sessionId || typeof sessionId !== "string") {
         throw unauthorized("No active OIDC session", "NO_SESSION");
@@ -278,8 +292,7 @@ export function createOidcRouter(deps: OidcRouterDeps): Router {
       const session = await oidcProvider.refreshToken(sessionId);
 
       // Update cookie with new expiry
-      const config = oidcProvider.getConfig();
-      res.cookie(OIDC_SESSION_COOKIE, session.sessionId, {
+      res.cookie(config.cookieName, session.sessionId, {
         ...getOidcCookieOptions(config),
         maxAge: config.sessionTtlSeconds * 1000,
       });

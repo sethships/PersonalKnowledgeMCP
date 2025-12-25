@@ -184,3 +184,22 @@ export class OidcSessionStorageError extends OidcError {
     this.cause = cause;
   }
 }
+
+/**
+ * OIDC session version conflict (optimistic locking failure)
+ *
+ * Retryable - caller should re-read session and retry the update.
+ */
+export class OidcSessionVersionConflictError extends OidcError {
+  constructor(
+    public readonly sessionId: string,
+    public readonly expectedVersion: number,
+    public readonly actualVersion: number
+  ) {
+    super(
+      `Session version conflict: expected ${expectedVersion}, found ${actualVersion}`,
+      "OIDC_SESSION_VERSION_CONFLICT",
+      true // Retryable - caller should re-read and retry
+    );
+  }
+}

@@ -11,7 +11,6 @@ import type { Request, Response, NextFunction } from "express";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../../logging/index.js";
 import type { OidcConfig, OidcProvider, OidcSession, OidcSessionStore } from "./oidc-types.js";
-import { OIDC_SESSION_COOKIE } from "./oidc-types.js";
 import type { TokenMetadata } from "../types.js";
 
 /**
@@ -115,9 +114,12 @@ export function createOidcAuthMiddleware(deps: OidcAuthMiddlewareDeps) {
       return next();
     }
 
+    // Get config for cookie name
+    const config = oidcProvider.getConfig();
+
     // Check for session cookie
     const cookies = req.cookies as Record<string, string> | undefined;
-    const sessionId = cookies?.[OIDC_SESSION_COOKIE];
+    const sessionId = cookies?.[config.cookieName];
     if (!sessionId || typeof sessionId !== "string") {
       // No OIDC session, fall through to bearer token auth
       return next();
@@ -128,8 +130,7 @@ export function createOidcAuthMiddleware(deps: OidcAuthMiddlewareDeps) {
 
       if (!session) {
         // Session not found or expired, clear cookie and fall through
-        const config = oidcProvider.getConfig();
-        res.clearCookie(OIDC_SESSION_COOKIE, getOidcCookieOptions(config));
+        res.clearCookie(config.cookieName, getOidcCookieOptions(config));
         return next();
       }
 
@@ -139,8 +140,7 @@ export function createOidcAuthMiddleware(deps: OidcAuthMiddlewareDeps) {
         return next();
       }
 
-      // Check if token needs refresh
-      const config = oidcProvider.getConfig();
+      // Check if token needs refresh (reuse config from above)
       const expiresAt = new Date(session.tokens.tokenExpiresAt);
       const refreshThreshold = new Date(Date.now() + config.refreshBeforeExpirySeconds * 1000);
 
@@ -169,8 +169,7 @@ export function createOidcAuthMiddleware(deps: OidcAuthMiddlewareDeps) {
     } catch (error) {
       getLogger().error({ err: error }, "OIDC session validation error");
       // Clear potentially invalid cookie and fall through
-      const config = oidcProvider.getConfig();
-      res.clearCookie(OIDC_SESSION_COOKIE, getOidcCookieOptions(config));
+      res.clearCookie(config.cookieName, getOidcCookieOptions(config));
       next();
     }
   };

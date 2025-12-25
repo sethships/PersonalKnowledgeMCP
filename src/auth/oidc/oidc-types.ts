@@ -47,6 +47,14 @@ export interface OidcConfig {
    * - undefined: Auto-detect based on NODE_ENV (secure if production)
    */
   cookieSecure?: boolean;
+
+  /**
+   * Name of the OIDC session cookie.
+   * Default: "pk_mcp_oidc_session"
+   *
+   * Customize to avoid conflicts when multiple instances share the same domain.
+   */
+  cookieName: string;
 }
 
 /**
@@ -127,6 +135,12 @@ export interface OidcSession {
 
   /** Mapped instance access levels for this user */
   mappedInstanceAccess: InstanceAccess[];
+
+  /**
+   * Optimistic locking version number
+   * Incremented on each update to detect concurrent modifications
+   */
+  version?: number;
 }
 
 /**
@@ -184,6 +198,29 @@ export interface OidcSessionStore {
    * Used after external modifications or for testing.
    */
   invalidateCache(): void;
+
+  /**
+   * Start automatic session cleanup
+   *
+   * Schedules periodic cleanup of expired sessions.
+   *
+   * @param intervalMs - Cleanup interval in milliseconds (default: 300000 = 5 minutes)
+   */
+  startAutoCleanup(intervalMs?: number): void;
+
+  /**
+   * Stop automatic session cleanup
+   *
+   * Cancels the periodic cleanup interval.
+   */
+  stopAutoCleanup(): void;
+
+  /**
+   * Check if automatic cleanup is running
+   *
+   * @returns True if cleanup interval is active
+   */
+  isAutoCleanupRunning(): boolean;
 }
 
 /**
@@ -263,6 +300,9 @@ export interface OidcSessionStoreFile {
 }
 
 /**
- * OIDC session cookie name
+ * Default OIDC session cookie name
+ *
+ * This is the default value used when OIDC_COOKIE_NAME is not configured.
+ * Prefer using config.cookieName for runtime cookie name.
  */
 export const OIDC_SESSION_COOKIE = "pk_mcp_oidc_session";

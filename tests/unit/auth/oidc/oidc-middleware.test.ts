@@ -19,8 +19,10 @@ import type {
   OidcSessionStore,
   OidcConfig,
 } from "../../../../src/auth/oidc/oidc-types.js";
-import { OIDC_SESSION_COOKIE } from "../../../../src/auth/oidc/oidc-types.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
+
+/** Default cookie name used in tests - matches the default config value */
+const TEST_OIDC_COOKIE_NAME = "pk_mcp_oidc_session";
 
 describe("OIDC Middleware", () => {
   beforeAll(() => {
@@ -72,6 +74,7 @@ describe("OIDC Middleware", () => {
       defaultInstanceAccess: ["public"],
       sessionTtlSeconds: 3600,
       refreshBeforeExpirySeconds: 300,
+      cookieName: "pk_mcp_oidc_session",
       ...overrides,
     };
   }
@@ -134,6 +137,9 @@ describe("OIDC Middleware", () => {
       cleanExpiredSessions: mock(() => Promise.resolve(0)),
       getStoragePath: mock(() => "/mock/path"),
       invalidateCache: mock(() => {}),
+      startAutoCleanup: mock(() => {}),
+      stopAutoCleanup: mock(() => {}),
+      isAutoCleanupRunning: mock(() => false),
       ...overrides,
     };
   }
@@ -183,7 +189,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "test-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "test-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -222,7 +228,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "non-existent-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "non-existent-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -230,7 +236,10 @@ describe("OIDC Middleware", () => {
       await middleware(req, res, next);
 
       expect(next).toHaveBeenCalledTimes(1);
-      expect(res.clearCookie).toHaveBeenCalledWith(OIDC_SESSION_COOKIE, OIDC_COOKIE_OPTIONS);
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        TEST_OIDC_COOKIE_NAME,
+        expect.objectContaining({ httpOnly: true })
+      );
     });
 
     it("should fall through when session exists but auth not complete (no user)", async () => {
@@ -243,7 +252,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "incomplete-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "incomplete-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -264,7 +273,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "incomplete-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "incomplete-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -285,7 +294,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "valid-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "valid-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -320,7 +329,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "near-expiry-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "near-expiry-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -353,7 +362,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "near-expiry-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "near-expiry-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -386,7 +395,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "no-refresh-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "no-refresh-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -406,7 +415,7 @@ describe("OIDC Middleware", () => {
       const middleware = createOidcAuthMiddleware({ oidcProvider, sessionStore });
 
       const req = createMockRequest({
-        cookies: { [OIDC_SESSION_COOKIE]: "error-session" },
+        cookies: { [TEST_OIDC_COOKIE_NAME]: "error-session" },
       });
       const res = createMockResponse();
       const next = mock(() => {});
@@ -414,7 +423,10 @@ describe("OIDC Middleware", () => {
       await middleware(req, res, next);
 
       expect(next).toHaveBeenCalledTimes(1);
-      expect(res.clearCookie).toHaveBeenCalledWith(OIDC_SESSION_COOKIE, OIDC_COOKIE_OPTIONS);
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        TEST_OIDC_COOKIE_NAME,
+        expect.objectContaining({ httpOnly: true })
+      );
       expect(req.tokenMetadata).toBeUndefined();
     });
   });

@@ -47,6 +47,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -65,6 +66,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -85,6 +87,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["work"],
         sessionTtlSeconds: 7200,
         refreshBeforeExpirySeconds: 600,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -102,6 +105,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -121,6 +125,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -141,6 +146,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -161,6 +167,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -184,6 +191,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -202,6 +210,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -221,6 +230,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -254,6 +264,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -276,6 +287,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);
@@ -297,6 +309,7 @@ describe("OIDC Provider", () => {
         defaultInstanceAccess: ["public"],
         sessionTtlSeconds: 3600,
         refreshBeforeExpirySeconds: 300,
+        cookieName: "pk_mcp_oidc_session",
       };
 
       const provider = new OidcProviderImpl(config, sessionStore);

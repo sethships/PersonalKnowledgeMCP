@@ -38,6 +38,7 @@ const ENV_KEYS = {
   SESSION_TTL: "OIDC_SESSION_TTL_SECONDS",
   REFRESH_BEFORE_EXPIRY: "OIDC_REFRESH_BEFORE_EXPIRY_SECONDS",
   COOKIE_SECURE: "OIDC_COOKIE_SECURE",
+  COOKIE_NAME: "OIDC_COOKIE_NAME",
 } as const;
 
 /**
@@ -49,6 +50,7 @@ const DEFAULTS = {
   defaultInstanceAccess: ["public"] as InstanceAccess[],
   sessionTtlSeconds: 3600, // 1 hour
   refreshBeforeExpirySeconds: 300, // 5 minutes
+  cookieName: "pk_mcp_oidc_session",
 } as const;
 
 /**
@@ -199,6 +201,7 @@ export function loadOidcConfig(): OidcConfig {
       ENV_KEYS.REFRESH_BEFORE_EXPIRY
     ),
     cookieSecure: parseCookieSecure(env[ENV_KEYS.COOKIE_SECURE]),
+    cookieName: env[ENV_KEYS.COOKIE_NAME]?.trim() || DEFAULTS.cookieName,
   };
 
   // Validate configuration
@@ -246,6 +249,7 @@ export function createDisabledOidcConfig(): OidcConfig {
     defaultInstanceAccess: DEFAULTS.defaultInstanceAccess,
     sessionTtlSeconds: DEFAULTS.sessionTtlSeconds,
     refreshBeforeExpirySeconds: DEFAULTS.refreshBeforeExpirySeconds,
+    cookieName: DEFAULTS.cookieName,
   };
 }
 
