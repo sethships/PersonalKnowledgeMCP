@@ -1,0 +1,25 @@
+# Personal Knowledge MCP - ChromaDB ConfigMap
+#
+# Configuration for ChromaDB vector database.
+# Matches settings from docker-compose.yml for consistency.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chromadb-config
+  labels:
+    app.kubernetes.io/component: chromadb
+data:
+  # Enable persistent storage
+  IS_PERSISTENT: "TRUE"
+
+  # Disable anonymous telemetry
+  ANONYMIZED_TELEMETRY: "FALSE"
+
+  # Disable reset endpoint for production safety
+  # Set to TRUE only for development/testing
+  ALLOW_RESET: "FALSE"
+
+  # Authentication configuration (enabled when CHROMA_SERVER_AUTHN_CREDENTIALS is set)
+  # Token auth provider is conditionally enabled via environment variable
+  CHROMA_SERVER_AUTHN_PROVIDER: "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
+  CHROMA_AUTH_TOKEN_TRANSPORT_HEADER: "Authorization"

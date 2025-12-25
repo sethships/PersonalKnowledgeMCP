@@ -1,0 +1,57 @@
+# Resource limits patch for local development
+#
+# Reduces resource requests and limits for resource-constrained environments
+
+# MCP Service resources
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pk-mcp-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: mcp-service
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+# ChromaDB resources
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chromadb
+spec:
+  template:
+    spec:
+      containers:
+        - name: chromadb
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+---
+# PostgreSQL resources
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

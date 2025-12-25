@@ -1,0 +1,51 @@
+# Personal Knowledge MCP - Base Kustomization
+#
+# This is the base configuration that all overlays build upon.
+# Apply with: kubectl apply -k kubernetes/overlays/local/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace for all resources
+namespace: pk-mcp
+
+# Common labels applied to all resources
+labels:
+  - pairs:
+      app.kubernetes.io/name: personal-knowledge-mcp
+      app.kubernetes.io/part-of: pk-mcp
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+# Resources to include
+resources:
+  # Namespace
+  - namespace.yaml
+
+  # MCP Service
+  - mcp-service/deployment.yaml
+  - mcp-service/service.yaml
+  - mcp-service/configmap.yaml
+  - mcp-service/secret.yaml
+  - mcp-service/pdb.yaml
+
+  # ChromaDB Vector Database
+  - chromadb/statefulset.yaml
+  - chromadb/service.yaml
+  - chromadb/configmap.yaml
+
+  # PostgreSQL Document Store
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - postgres/configmap.yaml
+
+  # Network Policies
+  - network-policies/default-deny.yaml
+  - network-policies/allow-mcp-to-chromadb.yaml
+  - network-policies/allow-mcp-to-postgres.yaml
+  - network-policies/allow-ingress-to-mcp.yaml
+
+  # Ingress
+  - ingress/ingress.yaml
+
+# Note: HPA is optional and not included in base.
+# To enable, add to overlay: resources: [../../base/mcp-service/hpa.yaml]

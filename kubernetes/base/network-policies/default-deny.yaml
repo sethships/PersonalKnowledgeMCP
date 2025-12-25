@@ -1,0 +1,50 @@
+# Personal Knowledge MCP - Default Deny Network Policy
+#
+# Denies all ingress traffic by default.
+# Specific policies whitelist allowed connections.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {} # Applies to all pods in namespace
+  policyTypes:
+    - Ingress
+  # No ingress rules = deny all ingress by default
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  labels:
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector: {} # Applies to all pods
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS queries
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow external HTTPS (for OpenAI API, GitHub API)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

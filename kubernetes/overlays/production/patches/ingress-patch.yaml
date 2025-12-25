@@ -1,0 +1,38 @@
+# Ingress patch for production
+#
+# Enables TLS and production hostname
+# Update the host and TLS settings for your domain
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pk-mcp-ingress
+  annotations:
+    # Force HTTPS redirect
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Use cert-manager for automatic TLS (if installed)
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pk-mcp.example.com
+      secretName: pk-mcp-tls
+  rules:
+    - host: pk-mcp.example.com
+      http:
+        paths:
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: pk-mcp-service
+                port:
+                  number: 3001

@@ -1,0 +1,41 @@
+# Storage class patch for production
+#
+# Uses default cloud storage class with production-sized volumes
+# Adjust storageClassName for your cloud provider:
+#   - AWS: gp3, gp2
+#   - GCP: standard, premium-rwo
+#   - Azure: managed-premium, managed-csi
+
+# ChromaDB storage class
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chromadb
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: standard
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Gi
+---
+# PostgreSQL storage class
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: standard
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi

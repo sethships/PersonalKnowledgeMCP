@@ -1,0 +1,15 @@
+# Personal Knowledge MCP - Pod Disruption Budget
+#
+# Ensures at least one MCP service pod is always available during
+# voluntary disruptions (node drains, upgrades, etc.)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pk-mcp-service-pdb
+  labels:
+    app.kubernetes.io/component: mcp-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mcp-service
