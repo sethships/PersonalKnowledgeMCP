@@ -171,6 +171,7 @@ Planned security improvements:
 
 ## Related Documentation
 
+- [Microsoft 365 (Entra ID) Integration Guide](./microsoft365-integration.md)
 - [Multi-Client Configuration](../client-configuration.md)
 - [Authentication Overview](../MCP_INTEGRATION_GUIDE.md)
 - [Rate Limiting Configuration](../troubleshooting.md)
