@@ -24,3 +24,5 @@ export {
   stopStreamableSessionCleanup,
   type StreamableHttpRouteDependencies,
 } from "./streamable-http.js";
+
+export { createOidcRouter, type OidcRouterDeps } from "./oidc.js";

@@ -93,3 +93,6 @@ export type {
   ScopeMiddlewareFactory,
   InstanceMiddlewareFactory,
 } from "./middleware-types.js";
+
+// OIDC Authentication (re-export entire module)
+export * as oidc from "./oidc/index.js";
