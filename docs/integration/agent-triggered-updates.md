@@ -124,7 +124,7 @@ bun run --cwd /path/to/PersonalKnowledgeMCP cli update <repository-name>
 # Update a specific repository
 bun run cli update my-project
 
-# Force full re-index (instead of incremental)
+# Force full re-index (fetches latest from remote, then reindexes completely)
 bun run cli update my-project --force
 
 # Update all indexed repositories

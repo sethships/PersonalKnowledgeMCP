@@ -208,6 +208,7 @@ export class IngestionService {
 
       const cloneResult = await this.repositoryCloner.clone(url, {
         branch: options.branch,
+        fetchLatest: options.force, // Fetch latest when force reindexing
       });
       clonePath = cloneResult.path; // Store for cleanup if needed
 

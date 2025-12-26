@@ -21,6 +21,16 @@ export class MockSimpleGit {
   private lastCloneOptions?: string[];
   private cloneDelay: number = 0;
 
+  // Fetch/reset tracking for fetchLatest tests
+  private shouldFailFetch: boolean = false;
+  private fetchError?: Error;
+  private fetchCallCount: number = 0;
+  private lastFetchArgs?: string[];
+  private resetCallCount: number = 0;
+  private lastResetArgs?: string[];
+  private remoteCallCount: number = 0;
+  private lastRemoteArgs?: string[];
+
   /**
    * Configure the mock to fail on next clone operation.
    *
@@ -103,9 +113,105 @@ export class MockSimpleGit {
   }
 
   /**
+   * Configure the mock to fail on fetch operation.
+   *
+   * @param error - Error to throw
+   */
+  setShouldFailFetch(error: Error): void {
+    this.shouldFailFetch = true;
+    this.fetchError = error;
+  }
+
+  /**
+   * Mock fetch implementation.
+   *
+   * @param args - Fetch arguments
+   */
+  async fetch(args: string[]): Promise<void> {
+    this.fetchCallCount++;
+    this.lastFetchArgs = args;
+
+    if (this.shouldFailFetch && this.fetchError) {
+      throw this.fetchError;
+    }
+  }
+
+  /**
+   * Mock reset implementation.
+   *
+   * @param args - Reset arguments
+   */
+  async reset(args: string[]): Promise<void> {
+    this.resetCallCount++;
+    this.lastResetArgs = args;
+  }
+
+  /**
+   * Mock remote implementation.
+   *
+   * @param args - Remote arguments
+   */
+  async remote(args: string[]): Promise<void> {
+    this.remoteCallCount++;
+    this.lastRemoteArgs = args;
+  }
+
+  /**
+   * Mock revparse implementation.
+   *
+   * @param _args - Args (unused in mock)
+   * @returns Mock branch name
+   */
+  async revparse(_args: string[]): Promise<string> {
+    return "main";
+  }
+
+  /**
+   * Get the number of times fetch was called.
+   */
+  getFetchCallCount(): number {
+    return this.fetchCallCount;
+  }
+
+  /**
+   * Get the last args passed to fetch.
+   */
+  getLastFetchArgs(): string[] | undefined {
+    return this.lastFetchArgs;
+  }
+
+  /**
+   * Get the number of times reset was called.
+   */
+  getResetCallCount(): number {
+    return this.resetCallCount;
+  }
+
+  /**
+   * Get the last args passed to reset.
+   */
+  getLastResetArgs(): string[] | undefined {
+    return this.lastResetArgs;
+  }
+
+  /**
+   * Get the number of times remote was called.
+   */
+  getRemoteCallCount(): number {
+    return this.remoteCallCount;
+  }
+
+  /**
+   * Get the last args passed to remote.
+   */
+  getLastRemoteArgs(): string[] | undefined {
+    return this.lastRemoteArgs;
+  }
+
+  /**
    * Reset all tracking state.
    */
-  reset(): void {
+  resetState(): void {
     this.cloneCallCount = 0;
     this.lastCloneUrl = undefined;
     this.lastClonePath = undefined;
@@ -113,6 +219,15 @@ export class MockSimpleGit {
     this.shouldFailClone = false;
     this.failureError = undefined;
     this.cloneDelay = 0;
+    // Reset fetch/reset tracking
+    this.shouldFailFetch = false;
+    this.fetchError = undefined;
+    this.fetchCallCount = 0;
+    this.lastFetchArgs = undefined;
+    this.resetCallCount = 0;
+    this.lastResetArgs = undefined;
+    this.remoteCallCount = 0;
+    this.lastRemoteArgs = undefined;
   }
 }
 
@@ -145,4 +260,5 @@ export const MOCK_GIT_ERRORS = {
   PERMISSION_DENIED: new MockGitError(
     "fatal: could not create work tree dir 'repo': Permission denied"
   ),
+  FETCH_FAILED: new MockGitError("fatal: couldn't find remote ref main"),
 } as const;

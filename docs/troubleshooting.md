@@ -1153,8 +1153,13 @@ bun run cli status
 **Solution:**
 ```bash
 # Force full re-index to ensure consistency
+# This fetches the latest changes from the remote repository and performs a complete re-index
 bun run cli update <repository-name> --force
 ```
+
+> **Note:** The `--force` flag fetches the latest changes from the remote repository
+> before reindexing, ensuring your search results reflect the current state of the
+> remote repository.
 
 ### Common Error Resolution Summary
 
