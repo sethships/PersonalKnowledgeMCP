@@ -15,6 +15,7 @@ import {
   CloneError,
   AuthenticationError,
   NetworkError,
+  FetchError,
   isRetryableCloneError,
 } from "./errors.js";
 import {
@@ -97,6 +98,18 @@ export class RepositoryCloner {
   }
 
   /**
+   * Creates a SimpleGit instance for a specific repository path.
+   *
+   * This method exists to allow mocking in tests.
+   *
+   * @param repoPath - Path to the repository
+   * @returns SimpleGit instance configured for the path
+   */
+  protected createGitForPath(repoPath: string): SimpleGit {
+    return simpleGit(repoPath);
+  }
+
+  /**
    * Clone a GitHub repository.
    *
    * @param url - GitHub repository URL (https://github.com/user/repo or https://github.com/user/repo.git)
@@ -105,6 +118,7 @@ export class RepositoryCloner {
    * @throws {ValidationError} If the URL is invalid
    * @throws {CloneError} If the clone operation fails
    * @throws {AuthenticationError} If authentication fails for a private repository
+   * @throws {FetchError} If fetching latest changes fails (when fetchLatest is true)
    */
   async clone(url: string, options: CloneOptions = {}): Promise<CloneResult> {
     const startTime = Date.now();
@@ -122,6 +136,7 @@ export class RepositoryCloner {
     const shallow = options.shallow !== false; // Default: true
     const fresh = options.fresh === true; // Default: false
     const branch = options.branch;
+    const fetchLatest = options.fetchLatest === true; // Default: false
 
     this.logger.info(
       {
@@ -131,6 +146,7 @@ export class RepositoryCloner {
         shallow,
         fresh,
         branch,
+        fetchLatest,
       },
       "Starting clone operation"
     );
@@ -145,6 +161,38 @@ export class RepositoryCloner {
     if (exists && !fresh) {
       // Repository already exists - detect current branch
       const actualBranch = branch || (await this.detectCurrentBranch(targetPath));
+
+      // If fetchLatest is requested, update the local clone to match remote
+      if (fetchLatest) {
+        this.logger.info(
+          {
+            targetPath,
+            repoName,
+            branch: actualBranch,
+          },
+          "Fetching latest changes from remote"
+        );
+
+        await this.updateToLatest(targetPath, actualBranch, url);
+
+        const durationMs = Date.now() - startTime;
+        this.logger.info(
+          {
+            metric: "repository.fetch_duration_ms",
+            value: durationMs,
+            repoName,
+            targetPath,
+            branch: actualBranch,
+          },
+          "Repository updated to latest"
+        );
+
+        return {
+          path: targetPath,
+          name: repoName,
+          branch: actualBranch,
+        };
+      }
 
       this.logger.info(
         {
@@ -290,6 +338,84 @@ export class RepositoryCloner {
         `Failed to clone repository: ${sanitizedMessage}`,
         this.sanitizeUrl(url),
         targetPath,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Update an existing local repository to match the remote state.
+   *
+   * Performs git fetch followed by git reset --hard to ensure the local
+   * clone matches the remote HEAD. This is used for force reindex operations
+   * to ensure the latest content is indexed.
+   *
+   * @param repoPath - Path to the local repository
+   * @param branch - Branch to update
+   * @param url - Original repository URL (for authentication)
+   * @throws {FetchError} If the fetch or reset operation fails
+   */
+  private async updateToLatest(repoPath: string, branch: string, url: string): Promise<void> {
+    const git = this.createGitForPath(repoPath);
+
+    try {
+      // Build authenticated remote URL if PAT is configured
+      const remoteUrl = this.buildAuthenticatedUrl(url);
+
+      // Fetch latest changes from remote
+      // For shallow clones, we need to unshallow first or fetch with depth
+      this.logger.debug(
+        {
+          repoPath,
+          branch,
+        },
+        "Fetching latest changes"
+      );
+
+      // Use retry wrapper for network resilience
+      await this.withRetryWrapper(async () => {
+        // Set the remote URL (in case PAT was added/changed)
+        await git.remote(["set-url", "origin", remoteUrl]);
+
+        // Fetch the specific branch with depth 1 for shallow repos
+        await git.fetch(["origin", branch, "--depth", "1"]);
+      }, `git.fetch(${branch})`);
+
+      // Reset to match remote HEAD
+      this.logger.debug(
+        {
+          repoPath,
+          branch,
+        },
+        "Resetting to remote HEAD"
+      );
+
+      await git.reset(["--hard", `origin/${branch}`]);
+
+      this.logger.debug(
+        {
+          repoPath,
+          branch,
+        },
+        "Successfully updated to latest"
+      );
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          repoPath,
+          branch,
+        },
+        "Failed to update repository to latest"
+      );
+
+      const sanitizedMessage =
+        error instanceof Error ? this.sanitizeErrorMessage(error.message) : String(error);
+
+      throw new FetchError(
+        `Failed to fetch latest changes: ${sanitizedMessage}`,
+        repoPath,
+        branch,
         error instanceof Error ? error : undefined
       );
     }

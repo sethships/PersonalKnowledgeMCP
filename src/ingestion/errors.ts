@@ -170,6 +170,38 @@ export class ChunkingError extends RepositoryError {
 }
 
 /**
+ * Error thrown when fetching latest changes from remote fails.
+ *
+ * This error occurs when updating an existing local clone to match
+ * the remote state. Common causes include:
+ * - Network issues during fetch
+ * - Branch no longer exists on remote
+ * - Merge conflicts during reset (shouldn't happen with --hard)
+ *
+ * @example
+ * `typescript
+ * try {
+ *   await cloner.clone(url, { fetchLatest: true });
+ * } catch (error) {
+ *   if (error instanceof FetchError) {
+ *     console.error(Fetch failed for ${error.repoPath}:, error.message);
+ *   }
+ * }
+ * `
+ */
+export class FetchError extends RepositoryError {
+  public readonly repoPath: string;
+  public readonly branch: string;
+
+  constructor(message: string, repoPath: string, branch: string, cause?: Error) {
+    super(message, "FETCH_ERROR", cause, true); // Retryable by default
+    this.name = "FetchError";
+    this.repoPath = repoPath;
+    this.branch = branch;
+  }
+}
+
+/**
  * Determine if an error is a retryable clone error based on its type and characteristics.
  *
  * Used to decide whether to retry a git clone operation after a failure.

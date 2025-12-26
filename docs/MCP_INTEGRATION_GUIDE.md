@@ -131,7 +131,7 @@ bun run cli index https://github.com/username/repository --name my-project
 # Index specific branch
 bun run cli index https://github.com/username/repository --branch develop
 
-# Force reindexing
+# Force reindexing (fetches latest changes from remote before reindexing)
 bun run cli index https://github.com/username/repository --force
 ```
 

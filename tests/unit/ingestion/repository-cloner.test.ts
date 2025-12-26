@@ -9,7 +9,12 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { RepositoryCloner } from "../../../src/ingestion/repository-cloner.js";
-import { ValidationError, CloneError, AuthenticationError } from "../../../src/ingestion/errors.js";
+import {
+  ValidationError,
+  CloneError,
+  AuthenticationError,
+  FetchError,
+} from "../../../src/ingestion/errors.js";
 import type { RepositoryClonerConfig } from "../../../src/ingestion/types.js";
 import { MockSimpleGit, MOCK_GIT_ERRORS } from "../../helpers/simple-git-mock.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
@@ -50,6 +55,8 @@ describe("RepositoryCloner", () => {
     // Inject mock git client
     // @ts-expect-error - Accessing private property for testing
     cloner.git = mockGit;
+    // @ts-expect-error - Accessing protected method for testing
+    cloner.createGitForPath = () => mockGit;
   });
 
   afterEach(async () => {
@@ -60,7 +67,7 @@ describe("RepositoryCloner", () => {
       // Ignore cleanup errors
     }
 
-    mockGit.reset();
+    mockGit.resetState();
     resetLogger();
   });
 
@@ -485,6 +492,137 @@ describe("RepositoryCloner", () => {
         const errorStr = JSON.stringify(error);
         expect(errorStr).not.toContain(pat);
       }
+    });
+  });
+
+  describe("Fetch Latest (Issue #124)", () => {
+    test("should skip fetch when fetchLatest=false and repo exists", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Second call without fetchLatest - should skip
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1); // Still 1
+      expect(mockGit.getFetchCallCount()).toBe(0); // No fetch
+    });
+
+    test("should fetch and reset when fetchLatest=true and repo exists", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Second call with fetchLatest=true - should fetch
+      const result = await cloner.clone(url, { fetchLatest: true });
+      expect(mockGit.getCloneCallCount()).toBe(1); // Still 1, didn't re-clone
+      expect(mockGit.getRemoteCallCount()).toBe(1); // Set remote URL
+      expect(mockGit.getFetchCallCount()).toBe(1); // Fetched
+      expect(mockGit.getResetCallCount()).toBe(1); // Reset to origin
+      expect(result.name).toBe("repo");
+    });
+
+    test("should include branch in fetch args", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone with specific branch
+      await cloner.clone(url, { branch: "develop" });
+
+      // Fetch latest
+      await cloner.clone(url, { branch: "develop", fetchLatest: true });
+
+      const fetchArgs = mockGit.getLastFetchArgs();
+      expect(fetchArgs).toContain("origin");
+      expect(fetchArgs).toContain("develop");
+      expect(fetchArgs).toContain("--depth");
+      expect(fetchArgs).toContain("1");
+    });
+
+    test("should reset to correct remote branch", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url, { branch: "feature-x" });
+
+      // Fetch latest
+      await cloner.clone(url, { branch: "feature-x", fetchLatest: true });
+
+      const resetArgs = mockGit.getLastResetArgs();
+      expect(resetArgs).toContain("--hard");
+      expect(resetArgs).toContain("origin/feature-x");
+    });
+
+    test("should throw FetchError when fetch fails", async () => {
+      expect.assertions(3);
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+
+      // Configure fetch to fail
+      mockGit.setShouldFailFetch(MOCK_GIT_ERRORS.FETCH_FAILED);
+
+      try {
+        await cloner.clone(url, { fetchLatest: true });
+      } catch (error) {
+        expect(error).toBeInstanceOf(FetchError);
+        if (error instanceof FetchError) {
+          expect(error.code).toBe("FETCH_ERROR");
+          expect(error.branch).toBeDefined();
+        }
+      }
+    });
+
+    test("should use authenticated URL when fetching with PAT", async () => {
+      const pat = "ghp_test1234567890abcdefghijklmnopqrstuvwxyz";
+      config.githubPat = pat;
+      cloner = new RepositoryCloner(config);
+      // @ts-expect-error - Accessing private property for testing
+      cloner.git = mockGit;
+      // @ts-expect-error - Accessing protected method for testing
+      cloner.createGitForPath = () => mockGit;
+
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+
+      // Fetch latest
+      await cloner.clone(url, { fetchLatest: true });
+
+      // Check that remote set-url was called with authenticated URL
+      const remoteArgs = mockGit.getLastRemoteArgs();
+      expect(remoteArgs).toContain("set-url");
+      expect(remoteArgs).toContain("origin");
+      // The third arg should be the authenticated URL
+      expect(remoteArgs?.[2]).toContain(pat);
+    });
+
+    test("should not fetch when repo does not exist", async () => {
+      const url = "https://github.com/user/new-repo";
+
+      // Clone with fetchLatest=true on new repo - should just clone
+      const result = await cloner.clone(url, { fetchLatest: true });
+
+      expect(mockGit.getCloneCallCount()).toBe(1);
+      expect(mockGit.getFetchCallCount()).toBe(0); // No fetch needed
+      expect(result.name).toBe("new-repo");
+    });
+
+    test("should fresh clone instead of fetch when fresh=true", async () => {
+      const url = "https://github.com/user/repo";
+
+      // First clone
+      await cloner.clone(url);
+      expect(mockGit.getCloneCallCount()).toBe(1);
+
+      // Fresh clone with fetchLatest - should re-clone, not fetch
+      await cloner.clone(url, { fresh: true, fetchLatest: true });
+      expect(mockGit.getCloneCallCount()).toBe(2); // Re-cloned
+      expect(mockGit.getFetchCallCount()).toBe(0); // Did not fetch
     });
   });
 });

@@ -40,6 +40,20 @@ export interface CloneOptions {
    * @default false
    */
   fresh?: boolean;
+
+  /**
+   * Fetch latest changes from remote when repository already exists locally.
+   *
+   * When true and the repository already exists locally (and fresh is false),
+   * performs git fetch origin <branch> followed by git reset --hard origin/<branch>
+   * to update the local clone to match the remote state.
+   *
+   * This is used for force reindex operations to ensure the latest remote
+   * content is indexed rather than stale local content.
+   *
+   * @default false
+   */
+  fetchLatest?: boolean;
 }
 
 /**
