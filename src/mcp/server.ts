@@ -14,7 +14,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../services/types.js";
 import type { RepositoryMetadataService } from "../repositories/types.js";
-import type { MCPServerConfig, ToolRegistry } from "./types.js";
+import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
+import type { MCPServerConfig, ToolRegistry, MCPServerOptionalDeps } from "./types.js";
+import type { MCPRateLimiter } from "./rate-limiter.js";
+import type { JobTracker } from "./job-tracker.js";
 import { createToolRegistry, getToolDefinitions, getToolHandler } from "./tools/index.js";
 import { createMethodNotFoundError } from "./errors.js";
 import { getComponentLogger } from "../logging/index.js";
@@ -77,7 +80,8 @@ export class PersonalKnowledgeMCPServer {
   constructor(
     searchService: SearchService,
     repositoryService: RepositoryMetadataService,
-    config: MCPServerConfig = DEFAULT_CONFIG
+    config: MCPServerConfig = DEFAULT_CONFIG,
+    optionalDeps?: MCPServerOptionalDeps
   ) {
     // Store config for creating additional server instances (SSE sessions)
     this.config = config;
@@ -86,8 +90,19 @@ export class PersonalKnowledgeMCPServer {
     this.server = this.createSdkServer();
 
     // Create tool registry with all available tools
-    // This is shared between all transports/sessions
-    this.toolRegistry = createToolRegistry(searchService, repositoryService);
+    // Use the new dependency object signature if optional deps are provided
+    if (optionalDeps?.updateCoordinator && optionalDeps?.rateLimiter && optionalDeps?.jobTracker) {
+      this.toolRegistry = createToolRegistry({
+        searchService,
+        repositoryService,
+        updateCoordinator: optionalDeps.updateCoordinator as IncrementalUpdateCoordinator,
+        rateLimiter: optionalDeps.rateLimiter as MCPRateLimiter,
+        jobTracker: optionalDeps.jobTracker as JobTracker,
+      });
+    } else {
+      // Legacy path - only core tools
+      this.toolRegistry = createToolRegistry(searchService, repositoryService);
+    }
 
     // Register request handlers on primary server
     this.registerHandlersOnServer(this.server);
@@ -97,6 +112,7 @@ export class PersonalKnowledgeMCPServer {
         serverName: config.name,
         version: config.version,
         toolCount: Object.keys(this.toolRegistry).length,
+        adminToolsEnabled: !!optionalDeps?.updateCoordinator,
       },
       "MCP server initialized"
     );

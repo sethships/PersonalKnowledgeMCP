@@ -8,12 +8,42 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../../services/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
+import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import type { MCPRateLimiter } from "../rate-limiter.js";
+import type { JobTracker } from "../job-tracker.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
 import {
   listIndexedRepositoriesToolDefinition,
   createListRepositoriesHandler,
 } from "./list-indexed-repositories.js";
+import {
+  triggerIncrementalUpdateToolDefinition,
+  createTriggerUpdateHandler,
+} from "./trigger-incremental-update.js";
+import {
+  getUpdateStatusToolDefinition,
+  createGetUpdateStatusHandler,
+} from "./get-update-status.js";
+
+/**
+ * Dependencies for tool registry creation
+ *
+ * Required dependencies are always needed, optional dependencies
+ * enable additional administrative tools.
+ */
+export interface ToolRegistryDependencies {
+  /** Required: Search service for semantic_search tool */
+  searchService: SearchService;
+  /** Required: Repository metadata service for list_indexed_repositories tool */
+  repositoryService: RepositoryMetadataService;
+  /** Optional: Update coordinator for trigger_incremental_update tool */
+  updateCoordinator?: IncrementalUpdateCoordinator;
+  /** Optional: Rate limiter for trigger_incremental_update tool */
+  rateLimiter?: MCPRateLimiter;
+  /** Optional: Job tracker for async update operations */
+  jobTracker?: JobTracker;
+}
 
 /**
  * Creates the tool registry with all available MCP tools
@@ -22,6 +52,7 @@ import {
  * - Instantiates all tool handlers with their dependencies
  * - Maps tool names to definitions and handlers
  * - Enables easy addition of new tools without modifying the MCP server
+ * - Conditionally registers administrative tools when dependencies are provided
  *
  * @param searchService - Injected search service for semantic_search tool
  * @param repositoryService - Injected repository metadata service for list_indexed_repositories tool
@@ -29,31 +60,74 @@ import {
  *
  * @example
  * ```typescript
- * const searchService = new SearchServiceImpl(provider, storage, repoService);
- * const repositoryService = RepositoryMetadataStoreImpl.getInstance();
+ * // Legacy usage (backwards compatible)
  * const registry = createToolRegistry(searchService, repositoryService);
  *
- * // List all tool names
- * const toolNames = Object.keys(registry);
- *
- * // Get a specific tool handler
- * const handler = getToolHandler(registry, 'semantic_search');
+ * // New usage with optional admin tools
+ * const registry = createToolRegistry({
+ *   searchService,
+ *   repositoryService,
+ *   updateCoordinator,
+ *   rateLimiter,
+ *   jobTracker,
+ * });
  * ```
  */
 export function createToolRegistry(
   searchService: SearchService,
   repositoryService: RepositoryMetadataService
+): ToolRegistry;
+export function createToolRegistry(deps: ToolRegistryDependencies): ToolRegistry;
+export function createToolRegistry(
+  searchServiceOrDeps: SearchService | ToolRegistryDependencies,
+  repositoryService?: RepositoryMetadataService
 ): ToolRegistry {
-  return {
+  // Handle both legacy and new signatures
+  let deps: ToolRegistryDependencies;
+  if (repositoryService !== undefined) {
+    // Legacy signature: (searchService, repositoryService)
+    deps = {
+      searchService: searchServiceOrDeps as SearchService,
+      repositoryService,
+    };
+  } else {
+    // New signature: (deps)
+    deps = searchServiceOrDeps as ToolRegistryDependencies;
+  }
+
+  // Build the base registry with required tools
+  const registry: ToolRegistry = {
     semantic_search: {
       definition: semanticSearchToolDefinition,
-      handler: createSemanticSearchHandler(searchService),
+      handler: createSemanticSearchHandler(deps.searchService),
     },
     list_indexed_repositories: {
       definition: listIndexedRepositoriesToolDefinition,
-      handler: createListRepositoriesHandler(repositoryService),
+      handler: createListRepositoriesHandler(deps.repositoryService),
     },
   };
+
+  // Conditionally add administrative tools when all dependencies are provided
+  if (deps.updateCoordinator && deps.rateLimiter && deps.jobTracker) {
+    registry["trigger_incremental_update"] = {
+      definition: triggerIncrementalUpdateToolDefinition,
+      handler: createTriggerUpdateHandler({
+        repositoryService: deps.repositoryService,
+        updateCoordinator: deps.updateCoordinator,
+        rateLimiter: deps.rateLimiter,
+        jobTracker: deps.jobTracker,
+      }),
+    };
+
+    registry["get_update_status"] = {
+      definition: getUpdateStatusToolDefinition,
+      handler: createGetUpdateStatusHandler({
+        jobTracker: deps.jobTracker,
+      }),
+    };
+  }
+
+  return registry;
 }
 
 /**

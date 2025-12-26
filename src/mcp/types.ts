@@ -104,3 +104,20 @@ export interface HttpTransportConfig {
   /** HTTP server host (default: 127.0.0.1) */
   host: string;
 }
+
+/**
+ * Optional dependencies for MCP server
+ *
+ * These dependencies enable administrative tools when provided.
+ * When not provided, the server operates with only the core tools.
+ */
+export interface MCPServerOptionalDeps {
+  /** Coordinator for incremental repository updates */
+  updateCoordinator?: unknown;
+
+  /** Rate limiter for administrative operations */
+  rateLimiter?: unknown;
+
+  /** Job tracker for async update operations */
+  jobTracker?: unknown;
+}
