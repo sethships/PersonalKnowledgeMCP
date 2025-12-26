@@ -6,6 +6,9 @@
  */
 
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
+import type { MCPRateLimiter } from "./rate-limiter.js";
+import type { JobTracker } from "./job-tracker.js";
 
 /**
  * MCP tool handler function signature
@@ -103,4 +106,21 @@ export interface HttpTransportConfig {
 
   /** HTTP server host (default: 127.0.0.1) */
   host: string;
+}
+
+/**
+ * Optional dependencies for MCP server
+ *
+ * These dependencies enable administrative tools when provided.
+ * When not provided, the server operates with only the core tools.
+ */
+export interface MCPServerOptionalDeps {
+  /** Coordinator for incremental repository updates */
+  updateCoordinator?: IncrementalUpdateCoordinator;
+
+  /** Rate limiter for administrative operations */
+  rateLimiter?: MCPRateLimiter;
+
+  /** Job tracker for async update operations */
+  jobTracker?: JobTracker;
 }
