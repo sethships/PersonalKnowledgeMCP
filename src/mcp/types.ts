@@ -6,6 +6,9 @@
  */
 
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
+import type { MCPRateLimiter } from "./rate-limiter.js";
+import type { JobTracker } from "./job-tracker.js";
 
 /**
  * MCP tool handler function signature
@@ -113,11 +116,11 @@ export interface HttpTransportConfig {
  */
 export interface MCPServerOptionalDeps {
   /** Coordinator for incremental repository updates */
-  updateCoordinator?: unknown;
+  updateCoordinator?: IncrementalUpdateCoordinator;
 
   /** Rate limiter for administrative operations */
-  rateLimiter?: unknown;
+  rateLimiter?: MCPRateLimiter;
 
   /** Job tracker for async update operations */
-  jobTracker?: unknown;
+  jobTracker?: JobTracker;
 }

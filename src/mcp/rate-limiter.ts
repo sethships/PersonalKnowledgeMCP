@@ -50,7 +50,8 @@ const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
  * Provides per-repository rate limiting for MCP operations.
  * State is stored in-memory and resets on service restart.
  *
- * Thread-safe for concurrent access (JavaScript single-threaded event loop).
+ * Async-safe due to JavaScript's single-threaded event loop - state
+ * transitions are atomic between await points.
  *
  * @example
  * ```typescript

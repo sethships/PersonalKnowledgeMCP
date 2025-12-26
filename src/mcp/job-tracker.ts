@@ -372,7 +372,10 @@ export class JobTracker {
 
       const toRemove = this.jobs.size - this.maxJobs;
       for (let i = 0; i < Math.min(toRemove, completedJobs.length); i++) {
-        this.jobs.delete(completedJobs[i]![0]);
+        const entry = completedJobs[i];
+        if (entry) {
+          this.jobs.delete(entry[0]);
+        }
       }
     }
 

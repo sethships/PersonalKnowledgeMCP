@@ -231,6 +231,22 @@ export interface TriggerUpdateDependencies {
 
 /**
  * Execute update with timeout
+ *
+ * Note: The AbortController is used only for timeout detection via Promise.race.
+ * The signal is NOT passed to the coordinator because IncrementalUpdateCoordinator
+ * does not currently support AbortSignal cancellation. This means:
+ *
+ * 1. On timeout, this function rejects immediately with a timeout error
+ * 2. The actual update operation continues running in the background until completion
+ * 3. The rate limiter is still marked complete when the background operation finishes
+ *
+ * This "abandon but don't abort" behavior is acceptable for MVP because:
+ * - Updates are idempotent and completing in the background is harmless
+ * - The rate limiter prevents rapid re-triggering regardless
+ * - Adding true cancellation would require changes to git and embedding operations
+ *
+ * Future enhancement: Pass signal to coordinator for proper cooperative cancellation.
+ * See: https://github.com/sethb75/PersonalKnowledgeMCP/issues/126#issuecomment-X
  */
 async function executeWithTimeout(
   coordinator: IncrementalUpdateCoordinator,
@@ -241,7 +257,8 @@ async function executeWithTimeout(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    // Create a race between the update and a timeout rejection
+    // Race: update vs timeout. Note: update continues in background if timeout wins.
+    // See function documentation for rationale on "abandon but don't abort" behavior.
     const result = await Promise.race([
       coordinator.updateRepository(repositoryName),
       new Promise<never>((_, reject) => {
@@ -321,13 +338,20 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
         };
       }
 
-      // Step 3: Check for existing running job first (for async mode deduplication)
-      // This should happen before rate limiting so callers can get the job ID
+      // Step 3: Check for existing running job first (for deduplication)
+      // Note: When a job is already running, we return the existing job ID regardless
+      // of whether the current request is sync or async. This behavior:
+      // - Prevents duplicate updates to the same repository
+      // - Allows callers to poll status via get_update_status
+      // - Is consistent with "at-most-once" update semantics
+      //
+      // Callers expecting sync behavior should check the response for `async: true`
+      // and handle accordingly (e.g., poll for completion or retry later).
       const existingJob = jobTracker.getRunningJob(repositoryName);
       if (existingJob) {
         log.info(
-          { repository: repositoryName, existingJobId: existingJob.id },
-          "Existing job found - returning job ID"
+          { repository: repositoryName, existingJobId: existingJob.id, requestedAsync: isAsync },
+          "Existing job found - returning job ID (deduplication)"
         );
         return {
           content: [formatAsyncSuccessResponse(repositoryName, existingJob.id)],
@@ -379,6 +403,19 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
         void (async () => {
           jobTracker.updateStatus(jobId, "running");
 
+          // Failsafe watchdog: ensure cleanup happens even in pathological cases
+          // where the coordinator hangs beyond the timeout (e.g., Promise never resolves)
+          const failsafeTimeout = setTimeout(() => {
+            if (rateLimiter.isInProgress(repositoryName)) {
+              log.warn(
+                { repository: repositoryName, jobId },
+                "Failsafe cleanup triggered - forcing job timeout after 11 minutes"
+              );
+              jobTracker.timeout(jobId);
+              rateLimiter.markComplete(repositoryName);
+            }
+          }, UPDATE_TIMEOUT_MS + 60000); // 11 minutes = 10 min timeout + 1 min buffer
+
           try {
             const result = await executeWithTimeout(
               updateCoordinator,
@@ -405,6 +442,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
               );
             }
           } finally {
+            clearTimeout(failsafeTimeout);
             rateLimiter.markComplete(repositoryName);
           }
         })();
