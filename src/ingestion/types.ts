@@ -74,6 +74,18 @@ export interface CloneResult {
    * Branch that was cloned.
    */
   branch: string;
+
+  /**
+   * Git commit SHA of the HEAD after clone.
+   *
+   * This is the full 40-character SHA of the commit that was cloned.
+   * Used to record `lastIndexedCommitSha` for incremental update support.
+   *
+   * Optional because SHA capture may fail in edge cases (e.g., empty repo).
+   *
+   * @example "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+   */
+  commitSha?: string;
 }
 
 /**

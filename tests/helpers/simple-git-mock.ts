@@ -31,6 +31,13 @@ export class MockSimpleGit {
   private remoteCallCount: number = 0;
   private lastRemoteArgs?: string[];
 
+  // Commit SHA tracking for incremental updates
+  private commitSha: string = "abc1234567890abcdef1234567890abcdef12345";
+  private shouldFailRevparseSha: boolean = false;
+  private revparseShaError?: Error;
+  private revparseCallCount: number = 0;
+  private lastRevparseArgs?: string[];
+
   /**
    * Configure the mock to fail on next clone operation.
    *
@@ -159,11 +166,66 @@ export class MockSimpleGit {
   /**
    * Mock revparse implementation.
    *
-   * @param _args - Args (unused in mock)
-   * @returns Mock branch name
+   * Supports both branch detection (--abbrev-ref HEAD) and commit SHA (HEAD).
+   *
+   * @param args - Git revparse arguments
+   * @returns Mock branch name or commit SHA depending on args
    */
-  async revparse(_args: string[]): Promise<string> {
+  async revparse(args: string[]): Promise<string> {
+    this.revparseCallCount++;
+    this.lastRevparseArgs = args;
+
+    // Return commit SHA when called with HEAD (for getHeadCommitSha)
+    if (args.includes("HEAD") && !args.includes("--abbrev-ref")) {
+      if (this.shouldFailRevparseSha && this.revparseShaError) {
+        throw this.revparseShaError;
+      }
+      return this.commitSha;
+    }
+
+    // Return branch name when called with --abbrev-ref HEAD (for detectCurrentBranch)
     return "main";
+  }
+
+  /**
+   * Set the commit SHA to return from revparse HEAD.
+   *
+   * @param sha - 40-character commit SHA
+   */
+  setCommitSha(sha: string): void {
+    this.commitSha = sha;
+  }
+
+  /**
+   * Get the configured commit SHA.
+   */
+  getCommitSha(): string {
+    return this.commitSha;
+  }
+
+  /**
+   * Configure the mock to fail on revparse HEAD (SHA capture) operation.
+   * This only affects getHeadCommitSha, not detectCurrentBranch.
+   *
+   * @param error - Error to throw
+   */
+  setShouldFailRevparseSha(error: Error): void {
+    this.shouldFailRevparseSha = true;
+    this.revparseShaError = error;
+  }
+
+  /**
+   * Get the number of times revparse was called.
+   */
+  getRevparseCallCount(): number {
+    return this.revparseCallCount;
+  }
+
+  /**
+   * Get the last args passed to revparse.
+   */
+  getLastRevparseArgs(): string[] | undefined {
+    return this.lastRevparseArgs;
   }
 
   /**
@@ -228,6 +290,12 @@ export class MockSimpleGit {
     this.lastResetArgs = undefined;
     this.remoteCallCount = 0;
     this.lastRemoteArgs = undefined;
+    // Reset revparse/SHA tracking
+    this.commitSha = "abc1234567890abcdef1234567890abcdef12345";
+    this.shouldFailRevparseSha = false;
+    this.revparseShaError = undefined;
+    this.revparseCallCount = 0;
+    this.lastRevparseArgs = undefined;
   }
 }
 
