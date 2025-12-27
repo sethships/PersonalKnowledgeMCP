@@ -645,7 +645,7 @@ describe("RepositoryCloner", () => {
 
     test("should include commitSha when reusing existing clone", async () => {
       const url = "https://github.com/user/repo";
-      const expectedSha = "abc1234567890abcdef1234567890abcdef123456";
+      const expectedSha = "abc1234567890abcdef1234567890abcdef12345";
 
       // First clone creates directory
       await cloner.clone(url);
@@ -662,7 +662,7 @@ describe("RepositoryCloner", () => {
     test("should include commitSha after fetchLatest", async () => {
       const url = "https://github.com/user/repo";
       const initialSha = "111aaa222bbb333ccc444ddd555eee666fff7778";
-      const updatedSha = "999zzz888yyy777xxx666www555vvv444uuu3332";
+      const updatedSha = "999aaa888bbb777ccc666ddd555eee444fff3332";
 
       mockGit.setCommitSha(initialSha);
 

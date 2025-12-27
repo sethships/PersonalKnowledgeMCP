@@ -36,6 +36,12 @@ const CLONE_OPTIONS = {
 } as const;
 
 /**
+ * Regex pattern for validating 40-character git commit SHAs.
+ * SHAs are hexadecimal strings containing only 0-9 and a-f.
+ */
+const SHA_REGEX = /^[0-9a-f]{40}$/;
+
+/**
  * Clones GitHub repositories for indexing into the knowledge base.
  *
  * Supports both public and private repositories with PAT authentication.
@@ -618,7 +624,21 @@ export class RepositoryCloner {
     try {
       const git = this.createGitForPath(repoPath);
       const sha = await git.revparse(["HEAD"]);
-      return sha.trim();
+      const trimmed = sha.trim();
+
+      // Validate SHA format (40 hex characters)
+      if (!SHA_REGEX.test(trimmed)) {
+        this.logger.warn(
+          {
+            sha: trimmed,
+            repoPath,
+          },
+          "Invalid SHA format from git revparse"
+        );
+        return undefined;
+      }
+
+      return trimmed;
     } catch (error) {
       this.logger.warn(
         {
