@@ -211,4 +211,70 @@ describe("RepositoryCloner Integration Tests", () => {
       await rm(join(testDir, "level1"), { recursive: true, force: true });
     }, 30000);
   });
+
+  describe("Commit SHA Capture", () => {
+    test("should return valid commit SHA in clone result", async () => {
+      const result = await cloner.clone(TEST_REPO_URL);
+
+      // Verify commitSha is present
+      expect(result.commitSha).toBeDefined();
+      expect(typeof result.commitSha).toBe("string");
+
+      // Verify SHA format (40 hex characters)
+      expect(result.commitSha).toHaveLength(40);
+      expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    }, 30000);
+
+    test("should return SHA matching actual HEAD of cloned repo", async () => {
+      const result = await cloner.clone(TEST_REPO_URL);
+
+      // Use simple-git to verify the SHA matches the actual HEAD
+      const git = simpleGit(result.path);
+      const actualSha = await git.revparse(["HEAD"]);
+
+      expect(result.commitSha).toBe(actualSha.trim());
+    }, 30000);
+
+    test("should return consistent SHA for same clone", async () => {
+      // First clone
+      const result1 = await cloner.clone(TEST_REPO_URL);
+      const sha1 = result1.commitSha;
+
+      // Second call should return same SHA (repo already exists, HEAD unchanged)
+      const result2 = await cloner.clone(TEST_REPO_URL);
+      const sha2 = result2.commitSha;
+
+      expect(sha1).toBe(sha2);
+    }, 30000);
+
+    test("should return SHA after fresh clone", async () => {
+      // First clone
+      const result1 = await cloner.clone(TEST_REPO_URL);
+      const sha1 = result1.commitSha;
+
+      // Fresh clone should also capture SHA
+      const result2 = await cloner.clone(TEST_REPO_URL, { fresh: true });
+
+      expect(result2.commitSha).toBeDefined();
+      expect(result2.commitSha).toHaveLength(40);
+
+      // SHA should be same since we're cloning same branch/commit
+      expect(result2.commitSha).toBe(sha1);
+    }, 60000);
+
+    test("should return SHA after fetchLatest", async () => {
+      // First clone
+      const result1 = await cloner.clone(TEST_REPO_URL);
+
+      // Clone with fetchLatest should also capture SHA
+      const result2 = await cloner.clone(TEST_REPO_URL, { fetchLatest: true });
+
+      expect(result2.commitSha).toBeDefined();
+      expect(result2.commitSha).toHaveLength(40);
+      expect(result2.commitSha).toMatch(/^[0-9a-f]{40}$/);
+
+      // SHA should be same since we're fetching same branch/commit
+      expect(result2.commitSha).toBe(result1.commitSha);
+    }, 60000);
+  });
 });

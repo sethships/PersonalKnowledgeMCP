@@ -41,6 +41,7 @@ class MockRepositoryCloner {
   private shouldFail = false;
   private failureError: Error | null = null;
   private cleanupCalled = false;
+  private commitSha: string | undefined = "abc1234567890abcdef1234567890abcdef12345";
 
   async clone(_url: string, options?: { branch?: string }): Promise<CloneResult> {
     if (this.shouldFail && this.failureError) {
@@ -50,6 +51,7 @@ class MockRepositoryCloner {
       path: "/tmp/mock-repo",
       name: "mock-repo",
       branch: options?.branch || "main",
+      commitSha: this.commitSha,
     };
   }
 
@@ -68,6 +70,21 @@ class MockRepositoryCloner {
   setShouldFail(shouldFail: boolean, error?: Error): void {
     this.shouldFail = shouldFail;
     this.failureError = error || null;
+  }
+
+  /**
+   * Set the commit SHA to return from clone().
+   * Pass undefined to simulate SHA capture failure.
+   */
+  setCommitSha(sha: string | undefined): void {
+    this.commitSha = sha;
+  }
+
+  /**
+   * Get the configured commit SHA.
+   */
+  getCommitSha(): string | undefined {
+    return this.commitSha;
   }
 }
 
@@ -892,6 +909,135 @@ describe("IngestionService", () => {
         const name = (service as any).sanitizeCollectionName("MyRepo");
         expect(name).toBe("myrepo");
       });
+    });
+  });
+
+  describe("Commit SHA Propagation", () => {
+    const testUrl = "https://github.com/test/repo.git";
+    const testRepoName = "repo";
+
+    it("should include lastIndexedCommitSha in repository metadata after indexing", async () => {
+      const expectedSha = "abc1234567890abcdef1234567890abcdef12345";
+      mockCloner.setCommitSha(expectedSha);
+
+      const mockFiles = [createMockFile("src/file1.ts")];
+      mockScanner.setMockFiles(mockFiles);
+
+      // Mock file content
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => "content",
+      });
+
+      const result = await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      expect(result.status).toBe("success");
+
+      // Verify lastIndexedCommitSha was stored in metadata
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo).not.toBeNull();
+      expect(repoInfo?.lastIndexedCommitSha).toBe(expectedSha);
+    });
+
+    it("should propagate custom commit SHA from cloner to metadata", async () => {
+      const customSha = "fedcba9876543210fedcba9876543210fedcba98";
+      mockCloner.setCommitSha(customSha);
+
+      const mockFiles = [createMockFile("src/file1.ts")];
+      mockScanner.setMockFiles(mockFiles);
+
+      // Mock file content
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => "content",
+      });
+
+      await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo?.lastIndexedCommitSha).toBe(customSha);
+    });
+
+    it("should handle undefined commitSha gracefully", async () => {
+      // Simulate SHA capture failure
+      mockCloner.setCommitSha(undefined);
+
+      const mockFiles = [createMockFile("src/file1.ts")];
+      mockScanner.setMockFiles(mockFiles);
+
+      // Mock file content
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => "content",
+      });
+
+      const result = await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      // Indexing should still succeed
+      expect(result.status).toBe("success");
+
+      // Metadata should not have lastIndexedCommitSha set
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo).not.toBeNull();
+      expect(repoInfo?.lastIndexedCommitSha).toBeUndefined();
+    });
+
+    it("should update lastIndexedCommitSha on reindex", async () => {
+      const originalSha = "abc1234567890abcdef1234567890abcdef12345";
+      const newSha = "999888777666555444333222111000aaabbbcccd";
+
+      // First index with original SHA
+      mockCloner.setCommitSha(originalSha);
+      const mockFiles = [createMockFile("src/file1.ts")];
+      mockScanner.setMockFiles(mockFiles);
+
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => "content",
+      });
+
+      await service.indexRepository(testUrl);
+
+      let repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo?.lastIndexedCommitSha).toBe(originalSha);
+
+      // Now reindex with new SHA
+      mockCloner.setCommitSha(newSha);
+      await service.reindexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo?.lastIndexedCommitSha).toBe(newSha);
+    });
+
+    it("should preserve 40-character SHA format in metadata", async () => {
+      const validSha = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+      expect(validSha).toHaveLength(40);
+
+      mockCloner.setCommitSha(validSha);
+
+      const mockFiles = [createMockFile("src/file1.ts")];
+      mockScanner.setMockFiles(mockFiles);
+
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => "content",
+      });
+
+      await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo?.lastIndexedCommitSha).toBe(validSha);
+      expect(repoInfo?.lastIndexedCommitSha).toHaveLength(40);
     });
   });
 });

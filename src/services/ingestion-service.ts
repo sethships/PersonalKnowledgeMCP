@@ -876,6 +876,7 @@ export class IngestionService {
       fileCount: params.stats.filesProcessed,
       chunkCount: params.stats.chunksCreated,
       lastIndexedAt: new Date().toISOString(),
+      lastIndexedCommitSha: params.cloneResult.commitSha,
       indexDurationMs: params.stats.durationMs,
       status: params.stats.filesFailed > 0 ? "error" : "ready",
       errorMessage: params.errorMessage,

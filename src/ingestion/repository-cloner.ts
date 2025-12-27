@@ -175,6 +175,9 @@ export class RepositoryCloner {
 
         await this.updateToLatest(targetPath, actualBranch, url);
 
+        // Capture commit SHA after fetch
+        const commitSha = await this.getHeadCommitSha(targetPath);
+
         const durationMs = Date.now() - startTime;
         this.logger.info(
           {
@@ -183,6 +186,7 @@ export class RepositoryCloner {
             repoName,
             targetPath,
             branch: actualBranch,
+            commitSha,
           },
           "Repository updated to latest"
         );
@@ -191,14 +195,19 @@ export class RepositoryCloner {
           path: targetPath,
           name: repoName,
           branch: actualBranch,
+          commitSha,
         };
       }
+
+      // Capture commit SHA of existing clone
+      const commitSha = await this.getHeadCommitSha(targetPath);
 
       this.logger.info(
         {
           targetPath,
           repoName,
           branch: actualBranch,
+          commitSha,
         },
         "Repository already cloned, skipping"
       );
@@ -207,6 +216,7 @@ export class RepositoryCloner {
         path: targetPath,
         name: repoName,
         branch: actualBranch,
+        commitSha,
       };
     }
 
@@ -253,7 +263,10 @@ export class RepositoryCloner {
       // Step 9: Detect actual branch name if not specified
       const actualBranch = branch || (await this.detectCurrentBranch(targetPath));
 
-      // Step 10: Log success with metrics
+      // Step 10: Capture commit SHA after clone
+      const commitSha = await this.getHeadCommitSha(targetPath);
+
+      // Step 11: Log success with metrics
       const durationMs = Date.now() - startTime;
 
       this.logger.info(
@@ -264,6 +277,7 @@ export class RepositoryCloner {
           targetPath,
           shallow,
           branch: actualBranch,
+          commitSha,
         },
         "Repository cloned successfully"
       );
@@ -272,6 +286,7 @@ export class RepositoryCloner {
         path: targetPath,
         name: repoName,
         branch: actualBranch,
+        commitSha,
       };
     } catch (error) {
       const durationMs = Date.now() - startTime;
@@ -575,7 +590,7 @@ export class RepositoryCloner {
    */
   private async detectCurrentBranch(repoPath: string): Promise<string> {
     try {
-      const git = simpleGit(repoPath);
+      const git = this.createGitForPath(repoPath);
       const currentBranch = await git.revparse(["--abbrev-ref", "HEAD"]);
       return currentBranch.trim();
     } catch (error) {
@@ -587,6 +602,32 @@ export class RepositoryCloner {
         "Failed to detect current branch, using 'unknown'"
       );
       return "unknown";
+    }
+  }
+
+  /**
+   * Get the HEAD commit SHA of a cloned repository.
+   *
+   * Uses git rev-parse HEAD to get the full 40-character commit SHA.
+   * This SHA is used for incremental update tracking.
+   *
+   * @param repoPath - Path to the cloned repository
+   * @returns Full 40-character commit SHA, or undefined if detection fails
+   */
+  private async getHeadCommitSha(repoPath: string): Promise<string | undefined> {
+    try {
+      const git = this.createGitForPath(repoPath);
+      const sha = await git.revparse(["HEAD"]);
+      return sha.trim();
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          repoPath,
+        },
+        "Failed to get HEAD commit SHA"
+      );
+      return undefined;
     }
   }
 

@@ -439,8 +439,11 @@ describe("RepositoryCloner", () => {
       expect(result).toBeDefined();
       expect(result.name).toBe("my-repo");
       expect(result.path).toContain("my-repo");
-      // Mock doesn't have real git repo, so branch detection returns "unknown"
-      expect(result.branch).toBe("unknown");
+      // Mock returns "main" as default branch
+      expect(result.branch).toBe("main");
+      // Should include commit SHA
+      expect(result.commitSha).toBeDefined();
+      expect(result.commitSha?.length).toBe(40);
     });
 
     test("should include specified branch in result", async () => {
@@ -623,6 +626,82 @@ describe("RepositoryCloner", () => {
       await cloner.clone(url, { fresh: true, fetchLatest: true });
       expect(mockGit.getCloneCallCount()).toBe(2); // Re-cloned
       expect(mockGit.getFetchCallCount()).toBe(0); // Did not fetch
+    });
+  });
+
+  describe("Commit SHA Capture", () => {
+    test("should include commitSha in result after fresh clone", async () => {
+      const url = "https://github.com/user/repo";
+      const expectedSha = "def4567890abcdef1234567890abcdef12345678";
+
+      mockGit.setCommitSha(expectedSha);
+
+      const result = await cloner.clone(url);
+
+      expect(result.commitSha).toBe(expectedSha);
+      expect(result.name).toBe("repo");
+      expect(result.branch).toBe("main");
+    });
+
+    test("should include commitSha when reusing existing clone", async () => {
+      const url = "https://github.com/user/repo";
+      const expectedSha = "abc1234567890abcdef1234567890abcdef123456";
+
+      // First clone creates directory
+      await cloner.clone(url);
+
+      // Set different SHA for second access
+      mockGit.setCommitSha(expectedSha);
+
+      // Second clone reuses existing
+      const result = await cloner.clone(url);
+
+      expect(result.commitSha).toBe(expectedSha);
+    });
+
+    test("should include commitSha after fetchLatest", async () => {
+      const url = "https://github.com/user/repo";
+      const initialSha = "111aaa222bbb333ccc444ddd555eee666fff7778";
+      const updatedSha = "999zzz888yyy777xxx666www555vvv444uuu3332";
+
+      mockGit.setCommitSha(initialSha);
+
+      // First clone
+      await cloner.clone(url);
+
+      // Simulate remote update
+      mockGit.setCommitSha(updatedSha);
+
+      // Fetch latest
+      const result = await cloner.clone(url, { fetchLatest: true });
+
+      expect(result.commitSha).toBe(updatedSha);
+    });
+
+    test("should return undefined commitSha when revparse fails", async () => {
+      const url = "https://github.com/user/repo";
+
+      // Make revparse fail for HEAD SHA only (not for --abbrev-ref HEAD)
+      mockGit.setShouldFailRevparseSha(new Error("git error"));
+
+      const result = await cloner.clone(url);
+
+      // Should still succeed, just without SHA
+      expect(result.commitSha).toBeUndefined();
+      expect(result.name).toBe("repo");
+      expect(result.branch).toBe("main"); // Branch detection still works
+    });
+
+    test("should capture 40-character SHA format", async () => {
+      const url = "https://github.com/user/repo";
+      const validSha = "a".repeat(40);
+
+      mockGit.setCommitSha(validSha);
+
+      const result = await cloner.clone(url);
+
+      expect(result.commitSha).toBe(validSha);
+      expect(result.commitSha?.length).toBe(40);
     });
   });
 });
