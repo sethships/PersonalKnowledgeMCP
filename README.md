@@ -777,6 +777,7 @@ bun run cli health
 - **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Complete guide for integrating with Claude Code
 
 ### Phase 1: Core MCP + Vector Search
+- **[Phase 1 Feature Summary](docs/phase1-feature-summary.md)** - Complete feature list, status, and known limitations
 - **[Phase 1 PRD](docs/Phase1-Core-MCP-Vector-Search-PRD.md)** - Product requirements for Phase 1
 - **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
 - **[Review Summary](docs/pm/phase1-review-summary.md)** - Document review and issue creation strategy
@@ -950,6 +951,25 @@ Development workflow:
 - Create PRs for all changes
 - Ensure tests pass and coverage ≥90%
 - Pre-commit hooks will auto-format and lint your code
+
+## Code Statistics
+
+Generated with [cloc](https://github.com/AlDanial/cloc):
+
+| Language | Files | Blank | Comment | Code |
+|:---------|------:|------:|--------:|-----:|
+| TypeScript | 209 | 8,974 | 16,291 | 39,933 |
+| Markdown | 34 | 4,596 | 9 | 14,697 |
+| YAML | 36 | 141 | 345 | 1,538 |
+| Bourne Shell | 3 | 224 | 241 | 900 |
+| PowerShell | 2 | 185 | 133 | 576 |
+| JSON | 7 | 5 | 0 | 308 |
+| Dockerfile | 1 | 22 | 38 | 36 |
+| TOML | 1 | 11 | 17 | 14 |
+| SQL | 1 | 3 | 16 | 9 |
+| JavaScript | 1 | 0 | 0 | 3 |
+| Python | 4 | 5 | 24 | 2 |
+| **SUM** | **299** | **14,166** | **17,114** | **58,016** |
 
 ## License
 
