@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Nothing yet
 
-## [0.1.0] - 2025-01-14 (Phase 1: Core MCP + Vector Search)
+## [0.1.0] - 2025-12-28 (Phase 1: Core MCP + Vector Search)
 
 Phase 1 establishes the core foundation for semantic code search via the Model Context Protocol.
 

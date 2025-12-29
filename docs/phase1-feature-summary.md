@@ -102,7 +102,7 @@ The following are intentional limitations in Phase 1, to be addressed in future 
 | Azure DevOps Integration | Phase 3 | Enterprise repository support |
 | Graph Database | Phase 4 | Neo4j for code relationships |
 | Automated Webhooks | Phase 4 | GitHub webhook handler |
-| OIDC Authentication | Phase 4 | Microsoft 365 SSO |
+| OIDC Full Integration | Phase 3+ | Microsoft 365 SSO (framework implemented) |
 | Kubernetes Deployment | Phase 4 | Production scaling |
 
 ### Current Constraints

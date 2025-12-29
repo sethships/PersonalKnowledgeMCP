@@ -954,14 +954,14 @@ Development workflow:
 
 ## Code Statistics
 
-Generated with [cloc](https://github.com/AlDanial/cloc):
+Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules, dist, .bun-cache, coverage):
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 209 | 8,974 | 16,291 | 39,933 |
-| Markdown | 34 | 4,596 | 9 | 14,697 |
+| TypeScript | 209 | 8,974 | 14,484 | 41,740 |
+| Markdown | 36 | 4,650 | 9 | 14,899 |
 | YAML | 36 | 141 | 345 | 1,538 |
-| Bourne Shell | 3 | 224 | 241 | 900 |
+| Bourne Shell | 6 | 232 | 242 | 924 |
 | PowerShell | 2 | 185 | 133 | 576 |
 | JSON | 7 | 5 | 0 | 308 |
 | Dockerfile | 1 | 22 | 38 | 36 |
@@ -969,7 +969,7 @@ Generated with [cloc](https://github.com/AlDanial/cloc):
 | SQL | 1 | 3 | 16 | 9 |
 | JavaScript | 1 | 0 | 0 | 3 |
 | Python | 4 | 5 | 24 | 2 |
-| **SUM** | **299** | **14,166** | **17,114** | **58,016** |
+| **SUM** | **304** | **14,228** | **15,308** | **60,049** |
 
 ## License
 
