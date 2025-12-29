@@ -238,7 +238,7 @@ describe("Secret Redaction", () => {
       }).not.toThrow();
     });
 
-    test("should handle logging with GITHUB_TOKEN in env (legacy)", () => {
+    test("should handle logging with GITHUB_TOKEN in env", () => {
       const logger = getComponentLogger("test");
 
       expect(() => {

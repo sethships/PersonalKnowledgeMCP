@@ -22,7 +22,7 @@ export const REDACT_PATHS = [
   // Environment variables
   "env.OPENAI_API_KEY",
   "env.GITHUB_PAT",
-  "env.GITHUB_TOKEN", // Legacy alias for GITHUB_PAT
+  "env.GITHUB_TOKEN", // Common GitHub token env var, redacted for defense in depth
   "env.DATABASE_URL",
   "env.AWS_SECRET_ACCESS_KEY",
   "env.AZURE_CLIENT_SECRET",
