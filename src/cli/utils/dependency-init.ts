@@ -203,7 +203,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
 
     // Step 8: Initialize GitHub client
     const githubClient = new GitHubClientImpl({
-      token: Bun.env["GITHUB_TOKEN"],
+      token: Bun.env["GITHUB_PAT"],
     });
     logger.debug("GitHub client initialized");
 

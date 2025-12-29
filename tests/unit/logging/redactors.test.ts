@@ -26,6 +26,7 @@ describe("Secret Redaction", () => {
     test("should include environment variable paths", () => {
       expect(REDACT_PATHS).toContain("env.OPENAI_API_KEY");
       expect(REDACT_PATHS).toContain("env.GITHUB_PAT");
+      expect(REDACT_PATHS).toContain("env.GITHUB_TOKEN");
     });
 
     test("should include authorization header paths", () => {
@@ -232,6 +233,18 @@ describe("Secret Redaction", () => {
         logger.info({
           env: {
             GITHUB_PAT: "ghp_secret123456789012345678901234567890",
+          },
+        });
+      }).not.toThrow();
+    });
+
+    test("should handle logging with GITHUB_TOKEN in env (legacy)", () => {
+      const logger = getComponentLogger("test");
+
+      expect(() => {
+        logger.info({
+          env: {
+            GITHUB_TOKEN: "ghp_secret123456789012345678901234567890",
           },
         });
       }).not.toThrow();
