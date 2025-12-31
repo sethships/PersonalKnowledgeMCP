@@ -167,7 +167,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-changeme} 'RETURN 1' || exit 1",
+          "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1",
         ]
       interval: 30s
       timeout: 10s

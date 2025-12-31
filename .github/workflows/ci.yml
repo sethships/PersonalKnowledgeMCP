@@ -39,9 +39,10 @@ jobs:
       - name: Start ChromaDB
         run: docker compose up -d chromadb
         env:
-          # Required for docker-compose.yml parsing (postgres service requires password)
-          # This is a dummy value - postgres isn't started in CI, but compose needs to parse the file
+          # Required for docker-compose.yml parsing (services require passwords)
+          # These are dummy values - postgres/neo4j aren't started in CI, but compose needs to parse the file
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Wait for ChromaDB to be ready
         run: |
@@ -58,8 +59,9 @@ jobs:
           docker compose logs chromadb
           exit 1
         env:
-          # Required for docker-compose.yml parsing (postgres service requires password)
+          # Required for docker-compose.yml parsing (services require passwords)
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Run tests with coverage
         run: bun test --coverage --coverage-reporter=lcov
@@ -79,5 +81,6 @@ jobs:
         if: always()
         run: docker compose down
         env:
-          # Required for docker-compose.yml parsing (postgres service requires password)
+          # Required for docker-compose.yml parsing (services require passwords)
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
