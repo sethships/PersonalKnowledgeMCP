@@ -1,0 +1,91 @@
+# Personal Knowledge MCP - Production Values
+#
+# Use for production deployments with full resources and security.
+#
+# Install: helm install pk-mcp ./charts/personal-knowledge-mcp -f examples/values-prod.yaml
+
+global:
+  namespace:
+    name: pk-mcp
+
+instance:
+  name: "production"
+  securityTier: "public"
+  requireAuth: true
+
+mcpService:
+  replicaCount: 2
+  image:
+    repository: your-registry.io/pk-mcp
+    tag: "1.0.0"
+    pullPolicy: Always
+  imagePullSecrets:
+    - name: registry-credentials
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+  config:
+    logLevel: "warn"
+    logFormat: "json"
+    nodeEnv: "production"
+    rateLimitEnabled: "true"
+    requireAuthForDefaultInstance: "true"
+
+chromadb:
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  persistence:
+    size: 50Gi
+    storageClass: "standard"
+
+postgres:
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "2"
+  persistence:
+    size: 20Gi
+    storageClass: "standard"
+
+secrets:
+  # Use pre-created secrets in production
+  create: false
+  existingSecret: "pk-mcp-secrets"
+
+ingress:
+  enabled: true
+  className: nginx
+  host: pk-mcp.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: pk-mcp-tls
+
+networkPolicies:
+  enabled: true
+  defaultDeny: true
+  allowDns: true
+  allowExternalHttps: true

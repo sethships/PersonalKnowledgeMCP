@@ -1,0 +1,83 @@
+{{- if .Values.mcpService.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pk-mcp.mcpService.configMapName" . }}
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.mcpService.labels" . | nindent 4 }}
+data:
+  # ChromaDB connection (internal Kubernetes DNS)
+  CHROMADB_HOST: {{ include "pk-mcp.chromadbHost" . | quote }}
+  CHROMADB_PORT: {{ include "pk-mcp.chromadbPort" . | quote }}
+
+  # PostgreSQL connection (internal Kubernetes DNS)
+  POSTGRES_HOST: {{ include "pk-mcp.postgresHost" . | quote }}
+  POSTGRES_PORT: {{ include "pk-mcp.postgresPort" . | quote }}
+  POSTGRES_DB: {{ .Values.postgres.config.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.config.username | quote }}
+
+  # HTTP transport configuration
+  HTTP_TRANSPORT_ENABLED: {{ .Values.mcpService.config.httpTransportEnabled | quote }}
+  HTTP_HOST: {{ .Values.mcpService.config.httpHost | quote }}
+  HTTP_PORT: {{ .Values.mcpService.config.httpPort | quote }}
+
+  # Session configuration
+  HTTP_MAX_SSE_SESSIONS: {{ .Values.mcpService.config.httpMaxSseSessions | quote }}
+  HTTP_SSE_SESSION_TTL_MS: {{ .Values.mcpService.config.httpSseSessionTtlMs | quote }}
+  HTTP_SSE_CLEANUP_INTERVAL_MS: {{ .Values.mcpService.config.httpSseCleanupIntervalMs | quote }}
+  HTTP_MAX_STREAMABLE_SESSIONS: {{ .Values.mcpService.config.httpMaxStreamableSessions | quote }}
+  HTTP_STREAMABLE_SESSION_TTL_MS: {{ .Values.mcpService.config.httpStreamableSessionTtlMs | quote }}
+  HTTP_STREAMABLE_CLEANUP_INTERVAL_MS: {{ .Values.mcpService.config.httpStreamableCleanupIntervalMs | quote }}
+
+  # Logging
+  LOG_LEVEL: {{ .Values.mcpService.config.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.mcpService.config.logFormat | quote }}
+  NODE_ENV: {{ .Values.mcpService.config.nodeEnv | quote }}
+
+  # Data paths
+  DATA_PATH: {{ .Values.mcpService.config.dataPath | quote }}
+  REPO_CLONE_PATH: {{ .Values.mcpService.config.repoClonePath | quote }}
+
+  # Embedding configuration
+  EMBEDDING_MODEL: {{ .Values.mcpService.config.embeddingModel | quote }}
+  EMBEDDING_DIMENSIONS: {{ .Values.mcpService.config.embeddingDimensions | quote }}
+  EMBEDDING_BATCH_SIZE: {{ .Values.mcpService.config.embeddingBatchSize | quote }}
+
+  # Chunking configuration
+  CHUNK_MAX_TOKENS: {{ .Values.mcpService.config.chunkMaxTokens | quote }}
+  CHUNK_OVERLAP_TOKENS: {{ .Values.mcpService.config.chunkOverlapTokens | quote }}
+
+  # Search configuration
+  DEFAULT_SEARCH_LIMIT: {{ .Values.mcpService.config.defaultSearchLimit | quote }}
+  MAX_SEARCH_LIMIT: {{ .Values.mcpService.config.maxSearchLimit | quote }}
+  DEFAULT_SIMILARITY_THRESHOLD: {{ .Values.mcpService.config.defaultSimilarityThreshold | quote }}
+  SNIPPET_MAX_LENGTH: {{ .Values.mcpService.config.snippetMaxLength | quote }}
+
+  # Performance configuration
+  MAX_RETRIES: {{ .Values.mcpService.config.maxRetries | quote }}
+  REQUEST_TIMEOUT_MS: {{ .Values.mcpService.config.requestTimeoutMs | quote }}
+  RETRY_INITIAL_DELAY_MS: {{ .Values.mcpService.config.retryInitialDelayMs | quote }}
+  RETRY_MAX_DELAY_MS: {{ .Values.mcpService.config.retryMaxDelayMs | quote }}
+  RETRY_BACKOFF_MULTIPLIER: {{ .Values.mcpService.config.retryBackoffMultiplier | quote }}
+
+  # Multi-instance configuration
+  DEFAULT_INSTANCE: {{ .Values.mcpService.config.defaultInstance | quote }}
+  REQUIRE_AUTH_FOR_DEFAULT_INSTANCE: {{ .Values.mcpService.config.requireAuthForDefaultInstance | quote }}
+
+  # Rate limiting
+  RATE_LIMIT_ENABLED: {{ .Values.mcpService.config.rateLimitEnabled | quote }}
+  RATE_LIMIT_READ_PER_MINUTE: {{ .Values.mcpService.config.rateLimitReadPerMinute | quote }}
+  RATE_LIMIT_READ_PER_HOUR: {{ .Values.mcpService.config.rateLimitReadPerHour | quote }}
+  RATE_LIMIT_WRITE_PER_MINUTE: {{ .Values.mcpService.config.rateLimitWritePerMinute | quote }}
+  RATE_LIMIT_WRITE_PER_HOUR: {{ .Values.mcpService.config.rateLimitWritePerHour | quote }}
+  RATE_LIMIT_ADMIN_BYPASS: {{ .Values.mcpService.config.rateLimitAdminBypass | quote }}
+
+  # CORS configuration
+  CORS_ENABLED: {{ .Values.mcpService.config.corsEnabled | quote }}
+  CORS_ORIGINS: {{ .Values.mcpService.config.corsOrigins | quote }}
+  CORS_CREDENTIALS: {{ .Values.mcpService.config.corsCredentials | quote }}
+
+  # Authentication
+  AUTH_TRACK_TOKEN_USAGE: {{ .Values.mcpService.config.authTrackTokenUsage | quote }}
+{{- end }}

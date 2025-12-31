@@ -1,0 +1,71 @@
+Personal Knowledge MCP has been installed!
+
+Release: {{ .Release.Name }}
+Namespace: {{ include "pk-mcp.namespace" . }}
+
+{{- if .Values.ingress.enabled }}
+=== Access the Application ===
+
+Application URL: http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}
+
+{{- else }}
+
+=== Access the Application ===
+
+The MCP service is not exposed via ingress. Access via port-forward:
+
+  kubectl -n {{ include "pk-mcp.namespace" . }} port-forward svc/{{ include "pk-mcp.mcpService.fullname" . }} {{ .Values.mcpService.service.port }}:{{ .Values.mcpService.service.port }}
+
+Then access: http://localhost:{{ .Values.mcpService.service.port }}
+
+{{- end }}
+
+=== Health Check ===
+
+  curl http://localhost:{{ .Values.mcpService.service.port }}/health
+
+{{- if .Values.chromadb.enabled }}
+
+=== ChromaDB ===
+
+ChromaDB is running at: {{ include "pk-mcp.chromadbHost" . }}:{{ include "pk-mcp.chromadbPort" . }}
+
+{{- end }}
+
+{{- if .Values.postgres.enabled }}
+
+=== PostgreSQL ===
+
+PostgreSQL is running at: {{ include "pk-mcp.postgresHost" . }}:{{ include "pk-mcp.postgresPort" . }}
+Database: {{ .Values.postgres.config.database }}
+Username: {{ .Values.postgres.config.username }}
+
+{{- end }}
+
+{{- if .Values.secrets.create }}
+
+=== IMPORTANT: Secrets ===
+
+Default secrets have been created with values from your Helm values.
+For production deployments, use pre-created secrets:
+
+  --set secrets.create=false --set secrets.existingSecret=your-secret-name
+
+{{- end }}
+
+=== Run Tests ===
+
+  helm test {{ .Release.Name }} -n {{ include "pk-mcp.namespace" . }}
+
+=== Useful Commands ===
+
+# View logs
+kubectl -n {{ include "pk-mcp.namespace" . }} logs -l app.kubernetes.io/component=mcp-service -f
+
+# View all resources
+kubectl -n {{ include "pk-mcp.namespace" . }} get all
+
+# Describe deployment
+kubectl -n {{ include "pk-mcp.namespace" . }} describe deployment {{ include "pk-mcp.mcpService.fullname" . }}
+
+For more information, see: https://github.com/sethb75/PersonalKnowledgeMCP

@@ -1,0 +1,51 @@
+# Personal Knowledge MCP - Public Instance Values
+#
+# Use for deploying a public instance for OSS/public knowledge.
+# Deploy as separate Helm release for instance isolation.
+#
+# Install: helm install pk-mcp-public ./charts/personal-knowledge-mcp \
+#          -n pk-mcp-public --create-namespace \
+#          -f examples/values-public.yaml
+
+global:
+  namespace:
+    create: true
+    name: pk-mcp-public
+
+instance:
+  name: "public"
+  securityTier: "public"
+  requireAuth: false
+
+mcpService:
+  replicaCount: 1
+  config:
+    defaultInstance: "public"
+    requireAuthForDefaultInstance: "false"
+    logLevel: "info"
+    # More permissive rate limits for public access
+    rateLimitReadPerMinute: "120"
+    rateLimitWritePerMinute: "60"
+
+chromadb:
+  persistence:
+    size: 50Gi
+
+postgres:
+  persistence:
+    size: 20Gi
+
+secrets:
+  create: false
+  existingSecret: "pk-mcp-public-secrets"
+
+ingress:
+  enabled: true
+  host: pk-mcp-public.local
+  tls:
+    enabled: true
+    secretName: pk-mcp-public-tls
+
+networkPolicies:
+  enabled: true
+  defaultDeny: true

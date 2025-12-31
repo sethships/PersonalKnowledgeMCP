@@ -1,0 +1,390 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Personal Knowledge MCP Helm Chart Values",
+  "type": "object",
+  "properties": {
+    "global": {
+      "type": "object",
+      "properties": {
+        "nameOverride": {
+          "type": "string",
+          "description": "Override the chart name"
+        },
+        "fullnameOverride": {
+          "type": "string",
+          "description": "Override the full release name"
+        },
+        "namespace": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "description": "Create the namespace"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$",
+              "description": "Namespace name"
+            }
+          }
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Instance name"
+        },
+        "securityTier": {
+          "type": "string",
+          "enum": ["private", "work", "public"],
+          "description": "Security tier"
+        },
+        "requireAuth": {
+          "type": "boolean",
+          "description": "Require authentication"
+        }
+      }
+    },
+    "mcpService": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "image": {
+          "type": "object",
+          "required": ["repository"],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "properties": {
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+[EPTGMK]i?$"
+                },
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[0-9]+m?$"
+                }
+              }
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "memory": {
+                  "type": "string",
+                  "pattern": "^[0-9]+[EPTGMK]i?$"
+                },
+                "cpu": {
+                  "type": "string",
+                  "pattern": "^[0-9]+m?$"
+                }
+              }
+            }
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "targetMemoryUtilizationPercentage": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "pdb": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minAvailable": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxUnavailable": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "chromadb": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "string",
+              "pattern": "^[0-9]+[EPTGMK]i$"
+            },
+            "storageClass": {
+              "type": "string"
+            },
+            "accessMode": {
+              "type": "string",
+              "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany"]
+            }
+          }
+        }
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "string",
+              "pattern": "^[0-9]+[EPTGMK]i$"
+            },
+            "storageClass": {
+              "type": "string"
+            },
+            "accessMode": {
+              "type": "string",
+              "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany"]
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "required": ["database", "username"],
+          "properties": {
+            "database": {
+              "type": "string",
+              "minLength": 1
+            },
+            "username": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "neo4j": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "openaiApiKey": {
+          "type": "string"
+        },
+        "githubPat": {
+          "type": "string"
+        },
+        "postgresPassword": {
+          "type": "string"
+        },
+        "chromadbAuthToken": {
+          "type": "string"
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tls": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "secretName": {
+              "type": "string"
+            }
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "pathType"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "pathType": {
+                "type": "string",
+                "enum": ["Exact", "Prefix", "ImplementationSpecific"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicies": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "defaultDeny": {
+          "type": "boolean"
+        },
+        "allowDns": {
+          "type": "boolean"
+        },
+        "allowExternalHttps": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

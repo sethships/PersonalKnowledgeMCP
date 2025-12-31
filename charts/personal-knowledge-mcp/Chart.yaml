@@ -1,0 +1,24 @@
+apiVersion: v2
+name: personal-knowledge-mcp
+description: AI-first knowledge management MCP service with semantic search capabilities
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - mcp
+  - model-context-protocol
+  - ai
+  - knowledge-management
+  - rag
+  - semantic-search
+  - vector-database
+  - chromadb
+  - embeddings
+home: https://github.com/sethb75/PersonalKnowledgeMCP
+sources:
+  - https://github.com/sethb75/PersonalKnowledgeMCP
+maintainers:
+  - name: Seth Bibler
+    email: seth@bibler.us
+icon: ""
+kubeVersion: ">=1.23.0-0"
