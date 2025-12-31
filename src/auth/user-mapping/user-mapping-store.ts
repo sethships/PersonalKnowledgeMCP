@@ -9,7 +9,7 @@
  */
 
 import { join } from "path";
-import type { FSWatcher } from "fs";
+import { watch, type FSWatcher } from "fs";
 import type { Logger } from "pino";
 import type {
   UserMappingStore,
@@ -122,11 +122,11 @@ export class UserMappingStoreImpl implements UserMappingStore {
     if (!UserMappingStoreImpl.instance) {
       const path = dataPath || process.env["DATA_PATH"] || "./data";
       UserMappingStoreImpl.instance = new UserMappingStoreImpl(path, debounceMs);
-    } else if (dataPath !== undefined) {
+    } else if (dataPath !== undefined || debounceMs !== undefined) {
       const logger = getComponentLogger("auth:user-mapping-store");
       logger.warn(
-        { requestedPath: dataPath },
-        "getInstance called with dataPath after singleton already initialized - ignoring new path"
+        { requestedPath: dataPath, requestedDebounceMs: debounceMs },
+        "getInstance called with parameters after singleton already initialized - ignoring new values"
       );
     }
     return UserMappingStoreImpl.instance;
@@ -341,10 +341,6 @@ export class UserMappingStoreImpl implements UserMappingStore {
     }
 
     try {
-      // Use dynamic import for fs (ESM compatible)
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-      const { watch } = require("fs") as typeof import("fs");
-
       // Bind handler to preserve 'this' context in callback
       const boundHandler = (): void => this.handleFileChange();
       this.watcher = watch(this.filePath, (eventType) => {

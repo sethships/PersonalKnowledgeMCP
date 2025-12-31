@@ -12,8 +12,10 @@
  * @module auth/user-mapping/extractors/azure-ad
  */
 
+import type { Logger } from "pino";
 import type { RawOidcClaims } from "../user-mapping-types.js";
 import { BaseClaimsExtractor } from "./claims-extractor.js";
+import { getComponentLogger } from "../../../logging/index.js";
 
 /**
  * Claims extractor for Azure AD / Entra ID
@@ -31,6 +33,21 @@ import { BaseClaimsExtractor } from "./claims-extractor.js";
  * ```
  */
 export class AzureAdExtractor extends BaseClaimsExtractor {
+  /**
+   * Lazy-initialized logger for group overflow diagnostics
+   */
+  private _logger: Logger | null = null;
+
+  /**
+   * Get logger instance (lazy initialization)
+   */
+  private get logger(): Logger {
+    if (!this._logger) {
+      this._logger = getComponentLogger("auth:claims-extractor:azure-ad");
+    }
+    return this._logger;
+  }
+
   /**
    * Azure AD claim keys
    */
@@ -81,6 +98,15 @@ export class AzureAdExtractor extends BaseClaimsExtractor {
 
     // Combine and deduplicate
     const allGroups = [...new Set([...groups, ...directoryRoles])];
+
+    // Warn if _claim_sources is present but groups array is empty (group overflow)
+    if (allGroups.length === 0 && claims["_claim_sources"] !== undefined) {
+      this.logger.warn(
+        { hasClaimSources: true },
+        "Azure AD token contains _claim_sources but no groups - user may belong to >200 groups. " +
+          "Configure group filtering in Azure AD or use Microsoft Graph API for full group membership."
+      );
+    }
 
     return allGroups;
   }

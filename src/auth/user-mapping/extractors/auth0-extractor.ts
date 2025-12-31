@@ -11,8 +11,10 @@
  * @module auth/user-mapping/extractors/auth0
  */
 
+import type { Logger } from "pino";
 import type { RawOidcClaims } from "../user-mapping-types.js";
 import { BaseClaimsExtractor } from "./claims-extractor.js";
+import { getComponentLogger } from "../../../logging/index.js";
 
 /**
  * Claims extractor for Auth0
@@ -30,6 +32,21 @@ import { BaseClaimsExtractor } from "./claims-extractor.js";
  * ```
  */
 export class Auth0Extractor extends BaseClaimsExtractor {
+  /**
+   * Lazy-initialized logger for fuzzy matching diagnostics
+   */
+  private _logger: Logger | null = null;
+
+  /**
+   * Get logger instance (lazy initialization)
+   */
+  private get logger(): Logger {
+    if (!this._logger) {
+      this._logger = getComponentLogger("auth:claims-extractor:auth0");
+    }
+    return this._logger;
+  }
+
   /**
    * Common claim keys used by Auth0
    */
@@ -81,7 +98,7 @@ export class Auth0Extractor extends BaseClaimsExtractor {
       }
     }
 
-    // Try to find any claim containing "groups" in its key
+    // Try to find any claim containing "groups" in its key (fuzzy matching)
     for (const [key, value] of Object.entries(claims)) {
       if (
         key.toLowerCase().includes("groups") &&
@@ -89,6 +106,10 @@ export class Auth0Extractor extends BaseClaimsExtractor {
       ) {
         const groups = this.extractStringArray(claims, key);
         if (groups.length > 0) {
+          this.logger.debug(
+            { claimKey: key, groupCount: groups.length },
+            "Auth0 groups extracted via fuzzy claim matching"
+          );
           return groups;
         }
       }
@@ -117,7 +138,7 @@ export class Auth0Extractor extends BaseClaimsExtractor {
       }
     }
 
-    // Try to find any claim containing "roles" in its key
+    // Try to find any claim containing "roles" in its key (fuzzy matching)
     for (const [key, value] of Object.entries(claims)) {
       if (
         key.toLowerCase().includes("roles") &&
@@ -125,6 +146,10 @@ export class Auth0Extractor extends BaseClaimsExtractor {
       ) {
         const roles = this.extractStringArray(claims, key);
         if (roles.length > 0) {
+          this.logger.debug(
+            { claimKey: key, roleCount: roles.length },
+            "Auth0 roles extracted via fuzzy claim matching"
+          );
           return roles;
         }
       }

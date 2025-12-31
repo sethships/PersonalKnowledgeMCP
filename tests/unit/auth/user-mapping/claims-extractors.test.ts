@@ -4,7 +4,7 @@
  * Tests for IdP-specific claims extraction adapters.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import {
   AzureAdExtractor,
   Auth0Extractor,
@@ -12,6 +12,7 @@ import {
   createClaimsExtractor,
 } from "../../../../src/auth/user-mapping/extractors/index.js";
 import type { UserMappingConfig } from "../../../../src/auth/user-mapping/user-mapping-types.js";
+import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
 
 const defaultConfig: UserMappingConfig = {
   enabled: true,
@@ -21,6 +22,15 @@ const defaultConfig: UserMappingConfig = {
   enableFileWatcher: false,
   fileWatcherDebounceMs: 500,
 };
+
+// Initialize logger for all tests in this file
+beforeAll(() => {
+  initializeLogger({ level: "error", format: "json" });
+});
+
+afterAll(() => {
+  resetLogger();
+});
 
 describe("AzureAdExtractor", () => {
   const extractor = new AzureAdExtractor();
