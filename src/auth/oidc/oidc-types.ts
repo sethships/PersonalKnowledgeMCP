@@ -72,6 +72,12 @@ export interface OidcUserInfo {
 
   /** User's profile picture URL */
   picture?: string;
+
+  /** Group memberships extracted from OIDC claims (for user mapping) */
+  groups?: string[];
+
+  /** Role assignments extracted from OIDC claims (for user mapping) */
+  roles?: string[];
 }
 
 /**

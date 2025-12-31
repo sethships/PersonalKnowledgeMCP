@@ -96,3 +96,6 @@ export type {
 
 // OIDC Authentication (re-export entire module)
 export * as oidc from "./oidc/index.js";
+
+// User Mapping (re-export entire module)
+export * as userMapping from "./user-mapping/index.js";
