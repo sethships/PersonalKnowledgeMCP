@@ -27,6 +27,11 @@ import {
   OidcUserInfoError,
   OidcSessionNotFoundError,
 } from "./oidc-errors.js";
+import type {
+  UserMappingService,
+  ClaimsExtractor,
+  NormalizedClaims,
+} from "../user-mapping/user-mapping-types.js";
 
 /**
  * OIDC Provider Implementation
@@ -72,15 +77,32 @@ export class OidcProviderImpl implements OidcProvider {
   private discoveryPromise: Promise<void> | null = null;
 
   /**
+   * Optional user mapping service for dynamic scope/instance assignment
+   */
+  private readonly userMappingService?: UserMappingService;
+
+  /**
+   * Optional claims extractor for IdP-specific claim handling
+   */
+  private readonly claimsExtractor?: ClaimsExtractor;
+
+  /**
    * Create a new OIDC provider
    *
    * @param config - OIDC configuration
    * @param sessionStore - Session store for managing auth flow state
+   * @param userMappingService - Optional user mapping service for dynamic permissions
+   * @param claimsExtractor - Optional claims extractor for IdP-specific handling
    */
   constructor(
     private readonly config: OidcConfig,
-    private readonly sessionStore: OidcSessionStore
-  ) {}
+    private readonly sessionStore: OidcSessionStore,
+    userMappingService?: UserMappingService,
+    claimsExtractor?: ClaimsExtractor
+  ) {
+    this.userMappingService = userMappingService;
+    this.claimsExtractor = claimsExtractor;
+  }
 
   /**
    * Lazy-initialized component logger
@@ -316,6 +338,48 @@ export class OidcProviderImpl implements OidcProvider {
       const expiresIn = tokens.expires_in || 3600;
       const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
+      // Extract groups and roles from ID token claims for user mapping
+      const idTokenClaims = tokens.claims() || {};
+
+      // Resolve scopes and instance access using user mapping service (if configured)
+      let mappedScopes = [...this.config.defaultScopes];
+      let mappedInstanceAccess = [...this.config.defaultInstanceAccess];
+
+      if (this.userMappingService && this.claimsExtractor) {
+        try {
+          // Normalize claims using the IdP-specific extractor
+          const normalizedClaims: NormalizedClaims = this.claimsExtractor.normalize(
+            idTokenClaims as Record<string, unknown>
+          );
+
+          // Also populate userInfo with extracted groups/roles for session storage
+          userInfo.groups = normalizedClaims.groups;
+          userInfo.roles = normalizedClaims.roles;
+
+          // Resolve mapping based on claims
+          const mapping = await this.userMappingService.resolveMapping(normalizedClaims);
+          mappedScopes = mapping.scopes;
+          mappedInstanceAccess = mapping.instanceAccess;
+
+          this.logger.debug(
+            {
+              sessionId,
+              matchedPattern: mapping.matchedPattern,
+              isDefault: mapping.isDefault,
+              scopes: mappedScopes,
+              instanceAccess: mappedInstanceAccess,
+            },
+            "User mapping resolved"
+          );
+        } catch (mappingError) {
+          // Log error but fall back to defaults - don't fail authentication
+          this.logger.warn(
+            { err: mappingError, sessionId },
+            "User mapping failed, using default scopes and instance access"
+          );
+        }
+      }
+
       // Update session with tokens and user info
       session.tokens = {
         accessToken: tokens.access_token,
@@ -324,8 +388,8 @@ export class OidcProviderImpl implements OidcProvider {
         tokenExpiresAt,
       };
       session.user = userInfo;
-      session.mappedScopes = [...this.config.defaultScopes];
-      session.mappedInstanceAccess = [...this.config.defaultInstanceAccess];
+      session.mappedScopes = mappedScopes;
+      session.mappedInstanceAccess = mappedInstanceAccess;
       session.expiresAt = tokenExpiresAt;
 
       // Clear auth flow state (no longer needed)
