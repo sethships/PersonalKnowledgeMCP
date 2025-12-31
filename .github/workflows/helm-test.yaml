@@ -38,23 +38,48 @@ jobs:
         with:
           version: "latest"
 
+      # Note: secrets.openaiApiKey and secrets.postgresPassword are required when secrets.create=true
+      # Providing test values for CI validation
       - name: Template with default values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
       - name: Template with dev values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp -f charts/personal-knowledge-mcp/examples/values-dev.yaml
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-dev.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
       - name: Template with prod values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp -f charts/personal-knowledge-mcp/examples/values-prod.yaml
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-prod.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
       - name: Template with private instance values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp -f charts/personal-knowledge-mcp/examples/values-private.yaml
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-private.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
       - name: Template with work instance values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp -f charts/personal-knowledge-mcp/examples/values-work.yaml
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-work.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
       - name: Template with public instance values
-        run: helm template pk-mcp ./charts/personal-knowledge-mcp -f charts/personal-knowledge-mcp/examples/values-public.yaml
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-public.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
 
   schema-validation:
     name: Schema Validation
