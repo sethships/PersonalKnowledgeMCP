@@ -149,6 +149,14 @@ helm rollback pk-mcp 1 -n pk-mcp
 - **Secrets**: If switching from `secrets.create=true` to `existingSecret`, create the secret first.
 - **Image tags**: Use specific tags (not `latest`) in production for reproducible deployments.
 
+### Data Persistence Notes
+
+- **ChromaDB & PostgreSQL**: Use PersistentVolumeClaims for data durability across pod restarts.
+- **MCP Service Data**: The `/app/data` directory (including cloned repositories) uses ephemeral `emptyDir` storage. This means:
+  - Cloned repositories are lost when pods restart or are rescheduled
+  - Re-indexing will occur automatically after restart (embeddings remain in ChromaDB)
+  - This is intentional for stateless deployment; ChromaDB holds the valuable embeddings
+
 ## Uninstalling
 
 ```bash

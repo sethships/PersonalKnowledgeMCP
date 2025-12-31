@@ -5,3 +5,5 @@ coverage
 *.json
 .env
 .env.*
+# Helm chart templates contain Go templating that isn't valid YAML
+charts/

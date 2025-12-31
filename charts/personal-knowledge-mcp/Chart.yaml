@@ -3,7 +3,8 @@ name: personal-knowledge-mcp
 description: AI-first knowledge management MCP service with semantic search capabilities
 type: application
 version: 0.1.0
-appVersion: "1.0.0"
+# appVersion tracks the application version (Phase 1 development)
+appVersion: "0.1.0"
 keywords:
   - mcp
   - model-context-protocol

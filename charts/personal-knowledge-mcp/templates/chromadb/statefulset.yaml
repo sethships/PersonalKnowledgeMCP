@@ -39,14 +39,14 @@ spec:
             - configMapRef:
                 name: {{ include "pk-mcp.chromadb.configMapName" . }}
           env:
-            # Optional authentication token from secret
-            {{- if or .Values.secrets.chromadbAuthToken .Values.secrets.existingSecret }}
+            # Authentication token from secret (when auth is explicitly enabled)
+            {{- if .Values.chromadb.auth.enabled }}
             - name: CHROMA_SERVER_AUTHN_CREDENTIALS
               valueFrom:
                 secretKeyRef:
                   name: {{ include "pk-mcp.secretName" . }}
                   key: CHROMADB_AUTH_TOKEN
-                  optional: true
+                  optional: false
             {{- end }}
           resources:
             {{- toYaml .Values.chromadb.resources | nindent 12 }}
@@ -61,8 +61,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /chroma/chroma
+            # Tmpfs for temp files (required for readOnlyRootFilesystem)
+            - name: tmp
+              mountPath: /tmp
           securityContext:
             {{- toYaml .Values.chromadb.containerSecurityContext | nindent 12 }}
+
+      # Volumes for temp directory (StatefulSet PVC handles data)
+      volumes:
+        - name: tmp
+          emptyDir: {}
 
       {{- with .Values.chromadb.nodeSelector }}
       nodeSelector:

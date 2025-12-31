@@ -10,6 +10,10 @@ metadata:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
   containers:
     - name: wget
       image: busybox:1.36
@@ -18,5 +22,11 @@ spec:
         - '-qO-'
         - '--timeout=10'
         - 'http://{{ include "pk-mcp.chromadb.fullname" . }}:{{ .Values.chromadb.service.port }}/api/v2/heartbeat'
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
   restartPolicy: Never
 {{- end }}

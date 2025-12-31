@@ -15,6 +15,14 @@ spec:
   ingress:
     # Allow traffic from ingress controller to MCP service
     - from:
+        {{- if .Values.networkPolicies.ingressControllerLabels }}
+        # Custom ingress controller labels
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicies.ingressControllerLabels | nindent 14 }}
+        {{- else }}
+        # Default: allow nginx and traefik ingress controllers
         - namespaceSelector: {}
           podSelector:
             matchLabels:
@@ -23,6 +31,7 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: traefik
+        {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.mcpService.service.port }}

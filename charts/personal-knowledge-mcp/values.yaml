@@ -258,6 +258,7 @@ chromadb:
   # Container security context
   containerSecurityContext:
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     capabilities:
       drop:
         - ALL
@@ -293,9 +294,16 @@ chromadb:
     isPersistent: "TRUE"
     anonymizedTelemetry: "FALSE"
     allowReset: "FALSE"
-    # Authentication provider (enabled when auth token is set)
-    authProvider: "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
-    authTokenTransportHeader: "Authorization"
+
+  # Authentication configuration
+  auth:
+    # Explicitly enable/disable authentication
+    # When true, requires secrets.chromadbAuthToken to be set
+    enabled: false
+    # Authentication provider type
+    provider: "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
+    # Header used for token transport
+    tokenTransportHeader: "Authorization"
 
   # Termination grace period in seconds
   terminationGracePeriodSeconds: 30
@@ -534,6 +542,12 @@ networkPolicies:
 
   # Allow external HTTPS egress (for OpenAI API)
   allowExternalHttps: true
+
+  # Custom ingress controller pod labels (optional)
+  # Use this to allow traffic from ingress controllers other than nginx/traefik
+  # Example for Kong: { app: kong }
+  # Example for HAProxy: { app.kubernetes.io/name: haproxy-ingress }
+  ingressControllerLabels: {}
 
 # =============================================================================
 # Service Account Configuration

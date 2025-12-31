@@ -279,10 +279,11 @@ Ingress full name
 {{- end }}
 
 {{/*
-Check if ChromaDB authentication is enabled (auth token is set)
+Check if ChromaDB authentication is enabled
+Uses explicit auth.enabled flag for clarity
 */}}
 {{- define "pk-mcp.chromadb.authEnabled" -}}
-{{- if or .Values.secrets.chromadbAuthToken (and .Values.secrets.existingSecret (not .Values.secrets.create)) }}
+{{- if .Values.chromadb.auth.enabled }}
 {{- true }}
 {{- else }}
 {{- false }}
