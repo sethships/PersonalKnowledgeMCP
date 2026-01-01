@@ -29,7 +29,8 @@ import {
   TOKEN_PREFIX,
 } from "./validation.js";
 import { TokenValidationError, TokenGenerationError } from "./errors.js";
-import { getComponentLogger } from "../logging/index.js";
+import { getComponentLogger, getAuditLogger } from "../logging/index.js";
+import type { AuditLogger } from "../logging/audit-types.js";
 
 /**
  * Token service implementation with caching for fast validation
@@ -62,6 +63,11 @@ export class TokenServiceImpl implements TokenService {
   private _logger: Logger | null = null;
 
   /**
+   * Lazy-initialized audit logger
+   */
+  private _auditLogger: AuditLogger | null = null;
+
+  /**
    * Create a new TokenService instance
    *
    * @param tokenStore - Token storage backend
@@ -76,6 +82,21 @@ export class TokenServiceImpl implements TokenService {
       this._logger = getComponentLogger("auth:token-service");
     }
     return this._logger;
+  }
+
+  /**
+   * Lazy-initialized audit logger
+   */
+  private getAudit(): AuditLogger | null {
+    if (this._auditLogger === null) {
+      try {
+        this._auditLogger = getAuditLogger();
+      } catch {
+        // Audit logger not initialized, skip audit logging
+        return null;
+      }
+    }
+    return this._auditLogger;
   }
 
   /**
@@ -143,6 +164,23 @@ export class TokenServiceImpl implements TokenService {
         },
         "Token generated"
       );
+
+      // Emit audit event for token creation
+      const audit = this.getAudit();
+      if (audit) {
+        audit.emit({
+          timestamp: new Date().toISOString(),
+          eventType: "token.created",
+          success: true,
+          token: {
+            tokenHashPrefix: tokenHash.substring(0, 8),
+            tokenName: validated.name,
+          },
+          scopes: validated.scopes as TokenScope[],
+          instanceAccess: validated.instanceAccess as InstanceAccess[],
+          expiresAt: metadata.expiresAt,
+        });
+      }
 
       return { rawToken, tokenHash, metadata };
     } catch (error) {
@@ -322,6 +360,20 @@ export class TokenServiceImpl implements TokenService {
       "Token revoked"
     );
 
+    // Emit audit event for token revocation
+    const audit = this.getAudit();
+    if (audit) {
+      audit.emit({
+        timestamp: new Date().toISOString(),
+        eventType: "token.revoked",
+        success: true,
+        token: {
+          tokenHashPrefix: tokenHash.substring(0, 8),
+          tokenName: token.metadata.name,
+        },
+      });
+    }
+
     return true;
   }
 
@@ -373,15 +425,33 @@ export class TokenServiceImpl implements TokenService {
 
     const tokens = await this.tokenStore.loadTokens();
 
-    if (!tokens.has(tokenHash)) {
+    const token = tokens.get(tokenHash);
+    if (!token) {
       this.logger.info({ tokenHash: tokenHash.substring(0, 8) }, "Token not found for deletion");
       return false;
     }
+
+    // Capture token info before deletion for audit log
+    const tokenName = token.metadata.name;
 
     tokens.delete(tokenHash);
     await this.tokenStore.saveTokens(tokens);
 
     this.logger.info({ tokenHash: tokenHash.substring(0, 8) }, "Token deleted");
+
+    // Emit audit event for token deletion
+    const audit = this.getAudit();
+    if (audit) {
+      audit.emit({
+        timestamp: new Date().toISOString(),
+        eventType: "token.deleted",
+        success: true,
+        token: {
+          tokenHashPrefix: tokenHash.substring(0, 8),
+          tokenName,
+        },
+      });
+    }
 
     return true;
   }

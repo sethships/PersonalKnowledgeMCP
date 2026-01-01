@@ -9,7 +9,8 @@
 
 import type { Request, Response, NextFunction } from "express";
 import type { Logger } from "pino";
-import { getComponentLogger } from "../../logging/index.js";
+import { getComponentLogger, getAuditLogger } from "../../logging/index.js";
+import type { AuditLogger } from "../../logging/audit-types.js";
 import type { OidcConfig, OidcProvider, OidcSession, OidcSessionStore } from "./oidc-types.js";
 import type { TokenMetadata } from "../types.js";
 
@@ -23,6 +24,35 @@ function getLogger(): Logger {
     logger = getComponentLogger("http:oidc-auth");
   }
   return logger;
+}
+
+/**
+ * Lazy-initialized audit logger
+ */
+let auditLogger: AuditLogger | null = null;
+
+/**
+ * Extract source IP from request, supporting reverse proxy environments
+ */
+function extractSourceIp(req: import("express").Request): string | undefined {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    const firstIp = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]?.trim();
+    return firstIp;
+  }
+  return req.ip;
+}
+
+function getAudit(): AuditLogger | null {
+  if (auditLogger === null) {
+    try {
+      auditLogger = getAuditLogger();
+    } catch {
+      // Audit logger not initialized, skip audit logging
+      return null;
+    }
+  }
+  return auditLogger;
 }
 
 /**
@@ -164,6 +194,23 @@ export function createOidcAuthMiddleware(deps: OidcAuthMiddlewareDeps) {
       req.oidcSession = session;
 
       getLogger().debug({ sessionId, sub: session.user.sub }, "OIDC session authenticated");
+
+      // Emit audit event for successful OIDC authentication
+      const audit = getAudit();
+      if (audit) {
+        audit.emit({
+          timestamp: new Date().toISOString(),
+          eventType: "auth.success",
+          success: true,
+          requestId: req.headers["x-request-id"] as string | undefined,
+          sourceIp: extractSourceIp(req),
+          authMethod: "oidc",
+          user: {
+            sub: session.user.sub,
+            email: session.user.email,
+          },
+        });
+      }
 
       next();
     } catch (error) {
