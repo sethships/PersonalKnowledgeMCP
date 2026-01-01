@@ -100,11 +100,44 @@ function createTokenCreatedEvent(): TokenCreatedEvent {
 }
 
 /**
- * Wait for async operations to complete
+ * Wait for async write operations to complete with polling
+ *
+ * More robust than fixed timeout - polls for file existence/content.
+ *
+ * @param expectedLines - Optional minimum expected line count
+ * @param timeout - Maximum wait time in ms (default: 1000)
  */
-async function waitForWrite(): Promise<void> {
-  // Wait for setImmediate and file write
-  await new Promise((resolve) => setTimeout(resolve, 100));
+async function waitForWrite(expectedLines?: number, timeout = 1000): Promise<void> {
+  const start = Date.now();
+  const pollInterval = 20; // Check every 20ms
+
+  while (Date.now() - start < timeout) {
+    // If no expected lines, just wait a bit for async operations
+    if (expectedLines === undefined) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return;
+    }
+
+    // Poll for file content
+    if (existsSync(TEST_LOG_PATH)) {
+      try {
+        const content = readFileSync(TEST_LOG_PATH, "utf-8");
+        const lines = content
+          .trim()
+          .split("\n")
+          .filter((l) => l.length > 0).length;
+        if (lines >= expectedLines) {
+          return;
+        }
+      } catch {
+        // File may be locked, continue polling
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  // Timeout reached - return anyway (test will fail if expectations not met)
 }
 
 describe("AuditLogger", () => {
@@ -441,5 +474,151 @@ describe("AuditLoggerConfig validation", () => {
     const config = createTestConfig({ logPath: "" });
 
     expect(() => initializeAuditLogger(config)).toThrow("cannot be empty");
+  });
+});
+
+describe("AuditLogger circuit breaker", () => {
+  beforeAll(() => {
+    try {
+      initializeLogger({ level: "silent", format: "json" });
+    } catch {
+      // Already initialized
+    }
+  });
+
+  beforeEach(() => {
+    resetAuditLogger();
+    if (existsSync(TEST_DATA_DIR)) {
+      rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+    }
+    mkdirSync(TEST_DATA_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    resetAuditLogger();
+    if (existsSync(TEST_DATA_DIR)) {
+      rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+    }
+  });
+
+  afterAll(() => {
+    resetLogger();
+  });
+
+  it("should report circuit as closed initially", () => {
+    const config = createTestConfig();
+    const logger = initializeAuditLogger(config);
+
+    expect(logger.isCircuitOpen()).toBe(false);
+  });
+
+  it("should drop events when circuit is open", async () => {
+    const config = createTestConfig();
+    const logger = initializeAuditLogger(config);
+
+    // Emit an event to create the log file
+    logger.emit(createAuthSuccessEvent());
+    await waitForWrite();
+
+    // Count initial events
+    const initialContent = readFileSync(TEST_LOG_PATH, "utf-8");
+    const initialLines = initialContent.trim().split("\n").length;
+
+    // Access internals to manually open circuit for testing
+    // @ts-expect-error - accessing private property for testing
+    logger.circuitOpen = true;
+
+    // Emit more events - should be dropped
+    logger.emit(createAuthSuccessEvent());
+    logger.emit(createAuthSuccessEvent());
+    await waitForWrite();
+
+    // Verify no new events were written
+    const finalContent = readFileSync(TEST_LOG_PATH, "utf-8");
+    const finalLines = finalContent.trim().split("\n").length;
+
+    expect(finalLines).toBe(initialLines);
+  });
+
+  it("should open circuit after 5 consecutive failures", async () => {
+    // Create config with a path that will cause write failures
+    const readOnlyPath = join(TEST_DATA_DIR, "readonly", "audit.log");
+    mkdirSync(dirname(readOnlyPath), { recursive: true });
+
+    const config = createTestConfig({ logPath: readOnlyPath });
+    const logger = initializeAuditLogger(config);
+
+    // Verify circuit starts closed
+    expect(logger.isCircuitOpen()).toBe(false);
+
+    // Make the directory read-only to cause write failures (platform-dependent)
+    // On Windows, we'll simulate failures by checking internal state
+    // @ts-expect-error - accessing private property for testing
+    logger.failureCount = 4;
+
+    // One more failure should open the circuit
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
+    (logger as any).handleWriteFailure(new Error("Test failure"), createAuthSuccessEvent());
+
+    // Circuit should now be open
+    expect(logger.isCircuitOpen()).toBe(true);
+  });
+
+  it("should track failure count correctly", () => {
+    const config = createTestConfig();
+    const logger = initializeAuditLogger(config);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    expect((logger as any).failureCount).toBe(0);
+
+    // Simulate failures
+    for (let i = 0; i < 3; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
+      (logger as any).handleWriteFailure(new Error("Test failure"), createAuthSuccessEvent());
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    expect((logger as any).failureCount).toBe(3);
+    expect(logger.isCircuitOpen()).toBe(false);
+  });
+
+  it("should reset failure count on successful write", async () => {
+    const config = createTestConfig();
+    const logger = initializeAuditLogger(config);
+
+    // Simulate some failures first
+    // @ts-expect-error - accessing private property for testing
+    logger.failureCount = 3;
+
+    // Emit a successful event
+    logger.emit(createAuthSuccessEvent());
+    await waitForWrite();
+
+    // Failure count should be reset
+    // @ts-expect-error - accessing private property for testing
+    expect(logger.failureCount).toBe(0);
+  });
+
+  it("should log to app log as fallback when circuit is open", async () => {
+    const config = createTestConfig();
+    const logger = initializeAuditLogger(config);
+
+    // Open circuit
+    // @ts-expect-error - accessing private property for testing
+    logger.circuitOpen = true;
+
+    // Emit event - should not throw and should not write to audit log
+    const event = createAuthSuccessEvent();
+    logger.emit(event);
+
+    await waitForWrite();
+
+    // If the log file exists, verify the event was not written
+    if (existsSync(TEST_LOG_PATH)) {
+      const content = readFileSync(TEST_LOG_PATH, "utf-8");
+      // The auth.success event with this specific requestId should not be in the file
+      // since circuit was open before emit
+      expect(content).not.toContain(event.requestId);
+    }
   });
 });

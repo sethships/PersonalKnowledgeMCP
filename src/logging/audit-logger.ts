@@ -62,6 +62,9 @@ export class AuditLoggerImpl implements AuditLogger {
   private circuitOpen = false;
   private resetTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+  // Rotation mutex to prevent concurrent rotations
+  private rotating = false;
+
   /**
    * Create a new audit logger
    *
@@ -152,11 +155,17 @@ export class AuditLoggerImpl implements AuditLogger {
    */
   private writeEvent(event: AuditEvent): void {
     try {
+      // Defensive check - should not happen but safer than non-null assertion
+      if (!this.auditLogger) {
+        this.appLogger.warn("Audit logger not initialized, event dropped");
+        return;
+      }
+
       // Check if rotation is needed before writing
       this.checkAndRotate();
 
       // Write the event
-      this.auditLogger!.info(event);
+      this.auditLogger.info(event);
 
       // Reset failure count on success
       if (this.failureCount > 0) {
@@ -233,8 +242,16 @@ export class AuditLoggerImpl implements AuditLogger {
 
   /**
    * Check if rotation is needed and rotate if so
+   *
+   * Uses a mutex flag to prevent concurrent rotations from multiple
+   * fire-and-forget emit() calls racing to rotate the same file.
    */
   private checkAndRotate(): void {
+    // Skip if rotation already in progress
+    if (this.rotating) {
+      return;
+    }
+
     try {
       if (!existsSync(this.config.logPath)) {
         return;
@@ -242,10 +259,17 @@ export class AuditLoggerImpl implements AuditLogger {
 
       const stats = statSync(this.config.logPath);
       if (stats.size >= this.config.maxFileSize) {
-        this.rotateLogFile();
+        this.rotating = true;
+        try {
+          this.rotateLogFile();
+        } finally {
+          this.rotating = false;
+        }
       }
-    } catch {
-      // Ignore errors during rotation check
+    } catch (error) {
+      this.rotating = false;
+      // Log rotation check errors for debugging
+      this.appLogger.debug({ err: error }, "Error during rotation check");
     }
   }
 
@@ -300,8 +324,8 @@ export class AuditLoggerImpl implements AuditLogger {
         }))
         .sort((a, b) => b.mtime - a.mtime); // Newest first
 
-      // Delete files beyond maxFiles limit
-      const filesToDelete = files.slice(this.config.maxFiles - 1); // -1 because current file counts
+      // Delete files beyond maxFiles limit (keeping maxFiles rotated files plus current active log)
+      const filesToDelete = files.slice(this.config.maxFiles);
 
       // Also delete files older than retention period
       if (this.config.retentionDays > 0) {

@@ -11,6 +11,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Logger } from "pino";
 import { getComponentLogger, getAuditLogger } from "../../logging/index.js";
 import type { AuditLogger } from "../../logging/audit-types.js";
+import { extractSourceIp } from "../../http/request-utils.js";
 import type { OidcConfig, OidcProvider, OidcSession, OidcSessionStore } from "./oidc-types.js";
 import type { TokenMetadata } from "../types.js";
 
@@ -30,18 +31,6 @@ function getLogger(): Logger {
  * Lazy-initialized audit logger
  */
 let auditLogger: AuditLogger | null = null;
-
-/**
- * Extract source IP from request, supporting reverse proxy environments
- */
-function extractSourceIp(req: import("express").Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) {
-    const firstIp = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]?.trim();
-    return firstIp;
-  }
-  return req.ip;
-}
 
 function getAudit(): AuditLogger | null {
   if (auditLogger === null) {

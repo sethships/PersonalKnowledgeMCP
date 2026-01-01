@@ -20,6 +20,8 @@ declare module "express-serve-static-core" {
     tokenMetadata?: TokenMetadata;
     /** Raw token string (only present after authenticateRequest succeeds) */
     rawToken?: string;
+    /** Token hash prefix for audit logging (first 8 chars of SHA-256 hash) */
+    tokenHashPrefix?: string;
     /** OIDC session (only present when authenticated via OIDC) */
     oidcSession?: OidcSession;
   }

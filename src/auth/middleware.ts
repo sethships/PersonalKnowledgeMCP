@@ -17,6 +17,7 @@ import type { Logger } from "pino";
 import { getComponentLogger, getAuditLogger } from "../logging/index.js";
 import type { AuditLogger, TokenIdentifier, AuthFailureReason } from "../logging/audit-types.js";
 import { unauthorized, forbidden } from "../http/middleware/error-handler.js";
+import { extractSourceIp } from "../http/request-utils.js";
 import type { TokenService, TokenScope, InstanceAccess, TokenValidationResult } from "./types.js";
 import type { AuthMiddleware, AuthMiddlewareFunctions } from "./middleware-types.js";
 
@@ -50,24 +51,6 @@ function getAudit(): AuditLogger | null {
     }
   }
   return auditLogger;
-}
-
-/**
- * Extract source IP from request, supporting reverse proxy environments
- *
- * @param req - Express request
- * @returns Client IP address or undefined
- */
-function extractSourceIp(req: Request): string | undefined {
-  // Trust X-Forwarded-For for reverse proxy environments (Docker, nginx)
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) {
-    // X-Forwarded-For can be comma-separated list; take first (client) IP
-    const firstIp = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]?.trim();
-    return firstIp;
-  }
-  // Fall back to direct IP
-  return req.ip;
 }
 
 /**
@@ -251,6 +234,7 @@ function createAuthenticateRequest(tokenService: TokenService): AuthMiddleware {
       // Ensure logging middleware never serializes full request objects to avoid token exposure.
       req.tokenMetadata = result.metadata;
       req.rawToken = rawToken;
+      req.tokenHashPrefix = tokenHashPrefix; // Cache for downstream audit events
 
       logAuthEvent(req, true, undefined, result.metadata?.name, tokenHashPrefix);
       next();
@@ -296,7 +280,8 @@ function createRequireScope(tokenService: TokenService) {
           // Emit audit event for scope denial
           const audit = getAudit();
           if (audit) {
-            const tokenHashPrefix = computeTokenHashPrefix(rawToken);
+            // Use cached hash prefix or compute if not available
+            const hashPrefix = req.tokenHashPrefix ?? computeTokenHashPrefix(rawToken);
             audit.emit({
               timestamp: new Date().toISOString(),
               eventType: "scope.denied",
@@ -304,7 +289,7 @@ function createRequireScope(tokenService: TokenService) {
               requestId: req.headers["x-request-id"] as string | undefined,
               sourceIp: extractSourceIp(req),
               token: {
-                tokenHashPrefix,
+                tokenHashPrefix: hashPrefix,
                 tokenName: req.tokenMetadata.name,
               },
               requiredScope: scope,
@@ -358,7 +343,8 @@ function createRequireInstanceAccess(tokenService: TokenService) {
           // Emit audit event for instance access denial
           const audit = getAudit();
           if (audit) {
-            const tokenHashPrefix = computeTokenHashPrefix(rawToken);
+            // Use cached hash prefix or compute if not available
+            const hashPrefix = req.tokenHashPrefix ?? computeTokenHashPrefix(rawToken);
             audit.emit({
               timestamp: new Date().toISOString(),
               eventType: "instance.denied",
@@ -366,7 +352,7 @@ function createRequireInstanceAccess(tokenService: TokenService) {
               requestId: req.headers["x-request-id"] as string | undefined,
               sourceIp: extractSourceIp(req),
               token: {
-                tokenHashPrefix,
+                tokenHashPrefix: hashPrefix,
                 tokenName: req.tokenMetadata.name,
               },
               requestedInstance: instance,

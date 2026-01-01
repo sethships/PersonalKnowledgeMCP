@@ -18,6 +18,14 @@ import type { AuditLoggerConfig } from "./audit-types.js";
 
 /**
  * Default audit logger configuration
+ *
+ * Note: For production deployments, use absolute paths for logPath to avoid
+ * issues with working directory changes. The default relative path is suitable
+ * for development but may behave unexpectedly in production environments where
+ * the service may be started from different directories.
+ *
+ * Example production config:
+ *   AUDIT_LOG_PATH=/var/log/pk-mcp/audit.log
  */
 const DEFAULT_CONFIG: AuditLoggerConfig = {
   enabled: true,
