@@ -518,20 +518,25 @@ describe("AuditLogger circuit breaker", () => {
 
     // Emit an event to create the log file
     logger.emit(createAuthSuccessEvent());
-    await waitForWrite();
 
-    // Count initial events
+    // Wait for the async write to complete with polling for expected line count
+    await waitForWrite(1);
+
+    // Verify the initial event was written
     const initialContent = readFileSync(TEST_LOG_PATH, "utf-8");
     const initialLines = initialContent.trim().split("\n").length;
+    expect(initialLines).toBe(1); // Ensure first event is written
 
     // Access internals to manually open circuit for testing
     // @ts-expect-error - accessing private property for testing
     logger.circuitOpen = true;
 
-    // Emit more events - should be dropped
+    // Emit more events - should be dropped because circuit is open
     logger.emit(createAuthSuccessEvent());
     logger.emit(createAuthSuccessEvent());
-    await waitForWrite();
+
+    // Wait a bit to ensure any queued writes would have time to complete
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify no new events were written
     const finalContent = readFileSync(TEST_LOG_PATH, "utf-8");
