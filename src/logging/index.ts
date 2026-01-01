@@ -31,6 +31,7 @@
  * - **MCP Compatible**: All logs to stderr (stdout reserved for MCP protocol)
  * - **Request Tracing**: Optional request IDs for correlation
  * - **Metric Logging**: Lightweight metrics as structured log events
+ * - **Audit Logging**: Separate audit log for security events
  *
  * ## Environment Variables
  *
@@ -43,6 +44,9 @@
 // Export all types
 export * from "./types.js";
 
+// Export audit types
+export * from "./audit-types.js";
+
 // Export logger initialization and factory functions
 export {
   initializeLogger,
@@ -50,6 +54,17 @@ export {
   getRootLogger,
   resetLogger,
 } from "./logger-factory.js";
+
+// Export audit logger
+export {
+  initializeAuditLogger,
+  getAuditLogger,
+  resetAuditLogger,
+  AuditLoggerImpl,
+} from "./audit-logger.js";
+
+// Export audit config
+export { loadAuditConfig, validateAuditConfig, getDefaultAuditConfig } from "./audit-config.js";
 
 // Export redaction utilities (useful for tests and custom sanitization)
 export {

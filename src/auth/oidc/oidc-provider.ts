@@ -9,7 +9,8 @@
 
 import * as client from "openid-client";
 import type { Logger } from "pino";
-import { getComponentLogger } from "../../logging/index.js";
+import { getComponentLogger, getAuditLogger } from "../../logging/index.js";
+import type { AuditLogger } from "../../logging/audit-types.js";
 import type {
   OidcConfig,
   OidcProvider,
@@ -62,6 +63,11 @@ export class OidcProviderImpl implements OidcProvider {
   private _logger: Logger | null = null;
 
   /**
+   * Lazy-initialized audit logger
+   */
+  private _auditLogger: AuditLogger | null = null;
+
+  /**
    * Cached OIDC client configuration after discovery
    *
    * **Note**: Discovery is cached for the lifetime of this provider instance.
@@ -112,6 +118,21 @@ export class OidcProviderImpl implements OidcProvider {
       this._logger = getComponentLogger("auth:oidc-provider");
     }
     return this._logger;
+  }
+
+  /**
+   * Lazy-initialized audit logger
+   */
+  private getAudit(): AuditLogger | null {
+    if (this._auditLogger === null) {
+      try {
+        this._auditLogger = getAuditLogger();
+      } catch {
+        // Audit logger not initialized, skip audit logging
+        return null;
+      }
+    }
+    return this._auditLogger;
   }
 
   /**
@@ -407,6 +428,22 @@ export class OidcProviderImpl implements OidcProvider {
         },
         "OIDC authentication successful"
       );
+
+      // Emit audit event for session creation
+      const audit = this.getAudit();
+      if (audit) {
+        audit.emit({
+          timestamp: new Date().toISOString(),
+          eventType: "session.created",
+          success: true,
+          user: {
+            sub: userInfo.sub,
+            email: userInfo.email,
+          },
+          scopes: mappedScopes,
+          instanceAccess: mappedInstanceAccess,
+        });
+      }
 
       return session;
     } catch (error) {
