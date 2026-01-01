@@ -175,13 +175,14 @@ The user has explicitly requested: "We should be able to use local serializers, 
 **Description:** Use Transformers.js as the primary local embedding solution for its simplicity and zero-dependency installation, with optional Ollama support for users who want GPU acceleration or specific models.
 
 **Architecture:**
-```
-                    EmbeddingProvider Interface
-                              |
-        +---------------------+---------------------+
-        |                     |                     |
-   OpenAI Provider    Transformers.js Provider   Ollama Provider
-   (current, cloud)   (local, CPU, default)      (local, GPU optional)
+
+```mermaid
+flowchart TB
+    EPI[EmbeddingProvider Interface]
+
+    EPI --> OP[OpenAI Provider<br/>current, cloud]
+    EPI --> TJP[Transformers.js Provider<br/>local, CPU, default]
+    EPI --> OLP[Ollama Provider<br/>local, GPU optional]
 ```
 
 **Pros:**

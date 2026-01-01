@@ -329,13 +329,20 @@ A knowledge graph is architecturally distinct from a vector store. They serve di
 
 #### Integration with Existing Services
 
-```
-Existing:
-  [MCP Server] --> [SearchService] --> [ChromaDB] (semantic search)
+```mermaid
+flowchart LR
+    subgraph Existing
+        MCP1[MCP Server] --> SS[SearchService] --> ChromaDB[(ChromaDB)]
+    end
 
-New Addition:
-  [MCP Server] --> [GraphService] --> [Neo4j] (structural queries)
-  [MCP Server] --> [HybridService] --> [Both] (combined queries)
+    subgraph "New Addition"
+        MCP2[MCP Server] --> GS[GraphService] --> Neo4j[(Neo4j)]
+        MCP3[MCP Server] --> HS[HybridService] --> Both[ChromaDB + Neo4j]
+    end
+
+    SS -.->|semantic search| ChromaDB
+    GS -.->|structural queries| Neo4j
+    HS -.->|combined queries| Both
 ```
 
 #### Neo4j Client Integration
@@ -487,33 +494,43 @@ interface ProviderCapabilities {
 
 ### 5.1 System Architecture
 
-```
-+-------------------+     +-------------------+     +-------------------+
-|   Claude Code     |     |    Cursor/VSCode  |     |    Other Clients  |
-+--------+----------+     +--------+----------+     +--------+----------+
-         |                         |                         |
-         v                         v                         v
-+--------+-------------------------+-------------------------+----------+
-|                         MCP Server (stdio/HTTP)                       |
-+--------+----------+-----+--------+----------+-----+--------+----------+
-         |                         |                         |
-         v                         v                         v
-+--------+----------+     +--------+----------+     +--------+----------+
-| semantic_search   |     | graph_query       |     | hybrid_search     |
-| (existing)        |     | (NEW)             |     | (NEW)             |
-+--------+----------+     +--------+----------+     +--------+----------+
-         |                         |                         |
-         v                         v                         v
-+--------+----------+     +--------+----------+     +--------+----------+
-|  SearchService    |     |  GraphService     |     |  HybridService    |
-|  (existing)       |     |  (NEW)            |     |  (NEW)            |
-+--------+----------+     +--------+----------+     +--------+----------+
-         |                         |                    |         |
-         v                         v                    v         v
-+--------+----------+     +--------+----------+   +----+---------+----+
-|    ChromaDB       |     |      Neo4j        |   | ChromaDB  | Neo4j |
-|  (Vector Store)   |     |   (Graph Store)   |   +-------------------+
-+-------------------+     +-------------------+
+```mermaid
+flowchart TB
+    subgraph Clients
+        CC[Claude Code]
+        CV[Cursor/VSCode]
+        OC[Other Clients]
+    end
+
+    subgraph MCP["MCP Server (stdio/HTTP)"]
+        SS_TOOL[semantic_search<br/>existing]
+        GQ_TOOL[graph_query<br/>NEW]
+        HS_TOOL[hybrid_search<br/>NEW]
+    end
+
+    subgraph Services
+        SS[SearchService<br/>existing]
+        GS[GraphService<br/>NEW]
+        HS[HybridService<br/>NEW]
+    end
+
+    subgraph Storage
+        ChromaDB[(ChromaDB<br/>Vector Store)]
+        Neo4j[(Neo4j<br/>Graph Store)]
+    end
+
+    CC --> MCP
+    CV --> MCP
+    OC --> MCP
+
+    SS_TOOL --> SS
+    GQ_TOOL --> GS
+    HS_TOOL --> HS
+
+    SS --> ChromaDB
+    GS --> Neo4j
+    HS --> ChromaDB
+    HS --> Neo4j
 ```
 
 ### 5.2 Service Layer Design
@@ -1024,14 +1041,26 @@ RETURN path
 
 The existing ingestion pipeline must be enhanced to extract and store graph relationships.
 
-```
-Current Pipeline:
-  Clone Repo -> Scan Files -> Chunk Files -> Generate Embeddings -> Store in ChromaDB
+**Current Pipeline:**
 
-Enhanced Pipeline:
-  Clone Repo -> Scan Files -> [Parse AST] -> Chunk Files -> Generate Embeddings -> Store in ChromaDB
-                                  |
-                                  +-> [Extract Entities] -> [Extract Relationships] -> Store in Neo4j
+```mermaid
+flowchart LR
+    A[Clone Repo] --> B[Scan Files] --> C[Chunk Files] --> D[Generate Embeddings] --> E[(Store in ChromaDB)]
+```
+
+**Enhanced Pipeline:**
+
+```mermaid
+flowchart TB
+    A[Clone Repo] --> B[Scan Files] --> C[Parse AST]
+
+    C --> D[Chunk Files]
+    D --> E[Generate Embeddings]
+    E --> F[(Store in ChromaDB)]
+
+    C --> G[Extract Entities]
+    G --> H[Extract Relationships]
+    H --> I[(Store in Neo4j)]
 ```
 
 #### New Ingestion Components
@@ -1214,23 +1243,15 @@ Implement a pluggable embedding provider architecture that supports:
 1. **OpenAI Provider** (existing): High-quality embeddings via API
 2. **Local Provider** (new): On-device embedding generation using JavaScript-native ML libraries
 
-```
-                         +-------------------+
-                         |  EmbeddingService |
-                         +--------+----------+
-                                  |
-                    +-------------+-------------+
-                    |                           |
-           +--------v--------+         +--------v--------+
-           | OpenAIProvider  |         | LocalProvider   |
-           | (API-based)     |         | (On-device)     |
-           +-----------------+         +-----------------+
-                    |                           |
-                    v                           v
-           +----------------+          +-----------------+
-           | OpenAI API     |          | Transformers.js |
-           | (external)     |          | or ONNX Runtime |
-           +----------------+          +-----------------+
+```mermaid
+flowchart TB
+    ES[EmbeddingService]
+
+    ES --> OP[OpenAIProvider<br/>API-based]
+    ES --> LP[LocalProvider<br/>On-device]
+
+    OP --> OA[OpenAI API<br/>external]
+    LP --> TJ[Transformers.js<br/>or ONNX Runtime]
 ```
 
 ### 11.3 Architecture Components

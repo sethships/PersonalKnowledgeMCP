@@ -188,26 +188,19 @@ The user explicitly stated: "If it can be part of ChromaDB and doesn't need to b
 
 ### High-Level Integration
 
-```
-+------------------+     +-------------------+     +------------------+
-|   Claude Code    |     |   MCP Service     |     |    Storage       |
-|   (MCP Client)   |<--->|   (Node.js/TS)    |<--->|    Layer         |
-+------------------+     +-------------------+     +------------------+
-                                  |                        |
-                                  v                        v
-                         +----------------+       +------------------+
-                         |  Query Router  |       |  ChromaDB        |
-                         +----------------+       |  (Vector Search) |
-                               |    |             +------------------+
-                               |    |                     ^
-                               |    |                     |
-                               |    +-------------------- | ----+
-                               |                          |     |
-                               v                          v     v
-                         +------------------+     +------------------+
-                         |   Neo4j Graph    |<--->|  Sync Service    |
-                         |   (Relationships)|     |  (Consistency)   |
-                         +------------------+     +------------------+
+```mermaid
+flowchart TB
+    CC[Claude Code<br/>MCP Client] <--> MCP[MCP Service<br/>Node.js/TS] <--> SL[Storage Layer]
+
+    MCP --> QR[Query Router]
+
+    SL --> ChromaDB[(ChromaDB<br/>Vector Search)]
+
+    QR --> Neo4j[(Neo4j Graph<br/>Relationships)]
+    QR --> ChromaDB
+
+    Neo4j <--> Sync[Sync Service<br/>Consistency]
+    ChromaDB <--> Sync
 ```
 
 ### Container Architecture (Docker Compose)
@@ -312,27 +305,22 @@ FOR (n:Function|Class|Module) ON EACH [n.name];
 
 The `Chunk` node creates a bridge between Neo4j and ChromaDB:
 
-```
-ChromaDB Document                    Neo4j Graph
-+------------------+                 +------------------+
-| id: "repo:path:0"|<--------------->| (c:Chunk)        |
-| embedding: [...]  |                 |  chromaId: "..."  |
-| metadata: {...}   |                 |  chunkIndex: 0   |
-+------------------+                 +------------------+
-                                            |
-                                            | HAS_CHUNK
-                                            v
-                                     +------------------+
-                                     | (f:File)         |
-                                     |  path: "..."     |
-                                     +------------------+
-                                            |
-                                            | DEFINES
-                                            v
-                                     +------------------+
-                                     | (fn:Function)    |
-                                     |  name: "..."     |
-                                     +------------------+
+```mermaid
+flowchart LR
+    subgraph ChromaDB["ChromaDB Document"]
+        doc["id: repo:path:0<br/>embedding: [...]<br/>metadata: {...}"]
+    end
+
+    subgraph Neo4j["Neo4j Graph"]
+        chunk["(c:Chunk)<br/>chromaId: ...<br/>chunkIndex: 0"]
+        file["(f:File)<br/>path: ..."]
+        func["(fn:Function)<br/>name: ..."]
+
+        chunk -->|HAS_CHUNK| file
+        file -->|DEFINES| func
+    end
+
+    doc <--> chunk
 ```
 
 This enables queries like:
@@ -559,28 +547,19 @@ interface EnhancedSearchInput {
 
 ### Write Path (During Indexing)
 
-```
-Repository Change Detected
-         |
-         v
-+------------------+
-| Ingestion        |
-| Service          |
-+------------------+
-         |
-    +----+----+
-    |         |
-    v         v
-+-------+  +-------+
-|ChromaDB|  | Neo4j |
-|Vectors |  | Graph |
-+-------+  +-------+
-         |
-         v
-+------------------+
-| Metadata Store   |
-| (PostgreSQL)     |
-+------------------+
+```mermaid
+flowchart TB
+    RCD[Repository Change Detected]
+    IS[Ingestion Service]
+    ChromaDB[(ChromaDB<br/>Vectors)]
+    Neo4j[(Neo4j<br/>Graph)]
+    Meta[(Metadata Store<br/>PostgreSQL)]
+
+    RCD --> IS
+    IS --> ChromaDB
+    IS --> Neo4j
+    ChromaDB --> Meta
+    Neo4j --> Meta
 ```
 
 Key principle: **Dual-write with ChromaDB as primary**
