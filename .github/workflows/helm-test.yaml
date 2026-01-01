@@ -1,0 +1,107 @@
+name: Helm Chart Test
+
+on:
+  push:
+    paths:
+      - "charts/**"
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "charts/**"
+
+jobs:
+  lint:
+    name: Lint Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "latest"
+
+      - name: Lint chart
+        run: helm lint ./charts/personal-knowledge-mcp
+
+  template:
+    name: Template Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "latest"
+
+      # Note: secrets.openaiApiKey and secrets.postgresPassword are required when secrets.create=true
+      # Providing test values for CI validation
+      - name: Template with default values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+      - name: Template with dev values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-dev.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+      - name: Template with prod values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-prod.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+      - name: Template with private instance values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-private.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+      - name: Template with work instance values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-work.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+      - name: Template with public instance values
+        run: |
+          helm template pk-mcp ./charts/personal-knowledge-mcp \
+            -f charts/personal-knowledge-mcp/examples/values-public.yaml \
+            --set secrets.openaiApiKey=test-openai-key \
+            --set secrets.postgresPassword=test-postgres-password
+
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "latest"
+
+      - name: Validate values against schema
+        run: |
+          if [ -f "./charts/personal-knowledge-mcp/values.schema.json" ]; then
+            # Helm automatically validates values.yaml against values.schema.json during templating
+            # This ensures values conform to the JSON schema before deployment
+            helm template pk-mcp ./charts/personal-knowledge-mcp \
+              --set secrets.openaiApiKey=test-key \
+              --set secrets.postgresPassword=test-pass
+            echo "Schema validation passed (implicit in helm template with values.schema.json)"
+          else
+            echo "No values.schema.json found, skipping schema validation"
+          fi

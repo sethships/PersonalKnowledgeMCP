@@ -1,0 +1,48 @@
+# Personal Knowledge MCP - Work Instance Values
+#
+# Use for deploying a work instance for work-related knowledge.
+# Deploy as separate Helm release for instance isolation.
+#
+# Install: helm install pk-mcp-work ./charts/personal-knowledge-mcp \
+#          -n pk-mcp-work --create-namespace \
+#          -f examples/values-work.yaml
+
+global:
+  namespace:
+    create: true
+    name: pk-mcp-work
+
+instance:
+  name: "work"
+  securityTier: "work"
+  requireAuth: true
+
+mcpService:
+  replicaCount: 1
+  config:
+    defaultInstance: "work"
+    requireAuthForDefaultInstance: "true"
+    logLevel: "info"
+
+chromadb:
+  persistence:
+    size: 30Gi
+
+postgres:
+  persistence:
+    size: 15Gi
+
+secrets:
+  create: false
+  existingSecret: "pk-mcp-work-secrets"
+
+ingress:
+  enabled: true
+  host: pk-mcp-work.local
+  tls:
+    enabled: true
+    secretName: pk-mcp-work-tls
+
+networkPolicies:
+  enabled: true
+  defaultDeny: true

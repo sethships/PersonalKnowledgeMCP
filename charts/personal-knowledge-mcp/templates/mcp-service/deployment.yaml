@@ -1,0 +1,117 @@
+{{- if .Values.mcpService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pk-mcp.mcpService.fullname" . }}
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.mcpService.labels" . | nindent 4 }}
+  {{- with .Values.global.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.mcpService.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pk-mcp.mcpService.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "pk-mcp.mcpService.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/mcp-service/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/mcp-service/secret.yaml") . | sha256sum }}
+        {{- with .Values.global.annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "pk-mcp.serviceAccountName" . }}
+      {{- with .Values.mcpService.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.mcpService.securityContext | nindent 8 }}
+
+      {{- if and .Values.mcpService.initContainer.enabled .Values.chromadb.enabled }}
+      initContainers:
+        - name: wait-for-chromadb
+          image: "{{ .Values.mcpService.initContainer.image.repository }}:{{ .Values.mcpService.initContainer.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for ChromaDB to be ready..."
+              until wget -q -O- http://{{ include "pk-mcp.chromadbHost" . }}:{{ include "pk-mcp.chromadbPort" . }}/api/v2/heartbeat 2>/dev/null; do
+                echo "ChromaDB not ready, waiting..."
+                sleep 2
+              done
+              echo "ChromaDB is ready!"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      {{- end }}
+
+      containers:
+        - name: mcp-service
+          image: "{{ .Values.mcpService.image.repository }}:{{ .Values.mcpService.image.tag }}"
+          imagePullPolicy: {{ .Values.mcpService.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcpService.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "pk-mcp.mcpService.configMapName" . }}
+            - secretRef:
+                name: {{ include "pk-mcp.secretName" . }}
+          resources:
+            {{- toYaml .Values.mcpService.resources | nindent 12 }}
+          {{- with .Values.mcpService.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.mcpService.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.mcpService.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+
+      {{- with .Values.mcpService.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.mcpService.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.mcpService.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      terminationGracePeriodSeconds: {{ .Values.mcpService.terminationGracePeriodSeconds }}
+{{- end }}

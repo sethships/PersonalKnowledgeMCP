@@ -1,0 +1,103 @@
+{{- if .Values.chromadb.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "pk-mcp.chromadb.fullname" . }}
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.chromadb.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "pk-mcp.chromadb.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "pk-mcp.chromadb.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  template:
+    metadata:
+      labels:
+        {{- include "pk-mcp.chromadb.selectorLabels" . | nindent 8 }}
+      {{- with .Values.global.annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.chromadb.securityContext | nindent 8 }}
+
+      containers:
+        - name: chromadb
+          image: "{{ .Values.chromadb.image.repository }}:{{ .Values.chromadb.image.tag }}"
+          imagePullPolicy: {{ .Values.chromadb.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "pk-mcp.chromadb.configMapName" . }}
+          env:
+            # Authentication token from secret (when auth is explicitly enabled)
+            {{- if .Values.chromadb.auth.enabled }}
+            - name: CHROMA_SERVER_AUTHN_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pk-mcp.secretName" . }}
+                  key: CHROMADB_AUTH_TOKEN
+                  optional: false
+            {{- end }}
+          resources:
+            {{- toYaml .Values.chromadb.resources | nindent 12 }}
+          {{- with .Values.chromadb.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.chromadb.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /chroma/chroma
+            # Tmpfs for temp files (required for readOnlyRootFilesystem)
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            {{- toYaml .Values.chromadb.containerSecurityContext | nindent 12 }}
+
+      # Volumes for temp directory (StatefulSet PVC handles data)
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      {{- with .Values.chromadb.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.chromadb.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      terminationGracePeriodSeconds: {{ .Values.chromadb.terminationGracePeriodSeconds }}
+
+  {{- if .Values.chromadb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "pk-mcp.chromadb.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.chromadb.persistence.accessMode }}
+        resources:
+          requests:
+            storage: {{ .Values.chromadb.persistence.size }}
+        {{- if .Values.chromadb.persistence.storageClass }}
+        storageClassName: {{ .Values.chromadb.persistence.storageClass | quote }}
+        {{- end }}
+  {{- end }}
+{{- end }}

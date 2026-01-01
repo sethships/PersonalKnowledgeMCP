@@ -1,0 +1,561 @@
+# Personal Knowledge MCP - Helm Chart Values
+# Default configuration values for the personal-knowledge-mcp chart.
+
+# =============================================================================
+# Global Settings
+# =============================================================================
+global:
+  # Override the chart name
+  nameOverride: ""
+  # Override the full release name
+  fullnameOverride: ""
+
+  # Namespace configuration
+  namespace:
+    # Create the namespace (set to false if namespace already exists)
+    create: true
+    # Namespace name (defaults to release namespace if empty)
+    name: ""
+
+  # Common labels applied to all resources
+  labels: {}
+  # Common annotations applied to all resources
+  annotations: {}
+
+# =============================================================================
+# Instance Configuration (for multi-instance deployments)
+# =============================================================================
+instance:
+  # Instance name (e.g., private, work, public, or custom name)
+  name: "default"
+  # Security tier (private, work, public)
+  securityTier: "public"
+  # Require authentication for this instance
+  requireAuth: false
+
+# =============================================================================
+# MCP Service Configuration
+# =============================================================================
+mcpService:
+  # Enable the MCP service deployment
+  enabled: true
+
+  # Number of replicas
+  replicaCount: 1
+
+  # Container image configuration
+  image:
+    repository: pk-mcp
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+
+  # Service account configuration
+  serviceAccount:
+    # Create a service account
+    create: true
+    # Service account name (auto-generated if empty)
+    name: ""
+    # Annotations for the service account
+    annotations: {}
+
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"
+
+  # Init container for waiting on ChromaDB
+  initContainer:
+    enabled: true
+    image:
+      repository: busybox
+      tag: "1.36"
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+
+  # Container security context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 3001
+    annotations: {}
+
+  # Liveness probe configuration
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  # Readiness probe configuration
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Horizontal Pod Autoscaler configuration
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Pod Disruption Budget configuration
+  pdb:
+    enabled: true
+    minAvailable: 1
+    # maxUnavailable: 1  # Alternative to minAvailable
+
+  # Pod affinity and anti-affinity rules
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: mcp-service
+            topologyKey: kubernetes.io/hostname
+
+  # Node selector for scheduling
+  nodeSelector: {}
+
+  # Tolerations for scheduling
+  tolerations: []
+
+  # Termination grace period in seconds
+  terminationGracePeriodSeconds: 30
+
+  # Application configuration (environment variables)
+  config:
+    # Logging
+    logLevel: "info"
+    logFormat: "json"
+    nodeEnv: "production"
+
+    # HTTP transport configuration
+    httpTransportEnabled: "true"
+    httpHost: "0.0.0.0"
+    httpPort: "3001"
+
+    # Session configuration
+    httpMaxSseSessions: "100"
+    httpSseSessionTtlMs: "1800000"
+    httpSseCleanupIntervalMs: "300000"
+    httpMaxStreamableSessions: "100"
+    httpStreamableSessionTtlMs: "1800000"
+    httpStreamableCleanupIntervalMs: "300000"
+
+    # Embedding configuration
+    embeddingModel: "text-embedding-3-small"
+    embeddingDimensions: "1536"
+    embeddingBatchSize: "100"
+
+    # Chunking configuration
+    chunkMaxTokens: "500"
+    chunkOverlapTokens: "50"
+
+    # Search configuration
+    defaultSearchLimit: "10"
+    maxSearchLimit: "50"
+    defaultSimilarityThreshold: "0.7"
+    snippetMaxLength: "500"
+
+    # Performance configuration
+    maxRetries: "3"
+    requestTimeoutMs: "30000"
+    retryInitialDelayMs: "1000"
+    retryMaxDelayMs: "60000"
+    retryBackoffMultiplier: "2"
+
+    # Multi-instance configuration
+    defaultInstance: "public"
+    requireAuthForDefaultInstance: "false"
+
+    # Rate limiting
+    rateLimitEnabled: "true"
+    rateLimitReadPerMinute: "60"
+    rateLimitReadPerHour: "1000"
+    rateLimitWritePerMinute: "30"
+    rateLimitWritePerHour: "500"
+    rateLimitAdminBypass: "true"
+
+    # CORS configuration
+    corsEnabled: "true"
+    corsOrigins: "http://localhost:3000"
+    corsCredentials: "true"
+
+    # Authentication
+    authTrackTokenUsage: "true"
+
+    # Data paths (container paths)
+    dataPath: "/app/data"
+    repoClonePath: "/app/data/repos"
+
+# =============================================================================
+# ChromaDB Configuration
+# =============================================================================
+chromadb:
+  # Enable ChromaDB deployment
+  enabled: true
+
+  # Container image configuration
+  image:
+    repository: chromadb/chroma
+    tag: "0.6.3"
+    pullPolicy: IfNotPresent
+
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 10Gi
+    # Storage class (empty uses cluster default)
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  # Container security context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+
+  # Liveness probe configuration
+  livenessProbe:
+    httpGet:
+      path: /api/v2/heartbeat
+      port: http
+    initialDelaySeconds: 40
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  # Readiness probe configuration
+  readinessProbe:
+    httpGet:
+      path: /api/v2/heartbeat
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # ChromaDB configuration
+  config:
+    isPersistent: "TRUE"
+    anonymizedTelemetry: "FALSE"
+    allowReset: "FALSE"
+
+  # Authentication configuration
+  auth:
+    # Explicitly enable/disable authentication
+    # When true, requires secrets.chromadbAuthToken to be set
+    enabled: false
+    # Authentication provider type
+    provider: "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
+    # Header used for token transport
+    tokenTransportHeader: "Authorization"
+
+  # Termination grace period in seconds
+  terminationGracePeriodSeconds: 30
+
+  # Node selector for scheduling
+  nodeSelector: {}
+
+  # Tolerations for scheduling
+  tolerations: []
+
+# =============================================================================
+# PostgreSQL Configuration
+# =============================================================================
+postgres:
+  # Enable PostgreSQL deployment
+  enabled: true
+
+  # Container image configuration
+  image:
+    repository: postgres
+    tag: "17.2-alpine"
+    pullPolicy: IfNotPresent
+
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "2"
+
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 5Gi
+    # Storage class (empty uses cluster default)
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+
+  # Container security context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 5432
+    annotations: {}
+
+  # Liveness probe configuration
+  livenessProbe:
+    exec:
+      command:
+        - pg_isready
+        - -U
+        - pk_mcp
+        - -d
+        - personal_knowledge
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  # Readiness probe configuration
+  readinessProbe:
+    exec:
+      command:
+        - pg_isready
+        - -U
+        - pk_mcp
+        - -d
+        - personal_knowledge
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # PostgreSQL configuration
+  config:
+    database: "personal_knowledge"
+    username: "pk_mcp"
+
+  # Init scripts configuration
+  initScripts:
+    enabled: false
+    # ConfigMap name containing init scripts
+    configMapName: ""
+
+  # Termination grace period in seconds
+  terminationGracePeriodSeconds: 30
+
+  # Node selector for scheduling
+  nodeSelector: {}
+
+  # Tolerations for scheduling
+  tolerations: []
+
+# =============================================================================
+# Neo4j Configuration (Phase 4 - Optional)
+# =============================================================================
+neo4j:
+  # Enable Neo4j deployment
+  enabled: false
+
+  # Container image configuration
+  image:
+    repository: neo4j
+    tag: "5.25.1-community"
+    pullPolicy: IfNotPresent
+
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+  # Pod security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 7474
+    runAsGroup: 7474
+    fsGroup: 7474
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    boltPort: 7687
+    httpPort: 7474
+    annotations: {}
+
+  # Neo4j configuration
+  config:
+    acceptLicenseAgreement: "yes"
+    heapInitialSize: "512m"
+    heapMaxSize: "2G"
+    pagecacheSize: "1G"
+
+  # Termination grace period in seconds
+  terminationGracePeriodSeconds: 120
+
+  # Node selector for scheduling
+  nodeSelector: {}
+
+  # Tolerations for scheduling
+  tolerations: []
+
+# =============================================================================
+# Secrets Configuration
+# =============================================================================
+secrets:
+  # Create secrets from values (for development)
+  create: true
+
+  # Use an existing secret instead of creating one
+  existingSecret: ""
+
+  # Secret values (only used when create: true)
+  # WARNING: For production, use existingSecret or external secrets
+  openaiApiKey: ""
+  githubPat: ""
+  postgresPassword: ""
+  chromadbAuthToken: ""
+
+  # External secrets configuration
+  externalSecrets:
+    enabled: false
+    annotations: {}
+    # Example annotations for External Secrets Operator:
+    # annotations:
+    #   external-secrets.io/secret-store: aws-secrets-manager
+
+# =============================================================================
+# Ingress Configuration
+# =============================================================================
+ingress:
+  # Enable ingress resource creation
+  enabled: true
+
+  # Ingress class name (nginx, traefik, etc.)
+  className: ""
+
+  # Ingress annotations
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+
+  # Hostname for the ingress
+  host: pk-mcp.local
+
+  # TLS configuration
+  tls:
+    enabled: false
+    # Secret name containing TLS certificate
+    secretName: ""
+
+  # Path configuration
+  paths:
+    - path: /health
+      pathType: Exact
+    - path: /api/v1
+      pathType: Prefix
+
+# =============================================================================
+# Network Policies Configuration
+# =============================================================================
+networkPolicies:
+  # Enable network policies
+  enabled: true
+
+  # Enable default deny policy
+  defaultDeny: true
+
+  # Allow DNS egress
+  allowDns: true
+
+  # Allow external HTTPS egress (for OpenAI API)
+  allowExternalHttps: true
+
+  # Custom ingress controller pod labels (optional)
+  # Use this to allow traffic from ingress controllers other than nginx/traefik
+  # Example for Kong: { app: kong }
+  # Example for HAProxy: { app.kubernetes.io/name: haproxy-ingress }
+  ingressControllerLabels: {}
+
+# =============================================================================
+# Service Account Configuration
+# =============================================================================
+serviceAccount:
+  # Create a service account
+  create: true
+  # Service account name (auto-generated if empty)
+  name: ""
+  # Annotations for the service account
+  annotations: {}

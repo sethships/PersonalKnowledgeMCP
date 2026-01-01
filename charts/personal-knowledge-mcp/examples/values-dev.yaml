@@ -1,0 +1,77 @@
+# Personal Knowledge MCP - Development Values
+#
+# Use for local development with K3s or minikube.
+# Reduced resources and local storage class.
+#
+# Install: helm install pk-mcp ./charts/personal-knowledge-mcp -f examples/values-dev.yaml
+
+global:
+  namespace:
+    name: pk-mcp-dev
+
+instance:
+  name: "dev"
+  securityTier: "public"
+  requireAuth: false
+
+mcpService:
+  replicaCount: 1
+  image:
+    # Use locally built image
+    pullPolicy: Never
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: false
+  pdb:
+    enabled: false
+  config:
+    logLevel: "debug"
+    logFormat: "pretty"
+    nodeEnv: "development"
+
+chromadb:
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"
+  persistence:
+    size: 5Gi
+    storageClass: "local-path"
+
+postgres:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    size: 2Gi
+    storageClass: "local-path"
+
+secrets:
+  create: true
+  # Set these values for development (or use --set)
+  openaiApiKey: ""
+  githubPat: ""
+  postgresPassword: "devpassword"
+  chromadbAuthToken: ""
+
+ingress:
+  enabled: true
+  host: localhost
+  className: traefik
+
+networkPolicies:
+  # Simplified for development
+  enabled: false

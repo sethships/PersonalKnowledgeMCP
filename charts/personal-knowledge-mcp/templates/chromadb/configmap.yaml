@@ -1,0 +1,24 @@
+{{- if .Values.chromadb.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pk-mcp.chromadb.configMapName" . }}
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.chromadb.labels" . | nindent 4 }}
+data:
+  # Persistence configuration
+  IS_PERSISTENT: {{ .Values.chromadb.config.isPersistent | quote }}
+
+  # Telemetry configuration
+  ANONYMIZED_TELEMETRY: {{ .Values.chromadb.config.anonymizedTelemetry | quote }}
+
+  # Reset endpoint (disabled by default for safety)
+  ALLOW_RESET: {{ .Values.chromadb.config.allowReset | quote }}
+
+  # Authentication configuration (explicitly enabled via chromadb.auth.enabled)
+  {{- if .Values.chromadb.auth.enabled }}
+  CHROMA_SERVER_AUTHN_PROVIDER: {{ .Values.chromadb.auth.provider | quote }}
+  CHROMA_AUTH_TOKEN_TRANSPORT_HEADER: {{ .Values.chromadb.auth.tokenTransportHeader | quote }}
+  {{- end }}
+{{- end }}

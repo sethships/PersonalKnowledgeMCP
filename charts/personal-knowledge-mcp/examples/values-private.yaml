@@ -1,0 +1,48 @@
+# Personal Knowledge MCP - Private Instance Values
+#
+# Use for deploying a private instance for personal/sensitive knowledge.
+# Deploy as separate Helm release for instance isolation.
+#
+# Install: helm install pk-mcp-private ./charts/personal-knowledge-mcp \
+#          -n pk-mcp-private --create-namespace \
+#          -f examples/values-private.yaml
+
+global:
+  namespace:
+    create: true
+    name: pk-mcp-private
+
+instance:
+  name: "private"
+  securityTier: "private"
+  requireAuth: true
+
+mcpService:
+  replicaCount: 1
+  config:
+    defaultInstance: "private"
+    requireAuthForDefaultInstance: "true"
+    logLevel: "info"
+
+chromadb:
+  persistence:
+    size: 20Gi
+
+postgres:
+  persistence:
+    size: 10Gi
+
+secrets:
+  create: false
+  existingSecret: "pk-mcp-private-secrets"
+
+ingress:
+  enabled: true
+  host: pk-mcp-private.local
+  tls:
+    enabled: true
+    secretName: pk-mcp-private-tls
+
+networkPolicies:
+  enabled: true
+  defaultDeny: true

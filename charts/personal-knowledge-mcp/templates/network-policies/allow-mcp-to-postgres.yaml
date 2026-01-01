@@ -1,0 +1,24 @@
+{{- if and .Values.networkPolicies.enabled .Values.postgres.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pk-mcp.fullname" . }}-allow-mcp-to-postgres
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pk-mcp.postgres.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from MCP service to PostgreSQL
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "pk-mcp.mcpService.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.postgres.service.port }}
+{{- end }}

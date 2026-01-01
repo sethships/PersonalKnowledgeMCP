@@ -1,0 +1,13 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pk-mcp.postgres.configMapName" . }}
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.postgres.labels" . | nindent 4 }}
+data:
+  # Database configuration
+  POSTGRES_DB: {{ .Values.postgres.config.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.config.username | quote }}
+{{- end }}

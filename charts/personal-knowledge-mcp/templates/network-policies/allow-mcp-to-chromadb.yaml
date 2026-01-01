@@ -1,0 +1,24 @@
+{{- if and .Values.networkPolicies.enabled .Values.chromadb.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "pk-mcp.fullname" . }}-allow-mcp-to-chromadb
+  namespace: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "pk-mcp.chromadb.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from MCP service to ChromaDB
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "pk-mcp.mcpService.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.chromadb.service.port }}
+{{- end }}

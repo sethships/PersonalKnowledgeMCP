@@ -1,0 +1,8 @@
+{{- if .Values.global.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "pk-mcp.namespace" . }}
+  labels:
+    {{- include "pk-mcp.labels" . | nindent 4 }}
+{{- end }}
