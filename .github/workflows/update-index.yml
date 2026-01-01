@@ -33,7 +33,9 @@ jobs:
       - name: Start ChromaDB
         run: docker compose up -d chromadb
         env:
+          # Dummy values for CI - these services aren't started but docker-compose parses the full file
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Wait for ChromaDB to be ready
         run: |
@@ -50,7 +52,9 @@ jobs:
           docker compose logs chromadb
           exit 1
         env:
+          # Dummy values for CI - these services aren't started but docker-compose parses the full file
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Update Knowledge Index
         run: |
@@ -75,4 +79,6 @@ jobs:
         if: always()
         run: docker compose down
         env:
+          # Dummy values for CI - these services aren't started but docker-compose parses the full file
           POSTGRES_PASSWORD: ci-dummy-not-used
+          NEO4J_PASSWORD: ci-dummy-not-used
