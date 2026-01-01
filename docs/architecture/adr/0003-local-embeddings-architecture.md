@@ -720,6 +720,149 @@ Estimated performance comparisons (to be validated during implementation):
 
 **Note:** Transformers.js model load time is only incurred once per session; subsequent requests use cached model.
 
+## CI/CD Deployment Considerations
+
+When integrating local embeddings with CI/CD pipelines (e.g., GitHub Actions, Azure Pipelines), the deployment topology determines where embedding computation occurs and significantly impacts performance and reliability.
+
+### Deployment Topology
+
+Embedding generation requires model loading, which involves:
+- Loading model weights into memory (22MB to 670MB+ depending on model)
+- Initializing the inference runtime (ONNX or Ollama)
+- Warm-up inference for optimal performance
+
+These costs are amortized across many requests on a persistent host but become prohibitive in ephemeral CI environments.
+
+```mermaid
+sequenceDiagram
+    participant CI as CI Pipeline<br/>(GitHub Actions)
+    participant WH as Webhook Endpoint<br/>(Secure)
+    participant MCP as MCP Service<br/>(Home Lab/K8s)
+    participant EMB as Embedding Provider<br/>(Transformers.js/Ollama)
+    participant VDB as ChromaDB<br/>(Vector Store)
+
+    CI->>WH: POST /webhook/index<br/>{repo, branch, commit}
+    WH->>WH: Validate auth token
+    WH->>MCP: Trigger indexing job
+    MCP->>EMB: Generate embeddings<br/>(cached model)
+    Note over EMB: Model already loaded<br/>~50ms per chunk
+    EMB-->>MCP: Embedding vectors
+    MCP->>VDB: Store embeddings
+    MCP-->>WH: Job queued/complete
+    WH-->>CI: 202 Accepted
+```
+
+### CI/CD Pattern Decision Matrix
+
+| Pattern | Embedding Compute Location | Model Cache | GPU Support | Cold Start | Recommended |
+|---------|---------------------------|-------------|-------------|------------|-------------|
+| **HTTP Trigger** | MCP host (home lab/K8s) | Persistent on MCP host | Yes, if host has GPU | None (model pre-loaded) | **YES** |
+| **Self-Hosted Runner** | CI runner machine | Persistent if runner persists | Depends on runner hardware | Minimal if runner is warm | Conditional |
+| **GitHub-Hosted Runner** | Ephemeral GitHub VM | None (downloaded each run) | No | 2-5 min model download | **NO** |
+
+### HTTP Trigger Pattern (Recommended)
+
+The HTTP trigger pattern delegates embedding computation to the MCP service host while CI remains lightweight:
+
+**Why HTTP Trigger is Preferred:**
+
+1. **Persistent Model Cache**: The MCP host keeps models loaded in memory or on fast local storage. No download or initialization delay per CI run.
+
+2. **GPU Acceleration Available**: If your MCP host (home lab server, Kubernetes node) has a GPU, Ollama can leverage it. CI runners rarely have GPU access.
+
+3. **No CI Cold Start**: The CI job simply makes an HTTP request. Total CI overhead is measured in seconds, not minutes.
+
+4. **Consistent Configuration**: The MCP service uses the same embedding provider configuration for both interactive queries and CI-triggered indexing. No risk of dimension mismatches or provider inconsistencies.
+
+5. **Resource Efficiency**: Embedding models consume 200MB-2GB of memory. Keeping this on dedicated infrastructure is more efficient than spinning up per-run.
+
+**Implementation Considerations:**
+
+- Expose a webhook endpoint from the MCP service (or a companion service)
+- Secure the endpoint with bearer tokens, IP allowlisting, or mTLS
+- Consider async job queuing for large repositories (return 202 Accepted, poll for status)
+- Log webhook events for audit and debugging
+
+**Example Webhook Configuration:**
+
+```yaml
+# config/webhooks.yaml
+webhooks:
+  enabled: true
+  endpoint: /api/v1/webhook/index
+  authentication:
+    type: bearer
+    tokenEnvVar: WEBHOOK_AUTH_TOKEN
+  allowedSources:
+    - "github.com"
+    - "dev.azure.com"
+  rateLimiting:
+    maxRequestsPerMinute: 10
+```
+
+### Self-Hosted Runner Pattern (Conditional)
+
+If your organization uses persistent self-hosted CI runners, embedding on the runner is acceptable:
+
+- **Requirement**: The runner must have the same embedding provider configuration as the MCP service
+- **Model Cache**: Persist the model cache directory between runs (e.g., `~/.cache/transformers.js`)
+- **Memory**: Ensure runners have sufficient memory (minimum 4GB for typical embedding models)
+- **Consistency Warning**: If the runner uses a different model or provider than the MCP host, search quality will be inconsistent
+
+### GitHub-Hosted Runners (Not Recommended)
+
+Running local embedding models on ephemeral GitHub-hosted runners is problematic:
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| Model Download | 2-5 min per run for 100-600MB model | None practical |
+| Cold Start | Additional 30-60s for runtime initialization | None |
+| No GPU | CPU-only inference is slow for large repos | None |
+| Billing | Extended job duration increases costs | Switch to HTTP trigger |
+| Timeout Risk | Long-running jobs may hit CI timeout limits | Split into smaller jobs |
+
+**If GitHub-hosted runners are unavoidable**, consider:
+- Using OpenAI API instead of local models (fast, no download)
+- Caching models in a GitHub Actions cache (limited to 10GB total)
+- Triggering only on release branches, not every PR
+
+### Webhook Security Recommendations
+
+When exposing webhook endpoints:
+
+1. **Authentication**: Require bearer tokens passed in `Authorization` header
+2. **Source Validation**: Verify webhook source via signature (GitHub uses HMAC-SHA256)
+3. **Network Isolation**: Consider exposing only via Tailscale, VPN, or private network
+4. **Rate Limiting**: Prevent abuse with per-source rate limits
+5. **Input Validation**: Validate repository URLs, branch names, and other parameters
+6. **Audit Logging**: Log all webhook invocations with source, action, and outcome
+
+```typescript
+// Example webhook validation middleware
+async function validateWebhook(req: Request): Promise<WebhookPayload> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new WebhookAuthError("Missing or invalid authorization");
+  }
+
+  const token = authHeader.slice(7);
+  if (token !== Bun.env["WEBHOOK_AUTH_TOKEN"]) {
+    throw new WebhookAuthError("Invalid token");
+  }
+
+  // Validate GitHub signature if present
+  const signature = req.headers.get("X-Hub-Signature-256");
+  if (signature) {
+    const isValid = await verifyGitHubSignature(req, signature);
+    if (!isValid) {
+      throw new WebhookAuthError("Invalid GitHub signature");
+    }
+  }
+
+  return await req.json() as WebhookPayload;
+}
+```
+
 ## Implementation Plan
 
 ### Phase 1: Transformers.js Provider (Week 1)

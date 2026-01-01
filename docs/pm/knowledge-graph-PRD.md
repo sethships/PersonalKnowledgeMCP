@@ -1,6 +1,6 @@
 # Knowledge Graph Feature PRD - Personal Knowledge MCP
 
-**Version:** 1.0
+**Version:** 1.2
 **Date:** January 1, 2026
 **Status:** Draft
 **Author:** Product Team
@@ -1458,7 +1458,43 @@ async function search(request: SearchRequest): Promise<SearchResult[]> {
 }
 ```
 
-### 11.7 Success Criteria (Local Embeddings)
+### 11.7 CI/CD Integration
+
+When integrating local embeddings with CI/CD pipelines (e.g., GitHub Actions, Azure DevOps), the recommended pattern is **HTTP trigger from CI to MCP service**.
+
+#### 11.7.1 Recommended Approach
+
+CI pipelines should trigger indexing via HTTP webhook rather than generating embeddings within the ephemeral runner environment.
+
+**Why HTTP Trigger Pattern:**
+
+| Consideration | HTTP Trigger | In-Runner Generation |
+|---------------|--------------|----------------------|
+| **Model caching** | Models pre-loaded on persistent host | Cold start every pipeline run |
+| **Resource efficiency** | Embedding generation on capable hardware | Constrained runner resources |
+| **Pipeline speed** | Fast HTTP call, work offloaded | Full embedding time in pipeline |
+| **Cost** | No additional runner minutes | Extended runner time |
+| **Consistency** | Same environment as interactive use | Potential configuration drift |
+
+**Pattern Summary:**
+1. CI pipeline detects code changes that require re-indexing
+2. Pipeline sends HTTP request to MCP service webhook endpoint
+3. MCP host (user's PC, home lab, or Kubernetes cluster) performs embedding generation
+4. Local embedding models benefit from cached/pre-loaded state
+5. CI pipeline remains lightweight and fast
+
+#### 11.7.2 Security Considerations
+
+- Webhook endpoints must be securely exposed (authentication tokens, VPN/Tailscale, or restricted IP ranges)
+- Avoid exposing MCP service directly to public internet
+- Use signed webhook payloads to prevent unauthorized triggers
+- Consider rate limiting to prevent abuse
+
+#### 11.7.3 Alternative: Scheduled Polling
+
+For environments where webhooks are not feasible, the MCP service can poll repository status on a schedule. This is less immediate but avoids inbound network exposure.
+
+### 11.8 Success Criteria (Local Embeddings)
 
 | Criterion | Target | Measurement |
 |-----------|--------|-------------|
@@ -1468,6 +1504,7 @@ async function search(request: SearchRequest): Promise<SearchResult[]> {
 | **Memory usage reasonable** | <1GB peak | Profile during 10K chunk indexing |
 | **Model download transparent** | Progress shown | First-run UX with large model |
 | **Provider switching seamless** | No code changes | Config-only provider change |
+| **CI/CD integration works** | Webhook triggers indexing | HTTP trigger initiates re-index from CI |
 
 ---
 
@@ -1801,6 +1838,7 @@ export interface EmbeddingConfig {
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | Product Team | Initial Knowledge Graph PRD |
 | 1.1 | 2026-01-01 | Product Team | Added Local Embeddings Provider scope (Section 11, updated roadmap) |
+| 1.2 | 2026-01-01 | Product Team | Added CI/CD integration guidance for local embeddings (Section 11.7) |
 
 ---
 
