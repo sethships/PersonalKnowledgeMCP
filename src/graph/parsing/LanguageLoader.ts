@@ -121,6 +121,30 @@ export class LanguageLoader {
   private static instance: LanguageLoader | null = null;
 
   private parser: Parser | null = null;
+  /**
+   * Cache of loaded language grammars.
+   *
+   * Design Decision: Languages are cached indefinitely without an eviction policy.
+   * This is acceptable because:
+   * 1. The current supported language set is small (4 languages: TypeScript, TSX, JavaScript, JSX)
+   * 2. Each WASM language grammar is relatively small (~100-200KB)
+   * 3. Languages are typically loaded once and reused throughout the application lifecycle
+   *
+   * If language support is expanded significantly in the future, consider implementing
+   * an LRU cache with configurable max size to bound memory usage.
+   */
+  /**
+   * Cache of loaded language grammars.
+   *
+   * Design Decision: Languages are cached indefinitely without an eviction policy.
+   * This is acceptable because:
+   * 1. The current supported language set is small (4 languages: TypeScript, TSX, JavaScript, JSX)
+   * 2. Each WASM language grammar is relatively small (~100-200KB)
+   * 3. Languages are typically loaded once and reused throughout the application lifecycle
+   *
+   * If language support is expanded significantly in the future, consider implementing
+   * an LRU cache with configurable max size to bound memory usage.
+   */
   private languages: Map<SupportedLanguage, Language> = new Map();
   private initPromise: Promise<void> | null = null;
   private readonly wasmPaths: WasmPathConfig;
@@ -211,7 +235,11 @@ export class LanguageLoader {
         "Initializing tree-sitter parser"
       );
 
-      // Initialize the tree-sitter WASM module
+      // Initialize the tree-sitter WASM module.
+      // NOTE: Parser.init() is a global operation in web-tree-sitter. It initializes the
+      // WASM module once per process. Subsequent calls with different configurations will
+      // still succeed but will use the already-loaded WASM module. This is expected behavior
+      // and why we use the singleton pattern - to ensure consistent initialization.
       await Parser.init({
         locateFile: (scriptName: string) => {
           if (scriptName === "web-tree-sitter.wasm" || scriptName === "tree-sitter.wasm") {

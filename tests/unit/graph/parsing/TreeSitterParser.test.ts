@@ -431,4 +431,89 @@ export class Bar {
       expect(bar?.lineStart).toBe(8);
     });
   });
+
+  describe("parseFile - Configuration Options", () => {
+    it("should include anonymous functions when includeAnonymous is true", async () => {
+      const content = `
+const handler = function() {
+  return "anonymous";
+};
+
+const arrowFn = () => {
+  return "arrow";
+};
+`;
+
+      const parserWithAnonymous = new TreeSitterParser(undefined, {
+        includeAnonymous: true,
+      });
+
+      const result = await parserWithAnonymous.parseFile(content, "anonymous.ts");
+
+      expect(result.success).toBe(true);
+      // Should include the anonymous function entities
+      const anonymousEntities = result.entities.filter((e) => e.name === "<anonymous>");
+      expect(anonymousEntities.length).toBeGreaterThan(0);
+    });
+
+    it("should exclude anonymous functions by default (includeAnonymous: false)", async () => {
+      const content = `
+const handler = function() {
+  return "anonymous";
+};
+`;
+
+      // Default parser (includeAnonymous: false)
+      const result = await parser.parseFile(content, "anonymous.ts");
+
+      expect(result.success).toBe(true);
+      // Should NOT include anonymous function entities
+      const anonymousEntities = result.entities.filter((e) => e.name === "<anonymous>");
+      expect(anonymousEntities.length).toBe(0);
+    });
+
+    it("should skip documentation extraction when extractDocumentation is false", async () => {
+      const content = `
+/**
+ * This is a documented function.
+ * @param x The input number
+ * @returns The doubled number
+ */
+export function documented(x: number): number {
+  return x * 2;
+}
+`;
+
+      const parserWithoutDocs = new TreeSitterParser(undefined, {
+        extractDocumentation: false,
+      });
+
+      const result = await parserWithoutDocs.parseFile(content, "documented.ts");
+
+      expect(result.success).toBe(true);
+      const fn = result.entities.find((e) => e.name === "documented");
+      expect(fn).toBeDefined();
+      // Documentation should NOT be extracted
+      expect(fn?.metadata?.documentation).toBeUndefined();
+    });
+
+    it("should extract documentation by default (extractDocumentation: true)", async () => {
+      const content = `
+/**
+ * This is a documented function.
+ */
+export function documented(): void {}
+`;
+
+      // Default parser (extractDocumentation: true)
+      const result = await parser.parseFile(content, "documented.ts");
+
+      expect(result.success).toBe(true);
+      const fn = result.entities.find((e) => e.name === "documented");
+      expect(fn).toBeDefined();
+      // Documentation should be extracted
+      expect(fn?.metadata?.documentation).toBeDefined();
+      expect(fn?.metadata?.documentation).toContain("documented function");
+    });
+  });
 });

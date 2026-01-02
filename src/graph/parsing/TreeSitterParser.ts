@@ -12,7 +12,7 @@ import type pino from "pino";
 import path from "node:path";
 import { getComponentLogger } from "../../logging/index.js";
 import { LanguageLoader } from "./LanguageLoader.js";
-import { LanguageNotSupportedError, FileTooLargeError } from "./errors.js";
+import { LanguageNotSupportedError, FileTooLargeError, ParseTimeoutError } from "./errors.js";
 import {
   type SupportedLanguage,
   type CodeEntity,
@@ -127,6 +127,7 @@ export class TreeSitterParser {
    * @returns Parse result with entities, imports, and errors
    * @throws {LanguageNotSupportedError} If file extension is not supported
    * @throws {FileTooLargeError} If file exceeds max size
+   * @throws {ParseTimeoutError} If parsing exceeds configured timeout
    */
   async parseFile(content: string, filePath: string): Promise<ParseResult> {
     const startTime = performance.now();
@@ -148,7 +149,16 @@ export class TreeSitterParser {
 
     this.logger.debug({ filePath, language, sizeBytes }, "Parsing file");
 
-    try {
+    // Create timeout promise for enforcing parseTimeoutMs
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new ParseTimeoutError(filePath, this.config.parseTimeoutMs));
+      }, this.config.parseTimeoutMs);
+    });
+
+    // Define the parse operation
+    const parseOperation = async (): Promise<ParseResult> => {
       // Get parser and language
       const parser = await this.languageLoader.getParser();
       const lang = await this.languageLoader.getLanguage(language);
@@ -215,8 +225,20 @@ export class TreeSitterParser {
         errors,
         success: true,
       };
+    };
+
+    try {
+      // Race between parse operation and timeout
+      const result = await Promise.race([parseOperation(), timeoutPromise]);
+      return result;
     } catch (error) {
       const parseTimeMs = performance.now() - startTime;
+
+      // Re-throw timeout errors and other known errors
+      if (error instanceof ParseTimeoutError) {
+        this.logger.warn({ filePath, timeoutMs: this.config.parseTimeoutMs }, "Parse timeout");
+        throw error;
+      }
 
       if (error instanceof LanguageNotSupportedError || error instanceof FileTooLargeError) {
         throw error;
@@ -240,6 +262,11 @@ export class TreeSitterParser {
         errors,
         success: false,
       };
+    } finally {
+      // Always clear the timeout to prevent memory leaks
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 

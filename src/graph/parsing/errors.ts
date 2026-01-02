@@ -98,7 +98,7 @@ export class LanguageLoadError extends ParsingError {
   constructor(language: SupportedLanguage, cause?: Error) {
     super(
       `Failed to load tree-sitter language: ${language}`,
-      "",
+      "<no-file>",
       "LANGUAGE_LOAD_ERROR",
       cause,
       true // Retryable
@@ -123,7 +123,7 @@ export class ParserInitializationError extends ParsingError {
   constructor(message: string, cause?: Error) {
     super(
       `Tree-sitter initialization failed: ${message}`,
-      "",
+      "<no-file>",
       "PARSER_INITIALIZATION_ERROR",
       cause,
       true // Retryable
