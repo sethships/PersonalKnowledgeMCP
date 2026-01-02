@@ -305,68 +305,77 @@ The critical path runs through:
 
 ## Progress Tracking
 
-### Phase 1: Knowledge Graph Foundation
+### Epic Issues
 
-| Task | Status | Assigned | Notes |
-|------|--------|----------|-------|
-| Create src/graph/ module structure | Not Started | - | |
-| Implement Neo4jClient with connection management | Not Started | - | |
-| Create Neo4j schema and migration tool | Not Started | - | |
-| Integrate tree-sitter for AST parsing | Not Started | - | |
-| Implement EntityExtractor for functions/classes | Not Started | - | |
-| Implement RelationshipExtractor for imports | Not Started | - | |
-| Create GraphIngestionService | Not Started | - | |
-| Add CLI command: pk-mcp graph populate | Not Started | - | |
-| Integrate Neo4j health into health checks | Not Started | - | |
-| Write unit and integration tests | Not Started | - | |
+| Epic | GitHub Issue | Description |
+|------|--------------|-------------|
+| Knowledge Graph Foundation | #138 | Phase 1 - Neo4j infrastructure, AST parsing, and graph ingestion |
+| Core MCP Graph Tools | #139 | Phase 2 - GraphService and dependency query tools |
+| Advanced Graph Tools | #140 | Phase 3 - Architecture and path finding tools |
+| Local Embeddings Provider | #141 | Phase 4 - Transformers.js and Ollama embedding providers |
 
-### Phase 2: Core MCP Tools
+### Phase 1: Knowledge Graph Foundation (Epic #138)
 
-| Task | Status | Assigned | Notes |
-|------|--------|----------|-------|
-| Implement GraphService interface | Not Started | - | |
-| Create get_dependencies tool handler | Not Started | - | |
-| Create get_dependents tool handler | Not Started | - | |
-| Register tools in MCP tool registry | Not Started | - | |
-| Write tests for new tools | Not Started | - | |
-| Document tools with usage examples | Not Started | - | |
+| Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
+|------|--------------|--------------|--------|----------|-------|
+| Create src/graph/ module structure | #142 | - | Not Started | - | |
+| Implement Neo4jClient with connection management | #143 | #142 | Not Started | - | |
+| Create Neo4j schema and migration tool | #144 | #143 | Not Started | - | |
+| Integrate tree-sitter for AST parsing | #145 | - | Not Started | - | |
+| Implement EntityExtractor for functions/classes | #146 | #145 | Not Started | - | |
+| Implement RelationshipExtractor for imports | #147 | #146 | Not Started | - | |
+| Create GraphIngestionService | #148 | #143, #147 | Not Started | - | |
+| Add CLI command: pk-mcp graph populate | #149 | #148 | Not Started | - | |
+| Integrate Neo4j health into health checks | #150 | #143 | Not Started | - | |
+| Write unit and integration tests | #151 | #148 | Not Started | - | |
 
-### Phase 3: Advanced Tools
+### Phase 2: Core MCP Tools (Epic #139)
 
-| Task | Status | Assigned | Notes |
-|------|--------|----------|-------|
-| Enhance extraction for function calls | Not Started | - | |
-| Implement get_architecture tool | Not Started | - | |
-| Implement find_path tool | Not Started | - | |
-| Add Cypher queries for shortest path | Not Started | - | |
-| Test with complex repositories | Not Started | - | |
+| Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
+|------|--------------|--------------|--------|----------|-------|
+| Implement GraphService interface | #152 | #148 | Not Started | - | |
+| Create get_dependencies tool handler | #153 | #152 | Not Started | - | |
+| Create get_dependents tool handler | #154 | #152 | Not Started | - | |
+| Register tools in MCP tool registry | #155 | #153, #154 | Not Started | - | |
+| Write tests for new tools | #156 | #153, #154 | Not Started | - | |
+| Document tools with usage examples | #157 | #155 | Not Started | - | |
 
-### Phase 4: Local Embeddings
+### Phase 3: Advanced Tools (Epic #140)
 
-| Task | Status | Assigned | Notes |
-|------|--------|----------|-------|
-| Define EmbeddingProvider interface updates | Not Started | - | |
-| Refactor OpenAIEmbeddingProvider | Not Started | - | |
-| Implement TransformersJsEmbeddingProvider | Not Started | - | |
-| Implement OllamaEmbeddingProvider | Not Started | - | |
-| Add model download and caching logic | Not Started | - | |
-| Update CLI with --provider flag | Not Started | - | |
-| Add provider status command | Not Started | - | |
-| Store provider info in repository metadata | Not Started | - | |
-| Update search service for provider routing | Not Started | - | |
-| Write integration tests for local providers | Not Started | - | |
-| Document provider selection trade-offs | Not Started | - | |
+| Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
+|------|--------------|--------------|--------|----------|-------|
+| Enhance extraction for function calls | #158 | #146 | Not Started | - | |
+| Implement get_architecture tool | #159 | #152 | Not Started | - | |
+| Implement find_path tool | #160 | #152, #158 | Not Started | - | |
+| Add Cypher queries for shortest path | #161 | #160 | Not Started | - | |
+| Test with complex repositories | #162 | #159, #160 | Not Started | - | |
+
+### Phase 4: Local Embeddings (Epic #141)
+
+| Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
+|------|--------------|--------------|--------|----------|-------|
+| Define EmbeddingProvider interface updates | #163 | - | Not Started | - | |
+| Refactor OpenAIEmbeddingProvider | #164 | #163 | Not Started | - | |
+| Implement TransformersJsEmbeddingProvider | #165 | #163 | Not Started | - | |
+| Implement OllamaEmbeddingProvider | #166 | #163 | Not Started | - | |
+| Add model download and caching logic | #167 | #165 | Not Started | - | |
+| Update CLI with --provider flag | #168 | #165, #166 | Not Started | - | |
+| Add provider status command | #169 | #168 | Not Started | - | |
+| Store provider info in repository metadata | #170 | #168 | Not Started | - | |
+| Update search service for provider routing | #171 | #170 | Not Started | - | |
+| Write integration tests for local providers | #172 | #165, #166 | Not Started | - | |
+| Document provider selection trade-offs | #173 | #172 | Not Started | - | |
 
 ### Phase 5: Integration and Polish
 
-| Task | Status | Assigned | Notes |
-|------|--------|----------|-------|
-| Integrate graph into incremental updates | Not Started | - | |
-| Create graph populate-all command | Not Started | - | |
-| Update backup scripts for Neo4j | Not Started | - | |
-| Performance testing at scale | Not Started | - | |
-| Optional: ONNX Runtime provider | Not Started | - | |
-| Final documentation | Not Started | - | |
+| Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
+|------|--------------|--------------|--------|----------|-------|
+| Integrate graph into incremental updates | #174 | #152, #148 | Not Started | - | |
+| Create graph populate-all command | #175 | #149 | Not Started | - | |
+| Update backup scripts for Neo4j | #176 | #143 | Not Started | - | |
+| Performance testing at scale | #177 | #162, #172 | Not Started | - | |
+| Optional: ONNX Runtime provider | - | #163 | Not Started | - | Stretch goal |
+| Final documentation | - | All | Not Started | - | Covers all phases |
 
 ---
 
@@ -420,3 +429,4 @@ The critical path runs through:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | Program Management | Initial roadmap |
+| 1.1 | 2026-01-01 | Program Management | Added GitHub issue IDs (#138-177) and dependency tracking to Progress Tracking tables |
