@@ -319,7 +319,7 @@ The critical path runs through:
 | Task | GitHub Issue | Dependencies | Status | Assigned | Notes |
 |------|--------------|--------------|--------|----------|-------|
 | ~~Create src/graph/ module structure~~ | ~~#142~~ | - | ✅ Complete | - | Closed via PR #178 |
-| Implement Neo4jClient with connection management | #143 | #142 | Not Started | - | |
+| Implement Neo4jClient with connection management | #143 | ~~#142~~ | Not Started | - | |
 | Create Neo4j schema and migration tool | #144 | #143 | Not Started | - | |
 | Integrate tree-sitter for AST parsing | #145 | - | Not Started | - | |
 | Implement EntityExtractor for functions/classes | #146 | #145 | Not Started | - | |
