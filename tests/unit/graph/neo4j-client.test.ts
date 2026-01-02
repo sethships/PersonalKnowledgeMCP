@@ -405,6 +405,51 @@ describe("Neo4jStorageClientImpl", () => {
 
       await expect(disconnectedClient.upsertNode(node)).rejects.toThrow(GraphConnectionError);
     });
+
+    test("should reject invalid node labels with Cypher injection attempts", async () => {
+      const maliciousNode = {
+        labels: ["EVIL}]->(m) DELETE m;//"],
+        name: "malicious",
+        url: "https://example.com",
+        description: "Test",
+      } as unknown as Omit<RepositoryNode, "id">;
+
+      await expect(client.upsertNode(maliciousNode)).rejects.toThrow(GraphError);
+      await expect(client.upsertNode(maliciousNode)).rejects.toThrow(/Invalid node label/);
+    });
+
+    test("should reject labels that do not start with a letter", async () => {
+      const invalidNode = {
+        labels: ["123Invalid"],
+        name: "test",
+        url: "https://example.com",
+        description: "Test",
+      } as unknown as Omit<RepositoryNode, "id">;
+
+      await expect(client.upsertNode(invalidNode)).rejects.toThrow(GraphError);
+    });
+
+    test("should reject labels with special characters", async () => {
+      const invalidNode = {
+        labels: ["Invalid-Label"],
+        name: "test",
+        url: "https://example.com",
+        description: "Test",
+      } as unknown as Omit<RepositoryNode, "id">;
+
+      await expect(client.upsertNode(invalidNode)).rejects.toThrow(GraphError);
+    });
+
+    test("should accept valid labels with underscores and numbers", async () => {
+      const validNode = createTestRepositoryNode();
+      validNode.labels = ["Valid_Label_123"];
+      mockSession.setQueryResult("MERGE", [
+        mockRecordFactories.nodeReturn(sampleMockNodes.repository),
+      ]);
+
+      const result = await client.upsertNode<RepositoryNode>(validNode);
+      expect(result).toBeDefined();
+    });
   });
 
   describe("deleteNode", () => {
@@ -546,6 +591,27 @@ describe("Neo4jStorageClientImpl", () => {
       await expect(
         disconnectedClient.createRelationship("from", "to", RelationshipType.CONTAINS)
       ).rejects.toThrow(GraphConnectionError);
+    });
+
+    test("should reject invalid relationship types with Cypher injection attempts", async () => {
+      await expect(
+        client.createRelationship("from", "to", "EVIL}]->(m);//" as RelationshipType)
+      ).rejects.toThrow(GraphError);
+      await expect(
+        client.createRelationship("from", "to", "EVIL}]->(m);//" as RelationshipType)
+      ).rejects.toThrow(/Invalid relationship type/);
+    });
+
+    test("should reject relationship types that do not start with a letter", async () => {
+      await expect(
+        client.createRelationship("from", "to", "123INVALID" as RelationshipType)
+      ).rejects.toThrow(GraphError);
+    });
+
+    test("should reject relationship types with special characters", async () => {
+      await expect(
+        client.createRelationship("from", "to", "INVALID-TYPE" as RelationshipType)
+      ).rejects.toThrow(GraphError);
     });
   });
 

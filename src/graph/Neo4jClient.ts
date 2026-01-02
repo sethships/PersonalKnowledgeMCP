@@ -979,7 +979,12 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
       let result;
       try {
         result = await this.withRetryWrapper(() => session.run(cypher, params), "traverse (APOC)");
-      } catch {
+      } catch (apocError) {
+        // Log APOC failure for debugging
+        this.logger.debug(
+          { err: apocError },
+          "APOC not available or failed, falling back to basic traversal"
+        );
         // Fall back to basic traversal without APOC
         const fallbackCypher = `
           MATCH ${startMatch}
