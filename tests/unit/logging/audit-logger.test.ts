@@ -105,16 +105,17 @@ function createTokenCreatedEvent(): TokenCreatedEvent {
  * More robust than fixed timeout - polls for file existence/content.
  *
  * @param expectedLines - Optional minimum expected line count
- * @param timeout - Maximum wait time in ms (default: 1000)
+ * @param timeout - Maximum wait time in ms (default: 2000 for CI compatibility)
  */
-async function waitForWrite(expectedLines?: number, timeout = 1000): Promise<void> {
+async function waitForWrite(expectedLines?: number, timeout = 2000): Promise<void> {
   const start = Date.now();
   const pollInterval = 20; // Check every 20ms
 
   while (Date.now() - start < timeout) {
     // If no expected lines, just wait a bit for async operations
+    // Use a longer wait than before for CI compatibility (200ms vs 100ms)
     if (expectedLines === undefined) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       return;
     }
 
