@@ -33,17 +33,27 @@ const integrationConfig: Neo4jConfig = {
 // Test data prefix to avoid conflicts
 const TEST_PREFIX = `test_${Date.now()}`;
 
-// Helper to check if Neo4j is available
+// Helper to check if Neo4j is available with a short timeout
 async function isNeo4jAvailable(): Promise<boolean> {
-  const client = new Neo4jStorageClientImpl(integrationConfig);
-  try {
-    await client.connect();
-    const healthy = await client.healthCheck();
-    await client.disconnect();
-    return healthy;
-  } catch {
-    return false;
-  }
+  // Use a promise race to timeout quickly if Neo4j is not available
+  // This prevents the beforeAll hook from timing out
+  const timeout = new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), 2000); // 2 second timeout
+  });
+
+  const connectionCheck = (async () => {
+    const client = new Neo4jStorageClientImpl(integrationConfig);
+    try {
+      await client.connect();
+      const healthy = await client.healthCheck();
+      await client.disconnect();
+      return healthy;
+    } catch {
+      return false;
+    }
+  })();
+
+  return Promise.race([connectionCheck, timeout]);
 }
 
 describe("Neo4jStorageClientImpl Integration Tests", () => {
