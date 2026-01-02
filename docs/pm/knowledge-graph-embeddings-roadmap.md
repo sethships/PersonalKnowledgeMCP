@@ -220,7 +220,7 @@ The critical path runs through:
 ### Milestone 2: Basic Graph Population (End of Week 3)
 
 **Criteria:**
-- [ ] Tree-sitter parses TypeScript/JavaScript files
+- [x] Tree-sitter parses TypeScript/JavaScript files *(Completed: PR #179)*
 - [ ] Entity extractor identifies functions and classes
 - [ ] Relationship extractor captures import statements
 - [ ] CLI command populates graph from repository
@@ -268,7 +268,7 @@ The critical path runs through:
 
 | ID | Risk | Impact | Probability | Mitigation | Owner | Status |
 |----|------|--------|-------------|------------|-------|--------|
-| R1 | Tree-sitter integration complexity | Medium | Medium | Start with TS/JS only; accept partial extraction | TBD | Open |
+| R1 | Tree-sitter integration complexity | Medium | Medium | Start with TS/JS only; accept partial extraction | TBD | Closed |
 | R2 | Neo4j memory usage exceeds home lab limits | Medium | Low | Configure limits; test with large repos early | TBD | Open |
 | R3 | Cypher query performance at scale | Medium | Medium | Benchmark regularly; add caching if needed | TBD | Open |
 | R4 | Bun + ONNX Runtime compatibility issues | High | Medium | Ollama as fallback; test early with Bun canary | TBD | Open |
@@ -297,7 +297,7 @@ The critical path runs through:
 |----|------------|-----------|-------|
 | A1 | Neo4j Community Edition sufficient for scale | Pending | Test with 100K+ nodes |
 | A2 | Transformers.js works with current Bun version | Pending | Test early in Phase 4 |
-| A3 | Tree-sitter has TypeScript bindings for Bun | Pending | Verify compatibility |
+| A3 | Tree-sitter has TypeScript bindings for Bun | ✅ Yes | Validated via web-tree-sitter (WASM) in PR #179 |
 | A4 | Local models provide acceptable search quality | Pending | Benchmark against OpenAI |
 | A5 | Developer workstations have 8GB+ RAM | Yes | Per PRD requirements |
 
@@ -321,8 +321,8 @@ The critical path runs through:
 | ~~Create src/graph/ module structure~~ | ~~#142~~ | - | ✅ Complete | - | Closed via PR #178 |
 | Implement Neo4jClient with connection management | #143 | ~~#142~~ | Not Started | - | |
 | Create Neo4j schema and migration tool | #144 | #143 | Not Started | - | |
-| Integrate tree-sitter for AST parsing | #145 | - | Not Started | - | |
-| Implement EntityExtractor for functions/classes | #146 | #145 | Not Started | - | |
+| ~~Integrate tree-sitter for AST parsing~~ | ~~#145~~ | - | ✅ Complete | - | Closed via PR #179 |
+| Implement EntityExtractor for functions/classes | #146 | ~~#145~~ | Not Started | - | Dependency resolved |
 | Implement RelationshipExtractor for imports | #147 | #146 | Not Started | - | |
 | Create GraphIngestionService | #148 | #143, #147 | Not Started | - | |
 | Add CLI command: pk-mcp graph populate | #149 | #148 | Not Started | - | |
@@ -431,3 +431,4 @@ The critical path runs through:
 | 1.0 | 2026-01-01 | Program Management | Initial roadmap |
 | 1.1 | 2026-01-01 | Program Management | Added GitHub issue IDs (#138-177) and dependency tracking to Progress Tracking tables |
 | 1.2 | 2026-01-02 | Program Management | Marked #142 (src/graph/ module structure) as complete via PR #178 |
+| 1.3 | 2026-01-02 | Program Management | Marked #145 (tree-sitter AST parsing) as complete via PR #179; updated dependencies for #146; closed risk R1; validated assumption A3 |
