@@ -92,6 +92,8 @@ import {
  */
 export class Neo4jStorageClientImpl implements Neo4jStorageClient {
   private driver: Driver | null = null;
+  /** Normalization factor for impact score calculation (higher = lower score per dependency) */
+  private static readonly IMPACT_SCORE_NORMALIZATION = 100;
   private config: Neo4jConfig;
   private retryConfig: RetryConfig;
   private logger = getComponentLogger("graph:neo4j");
@@ -296,6 +298,41 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
       return value.toNumber();
     }
     return value;
+  }
+
+  /**
+   * Validate and sanitize a Neo4j label
+   *
+   * Labels must match Neo4j naming rules: start with letter, contain only
+   * alphanumeric characters and underscores.
+   *
+   * @param label - The label to validate
+   * @returns The validated label
+   * @throws {GraphError} If the label contains invalid characters
+   */
+  private validateLabel(label: string): string {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(label)) {
+      throw new GraphError(
+        `Invalid node label: ${label}. Labels must start with a letter and contain only alphanumeric characters and underscores.`
+      );
+    }
+    return label;
+  }
+
+  /**
+   * Validate relationship type against allowed values
+   *
+   * Provides runtime validation to prevent Cypher injection through
+   * malicious relationship type strings.
+   *
+   * @param type - The relationship type to validate
+   * @throws {GraphError} If the relationship type is not valid
+   */
+  private validateRelationshipType(type: RelationshipType): void {
+    // Validate that the type matches Neo4j naming rules (same as labels)
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(type)) {
+      throw new GraphError(`Invalid relationship type: ${type}`);
+    }
   }
 
   /**
@@ -545,7 +582,9 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
     const startTime = Date.now();
     const session = this.createSession();
     const nodeId = this.generateNodeId(node);
-    const labels = node.labels.join(":");
+    // Validate each label to prevent Cypher injection
+    const validatedLabels = node.labels.map((label) => this.validateLabel(label));
+    const labels = validatedLabels.join(":");
 
     try {
       const { setClause, params } = this.buildNodeSetClause(node);
@@ -686,6 +725,9 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
     properties?: P
   ): Promise<Relationship<P>> {
     this.ensureConnected();
+
+    // Validate relationship type to prevent Cypher injection
+    this.validateRelationshipType(type);
 
     const startTime = Date.now();
     const session = this.createSession();
@@ -1225,7 +1267,10 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
 
       // Calculate impact score
       const totalDeps = directDeps.length + (transitiveDeps?.length ?? 0);
-      const impactScore = Math.min(1, totalDeps / 100); // Simple scoring
+      const impactScore = Math.min(
+        1,
+        totalDeps / Neo4jStorageClientImpl.IMPACT_SCORE_NORMALIZATION
+      );
 
       const durationMs = Date.now() - startTime;
       const result: GraphDependenciesResult = {
@@ -1369,7 +1414,10 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
               continue;
           }
 
-          const result = await session.run(cypher, params);
+          const result = await this.withRetryWrapper(
+            () => session.run(cypher, params),
+            "getContext"
+          );
 
           for (const record of result.records) {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
