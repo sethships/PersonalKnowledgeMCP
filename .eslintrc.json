@@ -52,7 +52,8 @@
     "dist",
     "node_modules",
     "coverage",
-    "*.js"
+    "*.js",
+    "tests/fixtures/**"
   ],
   "overrides": [
     {

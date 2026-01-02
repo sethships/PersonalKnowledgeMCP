@@ -7,3 +7,5 @@ coverage
 .env.*
 # Helm chart templates contain Go templating that isn't valid YAML
 charts/
+# Test fixtures may contain intentionally malformed code
+tests/fixtures/

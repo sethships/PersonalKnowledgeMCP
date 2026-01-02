@@ -3,9 +3,9 @@
  *
  * Knowledge Graph Module
  *
- * This module provides the public API for Neo4j knowledge graph operations.
- * It exports the storage client interface, types, and error classes for
- * interacting with the knowledge graph database.
+ * This module provides the public API for:
+ * - AST parsing and entity extraction (parsing submodule)
+ * - Neo4j knowledge graph operations (types, errors)
  *
  * The knowledge graph complements ChromaDB vector search by storing explicit
  * relationships between code entities (functions, classes, modules) enabling
@@ -38,6 +38,12 @@
  * });
  * ```
  */
+
+// =============================================================================
+// Parsing Module (AST parsing, entity extraction)
+// =============================================================================
+
+export * from "./parsing/index.js";
 
 // =============================================================================
 // Configuration Types
