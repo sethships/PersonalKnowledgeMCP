@@ -1007,11 +1007,15 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
       const seenRels = new Set<string>();
 
       for (const record of result.records) {
-        // Handle APOC result format
+        const recordKeys = record.keys;
+
+        // Handle APOC result format (nodes, relationships)
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const nodesVal = record.get("nodes");
+        const nodesVal = recordKeys.includes("nodes") ? record.get("nodes") : undefined;
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const relsVal = record.get("relationships");
+        const relsVal = recordKeys.includes("relationships")
+          ? record.get("relationships")
+          : undefined;
 
         if (Array.isArray(nodesVal)) {
           for (const node of nodesVal) {
@@ -1048,9 +1052,9 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
           }
         }
 
-        // Handle fallback result format
+        // Handle fallback result format (start, connectedNodes, allRels)
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const startVal = record.get("start");
+        const startVal = recordKeys.includes("start") ? record.get("start") : undefined;
         if (this.isNeo4jNode(startVal)) {
           const converted = this.convertNode(startVal);
           const nodeId = converted["id"] as string;
@@ -1065,7 +1069,9 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
         }
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const connectedNodes = record.get("connectedNodes");
+        const connectedNodes = recordKeys.includes("connectedNodes")
+          ? record.get("connectedNodes")
+          : undefined;
         if (Array.isArray(connectedNodes)) {
           for (const node of connectedNodes) {
             if (this.isNeo4jNode(node)) {
