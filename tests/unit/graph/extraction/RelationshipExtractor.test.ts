@@ -492,6 +492,25 @@ describe("RelationshipExtractor", () => {
         expect(error).toBeInstanceOf(FileTooLargeError);
       }
     });
+
+    it("should default to typescript language for unknown extensions in failed extractions", async () => {
+      // When extractFromFiles encounters a non-existent file with unknown extension,
+      // inferLanguageFromPath defaults to "typescript"
+      const { results } = await extractor.extractFromFiles([
+        path.join(FIXTURES_DIR, "unknown-file.xyz"),
+      ]);
+
+      expect(results).toHaveLength(1);
+      const result = results[0]!;
+      expect(result.success).toBe(false);
+      expect(result.language).toBe("typescript");
+    });
+
+    it("should not support files without extensions", () => {
+      expect(RelationshipExtractor.isSupported("Makefile")).toBe(false);
+      expect(RelationshipExtractor.isSupported("dockerfile")).toBe(false);
+      expect(RelationshipExtractor.isSupported(".gitignore")).toBe(false);
+    });
   });
 
   describe("path resolution", () => {

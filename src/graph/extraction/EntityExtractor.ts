@@ -94,7 +94,10 @@ export class EntityExtractor {
    * @returns true if the file type is supported
    */
   static isSupported(filePath: string): boolean {
-    const extension = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
+    const lastDot = filePath.lastIndexOf(".");
+    // Files without extensions or starting with dot (hidden files) are not supported
+    if (lastDot === -1 || lastDot === 0) return false;
+    const extension = filePath.substring(lastDot).toLowerCase();
     return TreeSitterParser.isSupported(extension);
   }
 

@@ -99,7 +99,10 @@ export class RelationshipExtractor {
    * @returns true if the file type is supported
    */
   static isSupported(filePath: string): boolean {
-    const extension = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
+    const lastDot = filePath.lastIndexOf(".");
+    // Files without extensions or starting with dot (hidden files) are not supported
+    if (lastDot === -1 || lastDot === 0) return false;
+    const extension = filePath.substring(lastDot).toLowerCase();
     return TreeSitterParser.isSupported(extension);
   }
 
@@ -379,7 +382,7 @@ export class RelationshipExtractor {
         relationship.targetModule = exportInfo.source;
 
         // Resolve relative re-export paths
-        if (this.isRelativePath(exportInfo.source)) {
+        if (this.isLocalPath(exportInfo.source)) {
           relationship.resolvedPath = this.resolveRelativePath(sourceFile, exportInfo.source);
         }
       }
@@ -455,12 +458,18 @@ export class RelationshipExtractor {
   }
 
   /**
-   * Check if a path is relative.
+   * Check if a path is a local (non-package) path.
+   *
+   * Local paths include:
+   * - Relative paths starting with . or ..
+   * - Absolute paths starting with /
+   *
+   * This distinguishes local file imports from external package imports.
    *
    * @param source - Path to check
-   * @returns true if relative path
+   * @returns true if local path (not an external package)
    */
-  private isRelativePath(source: string): boolean {
+  private isLocalPath(source: string): boolean {
     return source.startsWith(".") || source.startsWith("/");
   }
 
