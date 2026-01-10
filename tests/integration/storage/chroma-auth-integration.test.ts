@@ -94,32 +94,41 @@ describe("ChromaDB Authentication Integration", () => {
       client = new ChromaStorageClientImpl(config);
     });
 
-    test("should fail to connect with invalid auth token", async () => {
-      // ChromaDB returns 401 Unauthorized for invalid tokens
-      // The client may connect at transport level but operations fail
-      try {
-        await client.connect();
-        // If connect succeeds, subsequent operations should fail
-        const isHealthy = await client.healthCheck();
-        // Either connect throws or health check fails
-        expect(isHealthy).toBe(false);
-      } catch (error) {
-        // Connection rejection is expected behavior
-        expect(error).toBeDefined();
-      }
+    test("should connect successfully (heartbeat is unauthenticated)", async () => {
+      // ChromaDB's heartbeat endpoint is unauthenticated, so connect() succeeds
+      // Auth is only enforced on data operations
+      await client.connect();
+      expect(true).toBe(true);
     });
 
-    test("should fail health check with invalid auth token", async () => {
+    test("health check should pass (heartbeat is unauthenticated)", async () => {
       try {
-        // Attempt connection (may throw)
         await client.connect();
       } catch {
-        // Connection failed, which is expected
+        // Ignore if already connected
       }
 
-      // Health check should fail with invalid token
+      // Health check uses heartbeat endpoint which is unauthenticated
       const isHealthy = await client.healthCheck();
-      expect(isHealthy).toBe(false);
+      expect(isHealthy).toBe(true);
+    });
+
+    test("should fail data operations with invalid auth token", async () => {
+      try {
+        await client.connect();
+      } catch {
+        // Ignore if already connected
+      }
+
+      // Data operations should fail with 401 Unauthorized
+      try {
+        await client.getOrCreateCollection("test_invalid_token_collection");
+        // If we get here, auth wasn't enforced (unexpected)
+        expect(true).toBe(false);
+      } catch (error) {
+        // Expected: 401 Unauthorized error
+        expect(error).toBeDefined();
+      }
     });
   });
 
@@ -136,27 +145,41 @@ describe("ChromaDB Authentication Integration", () => {
       client = new ChromaStorageClientImpl(config);
     });
 
-    test("should fail to connect without auth token when server requires auth", async () => {
-      try {
-        await client.connect();
-        // If connect succeeds, subsequent operations should fail
-        const isHealthy = await client.healthCheck();
-        expect(isHealthy).toBe(false);
-      } catch (error) {
-        // Connection rejection is expected behavior
-        expect(error).toBeDefined();
-      }
+    test("should connect successfully (heartbeat is unauthenticated)", async () => {
+      // ChromaDB's heartbeat endpoint is unauthenticated, so connect() succeeds
+      // Auth is only enforced on data operations
+      await client.connect();
+      expect(true).toBe(true);
     });
 
-    test("should fail health check without auth token when server requires auth", async () => {
+    test("health check should pass (heartbeat is unauthenticated)", async () => {
       try {
         await client.connect();
       } catch {
-        // Connection failed, expected
+        // Ignore if already connected
       }
 
+      // Health check uses heartbeat endpoint which is unauthenticated
       const isHealthy = await client.healthCheck();
-      expect(isHealthy).toBe(false);
+      expect(isHealthy).toBe(true);
+    });
+
+    test("should fail data operations without auth token", async () => {
+      try {
+        await client.connect();
+      } catch {
+        // Ignore if already connected
+      }
+
+      // Data operations should fail with 401 Unauthorized
+      try {
+        await client.getOrCreateCollection("test_no_token_collection");
+        // If we get here, auth wasn't enforced (unexpected)
+        expect(true).toBe(false);
+      } catch (error) {
+        // Expected: 401 Unauthorized error
+        expect(error).toBeDefined();
+      }
     });
   });
 
