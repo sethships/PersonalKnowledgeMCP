@@ -150,7 +150,6 @@ export {
 
 export { isRetryableGraphError, mapNeo4jError } from "./errors.js";
 
-// =============================================================================
 // Schema Module
 // =============================================================================
 
@@ -179,3 +178,9 @@ export type {
   SchemaStatus,
   MigrationRegistry,
 } from "./migration/index.js";
+
+// =============================================================================
+// Ingestion Module (Graph data ingestion)
+// =============================================================================
+
+export * from "./ingestion/index.js";
