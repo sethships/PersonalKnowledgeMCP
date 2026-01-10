@@ -303,6 +303,82 @@ describe("GraphIngestionService", () => {
       await expect(service.ingestFiles(files, options)).rejects.toThrow(RepositoryExistsError);
     });
 
+    it("should reject empty repository name", async () => {
+      const options: GraphIngestionOptions = {
+        repository: "",
+        repositoryUrl: "https://github.com/test/empty-repo",
+      };
+
+      const files = [createSampleFileInput("test.ts")];
+      await expect(service.ingestFiles(files, options)).rejects.toThrow(
+        /Repository name cannot be empty/
+      );
+    });
+
+    it("should reject whitespace-only repository name", async () => {
+      const options: GraphIngestionOptions = {
+        repository: "   ",
+        repositoryUrl: "https://github.com/test/whitespace-repo",
+      };
+
+      const files = [createSampleFileInput("test.ts")];
+      await expect(service.ingestFiles(files, options)).rejects.toThrow(
+        /Repository name cannot be empty/
+      );
+    });
+
+    it("should reject repository name with invalid characters", async () => {
+      const options: GraphIngestionOptions = {
+        repository: "repo:with:colons",
+        repositoryUrl: "https://github.com/test/invalid-repo",
+      };
+
+      const files = [createSampleFileInput("test.ts")];
+      await expect(service.ingestFiles(files, options)).rejects.toThrow(/Invalid repository name/);
+    });
+
+    it("should reject repository name starting with non-alphanumeric", async () => {
+      const options: GraphIngestionOptions = {
+        repository: "-invalid-start",
+        repositoryUrl: "https://github.com/test/invalid-start",
+      };
+
+      const files = [createSampleFileInput("test.ts")];
+      await expect(service.ingestFiles(files, options)).rejects.toThrow(/Invalid repository name/);
+    });
+
+    it("should accept valid repository names", async () => {
+      const validNames = ["my-repo", "my_repo", "my.repo", "MyRepo123", "repo.v2", "a"];
+
+      for (const repoName of validNames) {
+        const options: GraphIngestionOptions = {
+          repository: repoName,
+          repositoryUrl: `https://github.com/test/${repoName}`,
+        };
+
+        // Mock runQuery to return no existing repo
+        (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
+
+        // Spy on extractors
+        const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+          createSampleExtractionResult("test.ts")
+        );
+        const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+          createSampleRelationshipResult("test.ts")
+        );
+
+        const files = [createSampleFileInput("test.ts")];
+        const result = await service.ingestFiles(files, options);
+
+        // Should not throw and complete successfully
+        expect(result.repository).toBe(repoName);
+        expect(result.status).toBe("success");
+
+        entitySpy.mockRestore();
+        relSpy.mockRestore();
+      }
+    });
+
     it("should allow re-ingestion with force flag", async () => {
       const options: GraphIngestionOptions = {
         repository: "existing-repo",

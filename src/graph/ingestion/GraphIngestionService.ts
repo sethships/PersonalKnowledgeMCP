@@ -33,6 +33,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_GRAPH_INGESTION_CONFIG } from "./types.js";
 import {
+  GraphIngestionError as GraphIngestionErrorClass,
   IngestionInProgressError,
   RepositoryExistsError,
   IngestionExtractionError,
@@ -104,6 +105,47 @@ export class GraphIngestionService {
   }
 
   /**
+   * Validate repository name format.
+   *
+   * Repository names are used directly in node IDs, so they must
+   * follow a safe pattern to avoid malformed IDs or query issues.
+   *
+   * @param repositoryName - Repository name to validate
+   * @throws {GraphIngestionErrorClass} If repository name is invalid
+   *
+   * @example
+   * ```typescript
+   * this.validateRepositoryName("my-repo");      // OK
+   * this.validateRepositoryName("my_repo.v2");   // OK
+   * this.validateRepositoryName("");             // Throws
+   * this.validateRepositoryName("repo:invalid"); // Throws
+   * ```
+   */
+  private validateRepositoryName(repositoryName: string): void {
+    if (!repositoryName || repositoryName.trim().length === 0) {
+      throw new GraphIngestionErrorClass("Repository name cannot be empty", "fatal_error", {
+        retryable: false,
+      });
+    }
+    // Allow alphanumeric, hyphens, underscores, dots (common in Git repos)
+    const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+    if (!validPattern.test(repositoryName)) {
+      throw new GraphIngestionErrorClass(
+        `Invalid repository name: "${repositoryName}". Must start with alphanumeric and contain only letters, numbers, dots, hyphens, or underscores.`,
+        "fatal_error",
+        { retryable: false }
+      );
+    }
+    if (repositoryName.length > 255) {
+      throw new GraphIngestionErrorClass(
+        "Repository name exceeds maximum length of 255 characters",
+        "fatal_error",
+        { retryable: false }
+      );
+    }
+  }
+
+  /**
    * Get current operational status of the service.
    *
    * @returns Current status including whether ingestion is in progress
@@ -132,6 +174,7 @@ export class GraphIngestionService {
    * @param options - Ingestion options including repository info and callbacks
    * @returns GraphIngestionResult with status, stats, and any errors
    *
+   * @throws {GraphIngestionErrorClass} If repository name is invalid
    * @throws {IngestionInProgressError} If another ingestion is in progress
    * @throws {RepositoryExistsError} If repository exists and force is false
    *
@@ -174,6 +217,9 @@ export class GraphIngestionService {
         imports: 0,
       },
     };
+
+    // Validate repository name before processing
+    this.validateRepositoryName(options.repository);
 
     // Check if already ingesting
     if (this._isIngesting && this._currentOperation) {

@@ -41,6 +41,11 @@ export interface GraphIngestionConfig {
 
   /**
    * Transaction timeout in milliseconds.
+   *
+   * **Note**: This setting is reserved for future use. Currently not implemented.
+   * Once implemented, will control how long individual transactions are allowed
+   * to run before being automatically rolled back.
+   *
    * @default 30000
    */
   transactionTimeoutMs?: number;
