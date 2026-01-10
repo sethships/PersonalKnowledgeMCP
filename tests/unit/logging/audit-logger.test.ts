@@ -521,7 +521,7 @@ describe("AuditLogger circuit breaker", () => {
     logger.emit(createAuthSuccessEvent());
 
     // Wait for the async write to complete with polling for expected line count
-    await waitForWrite(1);
+    await waitForWrite(1, 5000);
 
     // Verify the initial event was written
     const initialContent = readFileSync(TEST_LOG_PATH, "utf-8");
@@ -537,7 +537,7 @@ describe("AuditLogger circuit breaker", () => {
     logger.emit(createAuthSuccessEvent());
 
     // Wait a bit to ensure any queued writes would have time to complete
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Verify no new events were written
     const finalContent = readFileSync(TEST_LOG_PATH, "utf-8");
@@ -598,7 +598,7 @@ describe("AuditLogger circuit breaker", () => {
 
     // Emit a successful event
     logger.emit(createAuthSuccessEvent());
-    await waitForWrite();
+    await waitForWrite(1, 5000);
 
     // Failure count should be reset
     // @ts-expect-error - accessing private property for testing

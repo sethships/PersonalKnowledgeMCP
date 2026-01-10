@@ -150,6 +150,35 @@ export {
 
 export { isRetryableGraphError, mapNeo4jError } from "./errors.js";
 
+// Schema Module
+// =============================================================================
+
+export {
+  CONSTRAINTS,
+  INDEXES,
+  FULLTEXT_INDEXES,
+  ALL_SCHEMA_ELEMENTS,
+  getAllSchemaStatements,
+  getSchemaElementsByType,
+} from "./schema.js";
+
+export type { SchemaElement, SchemaElementType } from "./schema.js";
+
+// =============================================================================
+// Migration Module
+// =============================================================================
+
+export { MigrationRunner, registerAllMigrations, ALL_MIGRATIONS } from "./migration/index.js";
+
+export type {
+  SchemaMigration,
+  AppliedMigration,
+  MigrationOptions,
+  MigrationResult,
+  SchemaStatus,
+  MigrationRegistry,
+} from "./migration/index.js";
+
 // =============================================================================
 // Ingestion Module (Graph data ingestion)
 // =============================================================================
