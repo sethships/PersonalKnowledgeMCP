@@ -285,3 +285,22 @@ export type ValidatedTokenCreateOptions = z.infer<typeof TokenCreateCommandOptio
 export type ValidatedTokenListOptions = z.infer<typeof TokenListCommandOptionsSchema>;
 export type ValidatedTokenRevokeOptions = z.infer<typeof TokenRevokeCommandOptionsSchema>;
 export type ValidatedTokenRotateOptions = z.infer<typeof TokenRotateCommandOptionsSchema>;
+
+// ============================================================================
+// Graph Command Validation Schemas
+// ============================================================================
+
+/**
+ * Schema for graph migrate command options
+ */
+export const GraphMigrateCommandOptionsSchema = z.object({
+  dryRun: z.boolean().optional(),
+  force: z.boolean().optional(),
+  status: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for graph migrate command
+ */
+export type ValidatedGraphMigrateOptions = z.infer<typeof GraphMigrateCommandOptionsSchema>;

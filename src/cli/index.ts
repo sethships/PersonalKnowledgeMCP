@@ -12,6 +12,7 @@
  * - reset-update: Reset stuck update state
  * - health: Health check
  * - token: Manage authentication tokens (create, list, revoke, rotate)
+ * - graph: Manage knowledge graph (migrate)
  */
 
 import "dotenv/config";
@@ -33,6 +34,7 @@ import {
   tokenRevokeCommand,
   tokenRotateCommand,
 } from "./commands/token-command.js";
+import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -46,6 +48,7 @@ import {
   TokenListCommandOptionsSchema,
   TokenRevokeCommandOptionsSchema,
   TokenRotateCommandOptionsSchema,
+  GraphMigrateCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -271,6 +274,26 @@ tokenProgram
       const validatedOptions = TokenRotateCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await tokenRotateCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Graph command group
+const graphProgram = program.command("graph").description("Manage knowledge graph");
+
+// Graph migrate subcommand
+graphProgram
+  .command("migrate")
+  .description("Apply schema migrations to Neo4j knowledge graph")
+  .option("--dry-run", "Show what would be executed without applying")
+  .option("-f, --force", "Re-apply all migrations even if already applied")
+  .option("--status", "Show current schema version and pending migrations")
+  .option("--json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = GraphMigrateCommandOptionsSchema.parse(options);
+      await graphMigrateCommand(validatedOptions);
     } catch (error) {
       handleCommandError(error);
     }
