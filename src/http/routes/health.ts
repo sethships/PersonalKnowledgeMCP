@@ -31,6 +31,8 @@ const VERSION = "1.0.0";
 export interface HealthCheckDependencies {
   /** Check ChromaDB connectivity */
   checkChromaDb: () => Promise<boolean>;
+  /** Check Neo4j connectivity (optional - gracefully degrades if not configured) */
+  checkNeo4j?: () => Promise<boolean>;
 }
 
 /**
@@ -57,22 +59,50 @@ export function createHealthRouter(deps: HealthCheckDependencies): Router {
       // Check ChromaDB connectivity
       const chromaDbHealthy = await deps.checkChromaDb();
 
+      // Check Neo4j connectivity (optional)
+      let neo4jHealthy: boolean | undefined;
+      if (deps.checkNeo4j) {
+        try {
+          neo4jHealthy = await deps.checkNeo4j();
+        } catch (neo4jError) {
+          getLogger().warn({ error: neo4jError }, "Neo4j health check failed");
+          neo4jHealthy = false;
+        }
+      }
+
+      // Determine overall health status
+      // - healthy: all configured services are up
+      // - degraded: some services are down but core (ChromaDB) is up
+      // - unhealthy: core service (ChromaDB) is down
+      let status: "healthy" | "degraded" | "unhealthy";
+      if (!chromaDbHealthy) {
+        status = "unhealthy";
+      } else if (neo4jHealthy === false) {
+        status = "degraded";
+      } else {
+        status = "healthy";
+      }
+
       const response: HealthResponse = {
-        status: chromaDbHealthy ? "healthy" : "degraded",
+        status,
         version: VERSION,
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
         checks: {
           chromadb: chromaDbHealthy ? "connected" : "disconnected",
+          ...(neo4jHealthy !== undefined && {
+            neo4j: neo4jHealthy ? "connected" : "disconnected",
+          }),
         },
       };
 
-      const statusCode = chromaDbHealthy ? 200 : 503;
+      const statusCode = status === "healthy" ? 200 : 503;
 
       getLogger().debug(
         {
           status: response.status,
           chromadb: response.checks.chromadb,
+          neo4j: response.checks.neo4j,
           durationMs: Date.now() - startTime,
         },
         "Health check completed"

@@ -27,6 +27,8 @@ export interface HealthResponse {
   checks: {
     /** ChromaDB connection status */
     chromadb: "connected" | "disconnected";
+    /** Neo4j connection status (optional - only present if Neo4j is configured) */
+    neo4j?: "connected" | "disconnected";
   };
 }
 

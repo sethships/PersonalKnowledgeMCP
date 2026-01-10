@@ -61,6 +61,9 @@ export interface HttpServerDependencies {
   /** Health check function for ChromaDB */
   checkChromaDb: () => Promise<boolean>;
 
+  /** Health check function for Neo4j (optional - only if Neo4j is configured) */
+  checkNeo4j?: () => Promise<boolean>;
+
   /** Token service for authentication (optional for backward compatibility) */
   tokenService?: TokenService;
 
@@ -119,6 +122,7 @@ export function createHttpApp(deps: HttpServerDependencies): Express {
   app.use(
     createHealthRouter({
       checkChromaDb: deps.checkChromaDb,
+      checkNeo4j: deps.checkNeo4j,
     })
   );
 

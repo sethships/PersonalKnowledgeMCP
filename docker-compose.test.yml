@@ -1,0 +1,64 @@
+# Personal Knowledge MCP - Docker Compose Test Override
+# This file enables ChromaDB authentication for integration testing
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test-auth up -d
+#
+# Stop:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test-auth down
+#
+# Environment:
+#   Set CHROMADB_TEST_AUTH_TOKEN in your environment or .env.test file
+
+services:
+  # ============================================================================
+  # ChromaDB - Auth-Enabled Test Instance (Port 8100)
+  # For testing authentication functionality
+  # ============================================================================
+  chromadb-test-auth:
+    image: chromadb/chroma:0.6.3
+    container_name: pk-mcp-chromadb-test-auth
+    profiles:
+      - test-auth
+    ports:
+      - "127.0.0.1:8100:8000"
+    volumes:
+      - chromadb-test-auth-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - ALLOW_RESET=TRUE
+      # Always enable authentication for this test instance
+      - CHROMA_SERVER_AUTHN_PROVIDER=chromadb.auth.token_authn.TokenAuthenticationServerProvider
+      - CHROMA_SERVER_AUTHN_CREDENTIALS=${CHROMADB_TEST_AUTH_TOKEN:?CHROMADB_TEST_AUTH_TOKEN must be set for auth testing}
+      - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
+    networks:
+      - pk-mcp-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c ''import urllib.request; urllib.request.urlopen("http://localhost:8000/api/v2/heartbeat")''',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  chromadb-test-auth-data:
+    name: pk-mcp-chromadb-test-auth-data
