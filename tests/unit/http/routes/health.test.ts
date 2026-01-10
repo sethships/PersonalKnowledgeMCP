@@ -105,7 +105,7 @@ describe("Health Route", () => {
 
     expect(statusCode).toBe(503);
     expect(jsonData).toMatchObject({
-      status: "degraded",
+      status: "unhealthy",
       checks: {
         chromadb: "disconnected",
       },
@@ -156,5 +156,96 @@ describe("Health Route", () => {
     // Should be valid ISO date
     const parsed = new Date(response.timestamp);
     expect(parsed.toISOString()).toBe(response.timestamp);
+  });
+
+  describe("Neo4j Health Checks", () => {
+    test("should return 200 when both ChromaDB and Neo4j are healthy", async () => {
+      deps.checkNeo4j = mock(async () => true);
+      const router = createHealthRouter(deps);
+      const handler = getRouteHandler(router, "/health");
+      const mockNext = mock(() => {}) as unknown as NextFunction;
+
+      await handler(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(statusCode).toBe(200);
+      expect(jsonData).toMatchObject({
+        status: "healthy",
+        checks: {
+          chromadb: "connected",
+          neo4j: "connected",
+        },
+      });
+    });
+
+    test("should return 503 degraded when ChromaDB healthy but Neo4j unhealthy", async () => {
+      deps.checkNeo4j = mock(async () => false);
+      const router = createHealthRouter(deps);
+      const handler = getRouteHandler(router, "/health");
+      const mockNext = mock(() => {}) as unknown as NextFunction;
+
+      await handler(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(statusCode).toBe(503);
+      expect(jsonData).toMatchObject({
+        status: "degraded",
+        checks: {
+          chromadb: "connected",
+          neo4j: "disconnected",
+        },
+      });
+    });
+
+    test("should return 503 unhealthy when ChromaDB unhealthy (regardless of Neo4j)", async () => {
+      deps.checkChromaDb = mock(async () => false);
+      deps.checkNeo4j = mock(async () => true);
+      const router = createHealthRouter(deps);
+      const handler = getRouteHandler(router, "/health");
+      const mockNext = mock(() => {}) as unknown as NextFunction;
+
+      await handler(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(statusCode).toBe(503);
+      expect(jsonData).toMatchObject({
+        status: "unhealthy",
+        checks: {
+          chromadb: "disconnected",
+          neo4j: "connected",
+        },
+      });
+    });
+
+    test("should handle Neo4j check throwing error gracefully", async () => {
+      deps.checkNeo4j = mock(async () => {
+        throw new Error("Neo4j connection refused");
+      });
+      const router = createHealthRouter(deps);
+      const handler = getRouteHandler(router, "/health");
+      const mockNext = mock(() => {}) as unknown as NextFunction;
+
+      await handler(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(statusCode).toBe(503);
+      expect(jsonData).toMatchObject({
+        status: "degraded",
+        checks: {
+          chromadb: "connected",
+          neo4j: "disconnected",
+        },
+      });
+    });
+
+    test("should not include neo4j in checks when checkNeo4j not configured", async () => {
+      // deps.checkNeo4j is undefined by default
+      const router = createHealthRouter(deps);
+      const handler = getRouteHandler(router, "/health");
+      const mockNext = mock(() => {}) as unknown as NextFunction;
+
+      await handler(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(statusCode).toBe(200);
+      const response = jsonData as { checks: { chromadb: string; neo4j?: string } };
+      expect(response.checks.chromadb).toBe("connected");
+      expect(response.checks.neo4j).toBeUndefined();
+    });
   });
 });

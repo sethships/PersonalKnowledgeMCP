@@ -13,6 +13,7 @@ import type { SearchService } from "../../services/types.js";
 import type { IngestionService } from "../../services/ingestion-service.js";
 import type { GitHubClient } from "../../services/github-client-types.js";
 import type { TokenService } from "../../auth/types.js";
+import type { Neo4jStorageClient } from "../../graph/types.js";
 import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
@@ -27,6 +28,7 @@ import { IncrementalUpdateCoordinator } from "../../services/incremental-update-
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
+import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -74,6 +76,8 @@ export interface CliDependencies {
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
   tokenService: TokenService;
+  /** Optional Neo4j client for graph database operations (only if configured) */
+  neo4jClient?: Neo4jStorageClient;
   logger: Logger;
 }
 
@@ -239,6 +243,36 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     const tokenService = new TokenServiceImpl(tokenStore);
     logger.debug("Token service initialized");
 
+    // Step 12: Initialize Neo4j client (optional - only if configured)
+    let neo4jClient: Neo4jStorageClient | undefined;
+    const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
+    if (neo4jPassword) {
+      try {
+        neo4jClient = new Neo4jStorageClientImpl({
+          host: Bun.env["NEO4J_HOST"] || "localhost",
+          port: parseIntEnv("NEO4J_BOLT_PORT", 7687),
+          username: Bun.env["NEO4J_USER"] || "neo4j",
+          password: neo4jPassword,
+        });
+        await neo4jClient.connect();
+        const isHealthy = await neo4jClient.healthCheck();
+        if (isHealthy) {
+          logger.debug("Neo4j client initialized and healthy");
+        } else {
+          logger.warn("Neo4j client initialized but health check failed");
+        }
+      } catch (error) {
+        // Neo4j is optional - log warning but don't fail CLI startup
+        logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Neo4j initialization failed - graph features will be unavailable"
+        );
+        neo4jClient = undefined;
+      }
+    } else {
+      logger.debug("NEO4J_PASSWORD not set - Neo4j features disabled");
+    }
+
     return {
       embeddingProvider,
       chromaClient,
@@ -249,6 +283,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       updatePipeline,
       updateCoordinator,
       tokenService,
+      neo4jClient,
       logger,
     };
   } catch (error) {

@@ -27,6 +27,8 @@ import {
   startStreamableSessionCleanup,
 } from "./http/index.js";
 import { loadInstanceConfig, getEnabledInstances } from "./config/index.js";
+import { Neo4jStorageClientImpl } from "./graph/Neo4jClient.js";
+import type { Neo4jStorageClient } from "./graph/types.js";
 import { createInstanceRouter } from "./mcp/instance-router.js";
 
 // Initialize logger at application startup
@@ -129,6 +131,37 @@ async function main(): Promise<void> {
       "ChromaDB connection established and healthy"
     );
 
+    // Step 3b: Initialize Neo4j client (optional - only if configured)
+    let neo4jClient: Neo4jStorageClient | undefined;
+    const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
+    if (neo4jPassword) {
+      try {
+        logger.info("Initializing Neo4j client");
+        neo4jClient = new Neo4jStorageClientImpl({
+          host: Bun.env["NEO4J_HOST"] || "localhost",
+          port: parseInt(Bun.env["NEO4J_BOLT_PORT"] || "7687", 10),
+          username: Bun.env["NEO4J_USER"] || "neo4j",
+          password: neo4jPassword,
+        });
+        await neo4jClient.connect();
+        const neo4jHealthy = await neo4jClient.healthCheck();
+        if (neo4jHealthy) {
+          logger.info("Neo4j connection established and healthy");
+        } else {
+          logger.warn("Neo4j connection established but health check failed");
+        }
+      } catch (error) {
+        // Neo4j is optional - log warning but don't fail server startup
+        logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Neo4j initialization failed - graph features will be unavailable"
+        );
+        neo4jClient = undefined;
+      }
+    } else {
+      logger.debug("NEO4J_PASSWORD not set - Neo4j features disabled");
+    }
+
     // Step 4: Initialize repository metadata service (singleton)
     logger.info("Initializing repository metadata service");
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
@@ -191,6 +224,14 @@ async function main(): Promise<void> {
       logger.info("Shutting down instance router");
       await instanceRouter.shutdown();
     });
+
+    // Register Neo4j shutdown hook if initialized
+    if (neo4jClient) {
+      mcpServer.registerPreShutdownHook(async () => {
+        logger.info("Disconnecting Neo4j client");
+        await neo4jClient.disconnect();
+      });
+    }
     logger.info("MCP server created");
 
     // Step 7a: Start HTTP transport (if enabled)
@@ -203,6 +244,7 @@ async function main(): Promise<void> {
         createServerForSse: () => mcpServer.createServerForSse(),
         createServerForStreamableHttp: () => mcpServer.createServerForStreamableHttp(),
         checkChromaDb: () => chromaClient.healthCheck(),
+        checkNeo4j: neo4jClient ? () => neo4jClient.healthCheck() : undefined,
       });
 
       const httpServer = await startHttpServer(app, httpConfig);

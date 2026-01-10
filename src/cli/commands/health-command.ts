@@ -50,6 +50,26 @@ export async function healthCommand(deps: CliDependencies): Promise<void> {
     });
   }
 
+  // Check Neo4j (optional - only if configured)
+  if (deps.neo4jClient) {
+    const neo4jStart = performance.now();
+    try {
+      const isHealthy = await deps.neo4jClient.healthCheck();
+      results.push({
+        name: "Neo4j",
+        healthy: isHealthy,
+        durationMs: performance.now() - neo4jStart,
+      });
+    } catch (error) {
+      results.push({
+        name: "Neo4j",
+        healthy: false,
+        durationMs: performance.now() - neo4jStart,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   // Check OpenAI API (embedding provider)
   const openaiStart = performance.now();
   try {
@@ -112,7 +132,14 @@ export async function healthCommand(deps: CliDependencies): Promise<void> {
   } else {
     console.log(chalk.red("✗ Some systems are unhealthy."));
     console.log("\n" + chalk.bold("Next steps:"));
-    console.log("  • Verify ChromaDB is running: " + chalk.gray("docker-compose up -d"));
+    console.log(
+      "  • Verify ChromaDB is running: " + chalk.gray("docker compose --profile default up -d")
+    );
+    console.log(
+      "  • Verify Neo4j is running: " +
+        chalk.gray("docker compose --profile default up -d") +
+        " (or check NEO4J_PASSWORD in .env)"
+    );
     console.log("  • Check OPENAI_API_KEY in .env file");
     console.log("  • Check DATA_PATH permissions");
     process.exit(1);
