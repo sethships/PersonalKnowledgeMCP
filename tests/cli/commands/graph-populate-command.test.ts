@@ -11,25 +11,15 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/await-thenable */
 
-import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } from "bun:test";
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { RepositoryInfo, RepositoryMetadataService } from "../../../src/repositories/types.js";
 
-// Mock ora spinner
-const mockSpinner = {
-  start: vi.fn().mockReturnThis(),
-  stop: vi.fn().mockReturnThis(),
-  succeed: vi.fn().mockReturnThis(),
-  fail: vi.fn().mockReturnThis(),
-  warn: vi.fn().mockReturnThis(),
-  text: "",
-};
-
-vi.mock("ora", () => ({
-  default: () => mockSpinner,
-}));
+// Note: We do NOT mock ora here to avoid mock leakage to other test files.
+// Bun's vi.mock() hoists to module level and affects global module cache.
+// Real ora works fine in non-TTY environments (spinner methods work, just isSpinning=false).
 
 // Mock Neo4j client
 const mockConnect = vi.fn().mockResolvedValue(undefined);
@@ -114,11 +104,6 @@ describe("Graph Populate Command", () => {
     await mkdir(testDir, { recursive: true });
 
     // Reset mocks
-    mockSpinner.start.mockClear();
-    mockSpinner.stop.mockClear();
-    mockSpinner.succeed.mockClear();
-    mockSpinner.fail.mockClear();
-    mockSpinner.warn.mockClear();
     mockConnect.mockClear();
     mockDisconnect.mockClear();
     mockIngestFiles.mockClear();
@@ -137,6 +122,11 @@ describe("Graph Populate Command", () => {
     } catch {
       // Ignore cleanup errors
     }
+  });
+
+  afterAll(() => {
+    // Restore all mocks - vi.unmock is not available in Bun
+    vi.restoreAllMocks();
   });
 
   describe("GraphPopulateCommandOptionsSchema validation", () => {
@@ -397,9 +387,7 @@ describe("Graph Populate Command", () => {
       expect(mockConnect).toHaveBeenCalled();
       expect(mockIngestFiles).toHaveBeenCalled();
       expect(mockDisconnect).toHaveBeenCalled();
-
-      // Verify spinner updates
-      expect(mockSpinner.succeed).toHaveBeenCalled();
+      // Note: Spinner behavior is not tested to avoid ora mock leakage to other test files
     });
 
     it("should pass force option to ingestion service", async () => {
