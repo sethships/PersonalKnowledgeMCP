@@ -35,6 +35,7 @@ import {
   tokenRotateCommand,
 } from "./commands/token-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
+import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -49,6 +50,7 @@ import {
   TokenRevokeCommandOptionsSchema,
   TokenRotateCommandOptionsSchema,
   GraphMigrateCommandOptionsSchema,
+  GraphPopulateCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -294,6 +296,23 @@ graphProgram
     try {
       const validatedOptions = GraphMigrateCommandOptionsSchema.parse(options);
       await graphMigrateCommand(validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Graph populate subcommand
+graphProgram
+  .command("populate")
+  .description("Populate knowledge graph from an indexed repository")
+  .argument("<repository>", "Repository name to populate")
+  .option("-f, --force", "Delete existing graph data and repopulate")
+  .option("--json", "Output as JSON")
+  .action(async (repository: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = GraphPopulateCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await graphPopulateCommand(repository, validatedOptions, deps.repositoryService);
     } catch (error) {
       handleCommandError(error);
     }
