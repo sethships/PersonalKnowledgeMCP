@@ -64,7 +64,13 @@ jobs:
           NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Run tests with coverage
-        run: bun test --coverage --coverage-reporter=lcov
+        # Run main tests first (excluding isolated tests to prevent vi.mock leakage)
+        run: bun test --coverage --coverage-reporter=lcov tests/example.test.ts tests/integration tests/mcp tests/services tests/unit tests/cli tests/helpers tests/fixtures
+
+      - name: Run isolated tests
+        # Run isolated tests separately to prevent vi.mock from leaking to other test files
+        # These tests mock modules that would affect other tests if run together
+        run: bun test tests/isolated
 
       - name: Build project
         run: bun run build

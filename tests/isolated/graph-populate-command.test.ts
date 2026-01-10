@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } 
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { RepositoryInfo, RepositoryMetadataService } from "../../../src/repositories/types.js";
+import type { RepositoryInfo, RepositoryMetadataService } from "../../src/repositories/types.js";
 
 // Note: We do NOT mock ora here to avoid mock leakage to other test files.
 // Bun's vi.mock() hoists to module level and affects global module cache.
@@ -25,7 +25,7 @@ import type { RepositoryInfo, RepositoryMetadataService } from "../../../src/rep
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../../../src/graph/Neo4jClient.js", () => ({
+vi.mock("../../src/graph/Neo4jClient.js", () => ({
   Neo4jStorageClientImpl: vi.fn().mockImplementation(() => ({
     connect: mockConnect,
     disconnect: mockDisconnect,
@@ -35,18 +35,18 @@ vi.mock("../../../src/graph/Neo4jClient.js", () => ({
 // Mock GraphIngestionService
 const mockIngestFiles = vi.fn();
 
-vi.mock("../../../src/graph/ingestion/GraphIngestionService.js", () => ({
+vi.mock("../../src/graph/ingestion/GraphIngestionService.js", () => ({
   GraphIngestionService: vi.fn().mockImplementation(() => ({
     ingestFiles: mockIngestFiles,
   })),
 }));
 
 // Mock extractors
-vi.mock("../../../src/graph/extraction/EntityExtractor.js", () => ({
+vi.mock("../../src/graph/extraction/EntityExtractor.js", () => ({
   EntityExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
-vi.mock("../../../src/graph/extraction/RelationshipExtractor.js", () => ({
+vi.mock("../../src/graph/extraction/RelationshipExtractor.js", () => ({
   RelationshipExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
@@ -132,14 +132,14 @@ describe("Graph Populate Command", () => {
   describe("GraphPopulateCommandOptionsSchema validation", () => {
     it("should import validation schema correctly", async () => {
       const { GraphPopulateCommandOptionsSchema } =
-        await import("../../../src/cli/utils/validation.js");
+        await import("../../src/cli/utils/validation.js");
 
       expect(GraphPopulateCommandOptionsSchema).toBeDefined();
     });
 
     it("should validate empty options", async () => {
       const { GraphPopulateCommandOptionsSchema } =
-        await import("../../../src/cli/utils/validation.js");
+        await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({});
       expect(result.success).toBe(true);
@@ -147,7 +147,7 @@ describe("Graph Populate Command", () => {
 
     it("should validate force option", async () => {
       const { GraphPopulateCommandOptionsSchema } =
-        await import("../../../src/cli/utils/validation.js");
+        await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({ force: true });
       expect(result.success).toBe(true);
@@ -158,7 +158,7 @@ describe("Graph Populate Command", () => {
 
     it("should validate json option", async () => {
       const { GraphPopulateCommandOptionsSchema } =
-        await import("../../../src/cli/utils/validation.js");
+        await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({ json: true });
       expect(result.success).toBe(true);
@@ -169,7 +169,7 @@ describe("Graph Populate Command", () => {
 
     it("should validate both options together", async () => {
       const { GraphPopulateCommandOptionsSchema } =
-        await import("../../../src/cli/utils/validation.js");
+        await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({
         force: true,
@@ -185,13 +185,13 @@ describe("Graph Populate Command", () => {
 
   describe("getNeo4jConfig shared utility", () => {
     it("should export getNeo4jConfig from shared utility", async () => {
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
       expect(getNeo4jConfig).toBeDefined();
       expect(typeof getNeo4jConfig).toBe("function");
     });
 
     it("should return valid config with all env vars set", async () => {
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
       const config = getNeo4jConfig();
       expect(config.host).toBe("localhost");
@@ -202,21 +202,21 @@ describe("Graph Populate Command", () => {
 
     it("should throw when NEO4J_PASSWORD is missing", async () => {
       delete process.env["NEO4J_PASSWORD"];
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
       expect(() => getNeo4jConfig()).toThrow("NEO4J_PASSWORD");
     });
 
     it("should throw for invalid port", async () => {
       process.env["NEO4J_BOLT_PORT"] = "not-a-number";
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
       expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
     });
 
     it("should throw for port out of range", async () => {
       process.env["NEO4J_BOLT_PORT"] = "99999";
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
       expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
     });
@@ -225,7 +225,7 @@ describe("Graph Populate Command", () => {
       delete process.env["NEO4J_HOST"];
       delete process.env["NEO4J_BOLT_PORT"];
       delete process.env["NEO4J_USER"];
-      const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
       const config = getNeo4jConfig();
       expect(config.host).toBe("localhost");
@@ -244,7 +244,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await expect(
           graphPopulateCommand("test-repo", {}, mockRepositoryService)
@@ -263,7 +263,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await expect(
           graphPopulateCommand("test-repo", {}, mockRepositoryService)
@@ -284,7 +284,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("non-existent", {}, mockRepositoryService);
       } catch (error) {
@@ -307,7 +307,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -330,7 +330,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -379,7 +379,7 @@ describe("Graph Populate Command", () => {
       });
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", {}, mockRepositoryService);
 
@@ -412,7 +412,7 @@ describe("Graph Populate Command", () => {
       });
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", { force: true }, mockRepositoryService);
 
@@ -446,7 +446,7 @@ describe("Graph Populate Command", () => {
       mockIngestFiles.mockResolvedValue(mockResult);
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
 
@@ -469,7 +469,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
       } catch (error) {
@@ -492,7 +492,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
       } catch (error) {
@@ -537,7 +537,7 @@ describe("Graph Populate Command", () => {
       });
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", {}, mockRepositoryService);
 
@@ -581,7 +581,7 @@ describe("Graph Populate Command", () => {
       });
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", {}, mockRepositoryService);
 
@@ -609,7 +609,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -643,7 +643,7 @@ describe("Graph Populate Command", () => {
       });
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", {}, mockRepositoryService);
 
@@ -678,7 +678,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -698,7 +698,7 @@ describe("Graph Populate Command", () => {
       mockGetRepository.mockResolvedValue(repoWithTestPath);
 
       // Import RepositoryExistsError and make ingestion throw it
-      const { RepositoryExistsError } = await import("../../../src/graph/ingestion/errors.js");
+      const { RepositoryExistsError } = await import("../../src/graph/ingestion/errors.js");
       mockIngestFiles.mockRejectedValue(new RepositoryExistsError("test-repo"));
 
       const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
@@ -707,7 +707,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -729,7 +729,7 @@ describe("Graph Populate Command", () => {
       };
       mockGetRepository.mockResolvedValue(repoWithTestPath);
 
-      const { RepositoryExistsError } = await import("../../../src/graph/ingestion/errors.js");
+      const { RepositoryExistsError } = await import("../../src/graph/ingestion/errors.js");
       mockIngestFiles.mockRejectedValue(new RepositoryExistsError("test-repo"));
 
       const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
@@ -738,7 +738,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
       } catch (error) {
@@ -769,7 +769,7 @@ describe("Graph Populate Command", () => {
 
       try {
         const { graphPopulateCommand } =
-          await import("../../../src/cli/commands/graph-populate-command.js");
+          await import("../../src/cli/commands/graph-populate-command.js");
 
         await graphPopulateCommand("test-repo", {}, mockRepositoryService);
       } catch (error) {
@@ -862,7 +862,7 @@ describe("Graph Populate Command", () => {
       );
 
       const { graphPopulateCommand } =
-        await import("../../../src/cli/commands/graph-populate-command.js");
+        await import("../../src/cli/commands/graph-populate-command.js");
 
       await graphPopulateCommand("test-repo", {}, mockRepositoryService);
 
@@ -889,7 +889,7 @@ describe("Neo4j Config Utility Tests", () => {
 
   it("should handle custom host", async () => {
     process.env["NEO4J_HOST"] = "custom-host.example.com";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     const config = getNeo4jConfig();
     expect(config.host).toBe("custom-host.example.com");
@@ -897,7 +897,7 @@ describe("Neo4j Config Utility Tests", () => {
 
   it("should handle custom port", async () => {
     process.env["NEO4J_BOLT_PORT"] = "17687";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     const config = getNeo4jConfig();
     expect(config.port).toBe(17687);
@@ -905,7 +905,7 @@ describe("Neo4j Config Utility Tests", () => {
 
   it("should handle custom username", async () => {
     process.env["NEO4J_USER"] = "custom-user";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     const config = getNeo4jConfig();
     expect(config.username).toBe("custom-user");
@@ -913,21 +913,21 @@ describe("Neo4j Config Utility Tests", () => {
 
   it("should reject port with non-numeric characters", async () => {
     process.env["NEO4J_BOLT_PORT"] = "7687abc";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
   });
 
   it("should reject negative port", async () => {
     process.env["NEO4J_BOLT_PORT"] = "-1";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
   });
 
   it("should reject port 0", async () => {
     process.env["NEO4J_BOLT_PORT"] = "0";
-    const { getNeo4jConfig } = await import("../../../src/cli/utils/neo4j-config.js");
+    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
 
     expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
   });
