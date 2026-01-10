@@ -272,6 +272,12 @@ export class MigrationRunner {
   /**
    * Apply a single migration
    *
+   * Note: Multi-statement migrations execute each statement as a separate query
+   * without a wrapping transaction. This is intentional because Neo4j schema
+   * operations (CREATE CONSTRAINT, CREATE INDEX) cannot run inside explicit
+   * transactions. Each migration should be idempotent using IF NOT EXISTS patterns
+   * to handle partial failures safely.
+   *
    * @param migration - Migration to apply
    */
   private async applyMigration(migration: SchemaMigration): Promise<void> {
@@ -321,23 +327,33 @@ export class MigrationRunner {
   /**
    * Get the current schema version
    *
+   * Uses semver comparison to correctly determine the highest version,
+   * since Neo4j string ordering would incorrectly sort "10.0.0" before "2.0.0".
+   *
    * @returns Current version or null if no migrations applied
    */
   private async getCurrentVersion(): Promise<string | null> {
     const cypher = `
       MATCH (s:SchemaVersion)
       RETURN s.version AS version
-      ORDER BY s.version DESC
-      LIMIT 1
     `;
 
     const results = await this.client.runQuery<{ version: string }>(cypher);
-    const firstResult = results[0];
-    return firstResult ? firstResult.version : null;
+    if (results.length === 0) {
+      return null;
+    }
+
+    // Sort using proper semver comparison to handle multi-digit versions correctly
+    const sortedVersions = results.map((r) => r.version).sort((a, b) => semverCompare(b, a)); // Descending order
+
+    return sortedVersions[0] ?? null;
   }
 
   /**
    * Get all applied migrations
+   *
+   * Uses semver comparison for correct version ordering, since Neo4j string
+   * ordering would incorrectly sort "10.0.0" before "2.0.0".
    *
    * @returns List of applied migrations, most recent first
    */
@@ -345,7 +361,6 @@ export class MigrationRunner {
     const cypher = `
       MATCH (s:SchemaVersion)
       RETURN s.version AS version, s.description AS description, s.appliedAt AS appliedAt
-      ORDER BY s.version DESC
     `;
 
     const results = await this.client.runQuery<{
@@ -354,7 +369,10 @@ export class MigrationRunner {
       appliedAt: Date | string;
     }>(cypher);
 
-    return results.map((r) => ({
+    // Sort using proper semver comparison to handle multi-digit versions correctly
+    const sortedResults = [...results].sort((a, b) => semverCompare(b.version, a.version));
+
+    return sortedResults.map((r) => ({
       version: r.version,
       description: r.description,
       appliedAt: r.appliedAt instanceof Date ? r.appliedAt : new Date(r.appliedAt),

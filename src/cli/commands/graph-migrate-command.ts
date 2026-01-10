@@ -33,13 +33,22 @@ import type { ValidatedGraphMigrateOptions } from "../utils/validation.js";
  * Get Neo4j configuration from environment
  *
  * @returns Neo4j configuration object
- * @throws Error if required environment variables are missing
+ * @throws Error if required environment variables are missing or invalid
  */
 function getNeo4jConfig(): Neo4jConfig {
   const host = process.env["NEO4J_HOST"] || "localhost";
-  const port = parseInt(process.env["NEO4J_BOLT_PORT"] || "7687", 10);
+  const portEnv = process.env["NEO4J_BOLT_PORT"] || "7687";
   const username = process.env["NEO4J_USER"] || "neo4j";
   const password = process.env["NEO4J_PASSWORD"];
+
+  // Validate port is a valid integer (parseInt silently truncates "7687abc" to 7687)
+  const port = parseInt(portEnv, 10);
+  if (!/^\d+$/.test(portEnv) || isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid NEO4J_BOLT_PORT value: "${portEnv}". ` +
+        "Port must be a valid integer between 1 and 65535."
+    );
+  }
 
   if (!password) {
     throw new Error(
