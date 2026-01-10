@@ -86,7 +86,7 @@ program
   .option("-l, --limit <number>", "Maximum results (1-100)", "10")
   .option("-t, --threshold <number>", "Similarity threshold (0.0-1.0)", "0.7")
   .option("-r, --repo <name>", "Filter to specific repository")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (query: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = SearchCommandOptionsSchema.parse(options);
@@ -101,7 +101,7 @@ program
 program
   .command("status")
   .description("List indexed repositories and their status")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .option("--check", "Check GitHub for available updates")
   .option("--metrics", "Display aggregate update metrics")
   .action(async (options: Record<string, unknown>) => {
@@ -150,7 +150,7 @@ program
   .description("Update a repository with latest changes")
   .argument("<repository>", "Repository name to update")
   .option("-f, --force", "Force full re-index instead of incremental update")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .option("-v, --verbose", "Show all errors with actionable guidance")
   .action(async (repository: string, options: Record<string, unknown>) => {
     try {
@@ -166,7 +166,7 @@ program
 program
   .command("update-all")
   .description("Update all repositories with latest changes")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (options: Record<string, unknown>) => {
     try {
       const validatedOptions = UpdateAllCommandOptionsSchema.parse(options);
@@ -183,7 +183,7 @@ program
   .description("Display update history for a repository")
   .argument("<repository>", "Repository name to show history for")
   .option("-l, --limit <number>", "Maximum history entries to show (1-100)", "10")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (repository: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = HistoryCommandOptionsSchema.parse(options);
@@ -201,7 +201,7 @@ program
   .argument("<repository>", "Repository name to reset")
   .option("-f, --force", "Skip confirmation prompt")
   .option("-r, --recover", "Attempt automatic recovery")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (repository: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = ResetUpdateCommandOptionsSchema.parse(options);
@@ -237,7 +237,7 @@ tokenProgram
 tokenProgram
   .command("list")
   .description("List all tokens")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .option("--all", "Include expired and revoked tokens")
   .action(async (options: Record<string, unknown>) => {
     try {
@@ -291,7 +291,7 @@ graphProgram
   .option("--dry-run", "Show what would be executed without applying")
   .option("-f, --force", "Re-apply all migrations even if already applied")
   .option("--status", "Show current schema version and pending migrations")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (options: Record<string, unknown>) => {
     try {
       const validatedOptions = GraphMigrateCommandOptionsSchema.parse(options);
@@ -307,7 +307,7 @@ graphProgram
   .description("Populate knowledge graph from an indexed repository")
   .argument("<repository>", "Repository name to populate")
   .option("-f, --force", "Delete existing graph data and repopulate")
-  .option("--json", "Output as JSON")
+  .option("-j, --json", "Output as JSON")
   .action(async (repository: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = GraphPopulateCommandOptionsSchema.parse(options);

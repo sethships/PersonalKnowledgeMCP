@@ -33,6 +33,7 @@ import type { Neo4jConfig } from "../../graph/types.js";
 import type { FileInput, GraphIngestionProgress } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateOptions } from "../utils/validation.js";
+import { getNeo4jConfig } from "../utils/neo4j-config.js";
 
 /**
  * Supported file extensions for graph population.
@@ -57,48 +58,27 @@ const EXCLUDED_DIRECTORIES = new Set([
 ]);
 
 /**
- * Get Neo4j configuration from environment
- *
- * @returns Neo4j configuration object
- * @throws Error if required environment variables are missing or invalid
+ * Threshold for warning about large repository file counts.
+ * Processing many files may consume significant memory.
  */
-function getNeo4jConfig(): Neo4jConfig {
-  const host = process.env["NEO4J_HOST"] || "localhost";
-  const portEnv = process.env["NEO4J_BOLT_PORT"] || "7687";
-  const username = process.env["NEO4J_USER"] || "neo4j";
-  const password = process.env["NEO4J_PASSWORD"];
-
-  const port = parseInt(portEnv, 10);
-  if (!/^\d+$/.test(portEnv) || isNaN(port) || port < 1 || port > 65535) {
-    throw new Error(
-      `Invalid NEO4J_BOLT_PORT value: "${portEnv}". ` +
-        "Port must be a valid integer between 1 and 65535."
-    );
-  }
-
-  if (!password) {
-    throw new Error(
-      "NEO4J_PASSWORD environment variable is required. " +
-        "Set it in your .env file or export it in your shell."
-    );
-  }
-
-  return {
-    host,
-    port,
-    username,
-    password,
-  };
-}
+const LARGE_REPO_THRESHOLD = 5000;
 
 /**
  * Recursively scan directory for supported files.
  *
+ * Tracks files that couldn't be read due to I/O errors (permissions, encoding, etc.)
+ * so they can be reported to the user.
+ *
  * @param dirPath - Directory to scan
  * @param basePath - Base path for relative path calculation
+ * @param skippedFiles - Array to accumulate skipped file paths (mutated)
  * @returns Array of FileInput objects
  */
-async function scanDirectory(dirPath: string, basePath: string): Promise<FileInput[]> {
+async function scanDirectory(
+  dirPath: string,
+  basePath: string,
+  skippedFiles: string[] = []
+): Promise<FileInput[]> {
   const files: FileInput[] = [];
 
   const entries = await readdir(dirPath, { withFileTypes: true });
@@ -108,7 +88,7 @@ async function scanDirectory(dirPath: string, basePath: string): Promise<FileInp
 
     if (entry.isDirectory()) {
       if (!EXCLUDED_DIRECTORIES.has(entry.name)) {
-        const subFiles = await scanDirectory(fullPath, basePath);
+        const subFiles = await scanDirectory(fullPath, basePath, skippedFiles);
         files.push(...subFiles);
       }
     } else if (entry.isFile()) {
@@ -122,7 +102,9 @@ async function scanDirectory(dirPath: string, basePath: string): Promise<FileInp
             content,
           });
         } catch {
-          // Skip files that can't be read
+          // Track skipped files so we can report them
+          const relativePath = fullPath.substring(basePath.length + 1).replace(/\\/g, "/");
+          skippedFiles.push(relativePath);
         }
       }
     }
@@ -222,7 +204,8 @@ export async function graphPopulateCommand(
     }
 
     // Step 2: Scan files from local repository
-    const files = await scanDirectory(repository.localPath, repository.localPath);
+    const skippedFiles: string[] = [];
+    const files = await scanDirectory(repository.localPath, repository.localPath, skippedFiles);
 
     if (files.length === 0) {
       throw new Error(
@@ -231,8 +214,25 @@ export async function graphPopulateCommand(
       );
     }
 
-    if (!json) {
+    // Report skipped files if any
+    if (skippedFiles.length > 0 && !json) {
+      spinner.warn(
+        `Found ${files.length} files to process (${skippedFiles.length} files skipped due to read errors)`
+      );
+    } else if (!json) {
       spinner.succeed(`Found ${files.length} files to process`);
+    }
+
+    // Warn about large repositories
+    if (files.length > LARGE_REPO_THRESHOLD && !json) {
+      console.warn(
+        chalk.yellow(
+          `\nWarning: Processing ${files.length} files. This may consume significant memory.\n`
+        )
+      );
+    }
+
+    if (!json) {
       spinner.text = "Connecting to Neo4j...";
       spinner.start();
     }
@@ -283,9 +283,14 @@ export async function graphPopulateCommand(
 
     // Step 7: Report results
     if (json) {
-      console.log(JSON.stringify(result, null, 2));
+      // Include skipped files in JSON output
+      const jsonResult = {
+        ...result,
+        skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
+      };
+      console.log(JSON.stringify(jsonResult, null, 2));
     } else {
-      printResults(repositoryName, result.status, result.stats, result.errors);
+      printResults(repositoryName, result.status, result.stats, result.errors, skippedFiles);
     }
 
     // Exit with error code if failed
@@ -397,7 +402,8 @@ function printResults(
       imports?: number;
     };
   },
-  errors: Array<{ message: string; filePath?: string }>
+  errors: Array<{ message: string; filePath?: string }>,
+  skippedFiles: string[] = []
 ): void {
   const statusColor =
     status === "success" ? chalk.green : status === "partial" ? chalk.yellow : chalk.red;
@@ -412,6 +418,9 @@ function printResults(
   console.log(`    Processed: ${chalk.cyan(stats.filesProcessed.toString())}`);
   if (stats.filesFailed > 0) {
     console.log(`    Failed:    ${chalk.red(stats.filesFailed.toString())}`);
+  }
+  if (skippedFiles.length > 0) {
+    console.log(`    Skipped:   ${chalk.yellow(skippedFiles.length.toString())} (read errors)`);
   }
 
   // Node statistics
