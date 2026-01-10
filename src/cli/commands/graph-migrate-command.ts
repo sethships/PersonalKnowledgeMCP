@@ -28,42 +28,7 @@ import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
 import { MigrationRunner, registerAllMigrations } from "../../graph/migration/index.js";
 import type { Neo4jConfig } from "../../graph/types.js";
 import type { ValidatedGraphMigrateOptions } from "../utils/validation.js";
-
-/**
- * Get Neo4j configuration from environment
- *
- * @returns Neo4j configuration object
- * @throws Error if required environment variables are missing or invalid
- */
-function getNeo4jConfig(): Neo4jConfig {
-  const host = process.env["NEO4J_HOST"] || "localhost";
-  const portEnv = process.env["NEO4J_BOLT_PORT"] || "7687";
-  const username = process.env["NEO4J_USER"] || "neo4j";
-  const password = process.env["NEO4J_PASSWORD"];
-
-  // Validate port is a valid integer (parseInt silently truncates "7687abc" to 7687)
-  const port = parseInt(portEnv, 10);
-  if (!/^\d+$/.test(portEnv) || isNaN(port) || port < 1 || port > 65535) {
-    throw new Error(
-      `Invalid NEO4J_BOLT_PORT value: "${portEnv}". ` +
-        "Port must be a valid integer between 1 and 65535."
-    );
-  }
-
-  if (!password) {
-    throw new Error(
-      "NEO4J_PASSWORD environment variable is required. " +
-        "Set it in your .env file or export it in your shell."
-    );
-  }
-
-  return {
-    host,
-    port,
-    username,
-    password,
-  };
-}
+import { getNeo4jConfig } from "../utils/neo4j-config.js";
 
 /**
  * Execute graph migrate command

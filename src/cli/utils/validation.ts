@@ -304,3 +304,16 @@ export const GraphMigrateCommandOptionsSchema = z.object({
  * Inferred TypeScript type for graph migrate command
  */
 export type ValidatedGraphMigrateOptions = z.infer<typeof GraphMigrateCommandOptionsSchema>;
+
+/**
+ * Schema for graph populate command options
+ */
+export const GraphPopulateCommandOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for graph populate command
+ */
+export type ValidatedGraphPopulateOptions = z.infer<typeof GraphPopulateCommandOptionsSchema>;

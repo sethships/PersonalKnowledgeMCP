@@ -18,11 +18,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          # Updated from 1.1.38 to 1.3.3 to fix Express async handler compatibility issues
-          # The older version had different behavior with async route handlers causing 500 errors
+          # Updated from 1.3.3 to 1.3.5 to fix test isolation issues with vi.mock()
+          # Bun 1.3.5 has improved mock handling that prevents leakage between test files
           # Pinned for stability - Bun is rapidly evolving and unpinned 'latest' could break builds
           # Dependabot: This is intentionally pinned - please create PR for version updates
-          bun-version: 1.3.3
+          bun-version: 1.3.5
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -64,7 +64,13 @@ jobs:
           NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Run tests with coverage
-        run: bun test --coverage --coverage-reporter=lcov
+        # Run main tests first (excluding isolated tests to prevent vi.mock leakage)
+        run: bun test --coverage --coverage-reporter=lcov tests/example.test.ts tests/integration tests/mcp tests/services tests/unit tests/cli tests/helpers tests/fixtures
+
+      - name: Run isolated tests
+        # Run isolated tests separately to prevent vi.mock from leaking to other test files
+        # These tests mock modules that would affect other tests if run together
+        run: bun test tests/isolated
 
       - name: Build project
         run: bun run build
@@ -102,7 +108,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.3
+          bun-version: 1.3.5
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
