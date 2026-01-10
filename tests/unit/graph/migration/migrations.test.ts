@@ -4,7 +4,7 @@
  * Tests the individual migration files and their structure.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import {
   ALL_MIGRATIONS,
   registerAllMigrations,
@@ -13,6 +13,16 @@ import {
 import { migration0001 } from "../../../../src/graph/migration/migrations/0001-initial-schema.js";
 import { getAllSchemaStatements } from "../../../../src/graph/schema.js";
 import type { Neo4jStorageClient } from "../../../../src/graph/types.js";
+import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
+
+// Initialize logger for tests
+beforeEach(() => {
+  initializeLogger({ level: "silent", format: "json" });
+});
+
+afterEach(() => {
+  resetLogger();
+});
 
 /**
  * Create a minimal mock client for registration testing
