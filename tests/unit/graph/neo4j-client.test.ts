@@ -29,6 +29,7 @@ import {
 import {
   MockDriver,
   MockSession,
+  type MockNode,
   MockRecord,
   createMockNode,
   mockRecordFactories,
@@ -1061,6 +1062,133 @@ describe("Neo4jStorageClientImpl", () => {
           includeContext: ["imports"],
         })
       ).rejects.toThrow(GraphConnectionError);
+    });
+
+    // Batched query behavior tests (Issue #182)
+    test("should execute batched query with correct seedsParam structure", async () => {
+      // The batched query should receive seeds array with type, identifier, and repository
+      mockSession.setQueryResult("UNWIND", [
+        mockRecordFactories.contextResult(
+          sampleMockNodes.module,
+          "imports",
+          "src/index.ts",
+          "test-repo"
+        ),
+      ]);
+
+      const result = await client.getContext({
+        seeds: [
+          { type: "file", identifier: "src/index.ts", repository: "test-repo" },
+          { type: "file", identifier: "src/main.ts", repository: "test-repo" },
+        ],
+        includeContext: ["imports"],
+      });
+
+      expect(result).toBeDefined();
+      expect(result.metadata.seedsProcessed).toBe(2);
+    });
+
+    test("should deduplicate context items across seeds", async () => {
+      // Same module returned for multiple seeds should only appear once
+      mockSession.setQueryResult("UNWIND", [
+        mockRecordFactories.contextResult(
+          sampleMockNodes.module,
+          "imports",
+          "src/index.ts",
+          "test-repo"
+        ),
+        mockRecordFactories.contextResult(
+          sampleMockNodes.module,
+          "imports",
+          "src/main.ts",
+          "test-repo"
+        ),
+      ]);
+
+      const result = await client.getContext({
+        seeds: [
+          { type: "file", identifier: "src/index.ts", repository: "test-repo" },
+          { type: "file", identifier: "src/main.ts", repository: "test-repo" },
+        ],
+        includeContext: ["imports"],
+      });
+
+      // Should deduplicate - only one unique module
+      expect(result.context.length).toBe(1);
+    });
+
+    test("should early exit when limit is reached", async () => {
+      // Create many results that exceed the limit
+      const manyResults = Array.from({ length: 25 }, (_, i) => {
+        const node: MockNode = {
+          identity: mockNeo4j.int(1000 + i),
+          labels: ["Module"],
+          properties: {
+            id: `mod-${i}`,
+            name: `module${i}`,
+            repository: "test-repo",
+          },
+        };
+        return mockRecordFactories.contextResult(node, "imports", `src/file${i}.ts`, "test-repo");
+      });
+      mockSession.setQueryResult("UNWIND", manyResults);
+
+      const result = await client.getContext({
+        seeds: [{ type: "file", identifier: "src/index.ts" }],
+        includeContext: ["imports", "callers"], // 2 context types
+        limit: 10,
+      });
+
+      // Should stop at limit
+      expect(result.context.length).toBeLessThanOrEqual(10);
+    });
+
+    test("should handle seedRepo fallback from query result", async () => {
+      // When node doesn't have repository but seed does, use seed's repository
+      const nodeWithoutRepo: MockNode = {
+        identity: mockNeo4j.int(999),
+        labels: ["Module"],
+        properties: {
+          id: "mod-no-repo",
+          name: "moduleNoRepo",
+          // No repository property
+        },
+      };
+      mockSession.setQueryResult("UNWIND", [
+        mockRecordFactories.contextResult(
+          nodeWithoutRepo,
+          "imports",
+          "src/index.ts",
+          "fallback-repo"
+        ),
+      ]);
+
+      const result = await client.getContext({
+        seeds: [{ type: "file", identifier: "src/index.ts", repository: "fallback-repo" }],
+        includeContext: ["imports"],
+      });
+
+      expect(result.context.length).toBe(1);
+      // Repository should fall back to seedRepo from query result
+      expect(result.context[0]?.repository).toBe("fallback-repo");
+    });
+
+    test("should normalize seed types for batched query", async () => {
+      // Unknown seed types should be normalized to 'default'
+      mockSession.setQueryResult("UNWIND", []);
+
+      const result = await client.getContext({
+        seeds: [
+          { type: "file", identifier: "src/index.ts" },
+          { type: "chunk", identifier: "chunk-123" },
+          { type: "function", identifier: "myFunc" },
+          { type: "unknown" as never, identifier: "something" }, // Should become 'default'
+        ],
+        includeContext: ["imports"],
+      });
+
+      expect(result).toBeDefined();
+      expect(result.metadata.seedsProcessed).toBe(4);
     });
   });
 

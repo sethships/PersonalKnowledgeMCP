@@ -425,8 +425,16 @@ export const mockRecordFactories = {
   /**
    * Create a record for context retrieval
    */
-  contextResult: (contextNode: MockNode, reason: string): MockRecord => {
-    return new MockRecord(["context", "reason"], [contextNode, reason]);
+  contextResult: (
+    contextNode: MockNode,
+    reason: string,
+    seedId: string = "default-seed",
+    seedRepo: string | null = null
+  ): MockRecord => {
+    return new MockRecord(
+      ["seedId", "seedRepo", "context", "reason"],
+      [seedId, seedRepo, contextNode, reason]
+    );
   },
 };
 

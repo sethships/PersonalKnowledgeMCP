@@ -1330,24 +1330,42 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
 
   /**
    * Build a batched Cypher query for a specific context type.
-   * Uses UNWIND to process all seeds in a single query, reducing N queries to 1.
+   * Uses UNWIND with CALL subqueries to process all seeds in a single query,
+   * reducing N queries to 1 while ensuring Neo4j can use indexes efficiently.
+   *
+   * Note: CALL {} subquery syntax requires Neo4j 4.1+.
    *
    * @param ctxType - The context type to query for
    * @returns Object containing the Cypher query and reason description
    */
   private buildBatchedContextQuery(ctxType: ContextType): { cypher: string; reason: string } {
-    // Common seed matching pattern using UNWIND
-    // This handles all seed types (file, chunk, function) with optional repository filtering
+    // Use CALL subqueries for each seed type to ensure index usage.
+    // This pattern allows Neo4j to use indexes on File.path, Chunk.chromaId,
+    // Function.name, and node.id properties instead of doing full scans.
     const seedMatchClause = `
       UNWIND $seeds as seed
-      MATCH (n)
-      WHERE (
-        (seed.type = 'file' AND n:File AND n.path = seed.identifier) OR
-        (seed.type = 'chunk' AND n:Chunk AND n.chromaId = seed.identifier) OR
-        (seed.type = 'function' AND n:Function AND n.name = seed.identifier) OR
-        (seed.type = 'default' AND n.id = seed.identifier)
-      )
-      AND (seed.repository IS NULL OR n.repository = seed.repository)
+      CALL {
+        WITH seed
+        OPTIONAL MATCH (f:File {path: seed.identifier})
+        WHERE seed.type = 'file' AND (seed.repository IS NULL OR f.repository = seed.repository)
+        RETURN f as n
+        UNION ALL
+        WITH seed
+        OPTIONAL MATCH (c:Chunk {chromaId: seed.identifier})
+        WHERE seed.type = 'chunk' AND (seed.repository IS NULL OR c.repository = seed.repository)
+        RETURN c as n
+        UNION ALL
+        WITH seed
+        OPTIONAL MATCH (fn:Function {name: seed.identifier})
+        WHERE seed.type = 'function' AND (seed.repository IS NULL OR fn.repository = seed.repository)
+        RETURN fn as n
+        UNION ALL
+        WITH seed
+        OPTIONAL MATCH (d {id: seed.identifier})
+        WHERE seed.type = 'default' AND (seed.repository IS NULL OR d.repository = seed.repository)
+        RETURN d as n
+      }
+      WITH seed, n WHERE n IS NOT NULL
     `;
 
     switch (ctxType) {
@@ -1356,7 +1374,6 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
           cypher: `
             ${seedMatchClause}
             OPTIONAL MATCH (n)-[:IMPORTS]->(imported)
-            WHERE imported IS NOT NULL
             RETURN seed.identifier as seedId, seed.repository as seedRepo, imported as context, 'imports' as reason
           `,
           reason: "imported by seed",
@@ -1366,7 +1383,6 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
           cypher: `
             ${seedMatchClause}
             OPTIONAL MATCH (caller)-[:CALLS]->(n)
-            WHERE caller IS NOT NULL
             RETURN seed.identifier as seedId, seed.repository as seedRepo, caller as context, 'callers' as reason
           `,
           reason: "calls seed",
@@ -1376,7 +1392,6 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
           cypher: `
             ${seedMatchClause}
             OPTIONAL MATCH (n)-[:CALLS]->(callee)
-            WHERE callee IS NOT NULL
             RETURN seed.identifier as seedId, seed.repository as seedRepo, callee as context, 'callees' as reason
           `,
           reason: "called by seed",
@@ -1387,7 +1402,7 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
             ${seedMatchClause}
             OPTIONAL MATCH (parent)-[:CONTAINS|DEFINES]->(n)
             OPTIONAL MATCH (parent)-[:CONTAINS|DEFINES]->(sibling)
-            WHERE sibling IS NOT NULL AND sibling <> n
+            WHERE sibling <> n
             RETURN seed.identifier as seedId, seed.repository as seedRepo, sibling as context, 'siblings' as reason
           `,
           reason: "sibling of seed",
@@ -1397,14 +1412,17 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
           cypher: `
             ${seedMatchClause}
             OPTIONAL MATCH (n)-[:REFERENCES]->(doc)
-            WHERE doc IS NOT NULL AND doc:File AND doc.extension IN ['md', 'txt', 'rst']
+            WHERE doc:File AND doc.extension IN ['md', 'txt', 'rst']
             RETURN seed.identifier as seedId, seed.repository as seedRepo, doc as context, 'documentation' as reason
           `,
           reason: "documentation for seed",
         };
-      default:
-        // This should never happen due to TypeScript exhaustiveness checking
+      default: {
+        // TypeScript exhaustiveness check - this should never be reached
+        const _exhaustiveCheck: never = ctxType;
+        this.logger.error({ ctxType: _exhaustiveCheck }, "Unknown context type encountered");
         return { cypher: "", reason: "" };
+      }
     }
   }
 
