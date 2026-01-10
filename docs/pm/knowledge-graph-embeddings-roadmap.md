@@ -1,6 +1,6 @@
 # Knowledge Graph and Local Embeddings Roadmap
 
-**Version:** 1.0
+**Version:** 1.3
 **Date:** 2026-01-01
 **Author:** Program Management
 **Status:** Active
