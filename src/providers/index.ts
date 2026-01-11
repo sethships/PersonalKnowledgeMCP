@@ -38,5 +38,11 @@ export {
 export { OpenAIEmbeddingProvider } from "./openai-embedding.js";
 export type { OpenAIProviderConfig } from "./openai-embedding.js";
 
+export { TransformersJsEmbeddingProvider } from "./transformersjs-embedding.js";
+export type {
+  TransformersJsProviderConfig,
+  ModelDownloadProgress,
+} from "./transformersjs-embedding.js";
+
 // Factory function
 export { createEmbeddingProvider } from "./factory.js";
