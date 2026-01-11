@@ -483,6 +483,25 @@ describe("get_dependents MCP Tool", () => {
       expect(textContent.text).toContain("Graph operation failed");
     });
 
+    it("should handle generic Error from GraphService", async () => {
+      mockGraphService.setError(new Error("Unexpected database error"));
+
+      const handler = createGetDependentsHandler(mockGraphService);
+
+      const result = await handler({
+        entity_type: "file",
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+      });
+
+      expect(result.isError).toBe(true);
+
+      const content0 = result.content[0];
+      expect(content0).toBeDefined();
+      const textContent = content0 as { type: "text"; text: string };
+      expect(textContent.text).toContain("Error:");
+    });
+
     it("should include repository in dependent items", async () => {
       const mockResult: DependentResult = {
         entity: {

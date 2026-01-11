@@ -131,6 +131,10 @@ export function createGetDependentsHandler(graphService: GraphService): ToolHand
       );
 
       // Step 2: Map arguments to GraphService query format
+      // Note: The MCP tool accepts "package" as entity_type for package-level impact analysis.
+      // GraphService.DependentQuery uses EntityType which is "file" | "function" | "class".
+      // When "package" is passed, GraphService treats it as a file path query for the package
+      // directory, enabling impact analysis across all files within that package.
       const query = {
         entity_type: validatedArgs.entity_type as "file" | "function" | "class",
         entity_path: validatedArgs.entity_path,
