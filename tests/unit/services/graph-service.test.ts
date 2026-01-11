@@ -600,6 +600,41 @@ describe("GraphServiceImpl", () => {
         const callArg = traverseSpy.mock.calls[0]?.[0];
         expect(callArg?.depth).toBe(10);
       });
+
+      test("returns path_exists=false when source and target exist but are disconnected", async () => {
+        // Both nodes exist in traversal results, but no edges connect them
+        mockClient.traverse = mock(() =>
+          Promise.resolve({
+            nodes: [
+              {
+                id: "1",
+                type: "Function",
+                properties: { name: "handleRequest", path: "handleRequest", repository: "api" },
+              },
+              {
+                id: "2",
+                type: "Function",
+                properties: { name: "unrelated", path: "unrelated", repository: "api" },
+              },
+              {
+                id: "3",
+                type: "Function",
+                properties: { name: "queryDatabase", path: "queryDatabase", repository: "api" },
+              },
+            ],
+            // Edge connects 1->2, but target (3) is disconnected
+            relationships: [{ from: "1", to: "2", type: RelationshipType.CALLS, properties: {} }],
+            metadata: { nodesCount: 3, relationshipsCount: 1, queryTimeMs: 10 },
+          })
+        );
+
+        const result = await service.getPath(TEST_QUERIES.path.valid);
+
+        // Even though target exists in traversal, BFS finds no path
+        expect(result.path_exists).toBe(false);
+        expect(result.path).toBeNull();
+        expect(result.metadata.hops).toBe(0);
+      });
     });
   });
 

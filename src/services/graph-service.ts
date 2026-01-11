@@ -574,13 +574,17 @@ export class GraphServiceImpl implements GraphService {
         (n.properties?.["repository"] === query.to_entity.repository || !query.to_entity.repository)
     );
 
-    // Build path if target found
-    const path: PathNode[] | null = targetFound
+    // Build path if target found in traversal results
+    const reconstructedPath = targetFound
       ? this.reconstructPath(result.nodes, result.relationships, query)
-      : null;
+      : [];
+
+    // BFS may return empty path even if target exists (disconnected in subgraph)
+    const actualPathExists = reconstructedPath.length > 0;
+    const path = actualPathExists ? reconstructedPath : null;
 
     return {
-      path_exists: targetFound,
+      path_exists: actualPathExists,
       path,
       metadata: {
         hops: path ? path.length - 1 : 0,
@@ -890,19 +894,17 @@ export class GraphServiceImpl implements GraphService {
       }
     }
 
-    // No path found - return direct connection
-    return [
+    // No path found via BFS - return empty path
+    // The caller's path_exists check should handle this case
+    this.logger.debug(
       {
-        type: query.from_entity.type,
-        identifier: query.from_entity.path,
-        repository: query.from_entity.repository,
+        from_entity: query.from_entity.path,
+        to_entity: query.to_entity.path,
+        nodes_searched: visited.size,
       },
-      {
-        type: query.to_entity.type,
-        identifier: query.to_entity.path,
-        repository: query.to_entity.repository,
-      },
-    ];
+      "BFS completed but no path found to target"
+    );
+    return [];
   }
 
   /**
