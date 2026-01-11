@@ -176,6 +176,16 @@ class MockEmbeddingProvider implements EmbeddingProvider {
     return !this.shouldFail;
   }
 
+  getCapabilities() {
+    return {
+      maxBatchSize: 100,
+      maxTokensPerText: 8191,
+      supportsGPU: false,
+      requiresNetwork: false,
+      estimatedLatencyMs: 10,
+    };
+  }
+
   setShouldFail(shouldFail: boolean, error?: Error) {
     this.shouldFail = shouldFail;
     this.failureError = error || null;

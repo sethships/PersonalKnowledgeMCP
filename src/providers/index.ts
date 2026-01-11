@@ -22,7 +22,7 @@
  */
 
 // Type definitions
-export type { EmbeddingProvider, EmbeddingProviderConfig } from "./types.js";
+export type { EmbeddingProvider, EmbeddingProviderConfig, ProviderCapabilities } from "./types.js";
 
 // Error classes
 export {

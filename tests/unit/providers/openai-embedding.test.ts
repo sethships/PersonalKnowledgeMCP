@@ -572,4 +572,47 @@ describe("OpenAIEmbeddingProvider", () => {
       expect(isHealthy).toBe(false);
     });
   });
+
+  describe("getCapabilities", () => {
+    test("returns provider capabilities", () => {
+      const provider = new OpenAIEmbeddingProvider(config);
+      const capabilities = provider.getCapabilities();
+
+      expect(capabilities.maxBatchSize).toBe(config.batchSize);
+      expect(capabilities.maxTokensPerText).toBe(8191);
+      expect(capabilities.supportsGPU).toBe(false);
+      expect(capabilities.requiresNetwork).toBe(true);
+      expect(capabilities.estimatedLatencyMs).toBeGreaterThan(0);
+    });
+
+    test("reflects configured batch size", () => {
+      const smallBatchConfig = { ...TEST_CONFIGS.smallBatch };
+      const provider = new OpenAIEmbeddingProvider(smallBatchConfig);
+      const capabilities = provider.getCapabilities();
+
+      expect(capabilities.maxBatchSize).toBe(10);
+    });
+
+    test("indicates OpenAI is a network-dependent provider", () => {
+      const provider = new OpenAIEmbeddingProvider(config);
+      const capabilities = provider.getCapabilities();
+
+      // OpenAI requires network and does not support local GPU
+      expect(capabilities.requiresNetwork).toBe(true);
+      expect(capabilities.supportsGPU).toBe(false);
+    });
+
+    test("returns consistent values across multiple calls", () => {
+      const provider = new OpenAIEmbeddingProvider(config);
+
+      const caps1 = provider.getCapabilities();
+      const caps2 = provider.getCapabilities();
+
+      expect(caps1.maxBatchSize).toBe(caps2.maxBatchSize);
+      expect(caps1.maxTokensPerText).toBe(caps2.maxTokensPerText);
+      expect(caps1.supportsGPU).toBe(caps2.supportsGPU);
+      expect(caps1.requiresNetwork).toBe(caps2.requiresNetwork);
+      expect(caps1.estimatedLatencyMs).toBe(caps2.estimatedLatencyMs);
+    });
+  });
 });
