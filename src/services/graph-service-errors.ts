@@ -154,6 +154,8 @@ export class GraphServiceTimeoutError extends GraphServiceError {
  *
  * Not retryable - cache failures should not block the main operation.
  * The service should continue without caching.
+ *
+ * @internal Not currently used but reserved for future cache-specific error handling
  */
 export class CacheError extends GraphServiceError {
   /**
@@ -175,6 +177,8 @@ export class CacheError extends GraphServiceError {
  * Thrown when a repository is not found or not indexed
  *
  * Not retryable - the repository must be indexed first.
+ *
+ * @internal Not currently used but reserved for repository-specific validation
  */
 export class RepositoryNotIndexedError extends GraphServiceError {
   /**
@@ -198,6 +202,8 @@ export class RepositoryNotIndexedError extends GraphServiceError {
  * Not retryable - this is a valid result, not an error condition.
  * This error is typically not thrown; instead, PathResult.path_exists = false.
  * However, it's provided for edge cases where an error is more appropriate.
+ *
+ * @internal Not currently used - PathResult.path_exists = false is preferred
  */
 export class NoPathFoundError extends GraphServiceError {
   /**

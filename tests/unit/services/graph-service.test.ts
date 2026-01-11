@@ -445,7 +445,7 @@ describe("GraphServiceImpl", () => {
 
         const result = await service.getDependents(TEST_QUERIES.dependent.crossRepo);
 
-        expect(result.entity.repository).toBe("all");
+        expect(result.entity.repository).toBe("unknown");
       });
     });
 

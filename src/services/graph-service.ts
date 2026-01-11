@@ -71,6 +71,12 @@ export interface GraphServiceConfig {
 }
 
 /**
+ * Maximum number of nodes to return in a graph traversal query.
+ * This limit prevents runaway queries on large graphs.
+ */
+const MAX_TRAVERSE_NODES = 1000;
+
+/**
  * Default GraphService configuration
  */
 export const DEFAULT_GRAPH_SERVICE_CONFIG: GraphServiceConfig = {
@@ -485,7 +491,7 @@ export class GraphServiceImpl implements GraphService {
       target: {
         type: query.entity_type,
         identifier: query.entity_path,
-        repository: query.repository ?? "",
+        repository: query.repository ?? "unknown",
       },
       direction: "dependedOnBy",
       transitive: query.depth > 1,
@@ -514,13 +520,15 @@ export class GraphServiceImpl implements GraphService {
       }
     }
 
-    const repositoriesSearched = query.include_cross_repo ? ["all"] : [query.repository ?? ""];
+    const repositoriesSearched = query.include_cross_repo
+      ? ["all"]
+      : [query.repository ?? "unknown"];
 
     return {
       entity: {
         type: query.entity_type,
         path: query.entity_path,
-        repository: query.repository ?? "all",
+        repository: query.repository ?? "unknown",
         display_name: this.getDisplayName(query.entity_path),
       },
       dependents,
@@ -555,7 +563,7 @@ export class GraphServiceImpl implements GraphService {
       },
       relationships: relationshipFilter,
       depth: query.max_hops,
-      limit: 1000,
+      limit: MAX_TRAVERSE_NODES,
     });
 
     // Check if target node is in results
@@ -691,10 +699,15 @@ export class GraphServiceImpl implements GraphService {
 
   /**
    * Wrap an operation with timeout handling
+   *
+   * Uses Promise.race with proper cleanup to avoid timer leaks.
+   * The timeout is always cleared when the operation completes (success or failure).
    */
   private async withTimeout<T>(operation: Promise<T>, operationName: string): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(
           new GraphServiceTimeoutError(
             `${operationName} timed out after ${this.config.timeoutMs}ms`,
@@ -704,7 +717,13 @@ export class GraphServiceImpl implements GraphService {
       }, this.config.timeoutMs);
     });
 
-    return Promise.race([operation, timeoutPromise]);
+    try {
+      return await Promise.race([operation, timeoutPromise]);
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   /**
@@ -802,19 +821,18 @@ export class GraphServiceImpl implements GraphService {
     );
 
     if (!sourceNode || !targetNode) {
-      // Fallback to simple source -> target path
-      return [
+      // Return empty path instead of fabricating a fake direct connection
+      // This is more accurate than suggesting a path that may not exist
+      this.logger.warn(
         {
-          type: query.from_entity.type,
-          identifier: query.from_entity.path,
-          repository: query.from_entity.repository,
+          sourceFound: !!sourceNode,
+          targetFound: !!targetNode,
+          from_entity: query.from_entity.path,
+          to_entity: query.to_entity.path,
         },
-        {
-          type: query.to_entity.type,
-          identifier: query.to_entity.path,
-          repository: query.to_entity.repository,
-        },
-      ];
+        "Path reconstruction failed: source or target node not found in traversal results"
+      );
+      return [];
     }
 
     // BFS to find shortest path
@@ -828,7 +846,7 @@ export class GraphServiceImpl implements GraphService {
               (sourceNode.properties?.["path"] as string) ||
               (sourceNode.properties?.["name"] as string) ||
               sourceNode.id,
-            repository: (sourceNode.properties?.["repository"] as string) || "",
+            repository: (sourceNode.properties?.["repository"] as string) || "unknown",
           },
         ],
       },
@@ -863,7 +881,7 @@ export class GraphServiceImpl implements GraphService {
                 (nextNode.properties?.["path"] as string) ||
                 (nextNode.properties?.["name"] as string) ||
                 edge.to,
-              repository: (nextNode.properties?.["repository"] as string) || "",
+              repository: (nextNode.properties?.["repository"] as string) || "unknown",
             });
 
             queue.push({ nodeId: edge.to, path: newPath });
@@ -891,7 +909,12 @@ export class GraphServiceImpl implements GraphService {
    * Build Cypher query for architecture based on detail level
    */
   private buildArchitectureCypher(query: ValidatedArchitectureQuery): string {
-    const scopeFilter = query.scope ? `AND f.path STARTS WITH $scope` : "";
+    // Scope filter uses parameterization - $scope is passed as a query parameter
+    // This is safe from Cypher injection because:
+    // 1. query.scope is validated by Zod schema (non-empty string if present)
+    // 2. The actual value is passed via parameterized query, not string interpolation
+    // 3. The Neo4j driver handles proper escaping of parameter values
+    const scopeFilter = query.scope ? "AND f.path STARTS WITH $scope" : "";
 
     switch (query.detail_level) {
       case "packages":
