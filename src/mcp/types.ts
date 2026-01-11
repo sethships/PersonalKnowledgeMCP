@@ -7,6 +7,7 @@
 
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
+import type { GraphService } from "../services/graph-service-types.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -123,4 +124,52 @@ export interface MCPServerOptionalDeps {
 
   /** Job tracker for async update operations */
   jobTracker?: JobTracker;
+
+  /** GraphService for graph-based dependency queries */
+  graphService?: GraphService;
+}
+
+/**
+ * Valid entity type for get_dependencies tool
+ */
+export type DependencyEntityType = "file" | "function" | "class";
+
+/**
+ * Valid relationship type strings for get_dependencies tool
+ *
+ * These are the lowercase string values accepted by the MCP tool.
+ * They map to the RelationshipType enum values internally.
+ */
+export type DependencyRelationshipType =
+  | "imports"
+  | "calls"
+  | "extends"
+  | "implements"
+  | "references";
+
+/**
+ * Validated get_dependencies tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults where applicable.
+ */
+export interface GetDependenciesArgs {
+  /** Type of entity to query dependencies for */
+  entity_type: DependencyEntityType;
+
+  /**
+   * Entity identifier:
+   * - For files: relative path (e.g., 'src/auth/middleware.ts')
+   * - For functions/classes: name or fully qualified name
+   */
+  entity_path: string;
+
+  /** Repository name to scope the query */
+  repository: string;
+
+  /** Depth of transitive dependencies (1-5, default: 1) */
+  depth: number;
+
+  /** Filter to specific relationship types (optional, all types if omitted) */
+  relationship_types?: DependencyRelationshipType[];
 }

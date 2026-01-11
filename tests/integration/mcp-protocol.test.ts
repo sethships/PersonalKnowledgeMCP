@@ -20,6 +20,15 @@ import type {
   SearchResult,
 } from "../../src/services/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
+import type {
+  GraphService,
+  DependencyQuery,
+  DependencyResult,
+  DependentResult,
+  PathResult,
+  ArchitectureResult,
+} from "../../src/services/graph-service-types.js";
+import { RelationshipType } from "../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
@@ -70,10 +79,54 @@ class MockRepositoryMetadataService implements RepositoryMetadataService {
   }
 }
 
+// Mock GraphService with configurable behavior
+class MockGraphService implements GraphService {
+  private dependencyResult: DependencyResult = {
+    entity: {
+      type: "file",
+      path: "src/test.ts",
+      repository: "test-repo",
+      display_name: "test.ts",
+    },
+    dependencies: [],
+    metadata: {
+      total_count: 0,
+      query_time_ms: 10,
+      from_cache: false,
+      depth_searched: 1,
+    },
+  };
+
+  setDependencyResult(result: DependencyResult): void {
+    this.dependencyResult = result;
+  }
+
+  async getDependencies(_query: DependencyQuery): Promise<DependencyResult> {
+    return this.dependencyResult;
+  }
+
+  async getDependents(): Promise<DependentResult> {
+    throw new Error("Not implemented in mock");
+  }
+
+  async getPath(): Promise<PathResult> {
+    throw new Error("Not implemented in mock");
+  }
+
+  async getArchitecture(): Promise<ArchitectureResult> {
+    throw new Error("Not implemented in mock");
+  }
+
+  async healthCheck(): Promise<boolean> {
+    return true;
+  }
+}
+
 describe("MCP Protocol Integration", () => {
   let server: PersonalKnowledgeMCPServer;
   let mockSearchService: MockSearchService;
   let mockRepositoryService: MockRepositoryMetadataService;
+  let mockGraphService: MockGraphService;
 
   beforeEach(() => {
     // Initialize logger in silent mode for tests
@@ -82,13 +135,21 @@ describe("MCP Protocol Integration", () => {
     // Create fresh mock services
     mockSearchService = new MockSearchService();
     mockRepositoryService = new MockRepositoryMetadataService();
+    mockGraphService = new MockGraphService();
 
-    // Create server instance
-    server = new PersonalKnowledgeMCPServer(mockSearchService, mockRepositoryService, {
-      name: "test-mcp-server",
-      version: "1.0.0-test",
-      capabilities: { tools: true },
-    });
+    // Create server instance with graph service for get_dependencies tool
+    server = new PersonalKnowledgeMCPServer(
+      mockSearchService,
+      mockRepositoryService,
+      {
+        name: "test-mcp-server",
+        version: "1.0.0-test",
+        capabilities: { tools: true },
+      },
+      {
+        graphService: mockGraphService,
+      }
+    );
   });
 
   afterEach(() => {
@@ -477,6 +538,209 @@ describe("MCP Protocol Integration", () => {
         expect(repo.status).toBe("error");
         expect(repo.error_message).toBe("Failed to clone repository");
       }
+    });
+  });
+
+  describe("get_dependencies tool invocation", () => {
+    it("should expose get_dependencies tool when graphService is provided", async () => {
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+      });
+
+      expect(result).toBeDefined();
+      expect(result.content).toBeDefined();
+    });
+
+    it("should return dependencies for a file", async () => {
+      const mockResult: DependencyResult = {
+        entity: {
+          type: "file",
+          path: "src/services/auth.ts",
+          repository: "my-project",
+          display_name: "auth.ts",
+        },
+        dependencies: [
+          {
+            type: "file",
+            path: "src/utils/crypto.ts",
+            relationship_type: RelationshipType.IMPORTS,
+            depth: 1,
+          },
+          {
+            type: "module",
+            path: "jsonwebtoken",
+            relationship_type: RelationshipType.IMPORTS,
+            depth: 1,
+          },
+        ],
+        metadata: {
+          total_count: 2,
+          query_time_ms: 15,
+          from_cache: false,
+          depth_searched: 1,
+        },
+      };
+
+      mockGraphService.setDependencyResult(mockResult);
+
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        entity_path: "src/services/auth.ts",
+        repository: "my-project",
+      });
+
+      expect(result).toBeDefined();
+      expect(result.isError).toBe(false);
+
+      const jsonContent = result.content.find((c) => c.type === "text");
+      expect(jsonContent).toBeDefined();
+
+      if (jsonContent && jsonContent.type === "text") {
+        const response = JSON.parse(jsonContent.text);
+
+        expect(response.entity.type).toBe("file");
+        expect(response.entity.path).toBe("src/services/auth.ts");
+        expect(response.entity.repository).toBe("my-project");
+        expect(response.dependencies).toHaveLength(2);
+        expect(response.dependencies[0].path).toBe("src/utils/crypto.ts");
+        expect(response.dependencies[0].relationship).toBe("imports");
+        expect(response.metadata.total_count).toBe(2);
+      }
+    });
+
+    it("should handle depth parameter for transitive dependencies", async () => {
+      const mockResult: DependencyResult = {
+        entity: {
+          type: "file",
+          path: "src/api/handler.ts",
+          repository: "test-repo",
+          display_name: "handler.ts",
+        },
+        dependencies: [
+          {
+            type: "file",
+            path: "src/services/auth.ts",
+            relationship_type: RelationshipType.IMPORTS,
+            depth: 1,
+          },
+          {
+            type: "file",
+            path: "src/utils/crypto.ts",
+            relationship_type: RelationshipType.IMPORTS,
+            depth: 2,
+          },
+        ],
+        metadata: {
+          total_count: 2,
+          query_time_ms: 25,
+          from_cache: false,
+          depth_searched: 2,
+        },
+      };
+
+      mockGraphService.setDependencyResult(mockResult);
+
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        entity_path: "src/api/handler.ts",
+        repository: "test-repo",
+        depth: 2,
+      });
+
+      expect(result.isError).toBe(false);
+
+      const jsonContent = result.content.find((c) => c.type === "text");
+      if (jsonContent && jsonContent.type === "text") {
+        const response = JSON.parse(jsonContent.text);
+
+        expect(response.dependencies).toHaveLength(2);
+        expect(response.dependencies[0].depth).toBe(1);
+        expect(response.dependencies[1].depth).toBe(2);
+        expect(response.metadata.max_depth_reached).toBe(2);
+      }
+    });
+
+    it("should return validation error for missing required fields", async () => {
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        // Missing entity_path and repository
+      });
+
+      expect(result.isError).toBe(true);
+
+      const errorContent = result.content.find((c) => c.type === "text");
+      if (errorContent && errorContent.type === "text") {
+        expect(errorContent.text).toContain("Error:");
+      }
+    });
+
+    it("should return validation error for invalid entity_type", async () => {
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "module", // Invalid - must be file, function, or class
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+      });
+
+      expect(result.isError).toBe(true);
+    });
+
+    it("should return validation error for depth exceeding maximum", async () => {
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+        depth: 10, // Max is 5
+      });
+
+      expect(result.isError).toBe(true);
+    });
+
+    it("should handle empty dependencies result", async () => {
+      mockGraphService.setDependencyResult({
+        entity: {
+          type: "file",
+          path: "src/standalone.ts",
+          repository: "test-repo",
+          display_name: "standalone.ts",
+        },
+        dependencies: [],
+        metadata: {
+          total_count: 0,
+          query_time_ms: 5,
+          from_cache: false,
+          depth_searched: 1,
+        },
+      });
+
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "file",
+        entity_path: "src/standalone.ts",
+        repository: "test-repo",
+      });
+
+      expect(result.isError).toBe(false);
+
+      const jsonContent = result.content.find((c) => c.type === "text");
+      if (jsonContent && jsonContent.type === "text") {
+        const response = JSON.parse(jsonContent.text);
+
+        expect(response.dependencies).toEqual([]);
+        expect(response.metadata.total_count).toBe(0);
+      }
+    });
+
+    it("should accept relationship_types filter", async () => {
+      const result = await callTool(server, "get_dependencies", {
+        entity_type: "class",
+        entity_path: "AuthService",
+        repository: "test-repo",
+        relationship_types: ["imports", "extends"],
+      });
+
+      // Should not error on valid relationship types
+      expect(result.isError).toBe(false);
     });
   });
 
