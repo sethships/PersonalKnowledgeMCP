@@ -6,6 +6,74 @@
  */
 
 /**
+ * Capabilities and limitations of an embedding provider
+ *
+ * Describes the operational characteristics and constraints of an embedding provider.
+ * This information helps callers make informed decisions about batching strategies,
+ * deployment options, and provider selection based on requirements.
+ *
+ * @example
+ * ```typescript
+ * const caps = provider.getCapabilities();
+ * if (caps.requiresNetwork && !isOnline) {
+ *   throw new Error("Network required for this provider");
+ * }
+ * const batchSize = Math.min(texts.length, caps.maxBatchSize);
+ * ```
+ */
+export interface ProviderCapabilities {
+  /**
+   * Maximum number of texts that can be embedded in a single API call
+   *
+   * For API-based providers, this is typically limited by the service.
+   * For local providers, this may be limited by memory or compute resources.
+   *
+   * @example 100 (OpenAI), 32 (typical local model)
+   */
+  maxBatchSize: number;
+
+  /**
+   * Maximum tokens per input text
+   *
+   * Texts exceeding this limit may be truncated or rejected depending
+   * on the provider's behavior. This is an approximate limit.
+   *
+   * @example 8191 (OpenAI text-embedding-3-*), 512 (typical local model)
+   */
+  maxTokensPerText: number;
+
+  /**
+   * Whether this provider supports GPU acceleration
+   *
+   * True for local providers that can utilize GPU hardware.
+   * False for API-based providers (GPU is handled server-side).
+   *
+   * @example false (OpenAI), true (Transformers.js with WebGPU)
+   */
+  supportsGPU: boolean;
+
+  /**
+   * Whether this provider requires network connectivity
+   *
+   * True for API-based providers that call external services.
+   * False for local providers that run entirely on the local machine.
+   *
+   * @example true (OpenAI), false (Transformers.js)
+   */
+  requiresNetwork: boolean;
+
+  /**
+   * Estimated latency in milliseconds for single-text embedding
+   *
+   * This is an approximate value for typical conditions. Actual latency
+   * may vary based on network conditions, text length, and system load.
+   *
+   * @example 200 (OpenAI API), 50 (local GPU), 500 (local CPU)
+   */
+  estimatedLatencyMs: number;
+}
+
+/**
  * Configuration for embedding provider instances
  *
  * This configuration is used to initialize an embedding provider with the
@@ -158,4 +226,22 @@ export interface EmbeddingProvider {
    * ```
    */
   healthCheck(): Promise<boolean>;
+
+  /**
+   * Get provider capabilities and limitations
+   *
+   * Returns information about batch limits, network requirements, GPU support,
+   * and performance characteristics. This helps callers make informed decisions
+   * about provider selection, batching strategies, and deployment options.
+   *
+   * @returns Provider capabilities object describing operational characteristics
+   *
+   * @example
+   * ```typescript
+   * const caps = provider.getCapabilities();
+   * console.log(`Max batch size: ${caps.maxBatchSize}`);
+   * console.log(`Requires network: ${caps.requiresNetwork}`);
+   * ```
+   */
+  getCapabilities(): ProviderCapabilities;
 }

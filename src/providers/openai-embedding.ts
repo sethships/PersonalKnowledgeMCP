@@ -6,7 +6,7 @@
  */
 
 import OpenAI from "openai";
-import type { EmbeddingProvider, EmbeddingProviderConfig } from "./types.js";
+import type { EmbeddingProvider, EmbeddingProviderConfig, ProviderCapabilities } from "./types.js";
 import {
   EmbeddingError,
   EmbeddingAuthenticationError,
@@ -153,6 +153,24 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       // Health check never throws - just returns false
       return false;
     }
+  }
+
+  /**
+   * Get provider capabilities and limitations
+   *
+   * Returns information about OpenAI API constraints and characteristics.
+   * OpenAI is an API-based provider requiring network connectivity.
+   *
+   * @returns Provider capabilities for OpenAI embeddings
+   */
+  getCapabilities(): ProviderCapabilities {
+    return {
+      maxBatchSize: this.config.batchSize,
+      maxTokensPerText: 8191, // OpenAI text-embedding-3-* limit
+      supportsGPU: false, // API-based, GPU handled server-side
+      requiresNetwork: true, // Requires internet connectivity
+      estimatedLatencyMs: 200, // Typical API latency
+    };
   }
 
   /**

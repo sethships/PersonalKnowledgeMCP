@@ -46,6 +46,13 @@ describe("IncrementalUpdatePipeline", () => {
         texts.map(() => new Array(1536).fill(0.1) as number[])
       ),
       healthCheck: mock(async () => true),
+      getCapabilities: () => ({
+        maxBatchSize: 100,
+        maxTokensPerText: 8191,
+        supportsGPU: false,
+        requiresNetwork: false,
+        estimatedLatencyMs: 10,
+      }),
     };
 
     // Create mock storage client

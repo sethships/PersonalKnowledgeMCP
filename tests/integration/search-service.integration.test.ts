@@ -47,6 +47,16 @@ class MockEmbeddingProvider implements EmbeddingProvider {
     return true;
   }
 
+  getCapabilities() {
+    return {
+      maxBatchSize: 100,
+      maxTokensPerText: 8191,
+      supportsGPU: false,
+      requiresNetwork: false,
+      estimatedLatencyMs: 10,
+    };
+  }
+
   private hashString(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
