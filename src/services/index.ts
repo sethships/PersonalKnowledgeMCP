@@ -109,3 +109,66 @@ export {
   calculateRepositoryMetrics,
   calculateTrendMetrics,
 } from "./metrics-calculator.js";
+
+// GraphService exports
+export type {
+  GraphService,
+  DependencyQuery,
+  DependencyResult,
+  DependentQuery,
+  DependentResult,
+  PathQuery,
+  PathResult,
+  ArchitectureQuery,
+  ArchitectureResult,
+  EntityInfo,
+  DependencyItem,
+  DependentItem,
+  PathNode,
+  ArchitectureNode,
+  ModuleDependency,
+  ArchitectureMetrics,
+  ImpactAnalysis,
+  QueryMetadata,
+  EntityType,
+  ExtendedEntityType,
+  DetailLevel,
+  ArchitectureNodeType,
+  EntityReference,
+} from "./graph-service-types.js";
+
+export { GraphServiceImpl, DEFAULT_GRAPH_SERVICE_CONFIG } from "./graph-service.js";
+export type { GraphServiceConfig } from "./graph-service.js";
+
+export {
+  DependencyQuerySchema,
+  DependentQuerySchema,
+  PathQuerySchema,
+  ArchitectureQuerySchema,
+  EntityTypeSchema,
+  DetailLevelSchema,
+  EntityReferenceSchema,
+} from "./graph-service-validation.js";
+export type {
+  ValidatedDependencyQuery,
+  ValidatedDependentQuery,
+  ValidatedPathQuery,
+  ValidatedArchitectureQuery,
+  ValidatedEntityReference,
+} from "./graph-service-validation.js";
+
+export {
+  GraphServiceError,
+  GraphServiceValidationError,
+  GraphServiceOperationError,
+  EntityNotFoundError,
+  GraphServiceTimeoutError,
+  CacheError,
+  RepositoryNotIndexedError,
+  NoPathFoundError,
+  isGraphServiceError,
+  isRetryableServiceError,
+} from "./graph-service-errors.js";
+
+export { QueryCache, DEFAULT_CACHE_CONFIG } from "./graph-service-cache.js";
+export type { CacheConfig, CacheStats } from "./graph-service-cache.js";
