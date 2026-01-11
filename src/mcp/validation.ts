@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { createValidationError } from "./errors.js";
-import type { SemanticSearchArgs, GetDependenciesArgs } from "./types.js";
+import type { SemanticSearchArgs, GetDependenciesArgs, GetDependentsArgs } from "./types.js";
 
 /**
  * Zod schema for semantic_search tool arguments
@@ -186,6 +186,105 @@ export function validateGetDependenciesArgs(args: unknown): GetDependenciesArgs 
       .join("; ");
 
     throw createValidationError(`Invalid get_dependencies arguments: ${errorMessage}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Valid entity type strings for get_dependents
+ *
+ * Includes "package" in addition to the standard entity types,
+ * enabling impact analysis across package boundaries.
+ */
+export const DEPENDENT_ENTITY_TYPES = ["file", "function", "class", "package"] as const;
+
+/**
+ * Zod schema for get_dependents tool arguments
+ *
+ * This schema:
+ * - Enforces MCP tool contract from PRD Section 6.1 (Tool 2)
+ * - Validates entity_type enum values (includes "package")
+ * - Makes repository OPTIONAL (search all if omitted)
+ * - Validates depth range (1-5)
+ * - Provides default values for optional parameters
+ *
+ * Key differences from get_dependencies:
+ * - repository is optional (enables cross-repo search)
+ * - entity_type includes "package"
+ * - include_cross_repo parameter for multi-repo impact analysis
+ *
+ * Aligns with the inputSchema in get_dependents tool definition.
+ */
+export const GetDependentsArgsSchema = z
+  .object({
+    entity_type: z.enum(DEPENDENT_ENTITY_TYPES, {
+      message: "entity_type must be one of: file, function, class, package",
+    }),
+
+    entity_path: z
+      .string()
+      .trim()
+      .min(1, "Entity path cannot be empty")
+      .max(500, "Entity path exceeds maximum length of 500 characters"),
+
+    repository: z
+      .string()
+      .trim()
+      .min(1, "Repository name cannot be empty")
+      .max(200, "Repository name exceeds maximum length of 200 characters")
+      .optional(),
+
+    depth: z
+      .number()
+      .int("Depth must be an integer")
+      .min(1, "Depth must be at least 1")
+      .max(5, "Depth cannot exceed 5")
+      .optional()
+      .default(1),
+
+    include_cross_repo: z.boolean().optional().default(false),
+  })
+  .strict();
+
+/**
+ * Validates and parses get_dependents tool arguments
+ *
+ * This function:
+ * - Validates arguments against GetDependentsArgsSchema
+ * - Applies default values for optional parameters
+ * - Throws MCP InvalidParams error if validation fails
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @returns Validated and normalized arguments with defaults applied
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ *
+ * @example
+ * ```typescript
+ * const args = validateGetDependentsArgs({
+ *   entity_type: "function",
+ *   entity_path: "validateToken",
+ *   depth: 2,
+ *   include_cross_repo: true
+ * });
+ * // args.repository === undefined (search all repos)
+ * // args.depth === 2
+ * // args.include_cross_repo === true
+ * ```
+ */
+export function validateGetDependentsArgs(args: unknown): GetDependentsArgs {
+  const result = GetDependentsArgsSchema.safeParse(args);
+
+  if (!result.success) {
+    // Format Zod errors into human-readable message
+    const errorMessage = result.error.issues
+      .map((e) => {
+        const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
+        return `${path}${e.message}`;
+      })
+      .join("; ");
+
+    throw createValidationError(`Invalid get_dependents arguments: ${errorMessage}`);
   }
 
   return result.data;

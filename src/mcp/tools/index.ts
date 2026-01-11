@@ -27,6 +27,7 @@ import {
   createGetUpdateStatusHandler,
 } from "./get-update-status.js";
 import { getDependenciesToolDefinition, createGetDependenciesHandler } from "./get-dependencies.js";
+import { getDependentsToolDefinition, createGetDependentsHandler } from "./get-dependents.js";
 
 /**
  * Dependencies for tool registry creation
@@ -136,6 +137,11 @@ export function createToolRegistry(
     registry["get_dependencies"] = {
       definition: getDependenciesToolDefinition,
       handler: createGetDependenciesHandler(deps.graphService),
+    };
+
+    registry["get_dependents"] = {
+      definition: getDependentsToolDefinition,
+      handler: createGetDependentsHandler(deps.graphService),
     };
   }
 
