@@ -215,7 +215,7 @@ export function createGetDependenciesHandler(graphService: GraphService): ToolHa
  */
 function formatDependencyResponse(
   response: DependencyResult,
-  args: GetDependenciesArgs
+  _args: GetDependenciesArgs
 ): TextContent {
   // Map internal RelationshipType enum to lowercase strings for MCP output
   const relationshipToString = (relType: RelationshipType): string => {
@@ -238,7 +238,7 @@ function formatDependencyResponse(
     metadata: {
       total_count: response.metadata.total_count,
       query_time_ms: response.metadata.query_time_ms,
-      max_depth_reached: args.depth,
+      max_depth_reached: response.metadata.depth_searched,
     },
   };
 

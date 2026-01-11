@@ -23,6 +23,8 @@ import { initializeLogger, resetLogger } from "../../../../src/logging/index.js"
 import {
   GraphServiceValidationError,
   EntityNotFoundError,
+  GraphServiceTimeoutError,
+  GraphServiceOperationError,
 } from "../../../../src/services/graph-service-errors.js";
 
 // Mock GraphService for isolated testing
@@ -406,7 +408,47 @@ describe("get_dependencies MCP Tool", () => {
       expect(textContent.text).toContain("Invalid query parameters");
     });
 
-    it("should include max_depth_reached in metadata", async () => {
+    it("should handle GraphServiceTimeoutError", async () => {
+      mockGraphService.setError(new GraphServiceTimeoutError("Query timed out", 5000));
+
+      const handler = createGetDependenciesHandler(mockGraphService);
+
+      const result = await handler({
+        entity_type: "file",
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+      });
+
+      expect(result.isError).toBe(true);
+
+      const content0 = result.content[0];
+      expect(content0).toBeDefined();
+      const textContent = content0 as { type: "text"; text: string };
+      expect(textContent.text).toContain("timed out");
+    });
+
+    it("should handle GraphServiceOperationError", async () => {
+      mockGraphService.setError(new GraphServiceOperationError("Neo4j connection lost", true));
+
+      const handler = createGetDependenciesHandler(mockGraphService);
+
+      const result = await handler({
+        entity_type: "file",
+        entity_path: "src/test.ts",
+        repository: "test-repo",
+      });
+
+      expect(result.isError).toBe(true);
+
+      const content0 = result.content[0];
+      expect(content0).toBeDefined();
+      const textContent = content0 as { type: "text"; text: string };
+      expect(textContent.text).toContain("Graph operation failed");
+    });
+
+    it("should use depth_searched from response for max_depth_reached", async () => {
+      // Set up mock with depth_searched=2, different from requested depth=5
+      // This verifies we use the actual depth searched, not the requested depth
       mockGraphService.setDependencyResult({
         entity: {
           type: "file",
@@ -419,7 +461,7 @@ describe("get_dependencies MCP Tool", () => {
           total_count: 0,
           query_time_ms: 5,
           from_cache: false,
-          depth_searched: 3,
+          depth_searched: 2, // Actual depth searched (e.g., no more nodes to traverse)
         },
       });
 
@@ -429,13 +471,14 @@ describe("get_dependencies MCP Tool", () => {
         entity_type: "file",
         entity_path: "src/test.ts",
         repository: "test-repo",
-        depth: 3,
+        depth: 5, // Requested depth is 5, but only 2 was actually searched
       });
 
       const textContent = result.content[0] as { type: "text"; text: string };
       const parsed = JSON.parse(textContent.text);
 
-      expect(parsed.metadata.max_depth_reached).toBe(3);
+      // Should use response.metadata.depth_searched (2), not args.depth (5)
+      expect(parsed.metadata.max_depth_reached).toBe(2);
     });
   });
 
