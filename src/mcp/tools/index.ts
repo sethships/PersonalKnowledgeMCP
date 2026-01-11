@@ -11,6 +11,7 @@ import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
 import type { MCPRateLimiter } from "../rate-limiter.js";
 import type { JobTracker } from "../job-tracker.js";
+import type { GraphService } from "../../services/graph-service-types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
 import {
@@ -25,6 +26,7 @@ import {
   getUpdateStatusToolDefinition,
   createGetUpdateStatusHandler,
 } from "./get-update-status.js";
+import { getDependenciesToolDefinition, createGetDependenciesHandler } from "./get-dependencies.js";
 
 /**
  * Dependencies for tool registry creation
@@ -43,6 +45,8 @@ export interface ToolRegistryDependencies {
   rateLimiter?: MCPRateLimiter;
   /** Optional: Job tracker for async update operations */
   jobTracker?: JobTracker;
+  /** Optional: GraphService for graph-based dependency queries */
+  graphService?: GraphService;
 }
 
 /**
@@ -124,6 +128,14 @@ export function createToolRegistry(
       handler: createGetUpdateStatusHandler({
         jobTracker: deps.jobTracker,
       }),
+    };
+  }
+
+  // Conditionally add graph-based tools when GraphService is provided
+  if (deps.graphService) {
+    registry["get_dependencies"] = {
+      definition: getDependenciesToolDefinition,
+      handler: createGetDependenciesHandler(deps.graphService),
     };
   }
 

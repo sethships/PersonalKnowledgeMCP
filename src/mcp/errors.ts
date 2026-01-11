@@ -15,6 +15,13 @@ import {
   NoRepositoriesAvailableError,
   SearchOperationError,
 } from "../services/errors.js";
+import {
+  GraphServiceError,
+  GraphServiceValidationError,
+  EntityNotFoundError,
+  GraphServiceTimeoutError,
+  GraphServiceOperationError,
+} from "../services/graph-service-errors.js";
 import { InstanceAccessDeniedError } from "../auth/errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
@@ -102,6 +109,50 @@ export function mapToMCPError(error: unknown): McpError {
     // Catch-all for any other SearchError subclasses
     log.error({ error: error.message }, "Unknown SearchError type");
     return new McpError(ErrorCode.InternalError, "An error occurred during search.");
+  }
+
+  // Handle GraphService errors
+  if (error instanceof GraphServiceValidationError) {
+    log.warn({ error: error.message }, "GraphService validation error in MCP tool");
+    return new McpError(ErrorCode.InvalidParams, error.message);
+  }
+
+  if (error instanceof EntityNotFoundError) {
+    log.warn(
+      { entityType: error.entityType, entityPath: error.entityPath, repository: error.repository },
+      "Entity not found in graph"
+    );
+    return new McpError(
+      ErrorCode.InvalidParams,
+      `Entity not found: ${error.entityType} '${error.entityPath}'${
+        error.repository ? ` in repository '${error.repository}'` : ""
+      }. Please ensure the entity is indexed.`
+    );
+  }
+
+  if (error instanceof GraphServiceTimeoutError) {
+    log.warn(
+      { timeoutMs: error.timeoutMs, retryable: error.retryable },
+      "GraphService operation timed out"
+    );
+    return new McpError(
+      ErrorCode.InternalError,
+      "Graph query timed out. Please try again or reduce the query depth."
+    );
+  }
+
+  if (error instanceof GraphServiceOperationError) {
+    log.error(
+      { error: error.message, retryable: error.retryable },
+      "GraphService operation failed"
+    );
+    return new McpError(ErrorCode.InternalError, "Graph operation failed. Please try again.");
+  }
+
+  if (error instanceof GraphServiceError) {
+    // Catch-all for any other GraphServiceError subclasses
+    log.error({ error: error.message }, "Unknown GraphServiceError type");
+    return new McpError(ErrorCode.InternalError, "An error occurred during graph query.");
   }
 
   // Handle standard Error objects

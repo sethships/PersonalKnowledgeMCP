@@ -87,14 +87,15 @@ export class PersonalKnowledgeMCPServer {
     this.server = this.createSdkServer();
 
     // Create tool registry with all available tools
-    // Use the new dependency object signature if optional deps are provided
-    if (optionalDeps?.updateCoordinator && optionalDeps?.rateLimiter && optionalDeps?.jobTracker) {
+    // Use the new dependency object signature to pass optional dependencies
+    if (optionalDeps) {
       this.toolRegistry = createToolRegistry({
         searchService,
         repositoryService,
         updateCoordinator: optionalDeps.updateCoordinator,
         rateLimiter: optionalDeps.rateLimiter,
         jobTracker: optionalDeps.jobTracker,
+        graphService: optionalDeps.graphService,
       });
     } else {
       // Legacy path - only core tools
