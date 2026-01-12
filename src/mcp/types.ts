@@ -135,6 +135,14 @@ export interface MCPServerOptionalDeps {
 export type DependencyEntityType = "file" | "function" | "class";
 
 /**
+ * Valid entity type for get_dependents tool
+ *
+ * Extends DependencyEntityType to include "package" for impact analysis
+ * across package boundaries.
+ */
+export type DependentEntityType = "file" | "function" | "class" | "package";
+
+/**
  * Valid relationship type strings for get_dependencies tool
  *
  * These are the lowercase string values accepted by the MCP tool.
@@ -172,4 +180,32 @@ export interface GetDependenciesArgs {
 
   /** Filter to specific relationship types (optional, all types if omitted) */
   relationship_types?: DependencyRelationshipType[];
+}
+
+/**
+ * Validated get_dependents tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults where applicable.
+ */
+export interface GetDependentsArgs {
+  /** Type of entity to find dependents for */
+  entity_type: DependentEntityType;
+
+  /**
+   * Entity identifier:
+   * - For files: relative path (e.g., 'src/auth/middleware.ts')
+   * - For functions/classes: name or fully qualified name
+   * - For packages: package name or path
+   */
+  entity_path: string;
+
+  /** Repository name to scope the query (optional - search all if omitted) */
+  repository?: string;
+
+  /** Depth of transitive dependents (1-5, default: 1) */
+  depth: number;
+
+  /** Include dependents from other repositories (default: false) */
+  include_cross_repo: boolean;
 }
