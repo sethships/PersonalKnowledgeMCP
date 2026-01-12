@@ -3,6 +3,8 @@
  *
  * Provides a unified interface for instantiating embedding providers
  * based on configuration, with automatic environment variable handling.
+ *
+ * @see EmbeddingProviderFactory for the class-based factory pattern
  */
 
 import type { EmbeddingProvider, EmbeddingProviderConfig } from "./types.js";
@@ -11,6 +13,7 @@ import {
   TransformersJsEmbeddingProvider,
   type TransformersJsProviderConfig,
 } from "./transformersjs-embedding.js";
+import { OllamaEmbeddingProvider, type OllamaProviderConfig } from "./ollama-embedding.js";
 import { EmbeddingValidationError } from "./errors.js";
 
 /**
@@ -22,10 +25,7 @@ import { EmbeddingValidationError } from "./errors.js";
  * Supported providers:
  * - "openai": OpenAI Embeddings API (requires OPENAI_API_KEY)
  * - "transformersjs" / "transformers" / "local": Local Transformers.js models
- *
- * Future providers:
- * - "azure-openai": Azure OpenAI Service
- * - "ollama": Local Ollama models
+ * - "ollama": Local Ollama server (GPU-accelerated)
  *
  * @param config - Provider configuration (without sensitive credentials)
  * @returns Initialized embedding provider
@@ -57,9 +57,12 @@ export function createEmbeddingProvider(config: EmbeddingProviderConfig): Embedd
     case "local":
       return createTransformersJsProvider(config);
 
+    case "ollama":
+      return createOllamaProvider(config);
+
     default:
       throw new EmbeddingValidationError(
-        `Unsupported provider: ${config.provider}. Supported providers: openai, transformersjs`,
+        `Unsupported provider: ${config.provider}. Supported providers: openai, transformersjs, ollama`,
         "provider"
       );
   }
@@ -117,4 +120,36 @@ function createTransformersJsProvider(
   };
 
   return new TransformersJsEmbeddingProvider(transformersConfig);
+}
+
+/**
+ * Create an Ollama embedding provider
+ *
+ * Connects to a local Ollama server for GPU-accelerated embedding generation.
+ * Reads configuration from environment variables:
+ * - OLLAMA_BASE_URL: Full URL (takes precedence)
+ * - OLLAMA_HOST: Host name (default: localhost)
+ * - OLLAMA_PORT: Port number (default: 11434)
+ *
+ * @param config - Base provider configuration
+ * @returns Initialized Ollama provider
+ */
+function createOllamaProvider(config: EmbeddingProviderConfig): OllamaEmbeddingProvider {
+  // Build base URL from environment variables
+  let baseUrl = Bun.env["OLLAMA_BASE_URL"];
+
+  if (!baseUrl) {
+    const host = Bun.env["OLLAMA_HOST"] || "localhost";
+    const port = Bun.env["OLLAMA_PORT"] || "11434";
+    baseUrl = `http://${host}:${port}`;
+  }
+
+  const ollamaConfig: OllamaProviderConfig = {
+    ...config,
+    modelName: (config.options?.["modelName"] as string) || "nomic-embed-text",
+    baseUrl,
+    keepAlive: (config.options?.["keepAlive"] as string) || "5m",
+  };
+
+  return new OllamaEmbeddingProvider(ollamaConfig);
 }
