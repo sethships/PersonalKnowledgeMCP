@@ -21,6 +21,7 @@ import {
   type ParameterInfo,
   type ImportInfo,
   type ExportInfo,
+  type CallInfo,
   type ParseResult,
   type ParseError,
   type ParserConfig,
@@ -180,6 +181,7 @@ export class TreeSitterParser {
           entities: [],
           imports: [],
           exports: [],
+          calls: [],
           parseTimeMs: performance.now() - startTime,
           errors,
           success: false,
@@ -200,6 +202,9 @@ export class TreeSitterParser {
       // Extract exports
       const exports = this.extractExports(tree.rootNode);
 
+      // Extract function calls
+      const calls = this.extractCalls(tree.rootNode);
+
       const parseTimeMs = performance.now() - startTime;
 
       this.logger.info(
@@ -210,6 +215,7 @@ export class TreeSitterParser {
           entityCount: entities.length,
           importCount: imports.length,
           exportCount: exports.length,
+          callCount: calls.length,
           errorCount: errors.length,
         },
         "File parsed successfully"
@@ -221,6 +227,7 @@ export class TreeSitterParser {
         entities,
         imports,
         exports,
+        calls,
         parseTimeMs,
         errors,
         success: true,
@@ -258,6 +265,7 @@ export class TreeSitterParser {
         entities: [],
         imports: [],
         exports: [],
+        calls: [],
         parseTimeMs,
         errors,
         success: false,
@@ -1000,5 +1008,225 @@ export class TreeSitterParser {
 
     collect(node);
     return identifiers;
+  }
+
+  // ==================== Call Extraction Methods ====================
+
+  /**
+   * Extract function calls from the parse tree.
+   *
+   * Traverses the AST to find all call_expression nodes and extracts
+   * information about each function/method call for building CALLS relationships.
+   *
+   * @param root - Root node of the parse tree
+   * @returns Array of CallInfo objects
+   */
+  private extractCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    /**
+     * Recursively process nodes to find call expressions.
+     * Tracks the current caller context (function/method name).
+     */
+    const processNode = (node: Node, callerName?: string): void => {
+      // Update caller context when entering a function/method
+      let currentCaller = callerName;
+
+      // Note: We intentionally exclude "new_expression" (constructor calls like `new Foo()`)
+      // from caller context tracking. Constructor calls are semantically different from
+      // function/method calls - they create instances rather than invoke behavior.
+      // If constructor call tracking is needed, it should be handled separately.
+      if (
+        node.type === "function_declaration" ||
+        node.type === "method_definition" ||
+        node.type === "arrow_function" ||
+        node.type === "function_expression" ||
+        node.type === "generator_function_declaration"
+      ) {
+        // Get function name if available
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        } else if (node.type === "arrow_function") {
+          // For arrow functions assigned to variables, check immediate parent.
+          // Note: This only handles top-level arrow function assignments like:
+          //   const fn = () => { call(); }
+          // It does NOT handle nested cases like:
+          //   const obj = { method: () => { call(); } }
+          // In nested cases, `call()` will have callerName=undefined rather than "method".
+          // This is a known limitation - enhancing would require walking up the AST further.
+          const parent = node.parent;
+          if (parent?.type === "variable_declarator" || parent?.type === "lexical_declaration") {
+            const varName = parent.childForFieldName("name");
+            if (varName) {
+              currentCaller = varName.text;
+            }
+          }
+        }
+      }
+
+      // Check if this is a call expression
+      if (node.type === "call_expression") {
+        try {
+          const callInfo = this.extractCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a single call_expression node.
+   *
+   * @param node - The call_expression node
+   * @param callerName - Name of the containing function/method
+   * @returns CallInfo object or null if extraction fails
+   */
+  private extractCallInfo(node: Node, callerName?: string): CallInfo | null {
+    // Get the function being called (the target of the call)
+    const functionNode = node.childForFieldName("function");
+    if (!functionNode) {
+      return null;
+    }
+
+    // Extract the called name and expression
+    const callTarget = this.extractCallTarget(functionNode);
+    if (!callTarget) {
+      return null;
+    }
+
+    // Check if this call is awaited
+    const isAsync = node.parent?.type === "await_expression";
+
+    return {
+      calledName: callTarget.name,
+      calledExpression: callTarget.expression,
+      isAsync,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract the name and expression from a call target.
+   *
+   * Handles different call patterns:
+   * - Direct calls: foo()
+   * - Method calls: obj.method()
+   * - Chained calls: foo().bar()
+   * - Computed calls: obj["method"]()
+   *
+   * @param node - The function node from call_expression
+   * @returns Object with name and expression, or null
+   */
+  private extractCallTarget(node: Node): { name: string; expression: string } | null {
+    // Simple identifier: foo()
+    if (node.type === "identifier") {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    // Member expression: obj.method() or obj["method"]()
+    if (node.type === "member_expression") {
+      const propertyNode = node.childForFieldName("property");
+      const objectNode = node.childForFieldName("object");
+
+      if (propertyNode && objectNode) {
+        // For obj.method, name is "method", expression is "obj.method"
+        const name = propertyNode.text;
+        const expression = node.text;
+
+        return { name, expression };
+      }
+    }
+
+    // Subscript expression: obj["method"]() - dynamic property
+    if (node.type === "subscript_expression") {
+      const indexNode = node.childForFieldName("index");
+      const objectNode = node.childForFieldName("object");
+
+      if (indexNode && objectNode) {
+        // Try to get static string index
+        if (indexNode.type === "string") {
+          // Remove quotes from string
+          const name = indexNode.text.slice(1, -1);
+          return {
+            name,
+            expression: node.text,
+          };
+        }
+        // Dynamic index - use placeholder
+        return {
+          name: "[dynamic]",
+          expression: node.text,
+        };
+      }
+    }
+
+    // Parenthesized expression: (foo)() or (obj.method)()
+    if (node.type === "parenthesized_expression") {
+      // Find the inner expression by iterating children to skip punctuation.
+      // This is more robust than using index-based access (node.child(1))
+      // as it doesn't assume a specific AST structure.
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          return this.extractCallTarget(child);
+        }
+      }
+    }
+
+    // Call expression (chained): foo().bar() - the foo() part
+    if (node.type === "call_expression") {
+      // For chained calls, the full expression is complex
+      // We return the whole text as both name and expression
+      return {
+        name: "[chained]",
+        expression: node.text,
+      };
+    }
+
+    // Optional chain: obj?.method()
+    if (node.type === "optional_chain_expression") {
+      const child = node.child(0);
+      if (child) {
+        return this.extractCallTarget(child);
+      }
+    }
+
+    // Fallback for any other expression type
+    // Use the text as both name and expression
+    if (node.text) {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    return null;
   }
 }

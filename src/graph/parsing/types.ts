@@ -184,6 +184,48 @@ export interface ExportInfo {
 }
 
 /**
+ * Information about a function call.
+ *
+ * Captures details about function/method calls for building
+ * CALLS relationships in the knowledge graph.
+ *
+ * @example
+ * ```typescript
+ * // await fetchData(url);
+ * const callInfo: CallInfo = {
+ *   calledName: 'fetchData',
+ *   calledExpression: 'fetchData',
+ *   isAsync: true,
+ *   line: 15,
+ *   callerName: 'processRequest'
+ * };
+ *
+ * // obj.method();
+ * const methodCall: CallInfo = {
+ *   calledName: 'method',
+ *   calledExpression: 'obj.method',
+ *   isAsync: false,
+ *   line: 20,
+ *   callerName: 'handleEvent'
+ * };
+ * ```
+ */
+export interface CallInfo {
+  /** Name of the function/method being called (rightmost identifier) */
+  calledName: string;
+  /** Full expression for the call target (e.g., "obj.method" for method calls) */
+  calledExpression: string;
+  /** Whether this call is awaited */
+  isAsync: boolean;
+  /** Line number where the call appears (1-based) */
+  line: number;
+  /** Column where the call appears (0-based) */
+  column?: number;
+  /** Name of the containing function/method (caller context), if available */
+  callerName?: string;
+}
+
+/**
  * A parsing error that occurred during AST parsing.
  *
  * Tree-sitter is error-tolerant, so parsing can continue
@@ -203,7 +245,7 @@ export interface ParseError {
 /**
  * Result of parsing a single source file.
  *
- * Contains all extracted entities, imports, exports, and any
+ * Contains all extracted entities, imports, exports, calls, and any
  * errors encountered during parsing. Also includes timing
  * information for performance monitoring.
  *
@@ -211,6 +253,7 @@ export interface ParseError {
  * ```typescript
  * const result = await parser.parseFile(content, 'src/utils.ts');
  * console.log(`Found ${result.entities.length} entities`);
+ * console.log(`Found ${result.calls.length} function calls`);
  * console.log(`Parse time: ${result.parseTimeMs}ms`);
  * if (result.errors.length > 0) {
  *   console.warn('Parsing had errors:', result.errors);
@@ -228,6 +271,8 @@ export interface ParseResult {
   imports: ImportInfo[];
   /** Export statements found in the file */
   exports: ExportInfo[];
+  /** Function calls found in the file */
+  calls: CallInfo[];
   /** Time taken to parse the file in milliseconds */
   parseTimeMs: number;
   /** Any errors encountered during parsing */

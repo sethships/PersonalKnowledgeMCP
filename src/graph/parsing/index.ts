@@ -30,6 +30,7 @@ export type {
   CodeEntity,
   ImportInfo,
   ExportInfo,
+  CallInfo,
   ParseError,
   ParseResult,
   ParserConfig,
