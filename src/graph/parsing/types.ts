@@ -253,6 +253,7 @@ export interface ParseError {
  * ```typescript
  * const result = await parser.parseFile(content, 'src/utils.ts');
  * console.log(`Found ${result.entities.length} entities`);
+ * console.log(`Found ${result.calls.length} function calls`);
  * console.log(`Parse time: ${result.parseTimeMs}ms`);
  * if (result.errors.length > 0) {
  *   console.warn('Parsing had errors:', result.errors);

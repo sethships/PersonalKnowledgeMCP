@@ -683,6 +683,32 @@ export class Bar {
       );
       expect(thenCall).toBeDefined();
     });
+
+    it("should handle tagged template literals", async () => {
+      // Tagged template literals are a form of function call in JavaScript/TypeScript
+      // This test documents current behavior: they ARE captured as calls
+      const content = `
+function withTaggedTemplate() {
+  const query = sql\`SELECT * FROM users\`;
+  const styled = css\`color: red\`;
+}
+`;
+      const result = await parser.parseFile(content, "tagged-template.ts");
+
+      expect(result.success).toBe(true);
+
+      // Tagged template literals are captured as call expressions by tree-sitter
+      // The "function" being called is the tag (sql, css, etc.)
+      const taggedCalls = result.calls.filter((c) => c.callerName === "withTaggedTemplate");
+
+      // Document that tagged templates ARE captured
+      // sql\`...\` is parsed as a call to "sql"
+      const sqlCall = taggedCalls.find((c) => c.calledName === "sql");
+      expect(sqlCall).toBeDefined();
+
+      const cssCall = taggedCalls.find((c) => c.calledName === "css");
+      expect(cssCall).toBeDefined();
+    });
   });
 
   describe("parseFile - Configuration Options", () => {

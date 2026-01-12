@@ -1032,6 +1032,10 @@ export class TreeSitterParser {
       // Update caller context when entering a function/method
       let currentCaller = callerName;
 
+      // Note: We intentionally exclude "new_expression" (constructor calls like `new Foo()`)
+      // from caller context tracking. Constructor calls are semantically different from
+      // function/method calls - they create instances rather than invoke behavior.
+      // If constructor call tracking is needed, it should be handled separately.
       if (
         node.type === "function_declaration" ||
         node.type === "method_definition" ||
@@ -1044,7 +1048,13 @@ export class TreeSitterParser {
         if (nameNode) {
           currentCaller = nameNode.text;
         } else if (node.type === "arrow_function") {
-          // For arrow functions assigned to variables, check parent
+          // For arrow functions assigned to variables, check immediate parent.
+          // Note: This only handles top-level arrow function assignments like:
+          //   const fn = () => { call(); }
+          // It does NOT handle nested cases like:
+          //   const obj = { method: () => { call(); } }
+          // In nested cases, `call()` will have callerName=undefined rather than "method".
+          // This is a known limitation - enhancing would require walking up the AST further.
           const parent = node.parent;
           if (parent?.type === "variable_declarator" || parent?.type === "lexical_declaration") {
             const varName = parent.childForFieldName("name");
@@ -1179,10 +1189,14 @@ export class TreeSitterParser {
 
     // Parenthesized expression: (foo)() or (obj.method)()
     if (node.type === "parenthesized_expression") {
-      // Get the inner expression
-      const inner = node.child(1); // Skip opening paren
-      if (inner) {
-        return this.extractCallTarget(inner);
+      // Find the inner expression by iterating children to skip punctuation.
+      // This is more robust than using index-based access (node.child(1))
+      // as it doesn't assume a specific AST structure.
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          return this.extractCallTarget(child);
+        }
       }
     }
 
