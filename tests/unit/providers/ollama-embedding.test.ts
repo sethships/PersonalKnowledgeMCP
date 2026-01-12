@@ -167,6 +167,35 @@ describe("OllamaEmbeddingProvider", () => {
       expect(() => new OllamaEmbeddingProvider(config)).toThrow("Invalid base URL");
     });
 
+    test("throws on non-http/https URL scheme", () => {
+      const config: OllamaProviderConfig = {
+        ...DEFAULT_CONFIG,
+        baseUrl: "file:///etc/passwd",
+      };
+
+      expect(() => new OllamaEmbeddingProvider(config)).toThrow(EmbeddingValidationError);
+      expect(() => new OllamaEmbeddingProvider(config)).toThrow("Only http and https are allowed");
+    });
+
+    test("throws on javascript URL scheme", () => {
+      const config: OllamaProviderConfig = {
+        ...DEFAULT_CONFIG,
+        baseUrl: "javascript:alert(1)",
+      };
+
+      expect(() => new OllamaEmbeddingProvider(config)).toThrow(EmbeddingValidationError);
+    });
+
+    test("accepts https URL scheme", () => {
+      const config: OllamaProviderConfig = {
+        ...DEFAULT_CONFIG,
+        baseUrl: "https://ollama.example.com:443",
+      };
+
+      const provider = new OllamaEmbeddingProvider(config);
+      expect(provider).toBeDefined();
+    });
+
     test("accepts valid custom base URL", () => {
       const config: OllamaProviderConfig = {
         ...DEFAULT_CONFIG,

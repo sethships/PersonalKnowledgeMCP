@@ -305,6 +305,23 @@ export class EmbeddingProviderFactory {
     if (!baseUrl) {
       const host = Bun.env["OLLAMA_HOST"] || "localhost";
       const port = Bun.env["OLLAMA_PORT"] || "11434";
+
+      // Validate port is numeric
+      if (!/^\d+$/.test(port)) {
+        throw new EmbeddingValidationError(
+          `Invalid OLLAMA_PORT: ${port}. Must be a numeric port number.`,
+          "port"
+        );
+      }
+
+      // Validate host does not contain URL special characters
+      if (/[/:@#?]/.test(host)) {
+        throw new EmbeddingValidationError(
+          `Invalid OLLAMA_HOST: ${host}. Must be a valid hostname without URL special characters.`,
+          "host"
+        );
+      }
+
       baseUrl = `http://${host}:${port}`;
     }
 
