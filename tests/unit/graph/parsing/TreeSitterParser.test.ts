@@ -432,6 +432,259 @@ export class Bar {
     });
   });
 
+  describe("parseFile - Function Calls", () => {
+    it("should extract basic function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find console.log call
+      const consoleLog = result.calls.find(
+        (c) => c.calledName === "log" && c.calledExpression === "console.log"
+      );
+      expect(consoleLog).toBeDefined();
+      expect(consoleLog?.callerName).toBe("simpleCall");
+    });
+
+    it("should extract method calls on objects", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // obj.method() call
+      const methodCall = result.calls.find(
+        (c) => c.calledExpression === "obj.method" && c.callerName === "methodCalls"
+      );
+      expect(methodCall).toBeDefined();
+      expect(methodCall?.calledName).toBe("method");
+
+      // obj.anotherMethod() call
+      const anotherMethodCall = result.calls.find(
+        (c) => c.calledExpression === "obj.anotherMethod" && c.callerName === "methodCalls"
+      );
+      expect(anotherMethodCall).toBeDefined();
+    });
+
+    it("should detect async calls (await expressions)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // await fetchData() call
+      const fetchDataCall = result.calls.find(
+        (c) => c.calledName === "fetchData" && c.callerName === "asyncFunction"
+      );
+      expect(fetchDataCall).toBeDefined();
+      expect(fetchDataCall?.isAsync).toBe(true);
+
+      // await processResult() call
+      const processResultCall = result.calls.find(
+        (c) => c.calledName === "processResult" && c.callerName === "asyncFunction"
+      );
+      expect(processResultCall).toBeDefined();
+      expect(processResultCall?.isAsync).toBe(true);
+    });
+
+    it("should track caller context for function declarations", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // Calls within simpleCall function
+      const callsInSimpleCall = result.calls.filter((c) => c.callerName === "simpleCall");
+      expect(callsInSimpleCall.length).toBeGreaterThan(0);
+
+      // Calls within nestedCalls function
+      const callsInNestedCalls = result.calls.filter((c) => c.callerName === "nestedCalls");
+      expect(callsInNestedCalls.length).toBe(2); // outer() and inner()
+    });
+
+    it("should track caller context for class methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // Calls within constructor
+      const constructorCalls = result.calls.filter((c) => c.callerName === "constructor");
+      expect(constructorCalls.length).toBeGreaterThan(0);
+
+      // initialize() call in constructor
+      const initializeCall = result.calls.find(
+        (c) => c.calledExpression === "this.initialize" && c.callerName === "constructor"
+      );
+      expect(initializeCall).toBeDefined();
+
+      // Calls within doWork method
+      const doWorkCalls = result.calls.filter((c) => c.callerName === "doWork");
+      expect(doWorkCalls.length).toBe(2); // this.helper.process() and externalHelper()
+
+      // Calls within static method
+      const staticMethodCalls = result.calls.filter((c) => c.callerName === "staticMethod");
+      expect(staticMethodCalls.length).toBe(1);
+      expect(staticMethodCalls[0]?.calledName).toBe("staticHelper");
+    });
+
+    it("should extract multiple calls to the same function", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // validate() is called 3 times in multipleCallsSameFunction
+      const validateCalls = result.calls.filter(
+        (c) => c.calledName === "validate" && c.callerName === "multipleCallsSameFunction"
+      );
+      expect(validateCalls.length).toBe(3);
+    });
+
+    it("should extract chained method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // builder.setName("test").setAge(25).build() - should extract each call
+      const chainedCalls = result.calls.filter((c) => c.callerName === "chainedMethodCalls");
+      expect(chainedCalls.length).toBeGreaterThanOrEqual(3);
+
+      // Should have setName, setAge, and build calls
+      const callNames = chainedCalls.map((c) => c.calledName);
+      expect(callNames).toContain("setName");
+      expect(callNames).toContain("setAge");
+      expect(callNames).toContain("build");
+    });
+
+    it("should include correct line numbers", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // console.log is on line 11 in the fixture
+      const consoleLog = result.calls.find(
+        (c) => c.calledName === "log" && c.calledExpression === "console.log"
+      );
+      expect(consoleLog).toBeDefined();
+      expect(consoleLog?.line).toBe(11);
+
+      // All calls should have valid line numbers
+      for (const call of result.calls) {
+        expect(call.line).toBeGreaterThan(0);
+      }
+    });
+
+    it("should handle nested function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // outer(inner()) - should extract both calls
+      const outerCall = result.calls.find(
+        (c) => c.calledName === "outer" && c.callerName === "nestedCalls"
+      );
+      expect(outerCall).toBeDefined();
+
+      const innerCall = result.calls.find(
+        (c) => c.calledName === "inner" && c.callerName === "nestedCalls"
+      );
+      expect(innerCall).toBeDefined();
+    });
+
+    it("should extract calls from arrow functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // callFromArrow() in arrowFunction
+      const arrowCall = result.calls.find(
+        (c) => c.calledName === "callFromArrow" && c.callerName === "arrowFunction"
+      );
+      expect(arrowCall).toBeDefined();
+
+      // processNumber(x) in arrowWithParams
+      const arrowWithParamsCall = result.calls.find(
+        (c) => c.calledName === "processNumber" && c.callerName === "arrowWithParams"
+      );
+      expect(arrowWithParamsCall).toBeDefined();
+    });
+
+    it("should handle optional chaining calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // obj?.method() call
+      const optionalCall = result.calls.find(
+        (c) => c.callerName === "optionalChaining" && c.calledName === "method"
+      );
+      expect(optionalCall).toBeDefined();
+
+      // deeply?.nested?.call() call
+      const deepOptionalCall = result.calls.find(
+        (c) => c.callerName === "optionalChaining" && c.calledName === "call"
+      );
+      expect(deepOptionalCall).toBeDefined();
+    });
+
+    it("should extract calls from higher-order function callbacks", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // Higher order function calls: map, filter, forEach
+      const higherOrderCalls = result.calls.filter((c) => c.callerName === "higherOrder");
+      expect(higherOrderCalls.length).toBeGreaterThanOrEqual(3);
+
+      const callNames = higherOrderCalls.map((c) => c.calledName);
+      expect(callNames).toContain("map");
+      expect(callNames).toContain("filter");
+      expect(callNames).toContain("forEach");
+
+      // Also check for transform, validate, process calls inside callbacks
+      expect(callNames).toContain("transform");
+      expect(callNames).toContain("process");
+    });
+
+    it("should extract calls from exported functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // internalCall() in exportedWithCalls
+      const exportedCall = result.calls.find(
+        (c) => c.calledName === "internalCall" && c.callerName === "exportedWithCalls"
+      );
+      expect(exportedCall).toBeDefined();
+
+      // await asyncInternalCall() in exportedAsync
+      const asyncExportedCall = result.calls.find(
+        (c) => c.calledName === "asyncInternalCall" && c.callerName === "exportedAsync"
+      );
+      expect(asyncExportedCall).toBeDefined();
+      expect(asyncExportedCall?.isAsync).toBe(true);
+    });
+
+    it("should handle deep property access calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // this.service.repository.find()
+      const deepAccessCall = result.calls.find(
+        (c) => c.callerName === "deepPropertyAccess" && c.calledName === "find"
+      );
+      expect(deepAccessCall).toBeDefined();
+      expect(deepAccessCall?.calledExpression).toBe("this.service.repository.find");
+    });
+
+    it("should extract calls from callbacks", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "function-calls.ts")).text();
+      const result = await parser.parseFile(content, "function-calls.ts");
+
+      // setTimeout call
+      const setTimeoutCall = result.calls.find(
+        (c) => c.calledName === "setTimeout" && c.callerName === "withCallback"
+      );
+      expect(setTimeoutCall).toBeDefined();
+
+      // callbackAction() inside setTimeout callback
+      const callbackActionCall = result.calls.find((c) => c.calledName === "callbackAction");
+      expect(callbackActionCall).toBeDefined();
+
+      // promise.then call
+      const thenCall = result.calls.find(
+        (c) => c.calledName === "then" && c.callerName === "withCallback"
+      );
+      expect(thenCall).toBeDefined();
+    });
+  });
+
   describe("parseFile - Configuration Options", () => {
     it("should include anonymous functions when includeAnonymous is true", async () => {
       const content = `
