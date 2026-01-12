@@ -364,5 +364,42 @@ describe("EmbeddingProviderFactory", () => {
       const provider = factory.createProvider(config);
       expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
     });
+
+    test("throws on non-numeric OLLAMA_PORT", () => {
+      delete Bun.env["OLLAMA_BASE_URL"];
+      Bun.env["OLLAMA_PORT"] = "not-a-number";
+
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      expect(() => factory.createProvider(config)).toThrow(EmbeddingValidationError);
+      expect(() => factory.createProvider(config)).toThrow("Must be a numeric port number");
+    });
+
+    test("throws on OLLAMA_HOST with URL special characters", () => {
+      delete Bun.env["OLLAMA_BASE_URL"];
+      Bun.env["OLLAMA_HOST"] = "evil.com/malicious#";
+      Bun.env["OLLAMA_PORT"] = "11434";
+
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      expect(() => factory.createProvider(config)).toThrow(EmbeddingValidationError);
+      expect(() => factory.createProvider(config)).toThrow("Must be a valid hostname");
+    });
   });
 });

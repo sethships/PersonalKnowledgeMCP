@@ -8,7 +8,12 @@
  */
 
 import type { EmbeddingProvider, EmbeddingProviderConfig, ProviderCapabilities } from "./types.js";
-import { EmbeddingError, EmbeddingValidationError, EmbeddingNetworkError } from "./errors.js";
+import {
+  EmbeddingError,
+  EmbeddingValidationError,
+  EmbeddingNetworkError,
+  EmbeddingTimeoutError,
+} from "./errors.js";
 
 /**
  * Configuration specific to Ollama embedding provider
@@ -265,8 +270,10 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
           break;
         }
 
-        // Exponential backoff
-        await this.sleep(Math.pow(2, attempt) * 100);
+        // Exponential backoff with jitter to prevent thundering herd
+        const baseDelay = Math.pow(2, attempt) * 100;
+        const jitter = Math.random() * baseDelay * 0.5;
+        await this.sleep(baseDelay + jitter);
       }
     }
 
@@ -297,11 +304,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       return response;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new EmbeddingError(
-          `Request to Ollama timed out after ${this.timeoutMs}ms`,
-          "TIMEOUT",
-          true
-        );
+        throw new EmbeddingTimeoutError(`Request to Ollama timed out after ${this.timeoutMs}ms`);
       }
       throw error;
     } finally {
@@ -373,11 +376,21 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       throw new EmbeddingValidationError("Max retries cannot be negative", "maxRetries");
     }
 
-    // Validate base URL format if provided
+    // Validate base URL format and scheme if provided
     if (config.baseUrl) {
       try {
-        new URL(config.baseUrl);
-      } catch {
+        const parsedUrl = new URL(config.baseUrl);
+        const allowedProtocols = ["http:", "https:"];
+        if (!allowedProtocols.includes(parsedUrl.protocol)) {
+          throw new EmbeddingValidationError(
+            `Invalid base URL scheme: ${parsedUrl.protocol}. Only http and https are allowed.`,
+            "baseUrl"
+          );
+        }
+      } catch (error) {
+        if (error instanceof EmbeddingValidationError) {
+          throw error;
+        }
         throw new EmbeddingValidationError(
           `Invalid base URL: ${config.baseUrl}. Expected format: http://host:port`,
           "baseUrl"
