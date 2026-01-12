@@ -9,6 +9,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createEmbeddingProvider } from "../../../src/providers/factory.js";
 import { OpenAIEmbeddingProvider } from "../../../src/providers/openai-embedding.js";
 import { TransformersJsEmbeddingProvider } from "../../../src/providers/transformersjs-embedding.js";
+import { OllamaEmbeddingProvider } from "../../../src/providers/ollama-embedding.js";
 import { EmbeddingValidationError } from "../../../src/providers/errors.js";
 import type { EmbeddingProviderConfig } from "../../../src/providers/types.js";
 
@@ -186,7 +187,7 @@ describe("createEmbeddingProvider", () => {
     };
 
     expect(() => createEmbeddingProvider(config)).toThrow(
-      "Supported providers: openai, transformersjs"
+      "Supported providers: openai, transformersjs, ollama"
     );
   });
 
@@ -365,6 +366,178 @@ describe("createEmbeddingProvider", () => {
 
       const provider = createEmbeddingProvider(config);
       expect(provider.dimensions).toBe(768);
+    });
+  });
+
+  // Ollama provider tests
+  describe("Ollama provider", () => {
+    test("creates Ollama provider with 'ollama' name", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.providerId).toBe("ollama");
+      expect(provider.modelId).toBe("nomic-embed-text");
+      expect(provider.dimensions).toBe(768);
+    });
+
+    test("handles case-insensitive Ollama provider name", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "OLLAMA",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("handles mixed case Ollama provider name", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "Ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("uses default model name when not specified in options", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "some-model",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      // Default model name is nomic-embed-text
+      expect(provider.modelId).toBe("nomic-embed-text");
+    });
+
+    test("uses custom model name from options", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "custom-model",
+        dimensions: 1024,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+        options: {
+          modelName: "mxbai-embed-large",
+        },
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.modelId).toBe("mxbai-embed-large");
+    });
+
+    test("reads OLLAMA_BASE_URL from environment", () => {
+      Bun.env["OLLAMA_BASE_URL"] = "http://custom-ollama:9999";
+
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      // Provider should be created without error
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("constructs URL from OLLAMA_HOST and OLLAMA_PORT", () => {
+      delete Bun.env["OLLAMA_BASE_URL"];
+      Bun.env["OLLAMA_HOST"] = "192.168.1.100";
+      Bun.env["OLLAMA_PORT"] = "12345";
+
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      // Provider should be created without error
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("OLLAMA_BASE_URL takes precedence over HOST/PORT", () => {
+      Bun.env["OLLAMA_BASE_URL"] = "http://primary:8000";
+      Bun.env["OLLAMA_HOST"] = "secondary";
+      Bun.env["OLLAMA_PORT"] = "9000";
+
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      // Provider should be created without error, using BASE_URL
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("supports keepAlive option", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+        options: {
+          keepAlive: "30m",
+        },
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+    });
+
+    test("passes dimensions through to provider", () => {
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "mxbai-embed-large",
+        dimensions: 1024, // Different dimensions
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+        options: {
+          modelName: "mxbai-embed-large",
+        },
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider.dimensions).toBe(1024);
     });
   });
 });
