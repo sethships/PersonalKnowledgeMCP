@@ -46,11 +46,19 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 | Deployment | Docker Compose | ChromaDB containerization |
 | Testing | Bun Test | Built-in test runner with coverage |
 
+### Phase 2 Stack (Current)
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Graph DB | Neo4j Community | Code dependency graph and relationships |
+| Graph Protocol | Bolt | Neo4j connection protocol |
+| Graph Tools | get_dependencies, get_dependents | Dependency analysis MCP tools |
+
 ### Future Phases
 
-- **Phase 2**: Tree-sitter (AST parsing), PostgreSQL (document store), local file ingestion
+- **Phase 2** (in progress): Tree-sitter (AST parsing), PostgreSQL (document store), local file ingestion
 - **Phase 3**: Multi-instance architecture, Azure DevOps integration, authentication layer
-- **Phase 4**: Neo4j (graph relationships), automated update pipelines
+- **Phase 4**: Automated update pipelines, GitHub webhooks
 
 ## Architecture
 
@@ -63,28 +71,39 @@ graph TB
             TH[Tool Handlers]
             SS[semantic_search]
             LR[list_indexed_repositories]
+            GD[get_dependencies]
+            GT[get_dependents]
             SL[Service Layer]
             SRCH[Search Service]
             REPO[Repository Service]
+            GRAPH[Graph Service]
 
             TH --> SS
             TH --> LR
+            TH --> GD
+            TH --> GT
             SS --> SL
             LR --> SL
+            GD --> GRAPH
+            GT --> GRAPH
             SL --> SRCH
             SL --> REPO
         end
 
-        subgraph DOCKER["Docker Container"]
+        subgraph DOCKER["Docker Containers"]
             CDB[ChromaDB<br/>Vector Database<br/>Port: 8000]
+            NEO[Neo4j<br/>Graph Database<br/>Port: 7687]
             VOL[Volume: ./data/chromadb]
+            NEOVOL[Volume: ./data/neo4j]
             CDB -.->|persists to| VOL
+            NEO -.->|persists to| NEOVOL
         end
 
         FS[Local File System<br/>./data/repos/]
 
         CC <-->|stdio| MCP_SVC
         MCP_SVC -->|HTTP| CDB
+        MCP_SVC -->|Bolt| NEO
         MCP_SVC -->|clone/read| FS
     end
 
@@ -98,8 +117,8 @@ graph TB
     classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
 
     class CC client
-    class MCP_SVC,TH,SS,LR,SL,SRCH,REPO service
-    class CDB,VOL,FS storage
+    class MCP_SVC,TH,SS,LR,GD,GT,SL,SRCH,REPO,GRAPH service
+    class CDB,NEO,VOL,NEOVOL,FS storage
     class OAI external
 ```
 
@@ -282,6 +301,16 @@ Where is the database connection logic implemented?
 Find all implementations of rate limiting across my projects
 ```
 
+**Dependency analysis** (with graph tools):
+```
+What does src/services/auth.ts depend on?
+```
+
+**Impact analysis before refactoring** (with graph tools):
+```
+What code will be affected if I change the validateToken function?
+```
+
 ### Incremental Update Workflow
 
 After merging a PR to an indexed repository, update your index to include the latest changes:
@@ -370,6 +399,58 @@ List all indexed repositories with status and statistics.
 - File count and chunk count
 - Last indexed timestamp
 - Indexing status (ready, indexing, error)
+
+### get_dependencies
+
+Query what a file, function, or class depends on. Returns imports, calls, and inheritance relationships.
+
+**Parameters**:
+- `entity_type` (string, required): Type of entity - `"file"`, `"function"`, or `"class"`
+- `entity_path` (string, required): Path or identifier (e.g., `"src/auth/middleware.ts"`)
+- `repository` (string, required): Repository name to scope the query
+- `depth` (number, optional): Transitive dependency depth 1-5 (default: 1)
+- `relationship_types` (array, optional): Filter by relationship type - `["imports", "calls", "extends", "implements", "references"]`
+
+**Example**:
+```json
+{
+  "entity_type": "file",
+  "entity_path": "src/services/auth.ts",
+  "repository": "my-api",
+  "depth": 2
+}
+```
+
+**Requires**: Neo4j graph database with indexed repository data.
+
+### get_dependents
+
+Query what depends on a file, function, or class. Use for impact analysis before refactoring.
+
+**Parameters**:
+- `entity_type` (string, required): Type of entity - `"file"`, `"function"`, `"class"`, or `"package"`
+- `entity_path` (string, required): Path or identifier of the entity
+- `repository` (string, optional): Repository name (omit to search all)
+- `depth` (number, optional): Transitive dependent depth 1-5 (default: 1)
+- `include_cross_repo` (boolean, optional): Search across repositories (default: false)
+
+**Example**:
+```json
+{
+  "entity_type": "function",
+  "entity_path": "validateToken",
+  "repository": "my-api",
+  "depth": 2
+}
+```
+
+**Response includes**:
+- List of dependent entities with relationship types
+- Impact analysis metrics (direct count, transitive count, impact score)
+
+**Requires**: Neo4j graph database with indexed repository data.
+
+> **Note**: Graph tools require Neo4j and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
 
 ## CLI Usage
 
@@ -775,6 +856,7 @@ bun run cli health
 
 ### Getting Started
 - **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Complete guide for integrating with Claude Code
+- **[Graph Tools Guide](docs/graph-tools.md)** - Dependency analysis and impact assessment tools
 
 ### Phase 1: Core MCP + Vector Search
 - **[Phase 1 Feature Summary](docs/phase1-feature-summary.md)** - Complete feature list, status, and known limitations
@@ -954,26 +1036,27 @@ Development workflow:
 
 ## Code Statistics
 
-Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules, dist, .bun-cache, coverage):
+Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules, dist, .bun-cache, coverage, data):
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 209 | 8,974 | 14,484 | 41,740 |
-| Markdown | 36 | 4,650 | 9 | 14,899 |
-| YAML | 36 | 141 | 345 | 1,538 |
-| Bourne Shell | 6 | 232 | 242 | 924 |
+| TypeScript | 290 | 13,424 | 24,470 | 59,245 |
+| Markdown | 45 | 6,076 | 9 | 19,966 |
+| YAML | 68 | 330 | 578 | 3,179 |
+| Bourne Shell | 3 | 224 | 241 | 900 |
+| JSON | 8 | 5 | 0 | 705 |
 | PowerShell | 2 | 185 | 133 | 576 |
-| JSON | 7 | 5 | 0 | 308 |
+| Text | 1 | 31 | 0 | 40 |
 | Dockerfile | 1 | 22 | 38 | 36 |
+| JavaScript | 2 | 7 | 9 | 33 |
 | TOML | 1 | 11 | 17 | 14 |
 | SQL | 1 | 3 | 16 | 9 |
-| JavaScript | 1 | 0 | 0 | 3 |
 | Python | 4 | 5 | 24 | 2 |
-| **SUM** | **304** | **14,228** | **15,308** | **60,049** |
+| **SUM** | **426** | **20,323** | **25,535** | **84,705** |
 
 ## License
 
-*(To be determined)*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
