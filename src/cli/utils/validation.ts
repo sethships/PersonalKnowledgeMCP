@@ -332,3 +332,37 @@ export const GraphPopulateCommandOptionsSchema = z.object({
  * Inferred TypeScript type for graph populate command
  */
 export type ValidatedGraphPopulateOptions = z.infer<typeof GraphPopulateCommandOptionsSchema>;
+
+// ============================================================================
+// Providers Command Validation Schemas
+// ============================================================================
+
+/**
+ * Valid local provider identifiers that support setup
+ *
+ * Only local providers can be set up (download models).
+ * OpenAI is API-based and doesn't need local setup.
+ */
+const LOCAL_PROVIDER_ENUM = z.enum(["transformersjs", "transformers", "local", "ollama"]);
+
+/**
+ * Schema for providers status command options
+ */
+export const ProvidersStatusCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for providers setup command options
+ */
+export const ProvidersSetupCommandOptionsSchema = z.object({
+  provider: z.string().toLowerCase().pipe(LOCAL_PROVIDER_ENUM),
+  model: z.string().optional(),
+  force: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript types for providers commands
+ */
+export type ValidatedProvidersStatusOptions = z.infer<typeof ProvidersStatusCommandOptionsSchema>;
+export type ValidatedProvidersSetupOptions = z.infer<typeof ProvidersSetupCommandOptionsSchema>;
