@@ -20,7 +20,7 @@ import { RelationshipType } from "../../graph/types.js";
 import { validateFindPathArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
-import type { ToolHandler, FindPathArgs, DependencyRelationshipType } from "../types.js";
+import type { ToolHandler, DependencyRelationshipType } from "../types.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -100,12 +100,12 @@ export const findPathToolDefinition: Tool = {
 function parseEntityReference(entity: string, repository: string): EntityReference {
   if (entity.includes("::")) {
     const parts = entity.split("::");
-    const entityName = parts[parts.length - 1];
+    const entityName = parts[parts.length - 1]!;
     // Infer type: uppercase first char = class, otherwise function
-    const type = entityName && /^[A-Z]/.test(entityName) ? "class" : "function";
+    const type = /^[A-Z]/.test(entityName) ? "class" : "function";
     return {
       type,
-      path: entityName ?? entity,
+      path: entity, // Keep full qualified path for graph lookups
       repository,
     };
   }
@@ -198,7 +198,7 @@ export function createFindPathHandler(graphService: GraphService): ToolHandler {
       const response = await graphService.getPath(query);
 
       // Step 5: Format response for MCP
-      const content = formatPathResponse(response, validatedArgs);
+      const content = formatPathResponse(response);
 
       const duration = performance.now() - startTime;
       log.info(
@@ -243,10 +243,9 @@ export function createFindPathHandler(graphService: GraphService): ToolHandler {
  * indentation for readability in Claude Code's interface.
  *
  * @param response - Path result from GraphService
- * @param args - Original validated arguments (for metadata)
  * @returns MCP text content with formatted JSON
  */
-function formatPathResponse(response: PathResult, _args: FindPathArgs): TextContent {
+function formatPathResponse(response: PathResult): TextContent {
   // Map internal RelationshipType enum to lowercase strings for MCP output
   const relationshipToString = (relType: RelationshipType | undefined): string | undefined => {
     return relType?.toLowerCase();

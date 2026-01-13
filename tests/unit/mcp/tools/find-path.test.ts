@@ -17,6 +17,7 @@ import type {
   DependentResult,
   PathResult,
   ArchitectureResult,
+  PathQuery,
 } from "../../../../src/services/graph-service-types.js";
 import { RelationshipType } from "../../../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
@@ -41,6 +42,9 @@ class MockGraphService implements GraphService {
 
   private error: Error | null = null;
 
+  /** Captured query from last getPath call for verification */
+  public lastPathQuery: PathQuery | null = null;
+
   setPathResult(result: PathResult): void {
     this.pathResult = result;
   }
@@ -57,7 +61,8 @@ class MockGraphService implements GraphService {
     throw new Error("Not implemented in mock");
   }
 
-  async getPath(): Promise<PathResult> {
+  async getPath(query: PathQuery): Promise<PathResult> {
+    this.lastPathQuery = query;
     if (this.error) {
       throw this.error;
     }
@@ -522,6 +527,33 @@ describe("find_path MCP Tool", () => {
       });
 
       expect(result.isError).toBe(false);
+    });
+
+    it("should preserve full qualified path in EntityReference for graph lookups", async () => {
+      mockGraphService.setPathResult({
+        path_exists: true,
+        path: [],
+        metadata: {
+          hops: 0,
+          query_time_ms: 10,
+          from_cache: false,
+        },
+      });
+
+      const handler = createFindPathHandler(mockGraphService);
+
+      await handler({
+        from_entity: "src/routes/api.ts::handleLogin",
+        to_entity: "src/db/users.ts::findUser",
+        repository: "my-api",
+      });
+
+      // Verify full paths are preserved (not just entity names)
+      expect(mockGraphService.lastPathQuery).not.toBeNull();
+      expect(mockGraphService.lastPathQuery?.from_entity.path).toBe(
+        "src/routes/api.ts::handleLogin"
+      );
+      expect(mockGraphService.lastPathQuery?.to_entity.path).toBe("src/db/users.ts::findUser");
     });
   });
 
