@@ -18,7 +18,7 @@ import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
 import { createEmbeddingProvider } from "../../providers/factory.js";
-import { EmbeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
+import { embeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
 import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.js";
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
 import { FileScanner } from "../../ingestion/file-scanner.js";
@@ -120,16 +120,20 @@ export async function initializeDependencies(
   try {
     // Step 1: Resolve embedding provider
     // Priority: CLI flag > environment variable > factory default
-    const providerFactory = new EmbeddingProviderFactory();
+    // Uses singleton factory instance for performance
     const resolvedProvider =
-      options?.provider || Bun.env["EMBEDDING_PROVIDER"] || providerFactory.getDefaultProvider();
+      options?.provider ||
+      Bun.env["EMBEDDING_PROVIDER"] ||
+      embeddingProviderFactory.getDefaultProvider();
 
     // Validate provider is available (has required credentials/configuration)
-    if (!providerFactory.isProviderAvailable(resolvedProvider)) {
-      const providerInfo = providerFactory
+    if (!embeddingProviderFactory.isProviderAvailable(resolvedProvider)) {
+      const providerInfo = embeddingProviderFactory
         .listAvailableProviders()
         .find(
-          (p) => p.id === resolvedProvider || p.aliases.includes(resolvedProvider.toLowerCase())
+          (p) =>
+            p.id === resolvedProvider.toLowerCase() ||
+            p.aliases.includes(resolvedProvider.toLowerCase())
         );
 
       if (providerInfo && providerInfo.requiredEnvVars.length > 0) {
@@ -139,7 +143,7 @@ export async function initializeDependencies(
             `Please set these in your .env file or environment.`
         );
       } else {
-        const validProviders = providerFactory
+        const validProviders = embeddingProviderFactory
           .listAvailableProviders()
           .map((p) => p.id)
           .join(", ");

@@ -8,6 +8,9 @@ import { z } from "zod";
 
 /**
  * Valid embedding provider values (including aliases)
+ *
+ * Note: "transformers" is an undocumented alias for "transformersjs"
+ * that is accepted for convenience but not shown in help text.
  */
 const VALID_PROVIDERS = ["openai", "transformersjs", "transformers", "local", "ollama"] as const;
 
