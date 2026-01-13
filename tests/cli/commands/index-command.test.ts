@@ -337,4 +337,48 @@ describe("Index Command", () => {
       await expect(indexCommand("https://github.com/", {}, mockDeps)).rejects.toThrow();
     });
   });
+
+  describe("Provider option", () => {
+    it("should accept provider option in IndexCommandOptions", async () => {
+      mockIndexRepository.mockResolvedValue(createMockIndexResult());
+
+      const options: IndexCommandOptions = { provider: "openai" };
+      await indexCommand("https://github.com/user/repo.git", options, mockDeps);
+
+      // The command should complete successfully with provider option
+      expect(mockIndexRepository).toHaveBeenCalled();
+    });
+
+    it("should accept different provider values", async () => {
+      mockIndexRepository.mockResolvedValue(createMockIndexResult());
+
+      // Test with transformersjs
+      const options1: IndexCommandOptions = { provider: "transformersjs" };
+      await indexCommand("https://github.com/user/repo.git", options1, mockDeps);
+      expect(mockIndexRepository).toHaveBeenCalled();
+
+      // Reset mock
+      mockIndexRepository.mockClear();
+      mockIndexRepository.mockResolvedValue(createMockIndexResult());
+
+      // Test with local (alias for transformersjs)
+      const options2: IndexCommandOptions = { provider: "local" };
+      await indexCommand("https://github.com/user/repo.git", options2, mockDeps);
+      expect(mockIndexRepository).toHaveBeenCalled();
+    });
+
+    it("should accept provider with other options combined", async () => {
+      mockIndexRepository.mockResolvedValue(createMockIndexResult());
+
+      const options: IndexCommandOptions = {
+        name: "custom-name",
+        branch: "develop",
+        force: true,
+        provider: "ollama",
+      };
+      await indexCommand("https://github.com/user/repo.git", options, mockDeps);
+
+      expect(mockIndexRepository).toHaveBeenCalled();
+    });
+  });
 });

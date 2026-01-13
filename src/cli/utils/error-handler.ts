@@ -35,6 +35,7 @@ import {
   TokenStorageError,
   TokenGenerationError,
 } from "../../auth/errors.js";
+import { EmbeddingValidationError } from "../../providers/errors.js";
 
 /**
  * Handle command errors and exit with appropriate status code
@@ -295,6 +296,24 @@ export function handleCommandError(error: unknown, spinner?: Ora): never {
     console.error(
       "  • Enable verbose logging: " + chalk.gray("LOG_LEVEL=debug pk-mcp token create")
     );
+    process.exit(1);
+  }
+
+  // Handle embedding provider errors
+  if (error instanceof EmbeddingValidationError) {
+    console.error(chalk.red("✗ Embedding Provider Error"));
+    console.error(`\n${error.message}`);
+    console.error("\n" + chalk.bold("Available providers:"));
+    console.error("  • " + chalk.cyan("openai") + " - OpenAI API (requires OPENAI_API_KEY)");
+    console.error(
+      "  • " + chalk.cyan("transformersjs") + " - Local HuggingFace models (no API key)"
+    );
+    console.error("  • " + chalk.cyan("local") + " - Alias for transformersjs");
+    console.error("  • " + chalk.cyan("ollama") + " - Local Ollama server (GPU-accelerated)");
+    console.error("\n" + chalk.bold("Usage examples:"));
+    console.error("  " + chalk.gray("pk-mcp index <url> --provider openai"));
+    console.error("  " + chalk.gray("pk-mcp index <url> --provider transformersjs"));
+    console.error("  " + chalk.gray("EMBEDDING_PROVIDER=ollama pk-mcp index <url>"));
     process.exit(1);
   }
 

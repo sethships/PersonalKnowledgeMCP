@@ -68,10 +68,11 @@ program
   .option("-n, --name <name>", "Custom repository name")
   .option("-b, --branch <branch>", "Branch to clone")
   .option("-f, --force", "Force reindexing if repository already exists")
+  .option("-p, --provider <provider>", "Embedding provider (openai, transformersjs, local, ollama)")
   .action(async (url: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = IndexCommandOptionsSchema.parse(options);
-      const deps = await initializeDependencies();
+      const deps = await initializeDependencies({ provider: validatedOptions.provider });
       await indexCommand(url, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);

@@ -21,6 +21,8 @@ export interface IndexCommandOptions {
   name?: string;
   branch?: string;
   force?: boolean;
+  /** Embedding provider to use (openai, transformersjs, local, ollama) */
+  provider?: string;
 }
 
 /**
