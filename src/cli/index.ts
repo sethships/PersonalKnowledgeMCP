@@ -12,7 +12,8 @@
  * - reset-update: Reset stuck update state
  * - health: Health check
  * - token: Manage authentication tokens (create, list, revoke, rotate)
- * - graph: Manage knowledge graph (migrate)
+ * - graph: Manage knowledge graph (migrate, populate)
+ * - providers: Manage embedding providers (status, setup)
  */
 
 import "dotenv/config";
@@ -36,6 +37,7 @@ import {
 } from "./commands/token-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
+import { providersStatusCommand, providersSetupCommand } from "./commands/providers-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -51,6 +53,8 @@ import {
   TokenRotateCommandOptionsSchema,
   GraphMigrateCommandOptionsSchema,
   GraphPopulateCommandOptionsSchema,
+  ProvidersStatusCommandOptionsSchema,
+  ProvidersSetupCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -314,6 +318,43 @@ graphProgram
       const validatedOptions = GraphPopulateCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await graphPopulateCommand(repository, validatedOptions, deps.repositoryService);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Providers command group
+const providersProgram = program.command("providers").description("Manage embedding providers");
+
+// Providers status subcommand
+providersProgram
+  .command("status")
+  .description("Show available providers and their status")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ProvidersStatusCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await providersStatusCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Providers setup subcommand
+providersProgram
+  .command("setup")
+  .description("Download/prepare local embedding models")
+  .argument("<provider>", "Provider to set up (transformersjs, local, ollama)")
+  .option("-m, --model <model>", "Model to download (provider-specific)")
+  .option("-f, --force", "Re-download even if model exists")
+  .action(async (provider: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ProvidersSetupCommandOptionsSchema.parse({
+        ...options,
+        provider,
+      });
+      await providersSetupCommand(validatedOptions);
     } catch (error) {
       handleCommandError(error);
     }
