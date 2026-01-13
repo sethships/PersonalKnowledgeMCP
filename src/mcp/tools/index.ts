@@ -28,6 +28,7 @@ import {
 } from "./get-update-status.js";
 import { getDependenciesToolDefinition, createGetDependenciesHandler } from "./get-dependencies.js";
 import { getDependentsToolDefinition, createGetDependentsHandler } from "./get-dependents.js";
+import { getArchitectureToolDefinition, createGetArchitectureHandler } from "./get-architecture.js";
 
 /**
  * Dependencies for tool registry creation
@@ -142,6 +143,11 @@ export function createToolRegistry(
     registry["get_dependents"] = {
       definition: getDependentsToolDefinition,
       handler: createGetDependentsHandler(deps.graphService),
+    };
+
+    registry["get_architecture"] = {
+      definition: getArchitectureToolDefinition,
+      handler: createGetArchitectureHandler(deps.graphService),
     };
   }
 
