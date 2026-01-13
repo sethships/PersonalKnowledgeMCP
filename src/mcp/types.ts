@@ -243,3 +243,36 @@ export interface GetArchitectureArgs {
   /** Include external dependencies (node_modules, etc.) (default: false) */
   include_external: boolean;
 }
+
+/**
+ * Validated find_path tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults where applicable.
+ *
+ * The from_entity and to_entity strings can be:
+ * - File paths: 'src/routes/api.ts' (type inferred as "file")
+ * - Qualified names: 'src/routes/api.ts::handleLogin' (type inferred from case)
+ */
+export interface FindPathArgs {
+  /**
+   * Starting entity string (e.g., 'src/routes/api.ts::handleLogin')
+   * If contains '::', treated as function/class. Otherwise, treated as file.
+   */
+  from_entity: string;
+
+  /**
+   * Target entity string (e.g., 'src/db/users.ts::findUser')
+   * If contains '::', treated as function/class. Otherwise, treated as file.
+   */
+  to_entity: string;
+
+  /** Repository name to scope the query */
+  repository: string;
+
+  /** Maximum path length to search (1-20, default: 10) */
+  max_hops: number;
+
+  /** Filter to specific relationship types (optional, all types if omitted) */
+  relationship_types?: DependencyRelationshipType[];
+}

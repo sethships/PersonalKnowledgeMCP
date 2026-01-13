@@ -29,6 +29,7 @@ import {
 import { getDependenciesToolDefinition, createGetDependenciesHandler } from "./get-dependencies.js";
 import { getDependentsToolDefinition, createGetDependentsHandler } from "./get-dependents.js";
 import { getArchitectureToolDefinition, createGetArchitectureHandler } from "./get-architecture.js";
+import { findPathToolDefinition, createFindPathHandler } from "./find-path.js";
 
 /**
  * Dependencies for tool registry creation
@@ -148,6 +149,11 @@ export function createToolRegistry(
     registry["get_architecture"] = {
       definition: getArchitectureToolDefinition,
       handler: createGetArchitectureHandler(deps.graphService),
+    };
+
+    registry["find_path"] = {
+      definition: findPathToolDefinition,
+      handler: createFindPathHandler(deps.graphService),
     };
   }
 
