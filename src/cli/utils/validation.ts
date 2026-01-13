@@ -7,12 +7,24 @@
 import { z } from "zod";
 
 /**
+ * Valid embedding provider values (including aliases)
+ */
+const VALID_PROVIDERS = ["openai", "transformersjs", "transformers", "local", "ollama"] as const;
+
+/**
  * Schema for index command options
  */
 export const IndexCommandOptionsSchema = z.object({
   name: z.string().optional(),
   branch: z.string().optional(),
   force: z.boolean().optional(),
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .refine((val) => !val || VALID_PROVIDERS.includes(val as (typeof VALID_PROVIDERS)[number]), {
+      message: "Invalid provider. Valid values: openai, transformersjs, local, ollama",
+    }),
 });
 
 /**

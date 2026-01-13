@@ -882,6 +882,10 @@ export class IngestionService {
       errorMessage: params.errorMessage,
       includeExtensions: params.options.includeExtensions || [],
       excludePatterns: params.options.excludePatterns || [],
+      // Embedding provider metadata
+      embeddingProvider: this.embeddingProvider.providerId,
+      embeddingModel: this.embeddingProvider.modelId,
+      embeddingDimensions: this.embeddingProvider.dimensions,
     };
   }
 }

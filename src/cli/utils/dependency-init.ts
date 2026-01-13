@@ -18,6 +18,7 @@ import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
 import { createEmbeddingProvider } from "../../providers/factory.js";
+import { EmbeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
 import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.js";
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
 import { FileScanner } from "../../ingestion/file-scanner.js";
@@ -64,6 +65,14 @@ function parseNonNegativeIntEnv(key: string, defaultValue: number): number {
 }
 
 /**
+ * Options for dependency initialization
+ */
+export interface DependencyOptions {
+  /** Optional provider override from CLI flag */
+  provider?: string;
+}
+
+/**
  * All dependencies required by CLI commands
  */
 export interface CliDependencies {
@@ -87,10 +96,19 @@ export interface CliDependencies {
  * This mirrors the initialization pattern from src/index.ts but with
  * CLI-appropriate logging configuration.
  *
+ * Provider resolution priority:
+ * 1. CLI flag (options.provider)
+ * 2. Environment variable (EMBEDDING_PROVIDER)
+ * 3. Factory default (openai if API key set, else transformersjs)
+ *
+ * @param options - Optional configuration including provider override
  * @throws {Error} If required environment variables are missing
  * @throws {Error} If ChromaDB connection fails
+ * @throws {Error} If specified provider is not available
  */
-export async function initializeDependencies(): Promise<CliDependencies> {
+export async function initializeDependencies(
+  options?: DependencyOptions
+): Promise<CliDependencies> {
   // Initialize logger for CLI (less verbose by default)
   initializeLogger({
     level: (Bun.env["LOG_LEVEL"] as LogLevel) || "warn",
@@ -100,7 +118,38 @@ export async function initializeDependencies(): Promise<CliDependencies> {
   const logger = getComponentLogger("cli");
 
   try {
-    // Step 1: Load configuration from environment variables
+    // Step 1: Resolve embedding provider
+    // Priority: CLI flag > environment variable > factory default
+    const providerFactory = new EmbeddingProviderFactory();
+    const resolvedProvider =
+      options?.provider || Bun.env["EMBEDDING_PROVIDER"] || providerFactory.getDefaultProvider();
+
+    // Validate provider is available (has required credentials/configuration)
+    if (!providerFactory.isProviderAvailable(resolvedProvider)) {
+      const providerInfo = providerFactory
+        .listAvailableProviders()
+        .find(
+          (p) => p.id === resolvedProvider || p.aliases.includes(resolvedProvider.toLowerCase())
+        );
+
+      if (providerInfo && providerInfo.requiredEnvVars.length > 0) {
+        throw new Error(
+          `Provider '${resolvedProvider}' is not available.\n` +
+            `Required environment variables: ${providerInfo.requiredEnvVars.join(", ")}\n` +
+            `Please set these in your .env file or environment.`
+        );
+      } else {
+        const validProviders = providerFactory
+          .listAvailableProviders()
+          .map((p) => p.id)
+          .join(", ");
+        throw new Error(
+          `Unknown provider: '${resolvedProvider}'.\n` + `Valid providers: ${validProviders}`
+        );
+      }
+    }
+
+    // Step 2: Load configuration from environment variables
     const config = {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
@@ -108,7 +157,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
         authToken: Bun.env["CHROMADB_AUTH_TOKEN"],
       },
       embedding: {
-        provider: "openai",
+        provider: resolvedProvider,
         model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
         dimensions: parseIntEnv("EMBEDDING_DIMENSIONS", 1536),
         batchSize: parseIntEnv("EMBEDDING_BATCH_SIZE", 100),
@@ -123,16 +172,8 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       },
     };
 
-    // Step 2: Initialize embedding provider (OpenAI)
+    // Step 3: Initialize embedding provider
     const embeddingProvider = createEmbeddingProvider(config.embedding);
-
-    // Verify OpenAI API key is set
-    if (!Bun.env["OPENAI_API_KEY"]) {
-      throw new Error(
-        "OPENAI_API_KEY environment variable is not set.\n" +
-          "Please set your OpenAI API key in the .env file or environment."
-      );
-    }
 
     logger.debug(
       {
@@ -143,7 +184,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       "Embedding provider initialized"
     );
 
-    // Step 3: Initialize ChromaDB storage client
+    // Step 4: Initialize ChromaDB storage client
     const chromaClient = new ChromaStorageClientImpl({
       host: config.chromadb.host,
       port: config.chromadb.port,
@@ -178,15 +219,15 @@ export async function initializeDependencies(): Promise<CliDependencies> {
 
     logger.debug("ChromaDB connection established and healthy");
 
-    // Step 4: Initialize repository metadata service (singleton)
+    // Step 5: Initialize repository metadata service (singleton)
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.debug("Repository metadata service initialized");
 
-    // Step 5: Initialize search service
+    // Step 6: Initialize search service
     const searchService = new SearchServiceImpl(embeddingProvider, chromaClient, repositoryService);
     logger.debug("Search service initialized");
 
-    // Step 6: Initialize ingestion service components
+    // Step 7: Initialize ingestion service components
     const repositoryCloner = new RepositoryCloner({
       clonePath: config.ingestion.clonePath,
       githubPat: Bun.env["GITHUB_PAT"],
@@ -194,7 +235,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     const fileScanner = new FileScanner();
     const fileChunker = new FileChunker();
 
-    // Step 7: Initialize ingestion service
+    // Step 8: Initialize ingestion service
     const ingestionService = new IngestionServiceImpl(
       repositoryCloner,
       fileScanner,
@@ -205,13 +246,13 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     );
     logger.debug("Ingestion service initialized");
 
-    // Step 8: Initialize GitHub client
+    // Step 9: Initialize GitHub client
     const githubClient = new GitHubClientImpl({
       token: Bun.env["GITHUB_PAT"],
     });
     logger.debug("GitHub client initialized");
 
-    // Step 9: Initialize incremental update pipeline
+    // Step 10: Initialize incremental update pipeline
     const updatePipeline = new IncrementalUpdatePipeline(
       fileChunker,
       embeddingProvider,
@@ -220,7 +261,7 @@ export async function initializeDependencies(): Promise<CliDependencies> {
     );
     logger.debug("Incremental update pipeline initialized");
 
-    // Step 10: Initialize incremental update coordinator
+    // Step 11: Initialize incremental update coordinator
     const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
     const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
 
@@ -238,12 +279,12 @@ export async function initializeDependencies(): Promise<CliDependencies> {
       "Incremental update coordinator initialized"
     );
 
-    // Step 11: Initialize token service for authentication
+    // Step 12: Initialize token service for authentication
     const tokenStore = TokenStoreImpl.getInstance(config.data.path);
     const tokenService = new TokenServiceImpl(tokenStore);
     logger.debug("Token service initialized");
 
-    // Step 12: Initialize Neo4j client (optional - only if configured)
+    // Step 13: Initialize Neo4j client (optional - only if configured)
     let neo4jClient: Neo4jStorageClient | undefined;
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
     if (neo4jPassword) {

@@ -175,6 +175,43 @@ export interface RepositoryInfo {
   excludePatterns: string[];
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Embedding Provider Fields (Optional)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Embedding provider used for this repository
+   *
+   * Records which provider was used to generate embeddings.
+   * Important for ensuring consistent search quality when
+   * querying or updating the repository.
+   *
+   * @example "openai", "transformersjs", "ollama"
+   */
+  embeddingProvider?: string;
+
+  /**
+   * Embedding model used for this repository
+   *
+   * Records the specific model used to generate embeddings.
+   * Different models produce embeddings of different quality
+   * and dimensions.
+   *
+   * @example "text-embedding-3-small", "all-MiniLM-L6-v2", "nomic-embed-text"
+   */
+  embeddingModel?: string;
+
+  /**
+   * Embedding dimensions for this repository
+   *
+   * Records the vector dimensions of the embeddings stored
+   * in ChromaDB for this repository. Required for compatibility
+   * checks when searching or updating.
+   *
+   * @example 1536, 384, 768
+   */
+  embeddingDimensions?: number;
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Incremental Update Fields (Optional)
   // ─────────────────────────────────────────────────────────────────────────────
 
