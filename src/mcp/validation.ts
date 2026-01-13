@@ -8,7 +8,12 @@
 
 import { z } from "zod";
 import { createValidationError } from "./errors.js";
-import type { SemanticSearchArgs, GetDependenciesArgs, GetDependentsArgs } from "./types.js";
+import type {
+  SemanticSearchArgs,
+  GetDependenciesArgs,
+  GetDependentsArgs,
+  GetArchitectureArgs,
+} from "./types.js";
 
 /**
  * Zod schema for semantic_search tool arguments
@@ -285,6 +290,91 @@ export function validateGetDependentsArgs(args: unknown): GetDependentsArgs {
       .join("; ");
 
     throw createValidationError(`Invalid get_dependents arguments: ${errorMessage}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Valid detail level strings for get_architecture
+ *
+ * Controls the granularity of the architectural overview returned.
+ * - packages: High-level package/module structure only
+ * - modules: Packages and their internal modules (default)
+ * - files: Full file listing within modules
+ * - entities: Individual functions, classes, and definitions within files
+ */
+export const ARCHITECTURE_DETAIL_LEVELS = ["packages", "modules", "files", "entities"] as const;
+
+/**
+ * Zod schema for get_architecture tool arguments
+ *
+ * This schema:
+ * - Enforces MCP tool contract from PRD Section 6.1 (Tool 3)
+ * - Validates detail_level enum values
+ * - Validates repository and scope strings
+ * - Provides default values for optional parameters
+ *
+ * Aligns with the inputSchema in get_architecture tool definition.
+ */
+export const GetArchitectureArgsSchema = z
+  .object({
+    repository: z
+      .string()
+      .trim()
+      .min(1, "Repository name cannot be empty")
+      .max(200, "Repository name exceeds maximum length of 200 characters"),
+
+    scope: z
+      .string()
+      .trim()
+      .min(1, "Scope cannot be empty")
+      .max(500, "Scope exceeds maximum length of 500 characters")
+      .optional(),
+
+    detail_level: z.enum(ARCHITECTURE_DETAIL_LEVELS, {
+      message: `detail_level must be one of: ${ARCHITECTURE_DETAIL_LEVELS.join(", ")}`,
+    }),
+
+    include_external: z.boolean().optional().default(false),
+  })
+  .strict();
+
+/**
+ * Validates and parses get_architecture tool arguments
+ *
+ * This function:
+ * - Validates arguments against GetArchitectureArgsSchema
+ * - Applies default values for optional parameters
+ * - Throws MCP InvalidParams error if validation fails
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @returns Validated and normalized arguments with defaults applied
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ *
+ * @example
+ * ```typescript
+ * const args = validateGetArchitectureArgs({
+ *   repository: "my-project",
+ *   detail_level: "modules"
+ * });
+ * // args.scope === undefined (full repository)
+ * // args.include_external === false (default)
+ * ```
+ */
+export function validateGetArchitectureArgs(args: unknown): GetArchitectureArgs {
+  const result = GetArchitectureArgsSchema.safeParse(args);
+
+  if (!result.success) {
+    // Format Zod errors into human-readable message
+    const errorMessage = result.error.issues
+      .map((e) => {
+        const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
+        return `${path}${e.message}`;
+      })
+      .join("; ");
+
+    throw createValidationError(`Invalid get_architecture arguments: ${errorMessage}`);
   }
 
   return result.data;

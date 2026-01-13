@@ -209,3 +209,37 @@ export interface GetDependentsArgs {
   /** Include dependents from other repositories (default: false) */
   include_cross_repo: boolean;
 }
+
+/**
+ * Valid detail level for get_architecture tool
+ *
+ * Controls the granularity of the architectural overview returned.
+ * - packages: High-level package/module structure only
+ * - modules: Packages and their internal modules
+ * - files: Full file listing within modules
+ * - entities: Individual functions, classes, and definitions within files
+ */
+export type ArchitectureDetailLevel = "packages" | "modules" | "files" | "entities";
+
+/**
+ * Validated get_architecture tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults where applicable.
+ */
+export interface GetArchitectureArgs {
+  /** Repository name to analyze */
+  repository: string;
+
+  /**
+   * Specific package or directory to focus on (e.g., 'src/services')
+   * If omitted, analyzes full repository.
+   */
+  scope?: string;
+
+  /** Level of detail to return */
+  detail_level: ArchitectureDetailLevel;
+
+  /** Include external dependencies (node_modules, etc.) (default: false) */
+  include_external: boolean;
+}
