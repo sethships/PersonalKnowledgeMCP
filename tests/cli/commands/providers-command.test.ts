@@ -98,7 +98,9 @@ describe("Providers Commands", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     // Restore original env values
-    if (originalEnv["OPENAI_API_KEY"] !== undefined) {
+    if (originalEnv["OPENAI_API_KEY"] === undefined) {
+      delete Bun.env["OPENAI_API_KEY"];
+    } else {
       Bun.env["OPENAI_API_KEY"] = originalEnv["OPENAI_API_KEY"];
     }
   });
@@ -463,5 +465,81 @@ describe("Providers Formatters", () => {
       const result = createRepositoryProviderTable([]);
       expect(result).toContain("No repositories indexed");
     });
+  });
+});
+
+describe("providersSetupCommand", () => {
+  let capturedLogs: string[];
+  let capturedErrors: string[];
+  let mockExit: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    capturedLogs = [];
+    capturedErrors = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      capturedLogs.push(args.map((a) => String(a)).join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      capturedErrors.push(args.map((a) => String(a)).join(" "));
+    });
+    mockExit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should reject unsupported provider (openai)", async () => {
+    const { providersSetupCommand } =
+      await import("../../../src/cli/commands/providers-command.js");
+
+    await providersSetupCommand({ provider: "openai" });
+
+    expect(mockExit).toHaveBeenCalledWith(1);
+    const errorOutput = capturedErrors.join("\n");
+    expect(errorOutput).toContain("Setup is not available");
+  });
+
+  it("should reject unknown provider", async () => {
+    const { providersSetupCommand } =
+      await import("../../../src/cli/commands/providers-command.js");
+
+    await providersSetupCommand({ provider: "unknown-provider" });
+
+    expect(mockExit).toHaveBeenCalledWith(1);
+    const errorOutput = capturedErrors.join("\n");
+    expect(errorOutput).toContain("Setup is not available");
+  });
+
+  it("should normalize provider aliases", async () => {
+    const { providersSetupCommand } =
+      await import("../../../src/cli/commands/providers-command.js");
+
+    // "local" is an alias for "transformersjs"
+    // This test verifies it doesn't error on unknown provider
+    // The actual setup will fail on network/model issues which is expected
+    try {
+      await providersSetupCommand({ provider: "local" });
+    } catch {
+      // Expected - model download will fail in test environment
+    }
+
+    // Should NOT have rejected as unknown provider
+    const errorOutput = capturedErrors.join("\n");
+    expect(errorOutput).not.toContain("Setup is not available");
+  });
+
+  it("should log warning when force flag used with transformersjs", async () => {
+    const { providersSetupCommand } =
+      await import("../../../src/cli/commands/providers-command.js");
+
+    try {
+      await providersSetupCommand({ provider: "transformersjs", force: true });
+    } catch {
+      // Expected - model download will fail in test environment
+    }
+
+    const output = capturedLogs.join("\n");
+    expect(output).toContain("--force flag is accepted but cache clearing is not yet implemented");
   });
 });

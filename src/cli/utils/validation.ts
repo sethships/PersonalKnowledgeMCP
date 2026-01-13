@@ -356,15 +356,7 @@ export const ProvidersStatusCommandOptionsSchema = z.object({
  * Schema for providers setup command options
  */
 export const ProvidersSetupCommandOptionsSchema = z.object({
-  provider: z
-    .string()
-    .toLowerCase()
-    .pipe(
-      LOCAL_PROVIDER_ENUM.refine(
-        () => true,
-        "Invalid provider. Setup is only available for local providers: transformersjs, local, ollama"
-      )
-    ),
+  provider: z.string().toLowerCase().pipe(LOCAL_PROVIDER_ENUM),
   model: z.string().optional(),
   force: z.boolean().optional(),
 });

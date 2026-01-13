@@ -54,6 +54,22 @@ const DEFAULT_OPENAI_MODEL = "text-embedding-3-small";
 const DEFAULT_OPENAI_DIMENSIONS = 1536;
 
 // ============================================================================
+// Timeout Constants
+// ============================================================================
+
+/** Timeout for server health check (5 seconds) */
+const HEALTH_CHECK_TIMEOUT_MS = 5000;
+
+/** Timeout for Transformers.js model download (5 minutes) */
+const MODEL_DOWNLOAD_TIMEOUT_MS = 300000;
+
+/** Timeout for Ollama model pull (10 minutes) */
+const OLLAMA_PULL_TIMEOUT_MS = 600000;
+
+/** Timeout for provider verification (30 seconds) */
+const PROVIDER_VERIFY_TIMEOUT_MS = 30000;
+
+// ============================================================================
 // Command Option Types
 // ============================================================================
 
@@ -155,7 +171,7 @@ async function getOllamaStatus(
   try {
     const response = await fetch(`${baseUrl}/api/tags`, {
       method: "GET",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     });
 
     if (response.ok) {
@@ -299,9 +315,19 @@ function normalizeProvider(provider: string): string {
  * @param model - Optional custom model to download
  * @param force - Force re-download even if cached
  */
-async function setupTransformersJs(model?: string, _force?: boolean): Promise<void> {
+async function setupTransformersJs(model?: string, force?: boolean): Promise<void> {
   const modelPath = model || DEFAULT_TRANSFORMERSJS_MODEL;
   const startTime = Date.now();
+
+  // Note: Force re-download is not yet implemented for Transformers.js
+  // Model cache clearing would require access to the Hugging Face cache directory
+  if (force) {
+    console.log(
+      chalk.yellow(
+        "Note: --force flag is accepted but cache clearing is not yet implemented for Transformers.js"
+      )
+    );
+  }
 
   const spinner = ora({
     text: `Setting up ${chalk.cyan("Transformers.js")} with model ${chalk.cyan(modelPath)}...`,
@@ -316,7 +342,7 @@ async function setupTransformersJs(model?: string, _force?: boolean): Promise<vo
       dimensions: DEFAULT_TRANSFORMERSJS_DIMENSIONS,
       batchSize: 32,
       maxRetries: 0,
-      timeoutMs: 300000, // 5 minute timeout for download
+      timeoutMs: MODEL_DOWNLOAD_TIMEOUT_MS,
       modelPath,
       onProgress: (progress: ModelDownloadProgress) => {
         if (progress.status === "download" && progress.file) {
@@ -374,7 +400,7 @@ async function setupOllama(model?: string): Promise<void> {
     spinner.text = "Checking Ollama server...";
     const tagsResponse = await fetch(`${baseUrl}/api/tags`, {
       method: "GET",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     });
 
     if (!tagsResponse.ok) {
@@ -388,7 +414,7 @@ async function setupOllama(model?: string): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: modelName }),
-      signal: AbortSignal.timeout(600000), // 10 minute timeout
+      signal: AbortSignal.timeout(OLLAMA_PULL_TIMEOUT_MS),
     });
 
     if (!pullResponse.ok) {
@@ -439,7 +465,7 @@ async function setupOllama(model?: string): Promise<void> {
       dimensions: DEFAULT_OLLAMA_DIMENSIONS,
       batchSize: 32,
       maxRetries: 3,
-      timeoutMs: 30000,
+      timeoutMs: PROVIDER_VERIFY_TIMEOUT_MS,
       modelName,
       baseUrl,
     });

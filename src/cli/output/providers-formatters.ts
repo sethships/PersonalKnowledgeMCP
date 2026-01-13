@@ -96,6 +96,7 @@ export function createProvidersTable(providers: ProviderDisplayInfo[]): string {
       chalk.cyan("Default"),
     ],
     colWidths: [20, 20, 30, 12, 10],
+    wordWrap: true,
   });
 
   for (const provider of providers) {
@@ -131,6 +132,7 @@ export function createRepositoryProviderTable(repositories: RepositoryProviderUs
       chalk.cyan("Chunks"),
     ],
     colWidths: [25, 15, 25, 12, 10],
+    wordWrap: true,
   });
 
   for (const repo of repositories) {
