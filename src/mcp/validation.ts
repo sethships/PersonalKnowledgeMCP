@@ -13,6 +13,7 @@ import type {
   GetDependenciesArgs,
   GetDependentsArgs,
   GetArchitectureArgs,
+  FindPathArgs,
 } from "./types.js";
 
 /**
@@ -375,6 +376,98 @@ export function validateGetArchitectureArgs(args: unknown): GetArchitectureArgs 
       .join("; ");
 
     throw createValidationError(`Invalid get_architecture arguments: ${errorMessage}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Zod schema for find_path tool arguments
+ *
+ * This schema:
+ * - Enforces MCP tool contract from PRD Section 6.1 (Tool 4)
+ * - Validates from_entity and to_entity strings
+ * - Validates max_hops range (1-20)
+ * - Validates relationship_types array if provided
+ * - Provides default values for optional parameters
+ *
+ * Aligns with the inputSchema in find_path tool definition.
+ */
+export const FindPathArgsSchema = z
+  .object({
+    from_entity: z
+      .string()
+      .trim()
+      .min(1, "from_entity cannot be empty")
+      .max(500, "from_entity exceeds maximum length of 500 characters"),
+
+    to_entity: z
+      .string()
+      .trim()
+      .min(1, "to_entity cannot be empty")
+      .max(500, "to_entity exceeds maximum length of 500 characters"),
+
+    repository: z
+      .string()
+      .trim()
+      .min(1, "Repository name cannot be empty")
+      .max(200, "Repository name exceeds maximum length of 200 characters"),
+
+    max_hops: z
+      .number()
+      .int("max_hops must be an integer")
+      .min(1, "max_hops must be at least 1")
+      .max(20, "max_hops cannot exceed 20")
+      .optional()
+      .default(10),
+
+    relationship_types: z
+      .array(
+        z.enum(DEPENDENCY_RELATIONSHIP_TYPES, {
+          message: `relationship_types must be one of: ${DEPENDENCY_RELATIONSHIP_TYPES.join(", ")}`,
+        })
+      )
+      .optional(),
+  })
+  .strict();
+
+/**
+ * Validates and parses find_path tool arguments
+ *
+ * This function:
+ * - Validates arguments against FindPathArgsSchema
+ * - Applies default values for optional parameters
+ * - Throws MCP InvalidParams error if validation fails
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @returns Validated and normalized arguments with defaults applied
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ *
+ * @example
+ * ```typescript
+ * const args = validateFindPathArgs({
+ *   from_entity: "src/routes/api.ts::handleLogin",
+ *   to_entity: "src/db/users.ts::findUser",
+ *   repository: "my-api",
+ *   max_hops: 5
+ * });
+ * // args.max_hops === 5
+ * // args.relationship_types === undefined (all types)
+ * ```
+ */
+export function validateFindPathArgs(args: unknown): FindPathArgs {
+  const result = FindPathArgsSchema.safeParse(args);
+
+  if (!result.success) {
+    // Format Zod errors into human-readable message
+    const errorMessage = result.error.issues
+      .map((e) => {
+        const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
+        return `${path}${e.message}`;
+      })
+      .join("; ");
+
+    throw createValidationError(`Invalid find_path arguments: ${errorMessage}`);
   }
 
   return result.data;
