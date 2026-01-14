@@ -101,11 +101,11 @@ async function measurePerformance<T>(
 }> {
   const times: number[] = [];
 
-  // Warm-up run (not counted)
+  // Warm-up run (not counted, but log failures for debugging)
   try {
     await fn();
-  } catch {
-    // Ignore warm-up errors
+  } catch (error) {
+    console.warn(`Warm-up run failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Measured runs
@@ -188,7 +188,8 @@ describe("Graph Query Performance", () => {
       console.log(`  Target: <${TARGETS.simpleDependencyQuery}ms`);
 
       // Use p95 for more stable assertion (accounting for cold cache)
-      expect(stats.p95).toBeLessThan(TARGETS.simpleDependencyQuery * 2); // Allow 2x for CI variability
+      // Allow 1.5x for CI variability - balances stability with meaningful assertions
+      expect(stats.p95).toBeLessThan(TARGETS.simpleDependencyQuery * 1.5);
     });
 
     test(`transitive query (3 hops) should complete in <${TARGETS.transitiveQuery3Hops}ms`, async () => {
@@ -214,7 +215,8 @@ describe("Graph Query Performance", () => {
       console.log(`  p95: ${stats.p95.toFixed(2)}ms`);
       console.log(`  Target: <${TARGETS.transitiveQuery3Hops}ms`);
 
-      expect(stats.p95).toBeLessThan(TARGETS.transitiveQuery3Hops * 2);
+      // Allow 1.5x for CI variability - balances stability with meaningful assertions
+      expect(stats.p95).toBeLessThan(TARGETS.transitiveQuery3Hops * 1.5);
     });
   });
 
@@ -266,7 +268,8 @@ describe("Graph Query Performance", () => {
       console.log(`  p95: ${stats.p95.toFixed(2)}ms`);
       console.log(`  Target: <${TARGETS.architectureQuery}ms`);
 
-      expect(stats.p95).toBeLessThan(TARGETS.architectureQuery * 2);
+      // Allow 1.5x for CI variability - balances stability with meaningful assertions
+      expect(stats.p95).toBeLessThan(TARGETS.architectureQuery * 1.5);
     });
 
     test("scoped architecture query should be faster than full repo", async () => {
@@ -337,7 +340,8 @@ describe("Graph Query Performance", () => {
       console.log(`  p95: ${stats.p95.toFixed(2)}ms`);
       console.log(`  Target: <${TARGETS.pathFindingQuery}ms`);
 
-      expect(stats.p95).toBeLessThan(TARGETS.pathFindingQuery * 2);
+      // Allow 1.5x for CI variability - balances stability with meaningful assertions
+      expect(stats.p95).toBeLessThan(TARGETS.pathFindingQuery * 1.5);
     });
   });
 
@@ -470,7 +474,7 @@ describe("Graph Query Performance", () => {
       console.log("|---------------------|----------|----------|---------|--------|");
 
       const checkTarget = (p95: number, target: number): string =>
-        p95 < target * 2 ? "PASS" : "WARN"; // Allow 2x for CI
+        p95 < target * 1.5 ? "PASS" : "WARN"; // Allow 1.5x for CI variability
 
       console.log(
         `| Simple Dependency   | ${metrics["simple_dependency"]?.avg.toFixed(0).padStart(8)} | ${metrics["simple_dependency"]?.p95.toFixed(0).padStart(8)} | <${TARGETS.simpleDependencyQuery}ms  | ${checkTarget(metrics["simple_dependency"]?.p95 ?? 0, TARGETS.simpleDependencyQuery).padStart(6)} |`

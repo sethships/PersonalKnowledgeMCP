@@ -72,21 +72,36 @@ async function isRepositoryPopulated(
 }
 
 /**
- * Extract imports from a TypeScript file using regex
- * This provides ground truth for comparison
+ * Extract imports from a TypeScript file using regex patterns.
+ * This provides ground truth for comparison.
+ *
+ * Handles:
+ * - Standard imports: import { x } from "module"
+ * - Default imports: import x from "module"
+ * - Namespace imports: import * as x from "module"
+ * - Type imports: import type { x } from "module"
+ * - Re-exports: export { x } from "module"
+ * - Multi-line imports spanning multiple lines
  */
 function extractImportsFromFile(filePath: string): string[] {
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     const imports: string[] = [];
 
-    // Match import statements
-    const importRegex = /import\s+(?:(?:type\s+)?(?:\{[^}]*\}|[^{]*?)\s+from\s+)?['"]([^'"]+)['"]/g;
-    let match;
+    // Multiple patterns to catch different import/export styles
+    const importPatterns = [
+      // Standard imports (including multi-line with [\s\S]*? for any character including newlines)
+      /import\s+(?:type\s+)?(?:(?:\*\s+as\s+\w+|[\s\S]*?)\s+from\s+)?['"]([^'"]+)['"]/gm,
+      // Re-exports: export { ... } from "module" or export * from "module"
+      /export\s+(?:\*|(?:type\s+)?\{[\s\S]*?\})\s+from\s+['"]([^'"]+)['"]/gm,
+    ];
 
-    while ((match = importRegex.exec(content)) !== null) {
-      if (match[1]) {
-        imports.push(match[1]);
+    for (const pattern of importPatterns) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        if (match[1] && !imports.includes(match[1])) {
+          imports.push(match[1]);
+        }
       }
     }
 
@@ -96,38 +111,54 @@ function extractImportsFromFile(filePath: string): string[] {
   }
 }
 
+/** Maximum depth for recursive directory scanning to prevent runaway recursion */
+const MAX_SCAN_DEPTH = 20;
+
 /**
- * Find all files that import a given module using grep-like search
- * This provides ground truth for dependents query
+ * Find all files that import a given module using grep-like search.
+ * This provides ground truth for dependents query.
+ *
+ * @param targetPath - The path of the file to find importers for
+ * @param searchDir - The directory to search in
+ * @param maxDepth - Maximum recursion depth (default: MAX_SCAN_DEPTH)
  */
-function findImportersOfFile(targetPath: string, searchDir: string): string[] {
+function findImportersOfFile(
+  targetPath: string,
+  searchDir: string,
+  maxDepth: number = MAX_SCAN_DEPTH
+): string[] {
   const importers: string[] = [];
   const targetName = path.basename(targetPath, path.extname(targetPath));
 
-  function scanDirectory(dir: string): void {
+  // Build regex pattern for more accurate matching (reduces false positives)
+  // Matches: from ".../<targetName>" or from ".../<targetName>.js" or from ".../<targetName>.ts"
+  const importPattern = new RegExp(
+    `from\\s+['"](?:[^'"]*[/])?${escapeRegex(targetName)}(?:\\.(?:js|ts|tsx))?['"]`,
+    "g"
+  );
+
+  function scanDirectory(dir: string, currentDepth: number): void {
+    if (currentDepth > maxDepth) {
+      return; // Prevent excessive recursion
+    }
+
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
 
-        if (entry.isDirectory() && !entry.name.startsWith(".")) {
-          scanDirectory(fullPath);
+        if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+          scanDirectory(fullPath, currentDepth + 1);
         } else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
           try {
             const content = fs.readFileSync(fullPath, "utf-8");
-            // Check if file imports the target
-            if (
-              content.includes(`from "${targetPath}"`) ||
-              content.includes(`from './${targetPath}'`) ||
-              content.includes(`from "../${targetPath}"`) ||
-              content.includes(`/${targetName}"`) ||
-              content.includes(`/${targetName}'`) ||
-              content.includes(`/${targetName}.js"`) ||
-              content.includes(`/${targetName}.js'`)
-            ) {
+            // Use regex pattern for more accurate matching
+            if (importPattern.test(content)) {
               const relativePath = path.relative(process.cwd(), fullPath);
               importers.push(relativePath.replace(/\\/g, "/"));
             }
+            // Reset regex lastIndex for next file
+            importPattern.lastIndex = 0;
           } catch {
             // Skip unreadable files
           }
@@ -138,8 +169,25 @@ function findImportersOfFile(targetPath: string, searchDir: string): string[] {
     }
   }
 
-  scanDirectory(searchDir);
+  scanDirectory(searchDir, 0);
   return importers;
+}
+
+/** Helper to escape special regex characters in a string */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Helper to check if test should be skipped due to Neo4j unavailability.
+ * Logs a message when skipping and returns true if test should be skipped.
+ */
+function shouldSkipTest(neo4jAvailable: boolean, repoPopulated: boolean): boolean {
+  if (!neo4jAvailable || !repoPopulated) {
+    console.log("Skipping: Neo4j or repository not available");
+    return true;
+  }
+  return false;
 }
 
 describe("Dependency Accuracy Validation", () => {
@@ -190,10 +238,7 @@ describe("Dependency Accuracy Validation", () => {
 
     for (const testFile of testFiles) {
       test(`should accurately identify dependencies of ${testFile}`, async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
-          return;
-        }
+        if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
         const filePath = path.resolve(process.cwd(), testFile);
         if (!fs.existsSync(filePath)) {
@@ -276,10 +321,7 @@ describe("Dependency Accuracy Validation", () => {
 
     for (const targetFile of targetFiles) {
       test(`should find >95% of files importing ${targetFile}`, async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
-          return;
-        }
+        if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
         // Get ground truth using filesystem scan
         const groundTruthImporters = findImportersOfFile(targetFile, SOURCE_DIR);
@@ -345,10 +387,7 @@ describe("Dependency Accuracy Validation", () => {
 
   describe("Precision and Recall Metrics", () => {
     test("should calculate overall accuracy metrics", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
-        return;
-      }
+      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
       // Sample of files to test
       const sampleFiles = [
@@ -408,10 +447,7 @@ describe("Dependency Accuracy Validation", () => {
 
   describe("Edge Cases", () => {
     test("should handle files with no imports", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
-        return;
-      }
+      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
       // Find a simple file with few imports
       const query: DependencyQuery = {
@@ -433,10 +469,7 @@ describe("Dependency Accuracy Validation", () => {
     });
 
     test("should handle circular import scenarios", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
-        return;
-      }
+      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
       // Query for files that might have circular imports
       const query: DependencyQuery = {
@@ -455,10 +488,7 @@ describe("Dependency Accuracy Validation", () => {
     });
 
     test("should handle re-exported modules", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
-        return;
-      }
+      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
 
       // Index files often re-export from other files
       const query: DependencyQuery = {

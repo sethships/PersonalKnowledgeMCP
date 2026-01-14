@@ -203,4 +203,9 @@ Overall Accuracy Metrics:
 
 **Document Status:** Template - Actual values to be populated after test execution
 
+> **Note:** All "TBD" values in the tables above are template placeholders. These values are
+> populated dynamically when tests are run with an active Neo4j instance and populated graph.
+> Run the test suite with verbose output (`bun test tests/integration/graph/ --verbose`) to
+> see actual metrics logged to the console during test execution.
+
 **Last Updated:** January 2026

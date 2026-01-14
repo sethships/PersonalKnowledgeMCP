@@ -30,6 +30,7 @@ import type {
   ArchitectureQuery,
   PathQuery,
   EntityReference,
+  ArchitectureNode,
 } from "../../../src/services/graph-service-types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
@@ -518,16 +519,12 @@ describe("Comprehensive Real Repository Tests", () => {
   });
 });
 
-// Helper function to flatten architecture structure
-interface StructureNode {
-  name: string;
-  type: string;
-  path?: string;
-  children?: StructureNode[];
-}
-
-function flattenStructure(node: StructureNode): StructureNode[] {
-  const result: StructureNode[] = [node];
+/**
+ * Helper function to flatten architecture structure for easier searching.
+ * Recursively collects all nodes from the hierarchy into a flat array.
+ */
+function flattenStructure(node: ArchitectureNode): ArchitectureNode[] {
+  const result: ArchitectureNode[] = [node];
   if (node.children) {
     for (const child of node.children) {
       result.push(...flattenStructure(child));
