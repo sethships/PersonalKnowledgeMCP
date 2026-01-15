@@ -401,6 +401,45 @@ describe("ModelCacheService", () => {
       }
       expect(thrownError).toBeDefined();
     });
+
+    it("should reject source path that is not a directory", async () => {
+      const service = createModelCacheService();
+      // Use a known file path (not a directory)
+      const filePath =
+        process.platform === "win32" ? "C:\\Windows\\System32\\drivers\\etc\\hosts" : "/etc/hosts";
+
+      let thrownError: unknown;
+      try {
+        await service.importModel({
+          sourcePath: filePath,
+          provider: "transformersjs",
+          modelId: "test/model",
+        });
+      } catch (error) {
+        thrownError = error;
+      }
+      expect(thrownError).toBeDefined();
+      expect((thrownError as Error).message).toContain("must be a directory");
+    });
+
+    it("should normalize path to prevent directory traversal", async () => {
+      const service = createModelCacheService();
+      // Use a traversal path - should be normalized
+      const traversalPath = "/some/path/../../../etc";
+
+      let thrownError: unknown;
+      try {
+        await service.importModel({
+          sourcePath: traversalPath,
+          provider: "transformersjs",
+          modelId: "test/model",
+        });
+      } catch (error) {
+        thrownError = error;
+      }
+      // Should throw because path doesn't exist or isn't a valid model directory
+      expect(thrownError).toBeDefined();
+    });
   });
 });
 

@@ -146,6 +146,13 @@ async function confirmAction(message: string): Promise<boolean> {
   });
 
   return new Promise((resolve) => {
+    // Handle error/close events for robustness
+    rl.on("error", () => {
+      rl.close();
+      resolve(false);
+    });
+    rl.on("close", () => resolve(false));
+
     rl.question(`${message} [y/N] `, (answer) => {
       rl.close();
       resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");

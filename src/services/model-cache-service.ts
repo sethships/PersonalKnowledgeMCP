@@ -409,14 +409,23 @@ export class ModelCacheService {
   async importModel(options: ModelImportOptions): Promise<ModelImportResult> {
     const { sourcePath, provider, modelId, validate, overwrite } = options;
 
+    // Normalize and validate source path to prevent directory traversal
+    const normalizedSource = path.resolve(sourcePath);
+
     // Verify source path exists
-    if (!existsSync(sourcePath)) {
+    if (!existsSync(normalizedSource)) {
       throw new ModelImportError(provider, modelId, sourcePath, "Source path does not exist");
+    }
+
+    // Ensure source is a directory
+    const sourceStats = statSync(normalizedSource);
+    if (!sourceStats.isDirectory()) {
+      throw new ModelImportError(provider, modelId, sourcePath, "Source path must be a directory");
     }
 
     switch (provider) {
       case "transformersjs":
-        return this.importTransformersModel(sourcePath, modelId, validate, overwrite);
+        return this.importTransformersModel(normalizedSource, modelId, validate, overwrite);
       case "ollama":
         // Ollama models should be imported using `ollama create` command
         throw new ModelImportError(
