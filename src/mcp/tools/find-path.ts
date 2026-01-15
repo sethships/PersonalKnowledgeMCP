@@ -20,7 +20,8 @@ import { RelationshipType } from "../../graph/types.js";
 import { validateFindPathArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
-import type { ToolHandler, DependencyRelationshipType } from "../types.js";
+import type { ToolHandler } from "../types.js";
+import { mapMCPRelationshipTypes } from "./utils/relationship-mapper.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -118,30 +119,6 @@ function parseEntityReference(entity: string, repository: string): EntityReferen
 }
 
 /**
- * Maps MCP relationship type strings to internal RelationshipType enum values
- *
- * @param mcpTypes - Array of lowercase relationship type strings from MCP input
- * @returns Array of RelationshipType enum values for GraphService
- */
-function mapRelationshipTypes(
-  mcpTypes?: DependencyRelationshipType[]
-): RelationshipType[] | undefined {
-  if (!mcpTypes || mcpTypes.length === 0) {
-    return undefined;
-  }
-
-  const mapping: Record<DependencyRelationshipType, RelationshipType> = {
-    imports: RelationshipType.IMPORTS,
-    calls: RelationshipType.CALLS,
-    extends: RelationshipType.EXTENDS,
-    implements: RelationshipType.IMPLEMENTS,
-    references: RelationshipType.REFERENCES,
-  };
-
-  return mcpTypes.map((t) => mapping[t]);
-}
-
-/**
  * Creates the find_path tool handler
  *
  * This factory function enables dependency injection of the GraphService,
@@ -191,7 +168,7 @@ export function createFindPathHandler(graphService: GraphService): ToolHandler {
         from_entity: fromEntity,
         to_entity: toEntity,
         max_hops: validatedArgs.max_hops,
-        relationship_types: mapRelationshipTypes(validatedArgs.relationship_types),
+        relationship_types: mapMCPRelationshipTypes(validatedArgs.relationship_types),
       };
 
       // Step 4: Call GraphService with validated parameters

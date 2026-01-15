@@ -16,7 +16,8 @@ import { RelationshipType } from "../../graph/types.js";
 import { validateGetDependenciesArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
-import type { ToolHandler, GetDependenciesArgs, DependencyRelationshipType } from "../types.js";
+import type { ToolHandler, GetDependenciesArgs } from "../types.js";
+import { mapMCPRelationshipTypes } from "./utils/relationship-mapper.js";
 
 /**
  * Lazy-initialized logger to avoid initialization at module load time
@@ -87,30 +88,6 @@ export const getDependenciesToolDefinition: Tool = {
 };
 
 /**
- * Maps MCP relationship type strings to internal RelationshipType enum values
- *
- * @param mcpTypes - Array of lowercase relationship type strings from MCP input
- * @returns Array of RelationshipType enum values for GraphService
- */
-function mapRelationshipTypes(
-  mcpTypes?: DependencyRelationshipType[]
-): RelationshipType[] | undefined {
-  if (!mcpTypes || mcpTypes.length === 0) {
-    return undefined;
-  }
-
-  const mapping: Record<DependencyRelationshipType, RelationshipType> = {
-    imports: RelationshipType.IMPORTS,
-    calls: RelationshipType.CALLS,
-    extends: RelationshipType.EXTENDS,
-    implements: RelationshipType.IMPLEMENTS,
-    references: RelationshipType.REFERENCES,
-  };
-
-  return mcpTypes.map((t) => mapping[t]);
-}
-
-/**
  * Creates the get_dependencies tool handler
  *
  * This factory function enables dependency injection of the GraphService,
@@ -158,7 +135,7 @@ export function createGetDependenciesHandler(graphService: GraphService): ToolHa
         repository: validatedArgs.repository,
         depth: validatedArgs.depth,
         include_transitive: validatedArgs.depth > 1,
-        relationship_types: mapRelationshipTypes(validatedArgs.relationship_types),
+        relationship_types: mapMCPRelationshipTypes(validatedArgs.relationship_types),
       };
 
       // Step 3: Call GraphService with validated parameters
