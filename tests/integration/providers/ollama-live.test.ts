@@ -234,7 +234,7 @@ describe.skipIf(!shouldRunLiveTests)("OllamaEmbeddingProvider - Error Handling",
       maxRetries: 0,
       timeoutMs: 2000,
       modelName: DEFAULT_MODEL,
-      baseUrl: "http://localhost:99999", // Invalid port
+      baseUrl: "http://localhost:59999", // Port unlikely to be in use - tests connection refused
     };
 
     const provider = new OllamaEmbeddingProvider(config);

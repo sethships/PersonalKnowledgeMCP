@@ -147,8 +147,11 @@ describe.skipIf(!shouldRunBenchmarks)("Embedding Performance Benchmarks", () => 
         console.log(formatStats(stats, "Single Embedding"));
       }
 
-      // P50 should be under target
-      expect(stats.median).toBeLessThanOrEqual(PERFORMANCE_TARGETS.singleEmbeddingWarm * 2);
+      // P50 should be under target (2x tolerance for CI variance and non-GPU environments)
+      const CI_TOLERANCE_MULTIPLIER = 2;
+      expect(stats.median).toBeLessThanOrEqual(
+        PERFORMANCE_TARGETS.singleEmbeddingWarm * CI_TOLERANCE_MULTIPLIER
+      );
     });
 
     test("batch of 10 embeddings", async () => {
@@ -173,7 +176,11 @@ describe.skipIf(!shouldRunBenchmarks)("Embedding Performance Benchmarks", () => 
         console.log(formatStats(stats, "Batch of 10"));
       }
 
-      expect(stats.median).toBeLessThanOrEqual(PERFORMANCE_TARGETS.batchOf10 * 2);
+      // 2x tolerance for CI variance and non-GPU environments
+      const CI_TOLERANCE_MULTIPLIER = 2;
+      expect(stats.median).toBeLessThanOrEqual(
+        PERFORMANCE_TARGETS.batchOf10 * CI_TOLERANCE_MULTIPLIER
+      );
     });
 
     test("throughput benchmark", async () => {
@@ -227,8 +234,8 @@ describe.skipIf(!shouldRunBenchmarks)("Embedding Performance Benchmarks", () => 
         console.log(`  ${category} (${text.length} chars): ${stats.median.toFixed(2)}ms median`);
       }
 
-      // All should complete
-      expect(true).toBe(true);
+      // This test is informational - latencies logged above
+      // No hard assertion as performance varies by text length
     });
 
     test("code embedding performance", async () => {
@@ -375,9 +382,7 @@ describe.skipIf(!shouldRunBenchmarks)("Embedding Performance Benchmarks", () => 
 
     test("print performance summary", () => {
       printBenchmarks("Ollama", benchmarks);
-
-      // Summary printed, test passes
-      expect(true).toBe(true);
+      // This test is informational - summary logged above
     });
   });
 

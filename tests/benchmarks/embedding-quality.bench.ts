@@ -369,7 +369,9 @@ describe.skipIf(!shouldRunBenchmarks)("Embedding Quality Benchmarks", () => {
         denomTransformers += diffTransformers * diffTransformers;
       }
 
-      const correlation = numerator / Math.sqrt(denomOpenai * denomTransformers);
+      const denominator = Math.sqrt(denomOpenai * denomTransformers);
+      // Handle zero variance case (all identical margins) to avoid NaN
+      const correlation = denominator === 0 ? 0 : numerator / denominator;
       console.log(`\nMargin correlation: ${correlation.toFixed(4)}`);
 
       // Expect positive correlation (both should trend same direction)

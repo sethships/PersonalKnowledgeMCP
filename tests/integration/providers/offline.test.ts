@@ -17,7 +17,7 @@
  * - Ollama must be running locally with the model pulled
  */
 
-import { describe, test, expect, beforeAll, afterAll, mock } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, afterEach, mock } from "bun:test";
 import {
   TransformersJsEmbeddingProvider,
   type TransformersJsProviderConfig,
@@ -51,15 +51,24 @@ const EXTERNAL_DOMAINS = [
 ];
 
 /**
- * Check if a URL is external (not localhost)
+ * Check if a URL is external (not localhost or private network)
  */
 function isExternalUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
 
-    // localhost and 127.0.0.x are local
-    if (hostname === "localhost" || hostname.startsWith("127.")) {
+    // localhost, IPv6 localhost, and private IP ranges are local
+    if (
+      hostname === "localhost" ||
+      hostname.startsWith("127.") ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".local") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.") ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+    ) {
       return false;
     }
 
@@ -70,8 +79,8 @@ function isExternalUrl(url: string): boolean {
       }
     }
 
-    // Assume any other domain could be external
-    return !hostname.includes("local") && !hostname.includes("internal");
+    // Assume any other non-private domain is external
+    return true;
   } catch {
     return false;
   }
@@ -168,9 +177,18 @@ describe.skipIf(!shouldRunOfflineTests)("Transformers.js - Offline Operation", (
     console.log("Model initialized, starting offline tests...");
   }, 300000); // 5 minute timeout for model loading
 
+  // Ensure cleanup happens even if tests fail
+  afterEach(() => {
+    if (originalFetch && global.fetch !== originalFetch) {
+      global.fetch = originalFetch;
+    }
+  });
+
   afterAll(() => {
     // Restore original fetch
-    global.fetch = originalFetch;
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    }
   });
 
   test("generates embeddings without external network calls", async () => {
@@ -298,9 +316,18 @@ describe.skipIf(!shouldRunOfflineTests)("Ollama - Offline Operation", () => {
     console.log("Ollama ready, starting offline tests...");
   }, 120000);
 
+  // Ensure cleanup happens even if tests fail
+  afterEach(() => {
+    if (originalFetch && global.fetch !== originalFetch) {
+      global.fetch = originalFetch;
+    }
+  });
+
   afterAll(() => {
     // Restore original fetch
-    global.fetch = originalFetch;
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    }
   });
 
   test("generates embeddings with only local server calls", async () => {
