@@ -86,6 +86,17 @@ describe("mapMCPRelationshipTypes", () => {
         RelationshipType.CALLS,
       ]);
     });
+
+    it("should preserve input array order in output", () => {
+      // Order matters when filtering relationship traversal
+      const input: DependencyRelationshipType[] = ["references", "imports", "calls"];
+      const result = mapMCPRelationshipTypes(input);
+      expect(result).toEqual([
+        RelationshipType.REFERENCES,
+        RelationshipType.IMPORTS,
+        RelationshipType.CALLS,
+      ]);
+    });
   });
 
   describe("type coverage validation", () => {
