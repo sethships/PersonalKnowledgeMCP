@@ -30,6 +30,7 @@ import {
   type ProviderDisplayInfo,
   type ProviderStatus,
 } from "../output/providers-formatters.js";
+import { createModelCacheService } from "../../services/model-cache-service.js";
 
 // ============================================================================
 // Default Model Configurations
@@ -280,7 +281,7 @@ export async function providersSetupCommand(options: ProvidersSetupOptions): Pro
       await setupTransformersJs(options.model, options.force);
       break;
     case "ollama":
-      await setupOllama(options.model);
+      await setupOllama(options.model, options.force);
       break;
     default:
       console.error(
@@ -319,20 +320,32 @@ async function setupTransformersJs(model?: string, force?: boolean): Promise<voi
   const modelPath = model || DEFAULT_TRANSFORMERSJS_MODEL;
   const startTime = Date.now();
 
-  // Note: Force re-download is not yet implemented for Transformers.js
-  // Model cache clearing would require access to the Hugging Face cache directory
-  if (force) {
-    console.log(
-      chalk.yellow(
-        "Note: --force flag is accepted but cache clearing is not yet implemented for Transformers.js"
-      )
-    );
-  }
-
   const spinner = ora({
     text: `Setting up ${chalk.cyan("Transformers.js")} with model ${chalk.cyan(modelPath)}...`,
     color: "cyan",
   }).start();
+
+  // If force flag is set, clear existing cached model first
+  if (force) {
+    try {
+      spinner.text = `Clearing cached model ${chalk.cyan(modelPath)}...`;
+      const cacheService = createModelCacheService();
+      const isCached = await cacheService.isModelCached("transformersjs", modelPath);
+
+      if (isCached) {
+        await cacheService.clearModel("transformersjs", modelPath);
+        spinner.text = `Cleared cached model, downloading fresh copy...`;
+      } else {
+        spinner.text = `Model not cached, downloading...`;
+      }
+    } catch (error) {
+      // Log warning but continue with download - model might not exist yet
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      spinner.text = chalk.yellow(
+        `Could not clear cache: ${errorMessage}. Proceeding with download...`
+      );
+    }
+  }
 
   try {
     // Create provider with progress callback
@@ -381,8 +394,9 @@ async function setupTransformersJs(model?: string, force?: boolean): Promise<voi
  * This command verifies connectivity and optionally pulls a model.
  *
  * @param model - Optional model to pull
+ * @param force - Force re-pull even if model exists
  */
-async function setupOllama(model?: string): Promise<void> {
+async function setupOllama(model?: string, force?: boolean): Promise<void> {
   const modelName = model || DEFAULT_OLLAMA_MODEL;
   const startTime = Date.now();
 
@@ -405,6 +419,28 @@ async function setupOllama(model?: string): Promise<void> {
 
     if (!tagsResponse.ok) {
       throw new Error(`Ollama server returned ${tagsResponse.status}`);
+    }
+
+    // If force flag is set, delete existing model first
+    if (force) {
+      try {
+        spinner.text = `Deleting existing model ${chalk.cyan(modelName)}...`;
+        const cacheService = createModelCacheService();
+        const isCached = await cacheService.isModelCached("ollama", modelName);
+
+        if (isCached) {
+          await cacheService.clearModel("ollama", modelName);
+          spinner.text = `Deleted model, pulling fresh copy...`;
+        } else {
+          spinner.text = `Model not installed, pulling...`;
+        }
+      } catch (error) {
+        // Log warning but continue with pull - model might not exist yet
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        spinner.text = chalk.yellow(
+          `Could not delete model: ${errorMessage}. Proceeding with pull...`
+        );
+      }
     }
 
     // Pull the model (Ollama handles caching)

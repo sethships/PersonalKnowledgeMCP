@@ -366,3 +366,95 @@ export const ProvidersSetupCommandOptionsSchema = z.object({
  */
 export type ValidatedProvidersStatusOptions = z.infer<typeof ProvidersStatusCommandOptionsSchema>;
 export type ValidatedProvidersSetupOptions = z.infer<typeof ProvidersSetupCommandOptionsSchema>;
+
+// ============================================================================
+// Models Command Validation Schemas
+// ============================================================================
+
+/**
+ * Valid cacheable provider identifiers
+ *
+ * Only local providers have model caches to manage.
+ */
+const CACHEABLE_PROVIDER_ENUM = z.enum(["transformersjs", "transformers", "local", "ollama"]);
+
+/**
+ * Schema for models list command options
+ */
+export const ModelsListCommandOptionsSchema = z.object({
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .pipe(CACHEABLE_PROVIDER_ENUM.optional()),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for models status command options
+ */
+export const ModelsStatusCommandOptionsSchema = z.object({
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .pipe(CACHEABLE_PROVIDER_ENUM.optional()),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for models validate command options
+ */
+export const ModelsValidateCommandOptionsSchema = z.object({
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .pipe(CACHEABLE_PROVIDER_ENUM.optional()),
+  fix: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for models clear command options
+ */
+export const ModelsClearCommandOptionsSchema = z.object({
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .pipe(CACHEABLE_PROVIDER_ENUM.optional()),
+  force: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
+});
+
+/**
+ * Schema for models path command options
+ */
+export const ModelsPathCommandOptionsSchema = z.object({
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .pipe(CACHEABLE_PROVIDER_ENUM.optional()),
+});
+
+/**
+ * Schema for models import command options
+ */
+export const ModelsImportCommandOptionsSchema = z.object({
+  provider: z.string().toLowerCase().pipe(CACHEABLE_PROVIDER_ENUM),
+  modelId: z.string().min(1, "Model ID is required"),
+  validate: z.boolean().optional(),
+  overwrite: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript types for models commands
+ */
+export type ValidatedModelsListOptions = z.infer<typeof ModelsListCommandOptionsSchema>;
+export type ValidatedModelsStatusOptions = z.infer<typeof ModelsStatusCommandOptionsSchema>;
+export type ValidatedModelsValidateOptions = z.infer<typeof ModelsValidateCommandOptionsSchema>;
+export type ValidatedModelsClearOptions = z.infer<typeof ModelsClearCommandOptionsSchema>;
+export type ValidatedModelsPathOptions = z.infer<typeof ModelsPathCommandOptionsSchema>;
+export type ValidatedModelsImportOptions = z.infer<typeof ModelsImportCommandOptionsSchema>;

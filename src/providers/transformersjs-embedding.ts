@@ -7,8 +7,16 @@
  * @see ADR-0003: Local Embeddings Architecture
  */
 
+import * as path from "node:path";
+import * as os from "node:os";
+import { existsSync } from "node:fs";
 import type { EmbeddingProvider, EmbeddingProviderConfig, ProviderCapabilities } from "./types.js";
 import { EmbeddingError, EmbeddingValidationError, EmbeddingNetworkError } from "./errors.js";
+
+/**
+ * Default cache directory for Transformers.js models
+ */
+const DEFAULT_CACHE_DIR = path.join(os.homedir(), ".cache", "huggingface", "transformers");
 
 /**
  * Progress information during model download
@@ -220,6 +228,80 @@ export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
       requiresNetwork: false, // Works offline after model download
       estimatedLatencyMs: 100, // Approximate for warm model on CPU
     };
+  }
+
+  // ==========================================================================
+  // Cache Helper Methods
+  // ==========================================================================
+
+  /**
+   * Get the cache directory path
+   *
+   * Returns the configured cache directory or the default HuggingFace cache location.
+   *
+   * @returns Full path to the cache directory
+   */
+  getCacheDir(): string {
+    return this.config.cacheDir || DEFAULT_CACHE_DIR;
+  }
+
+  /**
+   * Get the full path to this model's cache directory
+   *
+   * The model is stored in a directory named using the HuggingFace convention:
+   * `models--{org}--{model}` (slashes replaced with double dashes)
+   *
+   * @returns Full path to the model's cache directory
+   */
+  getModelCachePath(): string {
+    const cacheDir = this.getCacheDir();
+    const modelDirName = `models--${this.modelId.replace("/", "--")}`;
+    return path.join(cacheDir, modelDirName);
+  }
+
+  /**
+   * Check if the model is already cached
+   *
+   * Verifies that the model directory exists and contains the required ONNX files.
+   *
+   * @returns True if the model appears to be cached and valid
+   */
+  isModelCached(): boolean {
+    const modelPath = this.getModelCachePath();
+
+    if (!existsSync(modelPath)) {
+      return false;
+    }
+
+    // Check for ONNX model files
+    const onnxDir = path.join(modelPath, "onnx");
+    if (!existsSync(onnxDir)) {
+      return false;
+    }
+
+    // Check for either standard or quantized model
+    const modelFile = path.join(onnxDir, "model.onnx");
+    const quantizedFile = path.join(onnxDir, "model_quantized.onnx");
+
+    return existsSync(modelFile) || existsSync(quantizedFile);
+  }
+
+  /**
+   * Get the configured cache directory (for external use)
+   *
+   * @returns The custom cache directory if configured, undefined otherwise
+   */
+  getConfiguredCacheDir(): string | undefined {
+    return this.config.cacheDir;
+  }
+
+  /**
+   * Check if quantized model is configured
+   *
+   * @returns True if this provider is configured to use quantized models
+   */
+  isQuantized(): boolean {
+    return this.config.quantized ?? false;
   }
 
   /**

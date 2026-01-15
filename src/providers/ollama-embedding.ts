@@ -65,6 +65,20 @@ interface OllamaTagsResponse {
 }
 
 /**
+ * Model information returned from Ollama server
+ */
+export interface OllamaModelInfo {
+  /** Model name (including tag, e.g., "nomic-embed-text:latest") */
+  name: string;
+  /** Model size in bytes */
+  size: number;
+  /** Model digest (SHA256 hash) */
+  digest: string;
+  /** When the model was last modified */
+  modifiedAt: Date;
+}
+
+/**
  * Ollama embedding provider implementation
  *
  * Implements the EmbeddingProvider interface using a local Ollama server.
@@ -213,6 +227,97 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       requiresNetwork: false, // Local server, no internet required
       estimatedLatencyMs: 50, // Fast with GPU, ~50-100ms warm
     };
+  }
+
+  // ==========================================================================
+  // Model Info Methods
+  // ==========================================================================
+
+  /**
+   * Get the Ollama server base URL
+   *
+   * @returns The configured base URL for the Ollama server
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * Check if the model is available on the Ollama server
+   *
+   * Queries the Ollama server to verify the model exists.
+   *
+   * @returns True if the model is available on the server
+   */
+  async isModelAvailable(): Promise<boolean> {
+    return this.healthCheck();
+  }
+
+  /**
+   * Get information about the model from Ollama server
+   *
+   * @returns Model metadata if available, null if model not found or server unavailable
+   */
+  async getModelInfo(): Promise<OllamaModelInfo | null> {
+    try {
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json()) as OllamaTagsResponse;
+
+      // Find the model (with or without tag)
+      const model = data.models.find(
+        (m) => m.name === this.modelId || m.name.startsWith(`${this.modelId}:`)
+      );
+
+      if (!model) {
+        return null;
+      }
+
+      return {
+        name: model.name,
+        size: model.size,
+        digest: model.digest,
+        modifiedAt: new Date(model.modified_at),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * List all available models on the Ollama server
+   *
+   * @returns Array of available models, or empty array if server unavailable
+   */
+  async listAvailableModels(): Promise<OllamaModelInfo[]> {
+    try {
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/tags`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const data = (await response.json()) as OllamaTagsResponse;
+
+      return data.models.map((m) => ({
+        name: m.name,
+        size: m.size,
+        digest: m.digest,
+        modifiedAt: new Date(m.modified_at),
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /**

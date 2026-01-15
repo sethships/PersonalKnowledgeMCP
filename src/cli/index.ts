@@ -14,6 +14,7 @@
  * - token: Manage authentication tokens (create, list, revoke, rotate)
  * - graph: Manage knowledge graph (migrate, populate)
  * - providers: Manage embedding providers (status, setup)
+ * - models: Manage embedding model cache (list, status, validate, clear, path, import)
  */
 
 import "dotenv/config";
@@ -39,6 +40,14 @@ import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import { providersStatusCommand, providersSetupCommand } from "./commands/providers-command.js";
 import {
+  modelsListCommand,
+  modelsStatusCommand,
+  modelsValidateCommand,
+  modelsClearCommand,
+  modelsPathCommand,
+  modelsImportCommand,
+} from "./commands/models-command.js";
+import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
   StatusCommandOptionsSchema,
@@ -55,6 +64,12 @@ import {
   GraphPopulateCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
+  ModelsListCommandOptionsSchema,
+  ModelsStatusCommandOptionsSchema,
+  ModelsValidateCommandOptionsSchema,
+  ModelsClearCommandOptionsSchema,
+  ModelsPathCommandOptionsSchema,
+  ModelsImportCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -355,6 +370,106 @@ providersProgram
         provider,
       });
       await providersSetupCommand(validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models command group
+const modelsProgram = program.command("models").description("Manage embedding model cache");
+
+// Models list subcommand
+modelsProgram
+  .command("list")
+  .description("List all cached embedding models")
+  .option("-p, --provider <provider>", "Filter to specific provider (transformersjs, ollama)")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsListCommandOptionsSchema.parse(options);
+      await modelsListCommand(validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models status subcommand
+modelsProgram
+  .command("status")
+  .description("Show cache status and disk usage")
+  .option("-p, --provider <provider>", "Filter to specific provider (transformersjs, ollama)")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsStatusCommandOptionsSchema.parse(options);
+      await modelsStatusCommand(validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models validate subcommand
+modelsProgram
+  .command("validate")
+  .description("Validate cached model integrity")
+  .argument("[modelId]", "Model ID to validate (all models if not specified)")
+  .option("-p, --provider <provider>", "Filter to specific provider (transformersjs, ollama)")
+  .option("--fix", "Attempt to fix invalid models by re-downloading")
+  .option("-j, --json", "Output as JSON")
+  .action(async (modelId: string | undefined, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsValidateCommandOptionsSchema.parse(options);
+      await modelsValidateCommand(modelId, validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models clear subcommand
+modelsProgram
+  .command("clear")
+  .description("Clear cached models")
+  .argument("[modelId]", "Model ID to clear (all models if not specified)")
+  .option("-p, --provider <provider>", "Filter to specific provider (transformersjs, ollama)")
+  .option("-f, --force", "Skip confirmation prompt")
+  .option("--dry-run", "Show what would be cleared without actually clearing")
+  .action(async (modelId: string | undefined, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsClearCommandOptionsSchema.parse(options);
+      await modelsClearCommand(modelId, validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models path subcommand
+modelsProgram
+  .command("path")
+  .description("Show path for manual model placement (air-gapped installations)")
+  .argument("<modelId>", "Model ID to get path for")
+  .option("-p, --provider <provider>", "Provider (default: transformersjs)")
+  .action((modelId: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsPathCommandOptionsSchema.parse(options);
+      modelsPathCommand(modelId, validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Models import subcommand
+modelsProgram
+  .command("import")
+  .description("Import model from local files (air-gapped installations)")
+  .argument("<sourcePath>", "Path to source model files")
+  .requiredOption("-p, --provider <provider>", "Provider (transformersjs, ollama)")
+  .requiredOption("-m, --model-id <modelId>", "Model identifier to use in cache")
+  .option("--validate", "Validate after import")
+  .option("--overwrite", "Overwrite existing cached model")
+  .action(async (sourcePath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = ModelsImportCommandOptionsSchema.parse(options);
+      await modelsImportCommand(sourcePath, validatedOptions);
     } catch (error) {
       handleCommandError(error);
     }
