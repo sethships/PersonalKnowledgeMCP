@@ -213,6 +213,55 @@ export interface DocumentQueryResult {
 export type ChromaCollection = Collection;
 
 /**
+ * Embedding provider metadata stored in ChromaDB collection metadata
+ *
+ * Keys use "app:" prefix to avoid collision with ChromaDB system keys.
+ * This metadata is stored when creating collections and used to determine
+ * which embedding provider to use for query embedding during search.
+ *
+ * @example
+ * ```typescript
+ * const metadata: CollectionEmbeddingMetadata = {
+ *   "app:embedding_provider": "openai",
+ *   "app:embedding_model": "text-embedding-3-small",
+ *   "app:embedding_dimensions": 1536,
+ * };
+ * ```
+ */
+export interface CollectionEmbeddingMetadata {
+  /** Embedding provider identifier (e.g., "openai", "transformersjs", "ollama") */
+  "app:embedding_provider"?: string;
+  /** Embedding model identifier (e.g., "text-embedding-3-small") */
+  "app:embedding_model"?: string;
+  /** Embedding vector dimensions (e.g., 1536, 384, 768) */
+  "app:embedding_dimensions"?: number;
+}
+
+/**
+ * Parsed embedding metadata with application-friendly property names
+ *
+ * Converted from CollectionEmbeddingMetadata for easier consumption
+ * in application code without the "app:" prefix keys.
+ *
+ * @example
+ * ```typescript
+ * const parsed: ParsedEmbeddingMetadata = {
+ *   provider: "openai",
+ *   model: "text-embedding-3-small",
+ *   dimensions: 1536,
+ * };
+ * ```
+ */
+export interface ParsedEmbeddingMetadata {
+  /** Embedding provider identifier */
+  provider?: string;
+  /** Embedding model identifier */
+  model?: string;
+  /** Embedding vector dimensions */
+  dimensions?: number;
+}
+
+/**
  * Client interface for interacting with ChromaDB vector storage
  *
  * This is the primary interface for all vector storage operations. It provides
@@ -265,7 +314,10 @@ export interface ChromaStorageClient {
    * @returns ChromaDB collection handle
    * @throws {StorageError} If collection operations fail
    */
-  getOrCreateCollection(name: string): Promise<ChromaCollection>;
+  getOrCreateCollection(
+    name: string,
+    embeddingMetadata?: CollectionEmbeddingMetadata
+  ): Promise<ChromaCollection>;
 
   /**
    * Delete a collection and all its documents
@@ -396,4 +448,20 @@ export interface ChromaStorageClient {
     repository: string,
     filePath: string
   ): Promise<number>;
+
+  /**
+   * Get embedding provider metadata for a collection
+   *
+   * Retrieves the embedding provider, model, and dimensions that were used
+   * when the collection was created. Returns null if the collection doesn't
+   * exist or has no embedding metadata.
+   *
+   * Used by the search service to determine which embedding provider to use
+   * for query embedding when searching a specific collection.
+   *
+   * @param name - Collection name
+   * @returns Parsed embedding metadata, or null if not found
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  getCollectionEmbeddingMetadata(name: string): Promise<ParsedEmbeddingMetadata | null>;
 }

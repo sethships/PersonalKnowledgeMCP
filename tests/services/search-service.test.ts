@@ -20,10 +20,13 @@ import {
   RepositoryNotFoundError,
   RepositoryNotReadyError,
   NoRepositoriesAvailableError,
-  SearchOperationError,
 } from "../../src/services/errors.js";
-import type { EmbeddingProvider } from "../../src/providers/types.js";
-import type { ChromaStorageClient, SimilarityResult } from "../../src/storage/types.js";
+import type { EmbeddingProvider, EmbeddingProviderConfig } from "../../src/providers/types.js";
+import type {
+  ChromaStorageClient,
+  SimilarityResult,
+  ParsedEmbeddingMetadata,
+} from "../../src/storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
@@ -108,6 +111,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return 0;
   }
 
+  async getCollectionEmbeddingMetadata(): Promise<ParsedEmbeddingMetadata | null> {
+    return null;
+  }
+
   setMockResults(results: SimilarityResult[]) {
     this.mockResults = results;
   }
@@ -139,9 +146,23 @@ class MockRepositoryService implements RepositoryMetadataService {
   }
 }
 
+// Mock EmbeddingProviderFactory
+class MockEmbeddingProviderFactory {
+  private mockProvider: EmbeddingProvider;
+
+  constructor(provider: EmbeddingProvider) {
+    this.mockProvider = provider;
+  }
+
+  createProvider(_config: EmbeddingProviderConfig): EmbeddingProvider {
+    return this.mockProvider;
+  }
+}
+
 describe("SearchServiceImpl", () => {
   let service: SearchServiceImpl;
   let mockEmbedding: MockEmbeddingProvider;
+  let mockFactory: MockEmbeddingProviderFactory;
   let mockStorage: MockChromaStorageClient;
   let mockRepoService: MockRepositoryService;
 
@@ -152,9 +173,10 @@ describe("SearchServiceImpl", () => {
 
   beforeEach(() => {
     mockEmbedding = new MockEmbeddingProvider();
+    mockFactory = new MockEmbeddingProviderFactory(mockEmbedding);
     mockStorage = new MockChromaStorageClient();
     mockRepoService = new MockRepositoryService();
-    service = new SearchServiceImpl(mockEmbedding, mockStorage, mockRepoService);
+    service = new SearchServiceImpl(mockEmbedding, mockFactory, mockStorage, mockRepoService);
   });
 
   afterAll(() => {
@@ -473,18 +495,24 @@ describe("SearchServiceImpl", () => {
   });
 
   describe("Error Handling", () => {
-    it("should wrap embedding provider errors in SearchOperationError", async () => {
+    it("should return empty results when embedding provider fails (graceful degradation)", async () => {
+      // In multi-provider search, errors in individual provider groups are caught
+      // and the search continues with other groups. When all groups fail, empty results returned.
       mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
       mockEmbedding.setShouldFail(true, new Error("Embedding failed"));
 
-      await expect(service.search({ query: "test" })).rejects.toThrow(SearchOperationError);
+      const response = await service.search({ query: "test" });
+      expect(response.results).toHaveLength(0);
     });
 
-    it("should wrap ChromaDB errors in SearchOperationError", async () => {
+    it("should return empty results when ChromaDB fails (graceful degradation)", async () => {
+      // In multi-provider search, storage errors are caught per provider group
+      // and the search continues with other groups. When all groups fail, empty results returned.
       mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
       mockStorage.setShouldFail(true, new Error("ChromaDB failed"));
 
-      await expect(service.search({ query: "test" })).rejects.toThrow(SearchOperationError);
+      const response = await service.search({ query: "test" });
+      expect(response.results).toHaveLength(0);
     });
 
     it("should rethrow SearchValidationError as-is", async () => {

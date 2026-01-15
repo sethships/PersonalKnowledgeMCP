@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { SearchServiceImpl } from "../../src/services/search-service.js";
 import { ChromaStorageClientImpl } from "../../src/storage/chroma-client.js";
 import { RepositoryMetadataStoreImpl } from "../../src/repositories/metadata-store.js";
-import type { EmbeddingProvider } from "../../src/providers/types.js";
+import type { EmbeddingProvider, EmbeddingProviderConfig } from "../../src/providers/types.js";
 import type { DocumentInput } from "../../src/storage/types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import fs from "fs";
@@ -68,6 +68,19 @@ class MockEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+// Mock EmbeddingProviderFactory for integration tests
+class MockEmbeddingProviderFactory {
+  private mockProvider: EmbeddingProvider;
+
+  constructor(provider: EmbeddingProvider) {
+    this.mockProvider = provider;
+  }
+
+  createProvider(_config: EmbeddingProviderConfig): EmbeddingProvider {
+    return this.mockProvider;
+  }
+}
+
 describeIntegration("SearchService Integration Tests", () => {
   const testDataPath = path.join(os.tmpdir(), "search-service-integration-test");
   const testChromaHost = process.env["CHROMADB_HOST"] || "localhost";
@@ -75,6 +88,7 @@ describeIntegration("SearchService Integration Tests", () => {
 
   let service: SearchServiceImpl;
   let embeddingProvider: MockEmbeddingProvider;
+  let embeddingProviderFactory: MockEmbeddingProviderFactory;
   let storageClient: ChromaStorageClientImpl;
   let repositoryService: RepositoryMetadataStoreImpl;
 
@@ -99,8 +113,16 @@ describeIntegration("SearchService Integration Tests", () => {
     // Connect to ChromaDB
     await storageClient.connect();
 
+    // Create EmbeddingProviderFactory
+    embeddingProviderFactory = new MockEmbeddingProviderFactory(embeddingProvider);
+
     // Create SearchService
-    service = new SearchServiceImpl(embeddingProvider, storageClient, repositoryService);
+    service = new SearchServiceImpl(
+      embeddingProvider,
+      embeddingProviderFactory,
+      storageClient,
+      repositoryService
+    );
   });
 
   afterAll(async () => {

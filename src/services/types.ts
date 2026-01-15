@@ -50,6 +50,20 @@ export interface SearchResult {
 }
 
 /**
+ * Warning generated during provider-aware search operations
+ */
+export interface SearchWarning {
+  /** Type of warning encountered */
+  type: "provider_mismatch" | "dimension_mismatch" | "missing_metadata";
+
+  /** Repository that triggered the warning */
+  repository: string;
+
+  /** Human-readable warning message */
+  message: string;
+}
+
+/**
  * Search response with results and diagnostic metadata
  */
 export interface SearchResponse {
@@ -72,6 +86,9 @@ export interface SearchResponse {
 
     /** List of repository names that were searched */
     repositories_searched: string[];
+
+    /** Warnings generated during search (e.g., provider mismatches) */
+    warnings?: SearchWarning[];
   };
 }
 

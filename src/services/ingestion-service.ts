@@ -14,7 +14,11 @@ import type { CloneResult, FileInfo, FileChunk } from "../ingestion/types.js";
 import type { FileScanner } from "../ingestion/file-scanner.js";
 import type { FileChunker } from "../ingestion/file-chunker.js";
 import type { EmbeddingProvider } from "../providers/types.js";
-import type { ChromaStorageClient, DocumentInput } from "../storage/types.js";
+import type {
+  ChromaStorageClient,
+  DocumentInput,
+  CollectionEmbeddingMetadata,
+} from "../storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
 import { getComponentLogger } from "../logging/index.js";
 import type {
@@ -268,7 +272,14 @@ export class IngestionService {
       }
 
       try {
-        await this.storageClient.getOrCreateCollection(collectionName);
+        // Build embedding metadata for provider-aware search
+        const embeddingMetadata: CollectionEmbeddingMetadata = {
+          "app:embedding_provider": this.embeddingProvider.providerId,
+          "app:embedding_model": this.embeddingProvider.modelId,
+          "app:embedding_dimensions": this.embeddingProvider.dimensions,
+        };
+
+        await this.storageClient.getOrCreateCollection(collectionName, embeddingMetadata);
       } catch (err) {
         throw new CollectionCreationError(collectionName, err);
       }

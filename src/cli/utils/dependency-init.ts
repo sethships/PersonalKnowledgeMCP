@@ -228,7 +228,12 @@ export async function initializeDependencies(
     logger.debug("Repository metadata service initialized");
 
     // Step 6: Initialize search service
-    const searchService = new SearchServiceImpl(embeddingProvider, chromaClient, repositoryService);
+    const searchService = new SearchServiceImpl(
+      embeddingProvider,
+      embeddingProviderFactory,
+      chromaClient,
+      repositoryService
+    );
     logger.debug("Search service initialized");
 
     // Step 7: Initialize ingestion service components
