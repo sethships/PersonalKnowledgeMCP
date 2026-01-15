@@ -83,3 +83,36 @@ export class SearchOperationError extends SearchError {
     this.cause = cause;
   }
 }
+
+/**
+ * Thrown when embedding dimensions don't match between provider and collection
+ * Not retryable - indicates configuration mismatch
+ */
+export class DimensionMismatchError extends SearchError {
+  constructor(
+    public readonly repositoryName: string,
+    public readonly expectedDimensions: number,
+    public readonly actualDimensions: number
+  ) {
+    super(
+      `Dimension mismatch for repository '${repositoryName}': expected ${expectedDimensions}, got ${actualDimensions}`,
+      false
+    );
+  }
+}
+
+/**
+ * Thrown when required embedding provider is not available
+ * Not retryable - provider must be configured
+ */
+export class ProviderUnavailableError extends SearchError {
+  constructor(
+    public readonly providerId: string,
+    public readonly reason?: string
+  ) {
+    super(
+      `Embedding provider '${providerId}' is not available${reason ? `: ${reason}` : ""}`,
+      false
+    );
+  }
+}

@@ -12,6 +12,7 @@ import "dotenv/config";
 import { PersonalKnowledgeMCPServer } from "./mcp/server.js";
 import { SearchServiceImpl } from "./services/search-service.js";
 import { createEmbeddingProvider } from "./providers/factory.js";
+import { embeddingProviderFactory } from "./providers/EmbeddingProviderFactory.js";
 import { RepositoryMetadataStoreImpl } from "./repositories/metadata-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "./logging/index.js";
 import {
@@ -206,7 +207,12 @@ async function main(): Promise<void> {
 
     // Step 5: Initialize search service
     logger.info("Initializing search service");
-    const searchService = new SearchServiceImpl(embeddingProvider, chromaClient, repositoryService);
+    const searchService = new SearchServiceImpl(
+      embeddingProvider,
+      embeddingProviderFactory,
+      chromaClient,
+      repositoryService
+    );
     logger.info("Search service initialized");
 
     // Step 6: Create MCP server

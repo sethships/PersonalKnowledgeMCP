@@ -31,7 +31,12 @@ import {
 } from "../../src/services/ingestion-errors.js";
 import type { IndexProgress } from "../../src/services/ingestion-types.js";
 import type { EmbeddingProvider } from "../../src/providers/types.js";
-import type { ChromaStorageClient, DocumentInput } from "../../src/storage/types.js";
+import type {
+  ChromaStorageClient,
+  DocumentInput,
+  ParsedEmbeddingMetadata,
+  CollectionEmbeddingMetadata,
+} from "../../src/storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
 import type { CloneResult, FileInfo, FileChunk } from "../../src/ingestion/types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
@@ -204,7 +209,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return true;
   }
 
-  async getOrCreateCollection(name: string): Promise<any> {
+  async getOrCreateCollection(
+    name: string,
+    _embeddingMetadata?: CollectionEmbeddingMetadata
+  ): Promise<any> {
     if (this.shouldFailCreate) {
       throw new Error("Failed to create collection");
     }
@@ -243,6 +251,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
 
   async getDocumentsByMetadata(): Promise<any[]> {
     return [];
+  }
+
+  async getCollectionEmbeddingMetadata(): Promise<ParsedEmbeddingMetadata | null> {
+    return null;
   }
 
   async deleteDocumentsByFilePrefix(): Promise<number> {

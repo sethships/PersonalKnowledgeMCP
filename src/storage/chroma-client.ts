@@ -27,6 +27,8 @@ import type {
   SimilarityResult,
   MetadataFilter,
   DocumentQueryResult,
+  CollectionEmbeddingMetadata,
+  ParsedEmbeddingMetadata,
 } from "./types.js";
 import {
   StorageError,
@@ -296,12 +298,19 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * Collections use cosine similarity metric for vector search.
    * Collection handles are cached in-memory to avoid repeated API calls.
    *
+   * When creating a new collection, embedding metadata should be provided
+   * to enable provider-aware query embedding during search operations.
+   *
    * @param name - Collection name (should follow repo_ naming convention)
+   * @param embeddingMetadata - Optional embedding provider metadata to store with collection
    * @returns ChromaDB collection handle
    * @throws {StorageError} If collection operations fail
    * @throws {StorageConnectionError} If not connected to ChromaDB
    */
-  async getOrCreateCollection(name: string): Promise<ChromaCollection> {
+  async getOrCreateCollection(
+    name: string,
+    embeddingMetadata?: CollectionEmbeddingMetadata
+  ): Promise<ChromaCollection> {
     this.ensureConnected();
 
     if (!name || name.trim() === "") {
@@ -314,10 +323,28 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
     }
 
     try {
-      // Get or create collection with cosine similarity metric
+      // Build metadata with HNSW cosine space and optional embedding provider info
+      const metadata: Record<string, string | number | boolean> = {
+        "hnsw:space": "cosine",
+      };
+
+      // Add embedding metadata if provided (for provider-aware search)
+      if (embeddingMetadata) {
+        if (embeddingMetadata["app:embedding_provider"]) {
+          metadata["app:embedding_provider"] = embeddingMetadata["app:embedding_provider"];
+        }
+        if (embeddingMetadata["app:embedding_model"]) {
+          metadata["app:embedding_model"] = embeddingMetadata["app:embedding_model"];
+        }
+        if (embeddingMetadata["app:embedding_dimensions"] !== undefined) {
+          metadata["app:embedding_dimensions"] = embeddingMetadata["app:embedding_dimensions"];
+        }
+      }
+
+      // Get or create collection with cosine similarity metric and embedding metadata
       const collection = await this.client!.getOrCreateCollection({
         name,
-        metadata: { "hnsw:space": "cosine" },
+        metadata,
       });
 
       // Cache the collection handle
@@ -1179,6 +1206,80 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   private ensureConnected(): void {
     if (!this.client) {
       throw new StorageConnectionError("Not connected to ChromaDB. Call connect() first.");
+    }
+  }
+  /**
+   * Get embedding provider metadata for a collection
+   *
+   * Retrieves the embedding provider, model, and dimensions that were used
+   * when the collection was created. Returns null if the collection doesn't
+   * exist or has no embedding metadata.
+   *
+   * Used by the search service to determine which embedding provider to use
+   * for query embedding when searching a specific collection.
+   *
+   * @param name - Collection name
+   * @returns Parsed embedding metadata, or null if not found
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async getCollectionEmbeddingMetadata(name: string): Promise<ParsedEmbeddingMetadata | null> {
+    this.ensureConnected();
+
+    try {
+      // List all collections to check if the target exists and get its metadata
+      const collections = await this.client!.listCollectionsAndMetadata();
+      const collectionInfo = collections.find((col) => col.name === name);
+
+      if (!collectionInfo) {
+        this.logger.debug(
+          { collection: name },
+          "Collection not found when getting embedding metadata"
+        );
+        return null;
+      }
+
+      const metadata = collectionInfo.metadata as Record<string, unknown> | undefined;
+      if (!metadata) {
+        this.logger.debug({ collection: name }, "Collection has no metadata");
+        return null;
+      }
+
+      // Parse the app: prefixed metadata keys
+      const result: ParsedEmbeddingMetadata = {};
+
+      if (typeof metadata["app:embedding_provider"] === "string") {
+        result.provider = metadata["app:embedding_provider"];
+      }
+      if (typeof metadata["app:embedding_model"] === "string") {
+        result.model = metadata["app:embedding_model"];
+      }
+      if (typeof metadata["app:embedding_dimensions"] === "number") {
+        result.dimensions = metadata["app:embedding_dimensions"];
+      }
+
+      // Return null if no embedding metadata was found
+      if (!result.provider && !result.model && !result.dimensions) {
+        this.logger.debug({ collection: name }, "Collection has no embedding metadata");
+        return null;
+      }
+
+      this.logger.debug(
+        { collection: name, embeddingMetadata: result },
+        "Retrieved embedding metadata for collection"
+      );
+
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { collection: name, err: error },
+        "Failed to get embedding metadata for collection"
+      );
+      throw new StorageError(
+        `Failed to get embedding metadata for collection '${name}': ${errorMessage}`,
+        "COLLECTION_OPERATION_ERROR",
+        error instanceof Error ? error : undefined
+      );
     }
   }
 }
