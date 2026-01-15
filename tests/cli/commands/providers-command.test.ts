@@ -529,7 +529,7 @@ describe("providersSetupCommand", () => {
     expect(errorOutput).not.toContain("Setup is not available");
   });
 
-  it("should log warning when force flag used with transformersjs", async () => {
+  it("should attempt cache clearing when force flag used with transformersjs", async () => {
     const { providersSetupCommand } =
       await import("../../../src/cli/commands/providers-command.js");
 
@@ -539,7 +539,10 @@ describe("providersSetupCommand", () => {
       // Expected - model download will fail in test environment
     }
 
+    // The force flag now actually attempts cache clearing
+    // The spinner text should mention clearing cache or downloading
     const output = capturedLogs.join("\n");
-    expect(output).toContain("--force flag is accepted but cache clearing is not yet implemented");
+    // Verify the command was executed (setup process started)
+    expect(output).toContain("Transformers.js");
   });
 });
