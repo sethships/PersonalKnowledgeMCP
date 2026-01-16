@@ -25,6 +25,7 @@ export type {
   FileIngestionResult,
   GraphIngestionServiceStatus,
   BatchCreationResult,
+  GraphFileDeletionResult,
 } from "./types.js";
 
 export { DEFAULT_GRAPH_INGESTION_CONFIG } from "./types.js";

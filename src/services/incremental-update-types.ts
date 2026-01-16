@@ -134,6 +134,105 @@ export interface UpdateOptions {
   correlationId?: string;
 }
 
+// =============================================================================
+// Graph Update Types
+// =============================================================================
+
+/**
+ * Error that occurred during graph update for a specific file.
+ *
+ * Graph errors are non-blocking - ChromaDB updates continue even if
+ * graph updates fail. Errors are collected for review and logging.
+ *
+ * @example
+ * ```typescript
+ * const error: GraphProcessingError = {
+ *   path: "src/broken.ts",
+ *   error: "Neo4j connection timeout",
+ *   operation: "ingest"
+ * };
+ * ```
+ */
+export interface GraphProcessingError {
+  /**
+   * Path to the file that had a graph update error.
+   */
+  path: string;
+
+  /**
+   * Error message describing what went wrong.
+   */
+  error: string;
+
+  /**
+   * Type of graph operation that failed.
+   * - `ingest`: Failed to add/update graph data for the file
+   * - `delete`: Failed to delete graph data for the file
+   */
+  operation: "ingest" | "delete";
+}
+
+/**
+ * Statistics about graph database updates during incremental processing.
+ *
+ * Graph updates are optional and non-blocking - if a graph service is
+ * configured, these stats track graph operations alongside ChromaDB updates.
+ *
+ * @example
+ * ```typescript
+ * const graphStats: GraphUpdateStats = {
+ *   graphNodesCreated: 15,
+ *   graphNodesDeleted: 3,
+ *   graphRelationshipsCreated: 22,
+ *   graphRelationshipsDeleted: 5,
+ *   graphFilesProcessed: 4,
+ *   graphFilesSkipped: 2,
+ *   graphErrors: []
+ * };
+ * ```
+ */
+export interface GraphUpdateStats {
+  /**
+   * Number of graph nodes created (File, Function, Class, Module, Chunk).
+   */
+  graphNodesCreated: number;
+
+  /**
+   * Number of graph nodes deleted.
+   */
+  graphNodesDeleted: number;
+
+  /**
+   * Number of graph relationships created (CONTAINS, DEFINES, IMPORTS, HAS_CHUNK).
+   */
+  graphRelationshipsCreated: number;
+
+  /**
+   * Number of graph relationships deleted.
+   */
+  graphRelationshipsDeleted: number;
+
+  /**
+   * Number of files that had graph data successfully processed.
+   */
+  graphFilesProcessed: number;
+
+  /**
+   * Number of files skipped for graph processing (non-TypeScript/JavaScript).
+   */
+  graphFilesSkipped: number;
+
+  /**
+   * Errors encountered during graph processing.
+   * Non-empty indicates partial success with some graph update failures.
+   */
+  graphErrors: GraphProcessingError[];
+}
+
+// =============================================================================
+// Core Update Types
+// =============================================================================
+
 /**
  * Statistics about processed incremental update.
  *
@@ -194,6 +293,15 @@ export interface UpdateStats {
    * Measured from start to end of processChanges() execution.
    */
   durationMs: number;
+
+  /**
+   * Graph database update statistics (optional).
+   *
+   * Only present when a GraphIngestionService is configured.
+   * Graph updates are non-blocking - ChromaDB updates continue
+   * even if graph updates fail.
+   */
+  graph?: GraphUpdateStats;
 }
 
 /**

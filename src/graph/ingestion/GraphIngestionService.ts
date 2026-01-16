@@ -30,6 +30,7 @@ import type {
   FileIngestionResult,
   GraphIngestionServiceStatus,
   GraphIngestionPhase,
+  GraphFileDeletionResult,
 } from "./types.js";
 import { DEFAULT_GRAPH_INGESTION_CONFIG } from "./types.js";
 import {
@@ -422,6 +423,102 @@ export class GraphIngestionService {
       },
       "Repository graph data deleted"
     );
+  }
+
+  /**
+   * Delete graph data for a single file.
+   *
+   * Removes the File node and all associated entity nodes (Function, Class)
+   * and Chunk nodes, along with their relationships. Module nodes are preserved
+   * as they may be shared across multiple files.
+   *
+   * Used for incremental updates when a file is deleted or modified
+   * (delete old data before re-ingesting).
+   *
+   * @param repositoryName - Name of the repository containing the file
+   * @param filePath - File path relative to repository root
+   * @returns Result containing deletion statistics and success status
+   *
+   * @example
+   * ```typescript
+   * const result = await service.deleteFileData("my-repo", "src/utils.ts");
+   * if (result.success) {
+   *   console.log(`Deleted ${result.nodesDeleted} nodes`);
+   * }
+   * ```
+   */
+  async deleteFileData(repositoryName: string, filePath: string): Promise<GraphFileDeletionResult> {
+    this.validateRepositoryName(repositoryName);
+
+    const fileId = this.generateFileNodeId(repositoryName, filePath);
+    const startTime = performance.now();
+
+    try {
+      // Delete File node, its entities (Functions, Classes), and chunks
+      // Module nodes are preserved as they may be shared across files
+      // We use a single query to count and delete atomically
+      const result = await this.neo4jClient.runQuery<{
+        nodesDeleted: number;
+        relsDeleted: number;
+      }>(
+        `
+        MATCH (f:File {id: $fileId})
+        OPTIONAL MATCH (f)-[:DEFINES]->(entity)
+        OPTIONAL MATCH (f)-[:HAS_CHUNK]->(chunk:Chunk)
+        WITH f, collect(DISTINCT entity) as entities, collect(DISTINCT chunk) as chunks
+        WITH f, entities, chunks,
+             size([x IN entities WHERE x IS NOT NULL]) + size([x IN chunks WHERE x IS NOT NULL]) + 1 as nodeCount
+        // Count relationships before deletion
+        OPTIONAL MATCH (f)-[r]-()
+        WITH f, entities, chunks, nodeCount, count(r) as relCount
+        // Delete entities and chunks (filter nulls)
+        FOREACH (e IN [x IN entities WHERE x IS NOT NULL] | DETACH DELETE e)
+        FOREACH (c IN [x IN chunks WHERE x IS NOT NULL] | DETACH DELETE c)
+        DETACH DELETE f
+        RETURN nodeCount as nodesDeleted, relCount as relsDeleted
+        `,
+        { fileId }
+      );
+
+      const durationMs = Math.round(performance.now() - startTime);
+      const stats = result[0] ?? { nodesDeleted: 0, relsDeleted: 0 };
+
+      this.logger.debug(
+        {
+          metric: "graph_ingestion.delete_file_ms",
+          value: durationMs,
+          repository: repositoryName,
+          filePath,
+          nodesDeleted: stats.nodesDeleted,
+          relationshipsDeleted: stats.relsDeleted,
+        },
+        "File graph data deleted"
+      );
+
+      return {
+        nodesDeleted: stats.nodesDeleted,
+        relationshipsDeleted: stats.relsDeleted,
+        success: true,
+      };
+    } catch (error) {
+      const durationMs = Math.round(performance.now() - startTime);
+      this.logger.error(
+        {
+          metric: "graph_ingestion.delete_file_ms",
+          value: durationMs,
+          repository: repositoryName,
+          filePath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to delete file graph data"
+      );
+
+      return {
+        nodesDeleted: 0,
+        relationshipsDeleted: 0,
+        success: false,
+      };
+    }
   }
 
   /**

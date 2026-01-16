@@ -22,7 +22,10 @@ import type {
   UpdateResult,
   UpdateStats,
   FileProcessingError,
+  GraphUpdateStats,
 } from "./incremental-update-types.js";
+import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
+import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
 
 /**
  * Pipeline service for processing incremental repository updates.
@@ -73,12 +76,14 @@ export class IncrementalUpdatePipeline {
    * @param embeddingProvider - Service for generating embeddings
    * @param storageClient - ChromaDB client for vector storage
    * @param logger - Logger instance
+   * @param graphIngestionService - Optional graph ingestion service for Neo4j updates
    */
   constructor(
     private readonly fileChunker: FileChunker,
     private readonly embeddingProvider: EmbeddingProvider,
     private readonly storageClient: ChromaStorageClient,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly graphIngestionService?: GraphIngestionService
   ) {}
 
   /**
@@ -170,6 +175,9 @@ export class IncrementalUpdatePipeline {
       durationMs: 0,
     };
 
+    // Initialize graph stats only if graph service is configured
+    const graphStats = this.graphIngestionService ? this.initializeGraphStats() : undefined;
+
     const errors: FileProcessingError[] = [];
 
     // Handle empty change list gracefully
@@ -207,19 +215,19 @@ export class IncrementalUpdatePipeline {
       try {
         switch (change.status) {
           case "added":
-            await this.processAddedFile(change, options, allChunks, stats);
+            await this.processAddedFile(change, options, allChunks, stats, graphStats);
             break;
 
           case "modified":
-            await this.processModifiedFile(change, options, allChunks, stats);
+            await this.processModifiedFile(change, options, allChunks, stats, graphStats);
             break;
 
           case "deleted":
-            await this.processDeletedFile(change, options, stats);
+            await this.processDeletedFile(change, options, stats, graphStats);
             break;
 
           case "renamed":
-            await this.processRenamedFile(change, options, allChunks, stats);
+            await this.processRenamedFile(change, options, allChunks, stats, graphStats);
             break;
 
           default:
@@ -273,6 +281,11 @@ export class IncrementalUpdatePipeline {
 
     stats.durationMs = Date.now() - startTime;
 
+    // Include graph stats in final stats if graph service is configured
+    if (graphStats) {
+      stats.graph = graphStats;
+    }
+
     const status = errors.length > 0 ? "completed_with_errors" : "completed";
 
     logger.info(
@@ -286,6 +299,11 @@ export class IncrementalUpdatePipeline {
           chunksUpserted: stats.chunksUpserted,
           chunksDeleted: stats.chunksDeleted,
           durationMs: stats.durationMs,
+          ...(graphStats && {
+            graphFilesProcessed: graphStats.graphFilesProcessed,
+            graphFilesSkipped: graphStats.graphFilesSkipped,
+            graphErrors: graphStats.graphErrors.length,
+          }),
         },
         errorCount: errors.length,
       },
@@ -323,20 +341,134 @@ export class IncrementalUpdatePipeline {
   }
 
   /**
+   * Initialize empty graph stats.
+   *
+   * @returns Fresh GraphUpdateStats object with all counters at zero
+   */
+  private initializeGraphStats(): GraphUpdateStats {
+    return {
+      graphNodesCreated: 0,
+      graphNodesDeleted: 0,
+      graphRelationshipsCreated: 0,
+      graphRelationshipsDeleted: 0,
+      graphFilesProcessed: 0,
+      graphFilesSkipped: 0,
+      graphErrors: [],
+    };
+  }
+
+  /**
+   * Process graph update for a file (non-blocking).
+   *
+   * Handles both ingest and delete operations for the knowledge graph.
+   * Graph failures are logged but don't block ChromaDB updates (degraded mode).
+   * Only TypeScript/JavaScript files are processed for graph extraction.
+   *
+   * @param operation - Type of graph operation: 'ingest' or 'delete'
+   * @param file - File information with path and optional content
+   * @param repositoryName - Repository name for graph node IDs
+   * @param graphStats - Statistics to update
+   */
+  private async processGraphUpdate(
+    operation: "ingest" | "delete",
+    file: { path: string; content?: string },
+    repositoryName: string,
+    graphStats: GraphUpdateStats
+  ): Promise<void> {
+    // Skip if no graph service configured
+    if (!this.graphIngestionService) {
+      return;
+    }
+
+    // Skip files that aren't supported for entity extraction
+    if (!EntityExtractor.isSupported(file.path)) {
+      graphStats.graphFilesSkipped++;
+      return;
+    }
+
+    try {
+      const startTime = performance.now();
+
+      if (operation === "delete") {
+        const result = await this.graphIngestionService.deleteFileData(repositoryName, file.path);
+        graphStats.graphNodesDeleted += result.nodesDeleted;
+        graphStats.graphRelationshipsDeleted += result.relationshipsDeleted;
+        if (!result.success) {
+          // deleteFileData returns success=false on error, but doesn't throw
+          graphStats.graphErrors.push({
+            path: file.path,
+            error: "Graph deletion returned unsuccessful",
+            operation: "delete",
+          });
+          return;
+        }
+      } else {
+        // Ingest requires content
+        if (!file.content) {
+          this.logger.warn({ filePath: file.path }, "Missing content for graph ingest, skipping");
+          graphStats.graphFilesSkipped++;
+          return;
+        }
+
+        const result = await this.graphIngestionService.ingestFile(
+          { path: file.path, content: file.content },
+          repositoryName
+        );
+        graphStats.graphNodesCreated += result.nodesCreated;
+        graphStats.graphRelationshipsCreated += result.relationshipsCreated;
+
+        if (!result.success) {
+          graphStats.graphErrors.push({
+            path: file.path,
+            error: result.errors[0]?.message ?? "Unknown ingest error",
+            operation: "ingest",
+          });
+          return;
+        }
+      }
+
+      graphStats.graphFilesProcessed++;
+
+      const durationMs = performance.now() - startTime;
+      if (durationMs > 100) {
+        this.logger.warn(
+          { filePath: file.path, durationMs: Math.round(durationMs), operation },
+          "Graph update exceeded 100ms target"
+        );
+      }
+    } catch (error) {
+      // Non-blocking: log error and continue
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      graphStats.graphErrors.push({
+        path: file.path,
+        error: errorMessage,
+        operation,
+      });
+      this.logger.warn(
+        { filePath: file.path, error: errorMessage, operation },
+        "Graph update failed - continuing with ChromaDB updates"
+      );
+    }
+  }
+
+  /**
    * Process an added file.
    *
    * Reads file content, chunks it, and collects chunks for embedding.
+   * Also ingests into knowledge graph if graph service is configured.
    *
    * @param change - File change details
    * @param options - Update options
    * @param allChunks - Accumulator for chunks to embed
    * @param stats - Statistics to update
+   * @param graphStats - Optional graph statistics to update
    */
   private async processAddedFile(
     change: FileChange,
     options: UpdateOptions,
     allChunks: FileChunk[],
-    stats: UpdateStats
+    stats: UpdateStats,
+    graphStats?: GraphUpdateStats
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing added file");
 
@@ -354,6 +486,16 @@ export class IncrementalUpdatePipeline {
     const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
     allChunks.push(...chunks);
 
+    // Graph update (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "ingest",
+        { path: change.path, content },
+        options.repository,
+        graphStats
+      );
+    }
+
     stats.filesAdded++;
   }
 
@@ -361,17 +503,20 @@ export class IncrementalUpdatePipeline {
    * Process a modified file.
    *
    * Deletes old chunks, reads new content, chunks it, and collects for embedding.
+   * Also updates knowledge graph if graph service is configured.
    *
    * @param change - File change details
    * @param options - Update options
    * @param allChunks - Accumulator for chunks to embed
    * @param stats - Statistics to update
+   * @param graphStats - Optional graph statistics to update
    */
   private async processModifiedFile(
     change: FileChange,
     options: UpdateOptions,
     allChunks: FileChunk[],
-    stats: UpdateStats
+    stats: UpdateStats,
+    graphStats?: GraphUpdateStats
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing modified file");
 
@@ -382,6 +527,16 @@ export class IncrementalUpdatePipeline {
       change.path
     );
     stats.chunksDeleted += deletedCount;
+
+    // Graph: delete old data first (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "delete",
+        { path: change.path },
+        options.repository,
+        graphStats
+      );
+    }
 
     // Read and chunk new content
     const absolutePath = this.validateFilePath(options.localPath, change.path);
@@ -398,6 +553,16 @@ export class IncrementalUpdatePipeline {
     const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
     allChunks.push(...chunks);
 
+    // Graph: ingest new data (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "ingest",
+        { path: change.path, content },
+        options.repository,
+        graphStats
+      );
+    }
+
     stats.filesModified++;
   }
 
@@ -405,15 +570,18 @@ export class IncrementalUpdatePipeline {
    * Process a deleted file.
    *
    * Deletes all chunks for the file from ChromaDB.
+   * Also deletes graph data if graph service is configured.
    *
    * @param change - File change details
    * @param options - Update options
    * @param stats - Statistics to update
+   * @param graphStats - Optional graph statistics to update
    */
   private async processDeletedFile(
     change: FileChange,
     options: UpdateOptions,
-    stats: UpdateStats
+    stats: UpdateStats,
+    graphStats?: GraphUpdateStats
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing deleted file");
 
@@ -423,6 +591,17 @@ export class IncrementalUpdatePipeline {
       change.path
     );
     stats.chunksDeleted += deletedCount;
+
+    // Graph: delete file data (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "delete",
+        { path: change.path },
+        options.repository,
+        graphStats
+      );
+    }
+
     stats.filesDeleted++;
   }
 
@@ -430,18 +609,20 @@ export class IncrementalUpdatePipeline {
    * Process a renamed file.
    *
    * Deletes chunks for old path, reads content at new path, chunks it,
-   * and collects for embedding.
+   * and collects for embedding. Also updates graph data if graph service is configured.
    *
    * @param change - File change details
    * @param options - Update options
    * @param allChunks - Accumulator for chunks to embed
    * @param stats - Statistics to update
+   * @param graphStats - Optional graph statistics to update
    */
   private async processRenamedFile(
     change: FileChange,
     options: UpdateOptions,
     allChunks: FileChunk[],
-    stats: UpdateStats
+    stats: UpdateStats,
+    graphStats?: GraphUpdateStats
   ): Promise<void> {
     this.logger.debug(
       { path: change.path, previousPath: change.previousPath },
@@ -461,6 +642,16 @@ export class IncrementalUpdatePipeline {
     );
     stats.chunksDeleted += deletedCount;
 
+    // Graph: delete old path data (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "delete",
+        { path: change.previousPath },
+        options.repository,
+        graphStats
+      );
+    }
+
     // Read and chunk at new path
     const absolutePath = this.validateFilePath(options.localPath, change.path);
     const content = await Bun.file(absolutePath).text();
@@ -475,6 +666,16 @@ export class IncrementalUpdatePipeline {
 
     const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
     allChunks.push(...chunks);
+
+    // Graph: ingest new path data (non-blocking)
+    if (graphStats) {
+      await this.processGraphUpdate(
+        "ingest",
+        { path: change.path, content },
+        options.repository,
+        graphStats
+      );
+    }
 
     stats.filesModified++; // Rename counts as modification
   }
