@@ -102,23 +102,17 @@ function createTokenCreatedEvent(): TokenCreatedEvent {
 /**
  * Wait for async write operations to complete with polling
  *
- * More robust than fixed timeout - polls for file existence/content.
+ * Polls for file existence and content. This is more robust than fixed
+ * timeouts for CI environments where I/O timing varies.
  *
- * @param expectedLines - Optional minimum expected line count
- * @param timeout - Maximum wait time in ms (default: 2000 for CI compatibility)
+ * @param expectedLines - Minimum expected line count (default: 1)
+ * @param timeout - Maximum wait time in ms (default: 3000 for CI compatibility)
  */
-async function waitForWrite(expectedLines?: number, timeout = 2000): Promise<void> {
+async function waitForWrite(expectedLines = 1, timeout = 3000): Promise<void> {
   const start = Date.now();
-  const pollInterval = 20; // Check every 20ms
+  const pollInterval = 30; // Check every 30ms
 
   while (Date.now() - start < timeout) {
-    // If no expected lines, just wait a bit for async operations
-    // Use a longer wait than before for CI compatibility (200ms vs 100ms)
-    if (expectedLines === undefined) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      return;
-    }
-
     // Poll for file content
     if (existsSync(TEST_LOG_PATH)) {
       try {
@@ -270,7 +264,8 @@ describe("AuditLogger", () => {
 
       logger.emit(createAuthSuccessEvent());
 
-      await waitForWrite();
+      // Fixed wait since no file is expected (can't poll for content)
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       expect(existsSync(TEST_LOG_PATH)).toBe(false);
     });
@@ -283,7 +278,7 @@ describe("AuditLogger", () => {
       logger.emit(createAuthFailureEvent());
       logger.emit(createTokenCreatedEvent());
 
-      await waitForWrite();
+      await waitForWrite(3);
 
       const content = readFileSync(TEST_LOG_PATH, "utf-8");
       const lines = content.trim().split("\n");
@@ -311,7 +306,7 @@ describe("AuditLogger", () => {
       logger.emit(createAuthSuccessEvent());
       logger.emit(createAuthFailureEvent());
 
-      await waitForWrite();
+      await waitForWrite(2);
 
       const result = await logger.query({});
 
@@ -327,7 +322,7 @@ describe("AuditLogger", () => {
       logger.emit(createAuthFailureEvent());
       logger.emit(createTokenCreatedEvent());
 
-      await waitForWrite();
+      await waitForWrite(3);
 
       const result = await logger.query({ eventTypes: ["auth.success"] });
 
@@ -342,7 +337,7 @@ describe("AuditLogger", () => {
       logger.emit(createAuthSuccessEvent());
       logger.emit(createAuthFailureEvent());
 
-      await waitForWrite();
+      await waitForWrite(2);
 
       const result = await logger.query({ success: false });
 
@@ -357,7 +352,7 @@ describe("AuditLogger", () => {
       logger.emit(createAuthSuccessEvent()); // abc12345
       logger.emit(createAuthFailureEvent()); // def67890
 
-      await waitForWrite();
+      await waitForWrite(2);
 
       const result = await logger.query({ tokenHashPrefix: "abc" });
 
@@ -374,7 +369,7 @@ describe("AuditLogger", () => {
         logger.emit(createAuthSuccessEvent());
       }
 
-      await waitForWrite();
+      await waitForWrite(5);
 
       // Get first 2
       const page1 = await logger.query({ limit: 2, offset: 0 });
@@ -402,9 +397,10 @@ describe("AuditLogger", () => {
       const logger = initializeAuditLogger(config);
 
       // Write enough events to trigger rotation (each event is ~300-400 bytes)
+      // Use a fixed wait since rotation resets line count in the main file
       for (let i = 0; i < 10; i++) {
         logger.emit(createAuthSuccessEvent());
-        await waitForWrite();
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       // Check for rotated files
@@ -617,7 +613,8 @@ describe("AuditLogger circuit breaker", () => {
     const event = createAuthSuccessEvent();
     logger.emit(event);
 
-    await waitForWrite();
+    // Fixed wait since circuit is open (no new file writes expected)
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     // If the log file exists, verify the event was not written
     if (existsSync(TEST_LOG_PATH)) {

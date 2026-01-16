@@ -172,3 +172,14 @@ export {
 
 export { QueryCache, DEFAULT_CACHE_CONFIG } from "./graph-service-cache.js";
 export type { CacheConfig, CacheStats } from "./graph-service-cache.js";
+
+// Graph Metrics exports
+export type {
+  GraphQueryType,
+  GraphQueryRecord,
+  GraphQueryTypeStats,
+  GraphTrendMetrics,
+  GraphMetrics,
+} from "./graph-metrics-types.js";
+export { GRAPH_QUERY_TYPES } from "./graph-metrics-types.js";
+export { GraphMetricsCollector, graphMetricsCollector } from "./graph-metrics-collector.js";
