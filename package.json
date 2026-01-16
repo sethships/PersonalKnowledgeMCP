@@ -19,17 +19,7 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "prepare": "husky install",
-    "lint-staged": "lint-staged",
-    "bench": "RUN_SCALE_BENCHMARKS=true bun test tests/benchmarks/",
-    "bench:population": "RUN_SCALE_BENCHMARKS=true bun test tests/benchmarks/graph-population.bench.ts",
-    "bench:query": "RUN_SCALE_BENCHMARKS=true bun test tests/benchmarks/graph-query-scale.bench.ts",
-    "bench:incremental": "RUN_SCALE_BENCHMARKS=true bun test tests/benchmarks/incremental-update-scale.bench.ts",
-    "bench:full": "bun tests/benchmarks/run-scale-tests.ts --scale large --suite all",
-    "bench:quick": "bun tests/benchmarks/run-scale-tests.ts --scale small --suite all",
-    "bench:report": "bun tests/benchmarks/run-scale-tests.ts --scale large --suite all --report markdown --output perf-report.md",
-    "bench:onnx": "RUN_ONNX_EVAL=true bun test ./tests/benchmarks/onnx-evaluation.bench.ts",
-    "test:scale": "bun test tests/integration/graph/scale-performance.test.ts",
-    "test:scale:full": "SCALE_TEST_SIZE=large bun test tests/integration/graph/scale-performance.test.ts"
+    "lint-staged": "lint-staged"
   },
   "keywords": [
     "mcp",
@@ -89,7 +79,6 @@
     "eslint-plugin-prettier": "^5.1.3",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.0",
-    "onnxruntime-node": "1.23.2",
     "prettier": "^3.2.5",
     "tree-sitter-javascript": "0.25.0",
     "tree-sitter-typescript": "0.23.2",
@@ -104,7 +93,6 @@
   },
   "homepage": "https://github.com/sethb75/PersonalKnowledgeMCP#readme",
   "trustedDependencies": [
-    "@modelcontextprotocol/sdk",
-    "onnxruntime-node"
+    "@modelcontextprotocol/sdk"
   ]
 }
