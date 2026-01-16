@@ -1,8 +1,15 @@
 /**
- * File scanning utilities for graph commands.
+ * File scanning utilities for graph populate commands.
  *
  * Provides shared file scanning functionality for populating the Neo4j
  * knowledge graph from indexed repositories.
+ *
+ * NOTE: This is a lightweight scanner specifically for graph population.
+ * It scans for tree-sitter parseable files (.ts, .tsx, .js, .jsx) and
+ * includes file content in the results.
+ *
+ * For full repository scanning with gitignore support, file size filtering,
+ * and progress callbacks, see src/ingestion/file-scanner.ts (FileScanner class).
  */
 
 import { readdir, readFile } from "fs/promises";
@@ -49,7 +56,14 @@ export async function scanDirectory(
 ): Promise<FileInput[]> {
   const files: FileInput[] = [];
 
-  const entries = await readdir(dirPath, { withFileTypes: true });
+  // Defensive error handling: if directory becomes inaccessible, return empty
+  let entries;
+  try {
+    entries = await readdir(dirPath, { withFileTypes: true });
+  } catch {
+    // Directory may have become inaccessible (permissions, deleted, etc.)
+    return files;
+  }
 
   for (const entry of entries) {
     const fullPath = join(dirPath, entry.name);
