@@ -14,33 +14,30 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "bun:test";
-import { graphPopulateAllCommand } from "../../../src/cli/commands/graph-populate-all-command.js";
-import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/repositories/types.js";
-import type {
-  GraphIngestionResult,
-  GraphIngestionStats,
-} from "../../../src/graph/ingestion/types.js";
-import { RepositoryExistsError } from "../../../src/graph/ingestion/errors.js";
-import { createTestRepositoryInfo } from "../../fixtures/repository-fixtures.js";
-import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+import { graphPopulateAllCommand } from "../../src/cli/commands/graph-populate-all-command.js";
+import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
+import type { GraphIngestionResult, GraphIngestionStats } from "../../src/graph/ingestion/types.js";
+import { RepositoryExistsError } from "../../src/graph/ingestion/errors.js";
+import { createTestRepositoryInfo } from "../fixtures/repository-fixtures.js";
+import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
 // Mock modules
-vi.mock("../../../src/graph/Neo4jClient.js", () => ({
+vi.mock("../../src/graph/Neo4jClient.js", () => ({
   Neo4jStorageClientImpl: vi.fn().mockImplementation(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 
-vi.mock("../../../src/graph/extraction/EntityExtractor.js", () => ({
+vi.mock("../../src/graph/extraction/EntityExtractor.js", () => ({
   EntityExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
-vi.mock("../../../src/graph/extraction/RelationshipExtractor.js", () => ({
+vi.mock("../../src/graph/extraction/RelationshipExtractor.js", () => ({
   RelationshipExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
-vi.mock("../../../src/cli/utils/neo4j-config.js", () => ({
+vi.mock("../../src/cli/utils/neo4j-config.js", () => ({
   getNeo4jConfig: vi.fn().mockReturnValue({
     host: "localhost",
     port: 7687,
@@ -58,7 +55,7 @@ vi.mock("fs/promises", () => ({
 
 // Mock GraphIngestionService
 const mockIngestFiles = vi.fn();
-vi.mock("../../../src/graph/ingestion/GraphIngestionService.js", () => ({
+vi.mock("../../src/graph/ingestion/GraphIngestionService.js", () => ({
   GraphIngestionService: vi.fn().mockImplementation(() => ({
     ingestFiles: mockIngestFiles,
   })),
