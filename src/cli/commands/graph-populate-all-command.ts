@@ -23,44 +23,23 @@
 import chalk from "chalk";
 import ora from "ora";
 import Table from "cli-table3";
-import { readdir, readFile, stat } from "fs/promises";
-import { join, extname } from "path";
+import { stat } from "fs/promises";
 import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
 import { GraphIngestionService } from "../../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
 import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
 import type { Neo4jConfig } from "../../graph/types.js";
-import type {
-  FileInput,
-  GraphIngestionProgress,
-  GraphIngestionStats,
-} from "../../graph/ingestion/types.js";
+import type { GraphIngestionProgress, GraphIngestionStats } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateAllOptions } from "../utils/validation.js";
 import { getNeo4jConfig } from "../utils/neo4j-config.js";
-
-/**
- * Supported file extensions for graph population.
- *
- * These are extensions supported by tree-sitter parsing.
- */
-const SUPPORTED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
-
-/**
- * Directories to exclude from file scanning.
- */
-const EXCLUDED_DIRECTORIES = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  "coverage",
-  ".next",
-  ".nuxt",
-  "out",
-  "__pycache__",
-]);
+import {
+  SUPPORTED_EXTENSIONS,
+  scanDirectory,
+  formatDuration,
+  formatPhase,
+} from "../utils/file-scanner.js";
 
 /**
  * Result of populating a single repository.
@@ -90,82 +69,6 @@ export interface GraphPopulateAllResult {
    * Duration in milliseconds.
    */
   durationMs?: number;
-}
-
-/**
- * Recursively scan directory for supported files.
- *
- * @param dirPath - Directory to scan
- * @param basePath - Base path for relative path calculation
- * @param skippedFiles - Array to accumulate skipped file paths (mutated)
- * @returns Array of FileInput objects
- */
-async function scanDirectory(
-  dirPath: string,
-  basePath: string,
-  skippedFiles: string[] = []
-): Promise<FileInput[]> {
-  const files: FileInput[] = [];
-
-  const entries = await readdir(dirPath, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = join(dirPath, entry.name);
-
-    if (entry.isDirectory()) {
-      if (!EXCLUDED_DIRECTORIES.has(entry.name)) {
-        const subFiles = await scanDirectory(fullPath, basePath, skippedFiles);
-        files.push(...subFiles);
-      }
-    } else if (entry.isFile()) {
-      const ext = extname(entry.name).toLowerCase();
-      if (SUPPORTED_EXTENSIONS.has(ext)) {
-        try {
-          const content = await readFile(fullPath, "utf-8");
-          const relativePath = fullPath.substring(basePath.length + 1).replace(/\\/g, "/");
-          files.push({
-            path: relativePath,
-            content,
-          });
-        } catch {
-          const relativePath = fullPath.substring(basePath.length + 1).replace(/\\/g, "/");
-          skippedFiles.push(relativePath);
-        }
-      }
-    }
-  }
-
-  return files;
-}
-
-/**
- * Format duration in milliseconds to human-readable string.
- */
-function formatDuration(ms: number): string {
-  if (ms < 1000) {
-    return `${ms}ms`;
-  }
-  const seconds = (ms / 1000).toFixed(1);
-  return `${seconds}s`;
-}
-
-/**
- * Format phase name for display.
- */
-function formatPhase(phase: string): string {
-  const phases: Record<string, string> = {
-    initializing: "Initializing",
-    extracting_entities: "Extracting entities",
-    extracting_relationships: "Extracting relationships",
-    creating_repository_node: "Creating repository node",
-    creating_file_nodes: "Creating file nodes",
-    creating_entity_nodes: "Creating entity nodes",
-    creating_module_nodes: "Creating module nodes",
-    creating_relationships: "Creating relationships",
-    verifying: "Verifying",
-    completed: "Completed",
-  };
-  return phases[phase] || phase;
 }
 
 /**
