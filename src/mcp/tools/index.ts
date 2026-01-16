@@ -30,6 +30,10 @@ import { getDependenciesToolDefinition, createGetDependenciesHandler } from "./g
 import { getDependentsToolDefinition, createGetDependentsHandler } from "./get-dependents.js";
 import { getArchitectureToolDefinition, createGetArchitectureHandler } from "./get-architecture.js";
 import { findPathToolDefinition, createFindPathHandler } from "./find-path.js";
+import {
+  getGraphMetricsToolDefinition,
+  createGetGraphMetricsHandler,
+} from "./get-graph-metrics.js";
 
 /**
  * Dependencies for tool registry creation
@@ -154,6 +158,11 @@ export function createToolRegistry(
     registry["find_path"] = {
       definition: findPathToolDefinition,
       handler: createFindPathHandler(deps.graphService),
+    };
+
+    registry["get_graph_metrics"] = {
+      definition: getGraphMetricsToolDefinition,
+      handler: createGetGraphMetricsHandler(),
     };
   }
 

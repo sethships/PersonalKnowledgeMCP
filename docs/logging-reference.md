@@ -457,6 +457,79 @@ Special log entries with `metric` field track performance:
 - `chromadb.connection_ms`: ChromaDB connection time
 - `metadata.list_ms`: Repository metadata list operation
 
+### Graph Query Metrics
+
+Graph query performance is tracked in memory and exposed via the `get_graph_metrics` MCP tool. Metrics are collected for each graph query execution at the GraphService level.
+
+#### Logged Fields for Graph Queries
+
+**Component**: `services:graph`
+
+**Info Log (Success)**:
+```json
+{
+  "level": "info",
+  "component": "services:graph",
+  "entity_type": "file",
+  "entity_path": "src/services/auth.ts",
+  "repository": "my-project",
+  "dependencies_count": 12,
+  "query_time_ms": 145,
+  "msg": "getDependencies completed"
+}
+```
+
+#### Neo4j Client Metrics
+
+**Component**: `graph:neo4j` (debug level)
+
+| Metric | Description |
+|--------|-------------|
+| `neo4j.query_ms` | Raw Cypher query execution time |
+| `neo4j.traverse_ms` | Graph traversal duration |
+| `neo4j.analyze_dependencies_ms` | Dependency analysis duration |
+| `neo4j.upsert_node_ms` | Node creation/update duration |
+| `neo4j.create_relationship_ms` | Relationship creation duration |
+
+#### Aggregated Graph Metrics
+
+Use the `get_graph_metrics` MCP tool to retrieve aggregated statistics:
+
+```json
+{
+  "success": true,
+  "metrics": {
+    "totalQueries": 450,
+    "averageDurationMs": 135.8,
+    "cacheHitRate": 0.38,
+    "byQueryType": [
+      {
+        "queryType": "getDependencies",
+        "totalQueries": 150,
+        "averageDurationMs": 125.5,
+        "maxDurationMs": 890,
+        "minDurationMs": 15,
+        "cacheHitRate": 0.42,
+        "averageResultCount": 8.3,
+        "errorCount": 2
+      }
+    ],
+    "last7DaysTrend": {
+      "queryCount": 85,
+      "averageDurationMs": 118.2,
+      "cacheHitRate": 0.45
+    }
+  }
+}
+```
+
+#### Query Types Tracked
+
+- `getDependencies`: Forward dependency queries
+- `getDependents`: Reverse dependency (impact) queries
+- `getPath`: Path finding between entities
+- `getArchitecture`: Repository structure queries
+
 ## Log Output Formats
 
 ### Development (Pretty Print)

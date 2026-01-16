@@ -27,6 +27,7 @@ import {
   type ValidatedPathQuery,
   type ValidatedArchitectureQuery,
 } from "./graph-service-validation.js";
+import { graphMetricsCollector } from "./graph-metrics-collector.js";
 import {
   GraphServiceValidationError,
   GraphServiceOperationError,
@@ -175,7 +176,20 @@ export class GraphServiceImpl implements GraphService {
       const cacheKey = QueryCache.generateKey("dep", validated);
       const cached = this.dependencyCache.get(cacheKey);
       if (cached) {
+        const queryTimeMs = Math.round(performance.now() - startTime);
         this.logger.debug({ cacheKey }, "Cache hit for getDependencies");
+
+        // Record cache hit metrics
+        graphMetricsCollector.record({
+          queryType: "getDependencies",
+          timestamp: new Date().toISOString(),
+          durationMs: queryTimeMs,
+          resultCount: cached.dependencies.length,
+          depth: validated.depth,
+          fromCache: true,
+          repository: validated.repository,
+        });
+
         return {
           ...cached,
           metadata: { ...cached.metadata, from_cache: true },
@@ -204,6 +218,17 @@ export class GraphServiceImpl implements GraphService {
         "getDependencies completed"
       );
 
+      // Record fresh query metrics
+      graphMetricsCollector.record({
+        queryType: "getDependencies",
+        timestamp: new Date().toISOString(),
+        durationMs: queryTimeMs,
+        resultCount: result.dependencies.length,
+        depth: validated.depth,
+        fromCache: false,
+        repository: validated.repository,
+      });
+
       return {
         ...result,
         metadata: {
@@ -213,6 +238,17 @@ export class GraphServiceImpl implements GraphService {
         },
       };
     } catch (error) {
+      // Record error metrics
+      const errorDurationMs = Math.round(performance.now() - startTime);
+      graphMetricsCollector.record({
+        queryType: "getDependencies",
+        timestamp: new Date().toISOString(),
+        durationMs: errorDurationMs,
+        resultCount: 0,
+        fromCache: false,
+        repository: query.repository,
+        error: true,
+      });
       this.handleError(error, "getDependencies", performance.now() - startTime);
       throw error;
     }
@@ -232,7 +268,20 @@ export class GraphServiceImpl implements GraphService {
       const cacheKey = QueryCache.generateKey("dnt", validated);
       const cached = this.dependentCache.get(cacheKey);
       if (cached) {
+        const queryTimeMs = Math.round(performance.now() - startTime);
         this.logger.debug({ cacheKey }, "Cache hit for getDependents");
+
+        // Record cache hit metrics
+        graphMetricsCollector.record({
+          queryType: "getDependents",
+          timestamp: new Date().toISOString(),
+          durationMs: queryTimeMs,
+          resultCount: cached.dependents.length,
+          depth: validated.depth,
+          fromCache: true,
+          repository: validated.repository,
+        });
+
         return {
           ...cached,
           metadata: { ...cached.metadata, from_cache: true },
@@ -259,6 +308,17 @@ export class GraphServiceImpl implements GraphService {
         "getDependents completed"
       );
 
+      // Record fresh query metrics
+      graphMetricsCollector.record({
+        queryType: "getDependents",
+        timestamp: new Date().toISOString(),
+        durationMs: queryTimeMs,
+        resultCount: result.dependents.length,
+        depth: validated.depth,
+        fromCache: false,
+        repository: validated.repository,
+      });
+
       return {
         ...result,
         metadata: {
@@ -268,6 +328,17 @@ export class GraphServiceImpl implements GraphService {
         },
       };
     } catch (error) {
+      // Record error metrics
+      const errorDurationMs = Math.round(performance.now() - startTime);
+      graphMetricsCollector.record({
+        queryType: "getDependents",
+        timestamp: new Date().toISOString(),
+        durationMs: errorDurationMs,
+        resultCount: 0,
+        fromCache: false,
+        repository: query.repository,
+        error: true,
+      });
       this.handleError(error, "getDependents", performance.now() - startTime);
       throw error;
     }
@@ -287,7 +358,19 @@ export class GraphServiceImpl implements GraphService {
       const cacheKey = QueryCache.generateKey("path", validated);
       const cached = this.pathCache.get(cacheKey);
       if (cached) {
+        const queryTimeMs = Math.round(performance.now() - startTime);
         this.logger.debug({ cacheKey }, "Cache hit for getPath");
+
+        // Record cache hit metrics
+        graphMetricsCollector.record({
+          queryType: "getPath",
+          timestamp: new Date().toISOString(),
+          durationMs: queryTimeMs,
+          resultCount: cached.metadata.hops,
+          fromCache: true,
+          repository: validated.from_entity.repository,
+        });
+
         return {
           ...cached,
           metadata: { ...cached.metadata, from_cache: true },
@@ -313,6 +396,16 @@ export class GraphServiceImpl implements GraphService {
         "getPath completed"
       );
 
+      // Record fresh query metrics
+      graphMetricsCollector.record({
+        queryType: "getPath",
+        timestamp: new Date().toISOString(),
+        durationMs: queryTimeMs,
+        resultCount: result.metadata.hops,
+        fromCache: false,
+        repository: validated.from_entity.repository,
+      });
+
       return {
         ...result,
         metadata: {
@@ -322,6 +415,17 @@ export class GraphServiceImpl implements GraphService {
         },
       };
     } catch (error) {
+      // Record error metrics
+      const errorDurationMs = Math.round(performance.now() - startTime);
+      graphMetricsCollector.record({
+        queryType: "getPath",
+        timestamp: new Date().toISOString(),
+        durationMs: errorDurationMs,
+        resultCount: 0,
+        fromCache: false,
+        repository: query.from_entity.repository,
+        error: true,
+      });
       this.handleError(error, "getPath", performance.now() - startTime);
       throw error;
     }
@@ -341,7 +445,19 @@ export class GraphServiceImpl implements GraphService {
       const cacheKey = QueryCache.generateKey("arch", validated);
       const cached = this.architectureCache.get(cacheKey);
       if (cached) {
+        const queryTimeMs = Math.round(performance.now() - startTime);
         this.logger.debug({ cacheKey }, "Cache hit for getArchitecture");
+
+        // Record cache hit metrics
+        graphMetricsCollector.record({
+          queryType: "getArchitecture",
+          timestamp: new Date().toISOString(),
+          durationMs: queryTimeMs,
+          resultCount: cached.metrics.total_files,
+          fromCache: true,
+          repository: validated.repository,
+        });
+
         return {
           ...cached,
           metadata: { ...cached.metadata, from_cache: true },
@@ -371,6 +487,16 @@ export class GraphServiceImpl implements GraphService {
         "getArchitecture completed"
       );
 
+      // Record fresh query metrics
+      graphMetricsCollector.record({
+        queryType: "getArchitecture",
+        timestamp: new Date().toISOString(),
+        durationMs: queryTimeMs,
+        resultCount: result.metrics.total_files,
+        fromCache: false,
+        repository: validated.repository,
+      });
+
       return {
         ...result,
         metadata: {
@@ -380,6 +506,17 @@ export class GraphServiceImpl implements GraphService {
         },
       };
     } catch (error) {
+      // Record error metrics
+      const errorDurationMs = Math.round(performance.now() - startTime);
+      graphMetricsCollector.record({
+        queryType: "getArchitecture",
+        timestamp: new Date().toISOString(),
+        durationMs: errorDurationMs,
+        resultCount: 0,
+        fromCache: false,
+        repository: query.repository,
+        error: true,
+      });
       this.handleError(error, "getArchitecture", performance.now() - startTime);
       throw error;
     }
