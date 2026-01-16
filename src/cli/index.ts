@@ -38,6 +38,7 @@ import {
 } from "./commands/token-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
+import { graphPopulateAllCommand } from "./commands/graph-populate-all-command.js";
 import { providersStatusCommand, providersSetupCommand } from "./commands/providers-command.js";
 import {
   modelsListCommand,
@@ -62,6 +63,7 @@ import {
   TokenRotateCommandOptionsSchema,
   GraphMigrateCommandOptionsSchema,
   GraphPopulateCommandOptionsSchema,
+  GraphPopulateAllCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
   ModelsListCommandOptionsSchema,
@@ -333,6 +335,22 @@ graphProgram
       const validatedOptions = GraphPopulateCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await graphPopulateCommand(repository, validatedOptions, deps.repositoryService);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Graph populate-all subcommand
+graphProgram
+  .command("populate-all")
+  .description("Populate knowledge graph for all indexed repositories")
+  .option("-f, --force", "Delete existing graph data and repopulate")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = GraphPopulateAllCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await graphPopulateAllCommand(validatedOptions, deps.repositoryService);
     } catch (error) {
       handleCommandError(error);
     }

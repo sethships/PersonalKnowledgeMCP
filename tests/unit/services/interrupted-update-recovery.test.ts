@@ -190,8 +190,10 @@ describe("evaluateRecoveryStrategy", () => {
 
   describe("manual_required strategy", () => {
     it("should recommend manual_required when local path is inaccessible", async () => {
+      // Use a path with UUID that will definitely not exist on any platform
+      const impossiblePath = `/nonexistent-${crypto.randomUUID()}/path-${Date.now()}/impossible`;
       const repo = createMockRepo({
-        localPath: "/nonexistent/path/that/does/not/exist",
+        localPath: impossiblePath,
       });
       const info = createMockInterruptedInfo({
         elapsedMs: 60000,
@@ -555,9 +557,11 @@ describe("recoverMultiple", () => {
   });
 
   it("should count manual_required correctly", async () => {
+    // Use a path with UUID that will definitely not exist on any platform
+    const impossiblePath = `/nonexistent-${crypto.randomUUID()}/path-${Date.now()}`;
     const repo = createMockRepo({
       name: "manual-repo",
-      localPath: "/nonexistent/path",
+      localPath: impossiblePath,
     });
     const info = createMockInterruptedInfo({
       repositoryName: "manual-repo",

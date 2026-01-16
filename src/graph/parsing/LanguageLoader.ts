@@ -9,7 +9,7 @@
 
 import { Parser, Language } from "web-tree-sitter";
 import path from "node:path";
-import { existsSync as fsExistsSync } from "node:fs";
+import { existsSync as fsExistsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
@@ -321,7 +321,17 @@ export class LanguageLoader {
     try {
       this.logger.debug({ language, wasmPath }, "Loading language grammar");
 
-      const lang = await Language.load(wasmPath);
+      // Read WASM file as Uint8Array to work around Bun compatibility issues
+      // Bun's Buffer on Linux may not have subarray() method expected by web-tree-sitter
+      // By reading as Buffer and converting to Uint8Array, we ensure compatibility
+      const wasmBuffer = readFileSync(wasmPath);
+      const wasmBytes = new Uint8Array(
+        wasmBuffer.buffer,
+        wasmBuffer.byteOffset,
+        wasmBuffer.byteLength
+      );
+
+      const lang = await Language.load(wasmBytes);
       this.languages.set(language, lang);
 
       const duration = performance.now() - startTime;
