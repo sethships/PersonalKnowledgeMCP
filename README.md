@@ -481,7 +481,7 @@ bun run cli index --provider transformersjs https://github.com/user/repo
 bun run cli index --provider ollama https://github.com/user/repo
 
 # Check available providers
-bun run cli providers list
+bun run cli providers status
 ```
 
 For detailed configuration, model options, offline usage, and troubleshooting, see the [Embedding Provider Guide](docs/embedding-providers.md).

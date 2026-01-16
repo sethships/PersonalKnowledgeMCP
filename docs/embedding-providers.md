@@ -304,7 +304,7 @@ bun run cli index --provider ollama --model mxbai-embed-large https://github.com
 Check available providers and their status:
 
 ```bash
-bun run cli providers list
+bun run cli providers status
 
 # Output:
 # ┌─────────────────┬────────────┬──────────────────────────┬────────────┐
@@ -477,7 +477,7 @@ bun run cli index --provider transformersjs https://github.com/user/side-project
 bun run cli index --provider ollama https://github.com/company/monorepo
 ```
 
-**Search behavior**: Searches query multiple collections and merge results by similarity score, regardless of provider.
+**Search behavior**: Searches query multiple collections and merge results by similarity score, regardless of provider used.
 
 ---
 
