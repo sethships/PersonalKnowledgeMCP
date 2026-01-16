@@ -132,23 +132,23 @@ const config: Neo4jConfig = {
 Essential indexes for query performance:
 
 ```cypher
--- File lookup by path (most common query pattern)
+// File lookup by path (most common query pattern)
 CREATE INDEX file_path_repo_idx IF NOT EXISTS
 FOR (f:File) ON (f.path, f.repository);
 
--- Repository lookup
+// Repository lookup
 CREATE INDEX repository_name_idx IF NOT EXISTS
 FOR (r:Repository) ON (r.name);
 
--- Function lookup
+// Function lookup
 CREATE INDEX function_name_idx IF NOT EXISTS
 FOR (fn:Function) ON (fn.name, fn.repository);
 
--- Module lookup for import resolution
+// Module lookup for import resolution
 CREATE INDEX module_name_idx IF NOT EXISTS
 FOR (m:Module) ON (m.name);
 
--- Composite index for file queries
+// Composite index for file queries
 CREATE INDEX file_repo_ext_idx IF NOT EXISTS
 FOR (f:File) ON (f.repository, f.extension);
 ```
@@ -404,7 +404,7 @@ server.memory.pagecache.size=1g
 
 - Use Docker containers for isolation
 - Pre-warm indexes before tests
-- Allow 1.5x tolerance for timing assertions (CI variance)
+- Default 1.5x tolerance for timing assertions (configurable via CI_TOLERANCE env var)
 
 ### Production Environment
 

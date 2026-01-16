@@ -326,6 +326,11 @@ describe.skipIf(!shouldRunBenchmarks)("Graph Query Performance at Scale", () => 
     console.log(`Query Benchmarks: ${scaleName} (${setup.fileCount} files)`);
     console.log("=".repeat(60));
 
+    // Guard: Ensure sample paths are available for benchmarks
+    if (setup.samplePaths.length === 0) {
+      throw new Error(`No sample paths available for benchmark at scale ${scaleName}`);
+    }
+
     // Benchmark 1: Simple 1-hop dependency query
     await runBenchmark("Simple dependency (1-hop)", TARGETS.simple1Hop, async () => {
       const path = setup.samplePaths[Math.floor(Math.random() * setup.samplePaths.length)]!;
@@ -551,6 +556,16 @@ describe.skipIf(!shouldRunBenchmarks)("Graph Query Performance at Scale", () => 
         if (dataPoints.length >= 2) {
           const first = dataPoints[0]!;
           const last = dataPoints[dataPoints.length - 1]!;
+
+          // Validate inputs to avoid NaN/Infinity in scaling calculation
+          if (first.files === 0 || first.p95 === 0 || last.files === first.files) {
+            console.log(`  Cannot calculate scaling: insufficient baseline data`);
+            for (const dp of dataPoints) {
+              console.log(`  ${dp.scale}: ${dp.p95.toFixed(1)}ms (${dp.files} files)`);
+            }
+            continue;
+          }
+
           const fileRatio = last.files / first.files;
           const timeRatio = last.p95 / first.p95;
           const scalingExponent = Math.log(timeRatio) / Math.log(fileRatio);
@@ -558,12 +573,18 @@ describe.skipIf(!shouldRunBenchmarks)("Graph Query Performance at Scale", () => 
           for (const dp of dataPoints) {
             console.log(`  ${dp.scale}: ${dp.p95.toFixed(1)}ms (${dp.files} files)`);
           }
-          console.log(`  Scaling: O(n^${scalingExponent.toFixed(2)})`);
 
-          // Sub-linear (< 1) or linear (~ 1) scaling is ideal
-          // Super-linear (> 1.5) scaling indicates potential issues
-          if (scalingExponent > 1.5) {
-            console.log(`  ⚠️ Warning: Super-linear scaling detected`);
+          // Guard against NaN from negative time ratios or other edge cases
+          if (Number.isNaN(scalingExponent) || !Number.isFinite(scalingExponent)) {
+            console.log(`  Scaling: Unable to calculate (invalid data)`);
+          } else {
+            console.log(`  Scaling: O(n^${scalingExponent.toFixed(2)})`);
+
+            // Sub-linear (< 1) or linear (~ 1) scaling is ideal
+            // Super-linear (> 1.5) scaling indicates potential issues
+            if (scalingExponent > 1.5) {
+              console.log(`  Warning: Super-linear scaling detected`);
+            }
           }
         }
       }

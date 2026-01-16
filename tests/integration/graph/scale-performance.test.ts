@@ -58,6 +58,7 @@ function getTestScale(): keyof typeof SCALE_TEST_CONFIGS {
 /**
  * Get CI tolerance multiplier
  * CI environments have more variance, so we allow higher tolerance
+ * Reduced from 2.0x to 1.5x to catch regressions earlier
  */
 function getCITolerance(): number {
   const envTolerance = process.env["CI_TOLERANCE"];
@@ -67,8 +68,8 @@ function getCITolerance(): number {
       return parsed;
     }
   }
-  // Default 2.0x for CI variance
-  return 2.0;
+  // Default 1.5x for CI variance (reduced from 2.0x to catch regressions)
+  return 1.5;
 }
 
 const testScale = getTestScale();

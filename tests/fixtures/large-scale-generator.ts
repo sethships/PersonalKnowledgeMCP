@@ -349,6 +349,13 @@ export class LargeScaleGenerator {
       attempts++;
     } while (this.generatedPaths.has(filePath) && attempts < 100);
 
+    // Handle collision by adding timestamp suffix to ensure uniqueness
+    if (attempts >= 100 && this.generatedPaths.has(filePath)) {
+      const timestamp = Date.now();
+      const dir = this.random.choose(this.directories);
+      filePath = `${dir}/${prefix}${timestamp}.${extension}`;
+    }
+
     this.generatedPaths.add(filePath);
     return filePath;
   }
