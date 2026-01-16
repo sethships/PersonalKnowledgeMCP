@@ -9,6 +9,7 @@ This guide helps resolve common issues when using Personal Knowledge MCP with Cl
 - [Connection Errors](#connection-errors)
 - [Performance Issues](#performance-issues)
 - [Repository Indexing Problems](#repository-indexing-problems)
+- [Embedding Provider Issues](#embedding-provider-issues)
 - [OpenAI API Issues](#openai-api-issues)
 - [Docker and ChromaDB Issues](#docker-and-chromadb-issues)
 - [Log Analysis](#log-analysis)
@@ -869,6 +870,89 @@ bun run cli remove repository-name --force --delete-files
 # Reindex from scratch
 bun run cli index https://github.com/user/repo
 ```
+
+---
+
+## Embedding Provider Issues
+
+For comprehensive provider documentation, see the [Embedding Provider Guide](embedding-providers.md).
+
+### Quick Provider Selection
+
+Personal Knowledge MCP supports three embedding providers:
+
+| Provider | When to Use | Setup Required |
+|----------|-------------|----------------|
+| **OpenAI** | Highest quality, team use | `OPENAI_API_KEY` environment variable |
+| **Transformers.js** | Zero-config, offline, air-gapped | None (default) |
+| **Ollama** | GPU acceleration, privacy | Ollama server + model pull |
+
+### Provider Not Available
+
+**Symptom**: "Provider not available" or provider health check fails
+
+**Resolution**:
+```bash
+# Check provider status
+bun run cli providers list
+
+# Verify OpenAI
+echo $OPENAI_API_KEY  # Should be set
+
+# Verify Ollama
+curl http://localhost:11434/api/tags  # Should respond
+```
+
+### Dimension Mismatch Error
+
+**Symptom**: "Embedding dimensions (X) do not match collection (Y)"
+
+**Cause**: Switching between providers or models with different dimensions.
+
+**Resolution**: Re-index with the new provider:
+```bash
+bun run cli index --force https://github.com/user/repo
+```
+
+### Transformers.js Model Download Fails
+
+**Symptom**: "Failed to download model" or download hangs
+
+**Resolution**:
+1. Check internet connection
+2. Clear cache: `rm -rf ~/.cache/huggingface/transformers/`
+3. Pre-download: `bun run cli providers setup transformersjs`
+4. For air-gapped: See [Offline Usage](embedding-providers.md#offline-usage)
+
+### Ollama Connection Failed
+
+**Symptom**: "Failed to connect to Ollama at localhost:11434"
+
+**Resolution**:
+```bash
+# Check Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama if needed
+ollama serve  # or: docker start ollama
+
+# Pull embedding model
+ollama pull nomic-embed-text
+```
+
+### Slow Embedding Generation
+
+**Symptom**: Indexing takes longer than expected
+
+**Resolution by provider**:
+
+| Provider | Issue | Solution |
+|----------|-------|----------|
+| OpenAI | Rate limits | Reduce batch size: `EMBEDDING_BATCH_SIZE=50` |
+| Transformers.js | First request slow | Normal - model loads once, subsequent requests fast |
+| Ollama | CPU-only | Install GPU drivers; verify `nvidia-smi` works |
+
+For detailed troubleshooting, see [Embedding Provider Guide - Troubleshooting](embedding-providers.md#troubleshooting).
 
 ---
 

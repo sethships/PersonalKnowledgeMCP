@@ -452,6 +452,40 @@ Query what depends on a file, function, or class. Use for impact analysis before
 
 > **Note**: Graph tools require Neo4j and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
 
+## Embedding Providers
+
+Personal Knowledge MCP supports multiple embedding providers for generating vector representations of your code.
+
+### Quick Comparison
+
+| Provider | Best For | Requires | Quality | Offline |
+|----------|----------|----------|---------|---------|
+| **OpenAI** | Highest quality | API key + internet | Highest | No |
+| **Transformers.js** | Zero-config, offline | Nothing (default) | Good | Yes |
+| **Ollama** | GPU acceleration | Ollama server | Good-High | Yes |
+
+### Default Behavior
+
+- **With `OPENAI_API_KEY` set**: Uses OpenAI (highest quality)
+- **Without API key**: Uses Transformers.js (zero-config local)
+
+### Usage
+
+```bash
+# Automatic selection (OpenAI if API key set, otherwise Transformers.js)
+bun run cli index https://github.com/user/repo
+
+# Explicit provider selection
+bun run cli index --provider openai https://github.com/user/repo
+bun run cli index --provider transformersjs https://github.com/user/repo
+bun run cli index --provider ollama https://github.com/user/repo
+
+# Check available providers
+bun run cli providers status
+```
+
+For detailed configuration, model options, offline usage, and troubleshooting, see the [Embedding Provider Guide](docs/embedding-providers.md).
+
 ## CLI Usage
 
 The Personal Knowledge MCP includes a command-line interface (`pk-mcp`) for managing indexed repositories.
