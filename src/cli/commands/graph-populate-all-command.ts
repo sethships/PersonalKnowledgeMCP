@@ -299,7 +299,7 @@ export async function graphPopulateAllCommand(
       console.error("  • Set NEO4J_PASSWORD in your .env file");
       console.error("  • Or export NEO4J_PASSWORD in your shell");
     }
-    process.exit(1);
+    return;
   }
 
   // Step 2: Get all repositories with status "ready"
