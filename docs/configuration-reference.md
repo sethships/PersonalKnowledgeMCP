@@ -134,7 +134,11 @@ POSTGRES_PORT=5432
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `TRANSFORMERS_CACHE` | No | `~/.cache/huggingface/transformers` | Model cache directory |
+| `TRANSFORMERS_CACHE` | No | See below | Model cache directory |
+
+**Default cache paths by platform:**
+- **Linux/macOS**: `~/.cache/huggingface/transformers`
+- **Windows**: `%USERPROFILE%\.cache\huggingface\transformers` (e.g., `C:\Users\YourName\.cache\huggingface\transformers`)
 
 ### Ollama Provider
 

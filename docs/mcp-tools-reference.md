@@ -520,33 +520,43 @@ Returns the chain of relationships linking two entities. Use this to trace execu
 
 ```json
 {
-  "paths": [
+  "path_exists": true,
+  "path": [
     {
-      "length": 3,
-      "nodes": [
-        {
-          "type": "function",
-          "path": "src/routes/api.ts::handleLogin"
-        },
-        {
-          "type": "function",
-          "path": "src/services/auth.ts::authenticate"
-        },
-        {
-          "type": "function",
-          "path": "src/db/users.ts::findUser"
-        }
-      ],
-      "relationships": [
-        { "type": "calls", "from": 0, "to": 1 },
-        { "type": "calls", "from": 1, "to": 2 }
-      ]
+      "type": "function",
+      "identifier": "src/routes/api.ts::handleLogin",
+      "repository": "my-api",
+      "relationship_to_next": "CALLS"
+    },
+    {
+      "type": "function",
+      "identifier": "src/services/auth.ts::authenticate",
+      "repository": "my-api",
+      "relationship_to_next": "CALLS"
+    },
+    {
+      "type": "function",
+      "identifier": "src/db/users.ts::findUser",
+      "repository": "my-api",
+      "relationship_to_next": null
     }
   ],
   "metadata": {
-    "paths_found": 1,
-    "shortest_path_length": 3,
+    "hops": 2,
     "query_time_ms": 85
+  }
+}
+```
+
+#### Response When No Path Found
+
+```json
+{
+  "path_exists": false,
+  "path": null,
+  "metadata": {
+    "hops": 0,
+    "query_time_ms": 42
   }
 }
 ```
@@ -586,28 +596,65 @@ Returns timing, cache hit rates, and query statistics. Use this to monitor Neo4j
 }
 ```
 
-#### Response Schema
+#### Response Schema (All Metrics)
+
+When `query_type` is `"all"` or omitted:
 
 ```json
 {
   "success": true,
   "metrics": {
-    "total_queries": 1250,
-    "cache_hit_rate": 0.75,
-    "average_query_time_ms": 45,
-    "p95_query_time_ms": 120,
-    "by_type": {
-      "getDependencies": {
-        "count": 500,
-        "avg_time_ms": 35,
-        "cache_hit_rate": 0.82
+    "totalQueries": 450,
+    "averageDurationMs": 135.8,
+    "cacheHitRate": 0.38,
+    "byQueryType": [
+      {
+        "queryType": "getDependencies",
+        "totalQueries": 150,
+        "averageDurationMs": 125.5,
+        "maxDurationMs": 890,
+        "minDurationMs": 15,
+        "cacheHitRate": 0.42,
+        "averageResultCount": 8.3,
+        "errorCount": 2
       },
-      "getDependents": {
-        "count": 400,
-        "avg_time_ms": 55,
-        "cache_hit_rate": 0.68
+      {
+        "queryType": "getDependents",
+        "totalQueries": 120,
+        "averageDurationMs": 145.2,
+        "maxDurationMs": 720,
+        "minDurationMs": 25,
+        "cacheHitRate": 0.35,
+        "averageResultCount": 12.1,
+        "errorCount": 1
       }
+    ],
+    "last7DaysTrend": {
+      "queryCount": 85,
+      "averageDurationMs": 118.2,
+      "cacheHitRate": 0.45
     }
+  }
+}
+```
+
+#### Response Schema (Filtered by Query Type)
+
+When `query_type` is a specific query type (e.g., `"getDependencies"`):
+
+```json
+{
+  "success": true,
+  "queryType": "getDependencies",
+  "stats": {
+    "queryType": "getDependencies",
+    "totalQueries": 150,
+    "averageDurationMs": 125.5,
+    "maxDurationMs": 890,
+    "minDurationMs": 15,
+    "cacheHitRate": 0.42,
+    "averageResultCount": 8.3,
+    "errorCount": 2
   }
 }
 ```
