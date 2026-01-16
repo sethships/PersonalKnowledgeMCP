@@ -16,6 +16,7 @@ import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import type { EmbeddingProvider } from "../../src/providers/index.js";
 import type { ChromaStorageClient } from "../../src/storage/index.js";
 import type { FileChange, UpdateOptions } from "../../src/services/incremental-update-types.js";
+import type { GraphIngestionService } from "../../src/graph/ingestion/GraphIngestionService.js";
 
 describe("IncrementalUpdatePipeline", () => {
   let pipeline: IncrementalUpdatePipeline;
@@ -541,6 +542,253 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.path).toBe("(batch embedding/storage)");
       expect(result.errors[0]?.error).toContain("rate limit");
+    });
+  });
+
+  describe("graph integration", () => {
+    let mockGraphService: {
+      ingestFile: ReturnType<typeof mock>;
+      deleteFileData: ReturnType<typeof mock>;
+    };
+    let pipelineWithGraph: IncrementalUpdatePipeline;
+
+    const baseOptions: UpdateOptions = {
+      repository: "test-repo",
+      localPath: "",
+      collectionName: "test_collection",
+      includeExtensions: [".ts", ".js", ".md"],
+      excludePatterns: ["node_modules/**", "dist/**"],
+    };
+
+    beforeEach(() => {
+      // Create mock graph ingestion service
+      mockGraphService = {
+        ingestFile: mock(async () => ({
+          filePath: "test.ts",
+          success: true,
+          nodesCreated: 5,
+          relationshipsCreated: 8,
+          errors: [],
+        })),
+        deleteFileData: mock(async () => ({
+          nodesDeleted: 3,
+          relationshipsDeleted: 4,
+          success: true,
+        })),
+      };
+
+      // Create pipeline with graph service
+      pipelineWithGraph = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        mockGraphService as unknown as GraphIngestionService
+      );
+    });
+
+    it("should call ingestFile for added TypeScript files", async () => {
+      // Create test file
+      const testFile = "src/test.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function hello() { return 'hello'; }");
+
+      const changes: FileChange[] = [{ path: testFile, status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      expect(result.stats.filesAdded).toBe(1);
+      expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
+      expect(result.stats.graph).toBeDefined();
+      expect(result.stats.graph?.graphNodesCreated).toBe(5);
+      expect(result.stats.graph?.graphRelationshipsCreated).toBe(8);
+      expect(result.stats.graph?.graphFilesProcessed).toBe(1);
+    });
+
+    it("should call deleteFileData then ingestFile for modified files", async () => {
+      // Create test file
+      const testFile = "src/modified.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function updated() { return 'updated'; }");
+
+      const changes: FileChange[] = [{ path: testFile, status: "modified" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      expect(result.stats.filesModified).toBe(1);
+      // Should delete then ingest
+      expect(mockGraphService.deleteFileData).toHaveBeenCalledTimes(1);
+      expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
+      expect(result.stats.graph?.graphNodesDeleted).toBe(3);
+      expect(result.stats.graph?.graphNodesCreated).toBe(5);
+    });
+
+    it("should call deleteFileData for deleted files", async () => {
+      const changes: FileChange[] = [{ path: "src/deleted.ts", status: "deleted" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      expect(result.stats.filesDeleted).toBe(1);
+      expect(mockGraphService.deleteFileData).toHaveBeenCalledTimes(1);
+      expect(mockGraphService.ingestFile).not.toHaveBeenCalled();
+      expect(result.stats.graph?.graphNodesDeleted).toBe(3);
+      expect(result.stats.graph?.graphRelationshipsDeleted).toBe(4);
+    });
+
+    it("should call deleteFileData for old path and ingestFile for new path on rename", async () => {
+      // Create test file at new location
+      const newPath = "src/renamed-new.ts";
+      const oldPath = "src/renamed-old.ts";
+      const testFilePath = join(testDir, newPath);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function renamed() { return 'renamed'; }");
+
+      const changes: FileChange[] = [{ path: newPath, status: "renamed", previousPath: oldPath }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      expect(result.stats.filesModified).toBe(1);
+      // Should delete old path then ingest new path
+      expect(mockGraphService.deleteFileData).toHaveBeenCalledTimes(1);
+      expect(mockGraphService.deleteFileData).toHaveBeenCalledWith("test-repo", oldPath);
+      expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
+    });
+
+    it("should skip non-TypeScript files for graph processing", async () => {
+      // Create markdown file (not supported for entity extraction)
+      const testFile = "docs/README.md";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "docs"), { recursive: true });
+      await writeFile(testFilePath, "# README\n\nThis is documentation.");
+
+      const changes: FileChange[] = [{ path: testFile, status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      expect(result.stats.filesAdded).toBe(1);
+      // Markdown files should be skipped for graph (not supported)
+      expect(mockGraphService.ingestFile).not.toHaveBeenCalled();
+      expect(result.stats.graph?.graphFilesSkipped).toBe(1);
+      expect(result.stats.graph?.graphFilesProcessed).toBe(0);
+    });
+
+    it("should continue processing if graph update fails", async () => {
+      // Create test file
+      const testFile = "src/test.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function hello() { return 'hello'; }");
+
+      // Make graph service throw an error
+      mockGraphService.ingestFile = mock(async () => {
+        throw new Error("Neo4j connection failed");
+      });
+
+      const changes: FileChange[] = [{ path: testFile, status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      // ChromaDB processing should still succeed
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // Graph error should be recorded but not block processing
+      expect(result.stats.graph?.graphErrors).toHaveLength(1);
+      expect(result.stats.graph?.graphErrors[0]?.path).toBe(testFile);
+      expect(result.stats.graph?.graphErrors[0]?.error).toContain("Neo4j connection failed");
+      expect(result.stats.graph?.graphErrors[0]?.operation).toBe("ingest");
+    });
+
+    it("should work normally without graph service (backward compatibility)", async () => {
+      // Create test file
+      const testFile = "src/test.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function hello() { return 'hello'; }");
+
+      // Use original pipeline without graph service
+      const changes: FileChange[] = [{ path: testFile, status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+      // No graph stats should be present
+      expect(result.stats.graph).toBeUndefined();
+    });
+
+    it("should record graph errors without blocking ChromaDB updates", async () => {
+      // Create test file
+      const testFile = "src/test.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function hello() { return 'hello'; }");
+
+      // Make ingestFile return failure (but not throw)
+      mockGraphService.ingestFile = mock(async () => ({
+        filePath: testFile,
+        success: false,
+        nodesCreated: 0,
+        relationshipsCreated: 0,
+        errors: [{ type: "file_error", message: "Parse error in file" }],
+      }));
+
+      const changes: FileChange[] = [{ path: testFile, status: "added" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      // ChromaDB processing should still succeed
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // Graph error should be recorded
+      expect(result.stats.graph?.graphErrors).toHaveLength(1);
+      expect(result.stats.graph?.graphErrors[0]?.operation).toBe("ingest");
+    });
+
+    it("should continue with ingest even if graph deletion fails for modified files", async () => {
+      // Create test file
+      const testFile = "src/modified.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function updated() { return 'updated'; }");
+
+      // Make deleteFileData return failure (but not throw)
+      mockGraphService.deleteFileData = mock(async () => ({
+        nodesDeleted: 0,
+        relationshipsDeleted: 0,
+        success: false,
+      }));
+
+      const changes: FileChange[] = [{ path: testFile, status: "modified" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      // ChromaDB processing should still succeed
+      expect(result.stats.filesModified).toBe(1);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // Graph deletion error should be recorded
+      expect(result.stats.graph?.graphErrors).toHaveLength(1);
+      expect(result.stats.graph?.graphErrors[0]?.path).toBe(testFile);
+      expect(result.stats.graph?.graphErrors[0]?.operation).toBe("delete");
+      expect(result.stats.graph?.graphErrors[0]?.error).toContain("Graph deletion failed");
+
+      // Ingest SHOULD still be called - better to have potentially duplicate
+      // data than lose new data entirely. The delete and ingest are separate
+      // operations in processModifiedFile, so delete failure doesn't prevent ingest.
+      expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
     });
   });
 });

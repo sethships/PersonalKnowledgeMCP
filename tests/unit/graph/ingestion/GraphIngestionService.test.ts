@@ -638,6 +638,88 @@ describe("GraphIngestionService", () => {
     });
   });
 
+  describe("deleteFileData", () => {
+    it("should delete file data successfully and return statistics", async () => {
+      // Mock runQuery to return deletion statistics
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([
+        { nodesDeleted: 5, relsDeleted: 8 },
+      ]);
+
+      const result = await service.deleteFileData("test-repo", "src/utils.ts");
+
+      expect(result.success).toBe(true);
+      expect(result.nodesDeleted).toBe(5);
+      expect(result.relationshipsDeleted).toBe(8);
+
+      // Verify runQuery was called with correct file ID
+      expect(mockNeo4jClient.runQuery).toHaveBeenCalled();
+      const calls = (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall?.[1]).toEqual({ fileId: "File:test-repo:src/utils.ts" });
+    });
+
+    it("should handle non-existent files gracefully", async () => {
+      // Mock runQuery to return empty result (file doesn't exist)
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
+
+      const result = await service.deleteFileData("test-repo", "src/nonexistent.ts");
+
+      expect(result.success).toBe(true);
+      expect(result.nodesDeleted).toBe(0);
+      expect(result.relationshipsDeleted).toBe(0);
+    });
+
+    it("should return success=false on database error without throwing", async () => {
+      // Mock runQuery to throw error
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockRejectedValue(
+        new Error("Database connection lost")
+      );
+
+      const result = await service.deleteFileData("test-repo", "src/utils.ts");
+
+      // Should not throw but return failure result
+      expect(result.success).toBe(false);
+      expect(result.nodesDeleted).toBe(0);
+      expect(result.relationshipsDeleted).toBe(0);
+    });
+
+    it("should validate repository name", async () => {
+      // Empty repository name should throw
+      await expect(service.deleteFileData("", "src/utils.ts")).rejects.toThrow(
+        /Repository name cannot be empty/
+      );
+
+      // Invalid characters should throw
+      await expect(service.deleteFileData("repo:invalid", "src/utils.ts")).rejects.toThrow(
+        /Invalid repository name/
+      );
+    });
+
+    it("should validate file path", async () => {
+      // Empty file path should throw
+      await expect(service.deleteFileData("test-repo", "")).rejects.toThrow(
+        /File path cannot be empty/
+      );
+
+      // Whitespace-only file path should throw
+      await expect(service.deleteFileData("test-repo", "   ")).rejects.toThrow(
+        /File path cannot be empty/
+      );
+    });
+
+    it("should generate correct file node ID", async () => {
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([
+        { nodesDeleted: 1, relsDeleted: 2 },
+      ]);
+
+      await service.deleteFileData("my-project", "src/components/Button.tsx");
+
+      const calls = (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall?.[1]).toEqual({ fileId: "File:my-project:src/components/Button.tsx" });
+    });
+  });
+
   describe("progress reporting", () => {
     it("should report progress through all phases", async () => {
       const progressUpdates: GraphIngestionProgress[] = [];

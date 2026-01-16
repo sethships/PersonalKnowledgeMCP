@@ -484,3 +484,41 @@ export interface BatchCreationResult {
    */
   errors: GraphIngestionError[];
 }
+
+// =============================================================================
+// File Deletion Types
+// =============================================================================
+
+/**
+ * Result of deleting graph data for a single file.
+ *
+ * Used by incremental update operations to remove graph data
+ * for deleted or modified files before re-ingesting.
+ *
+ * @example
+ * ```typescript
+ * const result: GraphFileDeletionResult = {
+ *   nodesDeleted: 5,
+ *   relationshipsDeleted: 8,
+ *   success: true,
+ * };
+ * ```
+ */
+export interface GraphFileDeletionResult {
+  /**
+   * Number of nodes deleted (File, Function, Class, Chunk nodes).
+   * Module nodes are preserved as they may be shared across files.
+   */
+  nodesDeleted: number;
+
+  /**
+   * Number of relationships deleted (CONTAINS, DEFINES, IMPORTS, HAS_CHUNK).
+   */
+  relationshipsDeleted: number;
+
+  /**
+   * Whether the deletion completed successfully.
+   * False indicates an error occurred but deletion may have been partial.
+   */
+  success: boolean;
+}
