@@ -333,6 +333,19 @@ export const GraphPopulateCommandOptionsSchema = z.object({
  */
 export type ValidatedGraphPopulateOptions = z.infer<typeof GraphPopulateCommandOptionsSchema>;
 
+/**
+ * Schema for graph populate-all command options
+ */
+export const GraphPopulateAllCommandOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for graph populate-all command
+ */
+export type ValidatedGraphPopulateAllOptions = z.infer<typeof GraphPopulateAllCommandOptionsSchema>;
+
 // ============================================================================
 // Providers Command Validation Schemas
 // ============================================================================
