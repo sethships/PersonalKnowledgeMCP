@@ -8,7 +8,33 @@ An AI-first knowledge management service built on the Model Context Protocol (MC
 
 Personal Knowledge MCP is a purpose-built MCP service that creates a semantic bridge between AI development workflows and diverse knowledge sources. Unlike traditional knowledge management systems retrofitted for AI access, this project is designed from the ground up for AI assistant integration.
 
-**Current Phase**: Phase 1 - Core MCP + Vector Search
+**Current Phase**: Phase 1 Complete, Phase 2 In Progress
+
+### Current Capabilities
+
+Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelligence features:
+
+| Capability | Description | Status |
+|------------|-------------|--------|
+| **Semantic Search** | Natural language code search across repositories | Available |
+| **Multi-Provider Embeddings** | OpenAI, Transformers.js (local), Ollama support | Available |
+| **Dependency Analysis** | Forward dependencies (what code depends on) | Available |
+| **Impact Analysis** | Reverse dependencies (what depends on code) | Available |
+| **Architecture Insights** | Module structure and inter-module dependencies | Available |
+| **Incremental Updates** | Fast index updates after PR merges | Available |
+| **Multi-Instance Isolation** | Separate Private/Work/Public knowledge bases | Available |
+| **HTTP Transport** | Cursor, VS Code Continue support | Available |
+| **Token Authentication** | Secure API access with scoped tokens | Available |
+
+### When to Use What
+
+| Use Case | Tool | Example Query |
+|----------|------|---------------|
+| Find code by concept | `semantic_search` | "JWT authentication middleware" |
+| Pre-change analysis | `get_dependencies` | "What does auth.ts depend on?" |
+| Refactoring impact | `get_dependents` | "What will break if I change validateToken?" |
+| Understand structure | `get_architecture` | "Show me the module organization" |
+| Trace execution flow | `find_path` | "How does login connect to database?" |
 
 ### Key Features
 
@@ -16,7 +42,8 @@ Personal Knowledge MCP is a purpose-built MCP service that creates a semantic br
 - **Semantic Code Search**: AI assistants can find relevant code and documentation without full codebase scans
 - **Private Repository Support**: Secure indexing of private GitHub repositories via PAT
 - **Vector-Based Retrieval**: Fast, accurate semantic search using ChromaDB
-- **OpenAI Embeddings**: High-quality semantic understanding with text-embedding-3-small
+- **Flexible Embedding Providers**: OpenAI (highest quality), Transformers.js (zero-config local), Ollama (GPU acceleration)
+- **Knowledge Graph**: Neo4j-powered dependency and architecture analysis
 - **Local-First Deployment**: Runs entirely on localhost with Docker Compose
 
 ## Use Cases
@@ -889,20 +916,28 @@ bun run cli health
 ## Documentation
 
 ### Getting Started
-- **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Complete guide for integrating with Claude Code
-- **[Graph Tools Guide](docs/graph-tools.md)** - Dependency analysis and impact assessment tools
+- **[Claude Code Setup Guide](docs/claude-code-setup.md)** - Complete MCP integration guide
+- **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Alternative integration documentation
 
-### Phase 1: Core MCP + Vector Search
+### Reference Documentation
+- **[CLI Commands Reference](docs/cli-commands-reference.md)** - Complete CLI command documentation
+- **[MCP Tools API Reference](docs/mcp-tools-reference.md)** - Formal API documentation for all MCP tools
+- **[Configuration Reference](docs/configuration-reference.md)** - All environment variables and settings
+
+### Feature Guides
+- **[Embedding Provider Guide](docs/embedding-providers.md)** - OpenAI, Transformers.js, and Ollama configuration
+- **[Graph Tools Guide](docs/graph-tools.md)** - Dependency analysis and impact assessment tools
+- **[Neo4j Setup Guide](docs/neo4j-setup.md)** - Knowledge graph database setup
+
+### Operations
+- **[Docker Operations Guide](docs/docker-operations.md)** - ChromaDB and container management
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+
+### Architecture & Design
 - **[Phase 1 Feature Summary](docs/phase1-feature-summary.md)** - Complete feature list, status, and known limitations
 - **[Phase 1 PRD](docs/Phase1-Core-MCP-Vector-Search-PRD.md)** - Product requirements for Phase 1
 - **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
-- **[Review Summary](docs/pm/phase1-review-summary.md)** - Document review and issue creation strategy
-
-### Incremental Updates Feature
-- **[Architecture Plan](docs/architecture/incremental-updates-plan.md)** - Technical design for incremental index updates
-- **[Implementation Roadmap](docs/pm/incremental-updates-roadmap.md)** - Phased implementation plan with GitHub issues
-
-### Docker Containerization (Phase 3+)
+- **[Incremental Updates Architecture](docs/architecture/incremental-updates-plan.md)** - Technical design for incremental index updates
 - **[Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md)** - Multi-transport MCP, security architecture, and deployment strategy
 
 ### Development
@@ -999,48 +1034,42 @@ To rotate the authentication token:
 - Technology decisions and architecture
 - GitHub issues and project planning
 
-### 🚧 Phase 1: Core MCP + Vector Search (In Progress)
-**Target**: January 14, 2025
-
-**Must Have**:
+### ✅ Phase 1: Core MCP + Vector Search (Complete)
 - MCP service with semantic_search and list_indexed_repositories tools
 - ChromaDB vector storage
 - OpenAI embedding generation
 - GitHub repository cloning and indexing
 - Private repository support via PAT
-- CLI commands (index, search, status, remove)
+- CLI commands (index, search, status, remove, update, update-all, history)
+- Incremental updates with change detection
 - 90% test coverage
 - Query response <500ms (p95)
 
-**Planned Extension - Incremental Updates** ([Epic #41](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41)):
-- On-demand index updates when PRs are merged (CLI-triggered)
-- Change detection via GitHub Compare API
-- Update history tracking and observability
-- See [Architecture Plan](docs/architecture/incremental-updates-plan.md) for details
+### 🚧 Phase 2: Code Intelligence + Multi-Provider Embeddings (In Progress)
+- **✅ Knowledge Graph** - Neo4j with get_dependencies, get_dependents, get_architecture, find_path tools
+- **✅ Local Embeddings** - Transformers.js (zero-config) and Ollama (GPU) support
+- **✅ Graph Schema Migrations** - CLI commands for database setup
+- AST parsing with tree-sitter (planned)
+- PostgreSQL document store (planned)
+- Local folder ingestion with file watcher (planned)
 
-### 📋 Phase 2: Code Intelligence + Local Files
-- AST parsing with tree-sitter
-- PostgreSQL document store
-- Local folder ingestion with file watcher
-- Markdown/PDF extraction
-
-### 📋 Phase 3: Multi-Instance + Containerization + Azure DevOps
+### ✅ Phase 3: Multi-Instance + Containerization (Complete)
 - **Docker Compose Hardening** - Production-ready container configuration
 - **Multi-Transport MCP** - HTTP/SSE transport alongside stdio for cross-client support
-- **Bearer Token Authentication** - Secure HTTP endpoints for network access
-- Multi-instance architecture (Private/Work/Public security tiers)
-- Azure DevOps integration
-- Instance-specific routing
+- **Bearer Token Authentication** - Secure HTTP endpoints with CLI management
+- **Multi-Instance Architecture** - Private/Work/Public security tier isolation
+- **Rate Limiting** - Configurable per-minute/per-hour limits
+- **CORS Support** - Browser client compatibility
 
 See [Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md) for detailed requirements.
 
-### 📋 Phase 4: Graph Relationships + Automation + Enterprise
-- Neo4j graph database
-- Code dependency extraction
+### 📋 Phase 4: Enterprise Features + Automation
+- **OpenID Connect (OIDC)** - Microsoft Entra ID, Auth0, Okta integration
+- **User Mapping** - Claim-based instance access control
 - Automated update pipelines
 - GitHub webhook handler
-- **OpenID Connect (OIDC)** - Microsoft 365 integration for enterprise auth
 - **Kubernetes Deployment** - Helm charts for production scaling
+- Azure DevOps integration
 
 ## Contributing
 
