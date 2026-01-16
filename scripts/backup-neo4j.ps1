@@ -243,6 +243,13 @@ function New-BackupChecksum {
     param([string]$BackupPath)
 
     $checksumPath = "$BackupPath.sha256"
+
+    # Warn user if backup file is large (>2GB) as checksum generation may take a while
+    $fileSize = (Get-Item -Path $BackupPath).Length
+    if ($fileSize -gt 2GB) {
+        Write-Warn "Large backup file detected ($([math]::Round($fileSize / 1GB, 2)) GB) - checksum generation may take a while"
+    }
+
     Write-Info "Generating SHA256 checksum..."
 
     try {

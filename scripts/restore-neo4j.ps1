@@ -221,6 +221,12 @@ function ConvertTo-DockerPath {
     # Get the absolute path
     $absolutePath = (Resolve-Path -Path $Path).Path
 
+    # Reject UNC paths (network paths) as Docker cannot mount them directly
+    if ($absolutePath -match '^\\\\') {
+        Write-Err "UNC paths are not supported. Please copy the backup to a local path first."
+        exit 4
+    }
+
     # Convert Windows path separators to forward slashes
     # and convert drive letter format (C:\ to /c/)
     $dockerPath = $absolutePath -replace '\\', '/'
@@ -354,10 +360,11 @@ function Clear-VolumeData {
 
     Write-Info "Clearing existing data in volume..."
 
+    # Remove all files including hidden files (dotfiles) for complete cleanup
     docker run --rm `
         -v "${Volume}:/data" `
         alpine `
-        sh -c "rm -rf /data/*" 2>$null
+        sh -c "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true" 2>$null
 
     if ($LASTEXITCODE -ne 0) {
         Write-Err "Failed to clear volume data"

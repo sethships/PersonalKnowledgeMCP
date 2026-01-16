@@ -58,6 +58,44 @@ DRY_RUN=false
 CONTAINER_WAS_RUNNING=false
 
 # =============================================================================
+# Cleanup Trap Handler
+# =============================================================================
+
+# Ensure container is restarted if script is interrupted after stopping it
+cleanup() {
+    local exit_code=$?
+    if [[ "$CONTAINER_WAS_RUNNING" == "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
+        local running_containers
+        running_containers=$(docker ps --format '{{.Names}}' | grep -i "$CONTAINER_PATTERN" || true)
+        if [[ -z "$running_containers" ]]; then
+            # Only show warning if not in quiet mode (avoid interfering with script output capture)
+            if [[ "$QUIET" != "true" ]]; then
+                echo "[WARN] Cleaning up: attempting to restart Neo4j container..." >&2
+            fi
+            # Try docker compose first
+            local compose_cmd
+            if docker compose version &>/dev/null 2>&1; then
+                compose_cmd="docker compose"
+            elif command -v docker-compose &>/dev/null; then
+                compose_cmd="docker-compose"
+            fi
+            if [[ -n "$compose_cmd" ]] && $compose_cmd up -d neo4j &>/dev/null 2>&1; then
+                : # Container started via compose
+            else
+                # Fallback: try docker start on stopped containers
+                local stopped_container
+                stopped_container=$(docker ps -a --format '{{.Names}}' | grep -i "$CONTAINER_PATTERN" | head -1 || true)
+                if [[ -n "$stopped_container" ]]; then
+                    docker start "$stopped_container" &>/dev/null 2>&1 || true
+                fi
+            fi
+        fi
+    fi
+    exit $exit_code
+}
+trap cleanup EXIT INT TERM
+
+# =============================================================================
 # Color Output (if terminal supports it)
 # =============================================================================
 
@@ -231,6 +269,15 @@ restart_container() {
     if $compose_cmd up -d neo4j &>/dev/null 2>&1; then
         log_info "Container restarted via docker compose"
     else
+        # Try docker start as fallback (for when no compose file is in current directory)
+        local container
+        container=$(docker ps -a --format '{{.Names}}' | grep -i "$CONTAINER_PATTERN" | head -1 || true)
+        if [[ -n "$container" ]]; then
+            if docker start "$container" &>/dev/null 2>&1; then
+                log_info "Container restarted via docker start: $container"
+                return 0
+            fi
+        fi
         log_warn "Could not restart container automatically"
         log_warn "Please start the container manually: $compose_cmd up -d neo4j"
     fi

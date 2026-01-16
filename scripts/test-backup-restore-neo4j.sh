@@ -44,6 +44,13 @@ TEST_NODE_ID="test_backup_restore_$(date +%s)"
 TEST_BACKUP_DIR="${SCRIPT_DIR}/../.test-backups"
 NEO4J_CONTAINER="pk-mcp-neo4j"
 
+# Auto-detect the volume name from the running container to ensure consistency
+# This prevents issues when running from different directories with docker-compose
+NEO4J_VOLUME="${VOLUME_NAME:-}"
+if [[ -z "$NEO4J_VOLUME" ]]; then
+    NEO4J_VOLUME=$(docker inspect "$NEO4J_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true)
+fi
+
 # Authentication - check for token in environment or .env file
 NEO4J_USER="${NEO4J_USER:-neo4j}"
 NEO4J_PASSWORD="${NEO4J_PASSWORD:-}"
@@ -162,6 +169,13 @@ check_prerequisites() {
     fi
     log_verbose "docker: OK"
 
+    # Show detected volume if available
+    if [[ -n "$NEO4J_VOLUME" ]]; then
+        log_verbose "Neo4j volume: $NEO4J_VOLUME"
+    else
+        log_warn "Could not detect Neo4j volume from container - will use auto-detection"
+    fi
+
     if ! [[ -x "${SCRIPT_DIR}/backup-neo4j.sh" ]]; then
         log_warn "backup-neo4j.sh is not executable, fixing..."
         chmod +x "${SCRIPT_DIR}/backup-neo4j.sh" 2>/dev/null || true
@@ -193,6 +207,12 @@ create_test_data() {
         log_fail "Test node creation could not be verified"
         return 1
     fi
+
+    # Allow time for Neo4j to flush data to disk before backup
+    # Neo4j Community Edition doesn't have db.checkpoint(), so we use a delay
+    # to allow the write-ahead log to be flushed to the data files
+    log_verbose "Waiting for data to be flushed to disk..."
+    sleep 5
 
     log_success "Test node created with id '${TEST_NODE_ID}'"
 }
@@ -234,10 +254,17 @@ create_backup() {
     # Export password for the backup script
     export NEO4J_PASSWORD
 
-    BACKUP_FILE=$("${SCRIPT_DIR}/backup-neo4j.sh" \
-        --backup-dir "${TEST_BACKUP_DIR}" \
-        --retention 0 \
-        --quiet 2>&1 | tail -1)
+    # Capture only stdout (backup file path), let stderr go to console
+    # The backup script outputs the backup path to stdout on the last line
+    # Use explicitly detected volume to ensure consistency across docker-compose contexts
+    # Build command arguments as array to avoid word-splitting issues
+    local -a backup_args=("--backup-dir" "${TEST_BACKUP_DIR}" "--retention" "0")
+    if [[ -n "$NEO4J_VOLUME" ]]; then
+        backup_args+=("--volume" "$NEO4J_VOLUME")
+    fi
+    backup_args+=("--quiet")
+
+    BACKUP_FILE=$("${SCRIPT_DIR}/backup-neo4j.sh" "${backup_args[@]}" 2>/dev/null | tail -1)
 
     if [[ -z "$BACKUP_FILE" ]] || [[ ! -f "$BACKUP_FILE" ]]; then
         log_fail "Backup script did not create a backup file"
@@ -249,25 +276,42 @@ create_backup() {
     backup_size=$(du -h "$BACKUP_FILE" | cut -f1)
 
     log_success "Backup created: $(basename "$BACKUP_FILE") ($backup_size)"
+
+    # Wait for Neo4j to be ready after backup (backup script restarts container)
+    log_info "Waiting for Neo4j to be ready after backup..."
+    local max_wait=60
+    local waited=0
+    while ! run_cypher "RETURN 1" &>/dev/null; do
+        if [[ $waited -ge $max_wait ]]; then
+            log_warn "Neo4j not ready after backup - continuing anyway"
+            break
+        fi
+        sleep 2
+        ((waited += 2))
+    done
 }
 
 # Delete test data (simulate data loss)
 delete_test_data() {
     log_step "Simulating data loss: deleting test node"
 
+    # Use DETACH DELETE to handle any potential relationships
     local result
-    result=$(run_cypher "MATCH (n:TestBackup {id: '${TEST_NODE_ID}'}) DELETE n RETURN count(n) AS deleted" 2>&1) || {
-        log_warn "Failed to delete test node (may have already been deleted)"
-        return 0
-    }
-
+    result=$(run_cypher "MATCH (n:TestBackup {id: '${TEST_NODE_ID}'}) DETACH DELETE n" 2>&1)
+    local exit_code=$?
+    log_verbose "Delete exit code: $exit_code"
     log_verbose "Delete result: $result"
 
-    # Verify deletion
+    if [[ $exit_code -ne 0 ]]; then
+        log_warn "Delete command returned error (exit $exit_code): $result"
+    fi
+
+    # Verify deletion regardless of command exit code
     local verify_result
     verify_result=$(run_cypher "MATCH (n:TestBackup {id: '${TEST_NODE_ID}'}) RETURN count(n) AS count" 2>&1) || true
+    log_verbose "Verify result: $verify_result"
 
-    if echo "$verify_result" | grep -q "0"; then
+    if echo "$verify_result" | grep -q "^0$\|, 0$\| 0$"; then
         log_success "Test node deleted (data loss simulated)"
     else
         log_fail "Failed to delete test node"
@@ -287,7 +331,15 @@ restore_backup() {
     # Export password for the restore script
     export NEO4J_PASSWORD
 
-    "${SCRIPT_DIR}/restore-neo4j.sh" "$BACKUP_FILE" --yes --quiet 2>&1 || {
+    # Use explicitly detected volume to ensure consistency
+    # Build command arguments as array to avoid word-splitting issues
+    local -a restore_args=("$BACKUP_FILE" "--yes")
+    if [[ -n "$NEO4J_VOLUME" ]]; then
+        restore_args+=("--volume" "$NEO4J_VOLUME")
+    fi
+    restore_args+=("--quiet")
+
+    "${SCRIPT_DIR}/restore-neo4j.sh" "${restore_args[@]}" 2>&1 || {
         log_fail "Restore script failed"
         return 1
     }
@@ -305,6 +357,10 @@ restore_backup() {
         sleep 2
         ((waited += 2))
     done
+
+    # Additional delay to ensure all data is fully loaded after Neo4j becomes responsive
+    # Neo4j may respond to basic queries before fully loading all data from restored files
+    sleep 5
 
     log_success "Backup restored successfully"
 }

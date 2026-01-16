@@ -272,7 +272,16 @@ start_container() {
     if $compose_cmd up -d neo4j &>/dev/null 2>&1; then
         log_info "Container started via docker compose"
     else
-        # Can't start without compose file, warn user
+        # Try docker start as fallback (for when no compose file is in current directory)
+        local container
+        container=$(docker ps -a --format '{{.Names}}' | grep -i "$CONTAINER_PATTERN" | head -1 || true)
+        if [[ -n "$container" ]]; then
+            if docker start "$container" &>/dev/null 2>&1; then
+                log_info "Container started via docker start: $container"
+                return 0
+            fi
+        fi
+        # Can't start without compose file or existing container
         log_warn "Could not start container automatically"
         log_warn "Please start the container manually: $compose_cmd up -d neo4j"
         return 1
@@ -362,10 +371,11 @@ clear_volume() {
     log_info "Clearing existing data in volume..."
 
     # Note: MSYS_NO_PATHCONV=1 prevents Git Bash from converting Unix paths
+    # Remove all files including hidden files (dotfiles) for complete cleanup
     MSYS_NO_PATHCONV=1 docker run --rm \
         -v "${VOLUME_NAME}:/data" \
         alpine \
-        sh -c "rm -rf /data/*" 2>&1
+        sh -c "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null || true" 2>&1
 
     if [[ $? -ne 0 ]]; then
         log_error "Failed to clear volume data"
