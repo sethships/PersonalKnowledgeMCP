@@ -245,7 +245,12 @@ describe.skipIf(!shouldRunEvaluation)("ONNX Runtime Evaluation (Issue #176)", ()
     test("can create inference session with CPU provider", async () => {
       // We need a model to create a session
       // First, let's check if Transformers.js has downloaded the model
-      const modelPath = `${process.env["HOME"] || process.env["USERPROFILE"]}/.cache/huggingface/transformers/models--Xenova--all-MiniLM-L6-v2`;
+      // Support custom HuggingFace cache locations via environment variables
+      const hfCacheDir =
+        process.env["HF_HOME"] ||
+        process.env["HUGGINGFACE_HUB_CACHE"] ||
+        `${process.env["HOME"] || process.env["USERPROFILE"]}/.cache/huggingface`;
+      const modelPath = `${hfCacheDir}/transformers/models--Xenova--all-MiniLM-L6-v2`;
 
       // Try to find the ONNX model file
       const possiblePaths = [
@@ -466,7 +471,12 @@ describe.skipIf(!shouldRunEvaluation)("ONNX Runtime Evaluation (Issue #176)", ()
       }
 
       // Check if DirectML provider is available
-      const modelPath = `${process.env["USERPROFILE"]}/.cache/huggingface/transformers/models--Xenova--all-MiniLM-L6-v2/onnx/model.onnx`;
+      // Support custom HuggingFace cache locations via environment variables
+      const hfCacheDir =
+        process.env["HF_HOME"] ||
+        process.env["HUGGINGFACE_HUB_CACHE"] ||
+        `${process.env["USERPROFILE"]}/.cache/huggingface`;
+      const modelPath = `${hfCacheDir}/transformers/models--Xenova--all-MiniLM-L6-v2/onnx/model.onnx`;
 
       try {
         const file = Bun.file(modelPath);
@@ -502,9 +512,10 @@ describe.skipIf(!shouldRunEvaluation)("ONNX Runtime Evaluation (Issue #176)", ()
           "Note: Actual GPU usage depends on model compatibility and system GPU",
         ].join("\n  ");
 
-        // Clean up
-        // Note: onnxruntime-node doesn't have explicit session.close()
-        // The session will be garbage collected
+        // Clean up session resources
+        if (typeof session.release === "function") {
+          await session.release();
+        }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -589,7 +600,7 @@ describe.skipIf(!shouldRunEvaluation)("ONNX Runtime Evaluation (Issue #176)", ()
 // Print instructions if evaluation is skipped
 if (!shouldRunEvaluation) {
   console.log(
-    "\n🔬 ONNX Runtime Evaluation is SKIPPED by default.\n" +
+    "\n[INFO] ONNX Runtime Evaluation is SKIPPED by default.\n" +
       "To run the evaluation:\n\n" +
       "  Basic evaluation:\n" +
       "    RUN_ONNX_EVAL=true bun test tests/benchmarks/onnx-evaluation.bench.ts\n\n" +

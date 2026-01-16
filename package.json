@@ -27,6 +27,7 @@
     "bench:full": "bun tests/benchmarks/run-scale-tests.ts --scale large --suite all",
     "bench:quick": "bun tests/benchmarks/run-scale-tests.ts --scale small --suite all",
     "bench:report": "bun tests/benchmarks/run-scale-tests.ts --scale large --suite all --report markdown --output perf-report.md",
+    "bench:onnx": "RUN_ONNX_EVAL=true bun test ./tests/benchmarks/onnx-evaluation.bench.ts",
     "test:scale": "bun test tests/integration/graph/scale-performance.test.ts",
     "test:scale:full": "SCALE_TEST_SIZE=large bun test tests/integration/graph/scale-performance.test.ts"
   },
@@ -70,7 +71,6 @@
     "ora": "9.0.0",
     "pino": "^8.19.0",
     "pino-pretty": "^10.3.1",
-    "sharp": "0.34.5",
     "simple-git": "^3.25.0",
     "web-tree-sitter": "0.26.3",
     "zod": "4.1.13"
@@ -105,7 +105,6 @@
   "homepage": "https://github.com/sethb75/PersonalKnowledgeMCP#readme",
   "trustedDependencies": [
     "@modelcontextprotocol/sdk",
-    "onnxruntime-node",
-    "sharp"
+    "onnxruntime-node"
   ]
 }
