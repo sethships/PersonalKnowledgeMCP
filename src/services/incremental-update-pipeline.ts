@@ -394,10 +394,9 @@ export class IncrementalUpdatePipeline {
         graphStats.graphNodesDeleted += result.nodesDeleted;
         graphStats.graphRelationshipsDeleted += result.relationshipsDeleted;
         if (!result.success) {
-          // deleteFileData returns success=false on error, but doesn't throw
           graphStats.graphErrors.push({
             path: file.path,
-            error: "Graph deletion returned unsuccessful",
+            error: "Graph deletion failed - check service logs for details",
             operation: "delete",
           });
           return;
@@ -486,7 +485,7 @@ export class IncrementalUpdatePipeline {
     const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
     allChunks.push(...chunks);
 
-    // Graph update (non-blocking)
+    // Graph update (errors captured in graphStats, don't block pipeline)
     if (graphStats) {
       await this.processGraphUpdate(
         "ingest",

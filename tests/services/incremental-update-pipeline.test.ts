@@ -755,5 +755,40 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats.graph?.graphErrors).toHaveLength(1);
       expect(result.stats.graph?.graphErrors[0]?.operation).toBe("ingest");
     });
+
+    it("should continue with ingest even if graph deletion fails for modified files", async () => {
+      // Create test file
+      const testFile = "src/modified.ts";
+      const testFilePath = join(testDir, testFile);
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(testFilePath, "export function updated() { return 'updated'; }");
+
+      // Make deleteFileData return failure (but not throw)
+      mockGraphService.deleteFileData = mock(async () => ({
+        nodesDeleted: 0,
+        relationshipsDeleted: 0,
+        success: false,
+      }));
+
+      const changes: FileChange[] = [{ path: testFile, status: "modified" }];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipelineWithGraph.processChanges(changes, options);
+
+      // ChromaDB processing should still succeed
+      expect(result.stats.filesModified).toBe(1);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // Graph deletion error should be recorded
+      expect(result.stats.graph?.graphErrors).toHaveLength(1);
+      expect(result.stats.graph?.graphErrors[0]?.path).toBe(testFile);
+      expect(result.stats.graph?.graphErrors[0]?.operation).toBe("delete");
+      expect(result.stats.graph?.graphErrors[0]?.error).toContain("Graph deletion failed");
+
+      // Ingest SHOULD still be called - better to have potentially duplicate
+      // data than lose new data entirely. The delete and ingest are separate
+      // operations in processModifiedFile, so delete failure doesn't prevent ingest.
+      expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
+    });
   });
 });

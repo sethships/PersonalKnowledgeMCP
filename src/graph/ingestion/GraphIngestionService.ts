@@ -450,6 +450,13 @@ export class GraphIngestionService {
   async deleteFileData(repositoryName: string, filePath: string): Promise<GraphFileDeletionResult> {
     this.validateRepositoryName(repositoryName);
 
+    // Validate file path
+    if (!filePath || filePath.trim().length === 0) {
+      throw new GraphIngestionErrorClass("File path cannot be empty", "fatal_error", {
+        retryable: false,
+      });
+    }
+
     const fileId = this.generateFileNodeId(repositoryName, filePath);
     const startTime = performance.now();
 
@@ -457,6 +464,8 @@ export class GraphIngestionService {
       // Delete File node, its entities (Functions, Classes), and chunks
       // Module nodes are preserved as they may be shared across files
       // We use a single query to count and delete atomically
+      // Note: Query returns empty array when file doesn't exist (MATCH fails),
+      // which is handled by the fallback to { nodesDeleted: 0, relsDeleted: 0 }
       const result = await this.neo4jClient.runQuery<{
         nodesDeleted: number;
         relsDeleted: number;

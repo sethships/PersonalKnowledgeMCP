@@ -695,6 +695,18 @@ describe("GraphIngestionService", () => {
       );
     });
 
+    it("should validate file path", async () => {
+      // Empty file path should throw
+      await expect(service.deleteFileData("test-repo", "")).rejects.toThrow(
+        /File path cannot be empty/
+      );
+
+      // Whitespace-only file path should throw
+      await expect(service.deleteFileData("test-repo", "   ")).rejects.toThrow(
+        /File path cannot be empty/
+      );
+    });
+
     it("should generate correct file node ID", async () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([
         { nodesDeleted: 1, relsDeleted: 2 },
