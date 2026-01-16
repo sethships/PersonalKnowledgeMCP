@@ -334,4 +334,26 @@ export class QueryCache<T> {
 
     return removed;
   }
+
+  /**
+   * Clear all entries whose keys start with the given prefix
+   *
+   * This is useful for invalidating cache entries related to a specific
+   * repository or query category without clearing the entire cache.
+   *
+   * @param prefix - Key prefix to match
+   * @returns Number of entries removed
+   */
+  clearByPrefix(prefix: string): number {
+    let removed = 0;
+
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+        removed++;
+      }
+    }
+
+    return removed;
+  }
 }
