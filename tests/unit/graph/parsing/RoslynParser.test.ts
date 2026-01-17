@@ -22,16 +22,32 @@ const FIXTURES_DIR = path.join(process.cwd(), "tests/fixtures/parsing");
 function checkDotNetSync(): boolean {
   try {
     const result = spawnSync("dotnet", ["--version"], {
-      timeout: 5000,
+      timeout: 2000, // Short timeout - if dotnet exists it responds quickly
       encoding: "utf-8",
+      // On Windows, shell: true helps find dotnet in PATH
+      shell: process.platform === "win32",
     });
-    return result.status === 0;
+
+    // Check for success: status 0, no error, and output looks like a version (e.g., "8.0.100")
+    if (result.status !== 0 || result.error) {
+      return false;
+    }
+
+    const output = (result.stdout || "").toString().trim();
+    // Version should match pattern like "8.0.100" or "10.0.102"
+    const versionPattern = /^\d+\.\d+\.\d+/;
+    return versionPattern.test(output);
   } catch {
     return false;
   }
 }
 
 const dotNetAvailableSync = checkDotNetSync();
+
+// Log once at module load for debugging CI issues
+if (!dotNetAvailableSync) {
+  console.log("ℹ️  .NET SDK not detected - Roslyn tests will be skipped");
+}
 
 // Helper to create tests that skip when .NET is not available
 // This immediately passes the test if .NET is not available, avoiding timeouts
