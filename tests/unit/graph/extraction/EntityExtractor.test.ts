@@ -36,6 +36,7 @@ describe("EntityExtractor", () => {
 
   describe("static methods", () => {
     it("should correctly identify supported files", () => {
+      // TypeScript/JavaScript files
       expect(EntityExtractor.isSupported("file.ts")).toBe(true);
       expect(EntityExtractor.isSupported("file.tsx")).toBe(true);
       expect(EntityExtractor.isSupported("file.js")).toBe(true);
@@ -43,7 +44,12 @@ describe("EntityExtractor", () => {
       expect(EntityExtractor.isSupported("file.mjs")).toBe(true);
       expect(EntityExtractor.isSupported("file.mts")).toBe(true);
 
-      expect(EntityExtractor.isSupported("file.py")).toBe(false);
+      // Python files
+      expect(EntityExtractor.isSupported("file.py")).toBe(true);
+      expect(EntityExtractor.isSupported("file.pyw")).toBe(true);
+      expect(EntityExtractor.isSupported("file.pyi")).toBe(true);
+
+      // Unsupported files
       expect(EntityExtractor.isSupported("file.css")).toBe(false);
       expect(EntityExtractor.isSupported("file.md")).toBe(false);
     });

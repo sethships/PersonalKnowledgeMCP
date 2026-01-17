@@ -31,11 +31,17 @@ describe("file-scanner utilities", () => {
       expect(SUPPORTED_EXTENSIONS.has(".md")).toBe(false);
       expect(SUPPORTED_EXTENSIONS.has(".json")).toBe(false);
       expect(SUPPORTED_EXTENSIONS.has(".yaml")).toBe(false);
-      expect(SUPPORTED_EXTENSIONS.has(".py")).toBe(false);
     });
 
-    test("has exactly 4 extensions", () => {
-      expect(SUPPORTED_EXTENSIONS.size).toBe(4);
+    test("contains Python extensions", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".py")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".pyw")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".pyi")).toBe(true);
+    });
+
+    test("has exactly 7 extensions", () => {
+      // 4 JS/TS extensions + 3 Python extensions
+      expect(SUPPORTED_EXTENSIONS.size).toBe(7);
     });
   });
 

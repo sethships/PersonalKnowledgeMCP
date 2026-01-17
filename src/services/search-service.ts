@@ -32,6 +32,32 @@ import {
 import { getComponentLogger } from "../logging/index.js";
 
 /**
+ * Map of language names to their file extensions.
+ * Used for language filtering in semantic search.
+ */
+const LANGUAGE_TO_EXTENSIONS: Record<string, string[]> = {
+  python: [".py", ".pyw", ".pyi"],
+  typescript: [".ts", ".tsx", ".mts", ".cts"],
+  javascript: [".js", ".jsx", ".mjs", ".cjs"],
+  java: [".java"],
+  csharp: [".cs"],
+  go: [".go"],
+  rust: [".rs"],
+  ruby: [".rb"],
+  php: [".php"],
+  swift: [".swift"],
+  kotlin: [".kt", ".kts"],
+  scala: [".scala"],
+  c: [".c", ".h"],
+  cpp: [".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx"],
+  markdown: [".md", ".mdx"],
+  json: [".json"],
+  yaml: [".yaml", ".yml"],
+  html: [".html", ".htm"],
+  css: [".css", ".scss", ".sass", ".less"],
+};
+
+/**
  * Interface for creating embedding providers on-demand
  * Used for multi-provider search to create providers dynamically
  */
@@ -192,10 +218,20 @@ export class SearchServiceImpl implements SearchService {
       }
 
       // 5. Merge and sort results from all providers
-      const mergedResults = this.mergeResults(allResults, validated.limit ?? 10);
+      // Request more results than needed if language filtering will reduce the set
+      const requestedLimit = validated.limit ?? 10;
+      const fetchLimit = validated.language ? Math.min(requestedLimit * 3, 50) : requestedLimit; // Fetch more if filtering
+      let mergedResults = this.mergeResults(allResults, fetchLimit);
+
+      // 5.5 Apply language filter if specified
+      if (validated.language) {
+        mergedResults = this.filterByLanguage(mergedResults, validated.language);
+        // Re-apply limit after filtering
+        mergedResults = mergedResults.slice(0, requestedLimit);
+      }
 
       // 6. Format results
-      const formattedResults = this.formatResults(mergedResults);
+      const formattedResults = this.formatResults(mergedResults, validated.language);
 
       // 7. Assemble response with metadata
       const totalTime = performance.now() - startTime;
@@ -541,15 +577,61 @@ export class SearchServiceImpl implements SearchService {
   }
 
   /**
+   * Filter results by programming language
+   *
+   * Filters the similarity results to only include files of the specified language.
+   * Language is determined by file extension.
+   *
+   * @param results - Raw similarity results to filter
+   * @param language - Language to filter by (e.g., "python", "typescript")
+   * @returns Filtered results
+   */
+  private filterByLanguage(results: SimilarityResult[], language: string): SimilarityResult[] {
+    const normalizedLanguage = language.toLowerCase();
+    const extensions = LANGUAGE_TO_EXTENSIONS[normalizedLanguage];
+
+    if (!extensions) {
+      this.logger.warn({ language }, "Unknown language for filtering, returning all results");
+      return results;
+    }
+
+    return results.filter((result) => {
+      const fileExtension = result.metadata?.file_extension ?? "";
+      return extensions.includes(fileExtension.toLowerCase());
+    });
+  }
+
+  /**
+   * Derive language from file extension
+   *
+   * @param extension - File extension (e.g., ".py", ".ts")
+   * @returns Language name or undefined if unknown
+   */
+  private deriveLanguageFromExtension(extension: string): string | undefined {
+    const normalizedExt = extension.toLowerCase();
+    for (const [language, extensions] of Object.entries(LANGUAGE_TO_EXTENSIONS)) {
+      if (extensions.includes(normalizedExt)) {
+        return language;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Format raw ChromaDB results into SearchResult objects
    *
    * - Truncate content snippets to ~500 chars at word boundaries
    * - Extract metadata from ChromaDB document metadata
    * - Results are already sorted by similarity descending from ChromaDB
+   * - Optionally derive language from file extension
    */
-  private formatResults(rawResults: SimilarityResult[]): SearchResult[] {
+  private formatResults(rawResults: SimilarityResult[], language?: string): SearchResult[] {
     return rawResults.map((result) => {
       const metadata = result.metadata ?? {};
+      const fileExtension = metadata.file_extension ?? "";
+
+      // Derive language from extension if not already provided in filter
+      const derivedLanguage = language ?? this.deriveLanguageFromExtension(fileExtension);
 
       return {
         file_path: metadata.file_path ?? "unknown",
@@ -558,9 +640,10 @@ export class SearchServiceImpl implements SearchService {
         similarity_score: result.similarity,
         chunk_index: metadata.chunk_index ?? 0,
         metadata: {
-          file_extension: metadata.file_extension ?? "",
+          file_extension: fileExtension,
           file_size_bytes: metadata.file_size_bytes ?? 0,
           indexed_at: metadata.indexed_at ?? new Date().toISOString(),
+          language: derivedLanguage,
         },
       };
     });
