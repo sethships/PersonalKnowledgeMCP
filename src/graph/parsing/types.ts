@@ -8,13 +8,13 @@
  */
 
 /**
- * Supported languages for AST parsing.
+ * Languages supported by tree-sitter for AST parsing.
  *
  * Supports TypeScript ecosystem languages, Python, Java, Go, and Rust.
  * JavaScript is handled by both TypeScript and JavaScript grammars
  * depending on the file extension.
  */
-export type SupportedLanguage =
+export type TreeSitterLanguage =
   | "typescript"
   | "tsx"
   | "javascript"
@@ -23,6 +23,16 @@ export type SupportedLanguage =
   | "java"
   | "go"
   | "rust";
+
+/**
+ * All supported languages for AST parsing.
+ *
+ * Includes tree-sitter languages plus C# which uses Roslyn.
+ *
+ * Note: C# parsing requires the .NET SDK to be installed and uses Roslyn
+ * instead of tree-sitter for full semantic analysis capabilities.
+ */
+export type SupportedLanguage = TreeSitterLanguage | "csharp";
 
 /**
  * Types of code entities that can be extracted from source files.
@@ -347,6 +357,7 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".java": "java",
   ".go": "go",
   ".rs": "rust",
+  ".cs": "csharp",
 };
 
 /**
@@ -367,4 +378,14 @@ export function isSupportedExtension(extension: string): boolean {
  */
 export function getLanguageFromExtension(extension: string): SupportedLanguage | null {
   return EXTENSION_TO_LANGUAGE[extension.toLowerCase()] ?? null;
+}
+
+/**
+ * Type guard to check if a language is a tree-sitter language.
+ *
+ * @param language - The language to check
+ * @returns true if the language is supported by tree-sitter (not csharp)
+ */
+export function isTreeSitterLanguage(language: SupportedLanguage): language is TreeSitterLanguage {
+  return language !== "csharp";
 }

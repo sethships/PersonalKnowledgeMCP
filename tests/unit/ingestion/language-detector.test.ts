@@ -97,8 +97,8 @@ describe("language-detector", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
         expect(detectLanguage("README.md")).toBe("unknown");
         expect(detectLanguage("style.css")).toBe("unknown");
-        expect(detectLanguage("app.py")).toBe("unknown");
-        expect(detectLanguage("lib.rs")).toBe("unknown");
+        expect(detectLanguage("main.cpp")).toBe("unknown");
+        expect(detectLanguage("header.h")).toBe("unknown");
       });
 
       test("returns unknown for files without extension", () => {
@@ -144,14 +144,17 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("jsx");
       expect(SUPPORTED_LANGUAGES).toContain("java");
       expect(SUPPORTED_LANGUAGES).toContain("go");
+      expect(SUPPORTED_LANGUAGES).toContain("python");
+      expect(SUPPORTED_LANGUAGES).toContain("rust");
+      expect(SUPPORTED_LANGUAGES).toContain("csharp");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 6 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(6);
+    test("has exactly 9 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(9);
     });
 
     test("is readonly", () => {

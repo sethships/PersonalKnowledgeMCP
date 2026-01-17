@@ -2,10 +2,14 @@
  * Entity extractor for code analysis.
  *
  * Provides a focused API for extracting code entities (functions, classes,
- * interfaces, etc.) from TypeScript and JavaScript source files using
- * tree-sitter AST parsing.
+ * interfaces, etc.) from source files using AST parsing.
  *
- * This class serves as the bridge between the low-level TreeSitterParser
+ * Supports multiple languages through the unified CodeParser:
+ * - TypeScript, JavaScript, TSX, JSX (via tree-sitter)
+ * - Python, Java, Go, Rust (via tree-sitter)
+ * - C# (via Roslyn - requires .NET SDK)
+ *
+ * This class serves as the bridge between the low-level CodeParser
  * and the knowledge graph storage layer, providing filtering and
  * convenience methods for entity extraction.
  *
@@ -34,8 +38,7 @@
 
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
-import { TreeSitterParser } from "../parsing/TreeSitterParser.js";
-import { LanguageLoader } from "../parsing/LanguageLoader.js";
+import { CodeParser } from "../parsing/CodeParser.js";
 import type { CodeEntity, SupportedLanguage } from "../parsing/types.js";
 import type {
   EntityExtractorConfig,
@@ -48,12 +51,12 @@ import { DEFAULT_EXTRACTOR_CONFIG } from "./types.js";
 /**
  * Entity extractor for code analysis.
  *
- * Wraps TreeSitterParser to provide a focused API for extracting
+ * Wraps CodeParser to provide a focused API for extracting
  * code entities from source files with filtering and batch processing
  * capabilities.
  */
 export class EntityExtractor {
-  private readonly parser: TreeSitterParser;
+  private readonly parser: CodeParser;
   private readonly config: Required<EntityExtractorConfig>;
   private _logger: pino.Logger | null = null;
 
@@ -61,15 +64,14 @@ export class EntityExtractor {
    * Create a new EntityExtractor instance.
    *
    * @param config - Optional configuration options
-   * @param languageLoader - Optional custom language loader for testing
    */
-  constructor(config?: EntityExtractorConfig, languageLoader?: LanguageLoader) {
+  constructor(config?: EntityExtractorConfig) {
     this.config = {
       ...DEFAULT_EXTRACTOR_CONFIG,
       ...config,
     };
 
-    this.parser = new TreeSitterParser(languageLoader, {
+    this.parser = new CodeParser({
       extractDocumentation: this.config.extractDocumentation,
       includeAnonymous: this.config.includeAnonymous,
       maxFileSizeBytes: this.config.maxFileSizeBytes,
@@ -98,7 +100,7 @@ export class EntityExtractor {
     // Files without extensions or starting with dot (hidden files) are not supported
     if (lastDot === -1 || lastDot === 0) return false;
     const extension = filePath.substring(lastDot).toLowerCase();
-    return TreeSitterParser.isSupported(extension);
+    return CodeParser.isSupported(extension);
   }
 
   /**

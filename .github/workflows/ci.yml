@@ -24,6 +24,19 @@ jobs:
           # Dependabot: This is intentionally pinned - please create PR for version updates
           bun-version: 1.3.5
 
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # .NET 10 is required for Roslyn analyzer (C# language support)
+          # This enables full C# parsing tests in CI
+          dotnet-version: "10.0.x"
+
+      - name: Build Roslyn Analyzer
+        run: |
+          cd tools/roslyn-analyzer
+          dotnet build --configuration Release
+          echo "✓ Roslyn analyzer built successfully"
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

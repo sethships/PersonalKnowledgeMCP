@@ -524,6 +524,9 @@ describe("AuditLogger circuit breaker", () => {
     const initialLines = initialContent.trim().split("\n").length;
     expect(initialLines).toBe(1); // Ensure first event is written
 
+    // Wait additional time to ensure queue is fully flushed before opening circuit
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     // Access internals to manually open circuit for testing
     // @ts-expect-error - accessing private property for testing
     logger.circuitOpen = true;
@@ -532,8 +535,9 @@ describe("AuditLogger circuit breaker", () => {
     logger.emit(createAuthSuccessEvent());
     logger.emit(createAuthSuccessEvent());
 
-    // Wait a bit to ensure any queued writes would have time to complete
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Wait longer to ensure any queued writes would have time to complete
+    // CI environments may have slower I/O than local development
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Verify no new events were written
     const finalContent = readFileSync(TEST_LOG_PATH, "utf-8");

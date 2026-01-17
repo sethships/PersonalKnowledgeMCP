@@ -24,6 +24,7 @@
 // Re-export types
 export type {
   SupportedLanguage,
+  TreeSitterLanguage,
   EntityType,
   ParameterInfo,
   EntityMetadata,
@@ -42,6 +43,7 @@ export {
   EXTENSION_TO_LANGUAGE,
   isSupportedExtension,
   getLanguageFromExtension,
+  isTreeSitterLanguage,
 } from "./types.js";
 
 // Re-export error classes
@@ -53,9 +55,20 @@ export {
   ParseTimeoutError,
   FileTooLargeError,
   ExtractionError,
+  RoslynNotAvailableError,
   isRetryableParsingError,
 } from "./errors.js";
 
 // Re-export main classes
 export { LanguageLoader } from "./LanguageLoader.js";
 export { TreeSitterParser } from "./TreeSitterParser.js";
+export { CodeParser } from "./CodeParser.js";
+
+// Re-export Roslyn module
+export {
+  RoslynParser,
+  detectDotNet,
+  isDotNetAvailable,
+  resetDetectionCache,
+  type DotNetDetectionResult,
+} from "./roslyn/index.js";

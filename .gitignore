@@ -160,9 +160,16 @@ test-data/
 test-temp/
 
 # .NET Build Artifacts (for tools/roslyn-analyzer)
-bin/
-obj/
+**/bin/
+**/obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+*.nupkg
 *.csproj.user
+project.lock.json
 
 # Windows null device filename collision
 nul

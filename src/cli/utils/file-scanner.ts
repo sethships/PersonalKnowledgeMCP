@@ -19,7 +19,7 @@ import type { FileInput } from "../../graph/ingestion/types.js";
 /**
  * Supported file extensions for graph population.
  *
- * These are extensions supported by tree-sitter parsing.
+ * These are extensions supported by tree-sitter or Roslyn parsing.
  */
 export const SUPPORTED_EXTENSIONS = new Set([
   ".ts",
@@ -31,6 +31,8 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".pyi",
   ".java",
   ".go",
+  ".rs",
+  ".cs",
 ]);
 
 /**
