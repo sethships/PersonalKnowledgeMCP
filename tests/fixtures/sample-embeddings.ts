@@ -40,6 +40,7 @@ export function createTestMetadata(overrides: Partial<DocumentMetadata> = {}): D
     chunk_start_line: 1,
     chunk_end_line: 50,
     file_extension: ".ts",
+    language: "typescript",
     file_size_bytes: 1024,
     content_hash: "abc123def456",
     indexed_at: "2025-12-10T00:00:00Z",

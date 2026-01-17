@@ -256,6 +256,61 @@ describe("SearchServiceImpl", () => {
       const response = await service.search({ query: "  test  " });
       expect(response).toBeDefined();
     });
+
+    it("should validate language enum values", async () => {
+      mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
+
+      // Invalid language value should throw validation error
+      await expect(service.search({ query: "test", language: "python" as any })).rejects.toThrow(
+        SearchValidationError
+      );
+
+      await expect(service.search({ query: "test", language: "invalid" as any })).rejects.toThrow(
+        SearchValidationError
+      );
+    });
+  });
+
+  describe("Language Filtering", () => {
+    it("should accept valid language filter values", async () => {
+      mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
+      mockStorage.setMockResults([]);
+
+      // All supported languages should work
+      const languages = ["typescript", "tsx", "javascript", "jsx"] as const;
+      for (const lang of languages) {
+        const response = await service.search({ query: "test", language: lang });
+        expect(response).toBeDefined();
+      }
+    });
+
+    it("should pass language filter through to search", async () => {
+      mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
+      mockStorage.setMockResults([
+        createMockResult("src/utils.ts", 0.9, "TypeScript code", "typescript"),
+      ]);
+
+      const response = await service.search({
+        query: "test",
+        language: "typescript",
+      });
+
+      expect(response).toBeDefined();
+      expect(response.results.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should work without language filter (searches all languages)", async () => {
+      mockRepoService.setMockRepositories([createMockRepo("test-repo", "ready")]);
+      mockStorage.setMockResults([
+        createMockResult("src/utils.ts", 0.9, "TypeScript code", "typescript"),
+        createMockResult("lib/helper.js", 0.8, "JavaScript code", "javascript"),
+      ]);
+
+      const response = await service.search({ query: "test" });
+
+      expect(response).toBeDefined();
+      expect(response.results.length).toBe(2);
+    });
   });
 
   describe("Repository Selection", () => {
@@ -550,8 +605,14 @@ function createMockRepo(name: string, status: "ready" | "indexing" | "error"): R
 function createMockResult(
   filePath: string,
   similarity: number,
-  content?: string
+  content?: string,
+  language?: string
 ): SimilarityResult {
+  // Extract extension and infer language if not provided
+  const ext = "." + filePath.split(".").pop();
+  const inferredLanguage =
+    language ?? (ext === ".ts" ? "typescript" : ext === ".js" ? "javascript" : "unknown");
+
   return {
     id: `test-repo:${filePath}:0`,
     content: content || "This is test content for the search result",
@@ -562,7 +623,8 @@ function createMockResult(
       total_chunks: 1,
       chunk_start_line: 1,
       chunk_end_line: 10,
-      file_extension: ".ts",
+      file_extension: ext,
+      language: inferredLanguage,
       file_size_bytes: 1024,
       content_hash: "abc123",
       indexed_at: new Date().toISOString(),

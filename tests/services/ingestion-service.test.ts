@@ -129,6 +129,13 @@ class MockFileChunker {
       return this.mockChunks;
     }
     // Default: create one chunk per file with complete metadata
+    // Simple language detection for tests
+    const language =
+      fileInfo.extension === ".ts" || fileInfo.extension === ".tsx"
+        ? "typescript"
+        : fileInfo.extension === ".js" || fileInfo.extension === ".jsx"
+          ? "javascript"
+          : "unknown";
     return [
       {
         id: `${repository}:${fileInfo.relativePath}:0`,
@@ -141,6 +148,7 @@ class MockFileChunker {
         endLine: content.split("\n").length,
         metadata: {
           extension: fileInfo.extension,
+          language,
           fileSizeBytes: fileInfo.sizeBytes,
           contentHash: "mock-hash",
           fileModifiedAt: fileInfo.modifiedAt,

@@ -446,11 +446,11 @@ describe("semantic_search Tool", () => {
         const handler = createSemanticSearchHandler(mockService);
 
         await handler({
-          query: "python code",
-          language: "python",
+          query: "typescript code",
+          language: "typescript",
         });
 
-        expect(mockService.lastQuery?.language).toBe("python");
+        expect(mockService.lastQuery?.language).toBe("typescript");
       });
 
       it("should handle all parameters including language", async () => {
@@ -471,15 +471,17 @@ describe("semantic_search Tool", () => {
         expect(mockService.lastQuery?.language).toBe("typescript");
       });
 
-      it("should trim whitespace from language", async () => {
+      it("should reject invalid language values", async () => {
         const handler = createSemanticSearchHandler(mockService);
 
-        await handler({
+        const result = await handler({
           query: "test",
-          language: "  python  ",
+          language: "python",
         });
 
-        expect(mockService.lastQuery?.language).toBe("python");
+        // Invalid language values should return an error
+        expect(result.isError).toBe(true);
+        expect((result.content[0] as { text: string }).text).toContain("Error");
       });
     });
   });

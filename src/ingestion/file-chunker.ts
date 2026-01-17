@@ -13,6 +13,7 @@ import type pino from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { FileInfo, FileChunk, ChunkerConfig } from "./types.js";
 import { ValidationError, ChunkingError } from "./errors.js";
+import { detectLanguage } from "./language-detector.js";
 
 /**
  * Internal representation of chunk boundaries within a file.
@@ -331,6 +332,7 @@ export class FileChunker {
           endLine: boundary.endLine,
           metadata: {
             extension: fileInfo.extension,
+            language: detectLanguage(fileInfo.relativePath),
             fileSizeBytes: fileInfo.sizeBytes,
             contentHash: computeContentHash(chunkContent),
             fileModifiedAt: fileInfo.modifiedAt,

@@ -624,6 +624,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
               collection.query({
                 queryEmbeddings: [query.embedding],
                 nResults: query.limit,
+                where: query.where as Record<string, unknown> | undefined,
               }),
             `ChromaDB query ${collectionName}`
           );

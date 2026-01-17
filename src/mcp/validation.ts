@@ -51,7 +51,7 @@ export const SemanticSearchArgsSchema = z
 
     repository: z.string().trim().min(1, "Repository name cannot be empty").optional(),
 
-    language: z.string().trim().min(1, "Language cannot be empty").optional(),
+    language: z.enum(["typescript", "tsx", "javascript", "jsx"]).optional(),
   })
   .strict();
 

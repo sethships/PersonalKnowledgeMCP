@@ -38,7 +38,7 @@ export const SearchQuerySchema = z
 
     repository: z.string().trim().min(1, "Repository name must not be empty").optional(),
 
-    language: z.string().trim().min(1, "Language must not be empty").optional(),
+    language: z.enum(["typescript", "tsx", "javascript", "jsx"]).optional(),
   })
   .strict(); // Disallow extra properties
 

@@ -57,6 +57,8 @@ export interface DocumentMetadata {
   // File metadata
   /** File extension including the dot (e.g., ".ts", ".md") */
   file_extension: string;
+  /** Programming language identifier (e.g., "typescript", "javascript", "unknown") */
+  language: string;
   /** File size in bytes */
   file_size_bytes: number;
 
@@ -102,6 +104,8 @@ export interface SimilarityQuery {
   limit: number;
   /** Minimum similarity score (0-1 scale) - results below this threshold are filtered out */
   threshold: number;
+  /** Optional metadata filter (e.g., { language: "typescript" }) */
+  where?: MetadataFilter;
 }
 
 /**

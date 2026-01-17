@@ -410,6 +410,16 @@ export interface FileChunk {
     extension: string;
 
     /**
+     * Programming language detected from file extension.
+     *
+     * Used for language-filtered semantic search queries.
+     * Detected using the language-detector module.
+     *
+     * @example "typescript", "javascript", "tsx", "jsx", "unknown"
+     */
+    language: string;
+
+    /**
      * Original file size in bytes.
      *
      * Size of the entire file, not just this chunk.

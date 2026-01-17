@@ -23,7 +23,7 @@ export interface SearchQuery {
 
   /**
    * Optional language filter. If provided, only returns results from files
-   * of the specified programming language (e.g., "python", "typescript", "javascript").
+   * of the specified programming language. Supported values: typescript, tsx, javascript, jsx.
    */
   language?: string;
 }
