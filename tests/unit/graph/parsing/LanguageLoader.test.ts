@@ -200,6 +200,14 @@ describe("LanguageLoader", () => {
       expect(loader.getStatus().initialized).toBe(true);
       expect(loader.isLanguageLoaded("javascript")).toBe(true);
     });
+
+    it("should load Python language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("python");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("python")).toBe(true);
+    });
   });
 
   describe("error handling", () => {
@@ -210,6 +218,7 @@ describe("LanguageLoader", () => {
           tsx: "/nonexistent/path.wasm",
           javascript: "/nonexistent/path.wasm",
           jsx: "/nonexistent/path.wasm",
+          python: "/nonexistent/path.wasm",
         },
       });
 
@@ -236,6 +245,7 @@ describe("LanguageLoader", () => {
           tsx: "/custom/tsx.wasm",
           javascript: "/custom/javascript.wasm",
           jsx: "/custom/jsx.wasm",
+          python: "/custom/python.wasm",
         },
       };
 

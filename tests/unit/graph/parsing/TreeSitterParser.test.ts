@@ -1,7 +1,7 @@
 /**
  * Unit tests for TreeSitterParser.
  *
- * Tests AST parsing and entity extraction for TypeScript and JavaScript files.
+ * Tests AST parsing and entity extraction for TypeScript, JavaScript, and Python files.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
@@ -35,6 +35,7 @@ describe("TreeSitterParser", () => {
 
   describe("static methods", () => {
     it("should correctly identify supported extensions", () => {
+      // TypeScript/JavaScript extensions
       expect(TreeSitterParser.isSupported(".ts")).toBe(true);
       expect(TreeSitterParser.isSupported(".tsx")).toBe(true);
       expect(TreeSitterParser.isSupported(".js")).toBe(true);
@@ -44,18 +45,24 @@ describe("TreeSitterParser", () => {
       expect(TreeSitterParser.isSupported(".mts")).toBe(true);
       expect(TreeSitterParser.isSupported(".cts")).toBe(true);
 
+      // Python extensions
+      expect(TreeSitterParser.isSupported(".py")).toBe(true);
+      expect(TreeSitterParser.isSupported(".pyw")).toBe(true);
+      expect(TreeSitterParser.isSupported(".pyi")).toBe(true);
+
       // Case insensitive
       expect(TreeSitterParser.isSupported(".TS")).toBe(true);
       expect(TreeSitterParser.isSupported(".TSX")).toBe(true);
+      expect(TreeSitterParser.isSupported(".PY")).toBe(true);
 
       // Unsupported
-      expect(TreeSitterParser.isSupported(".py")).toBe(false);
       expect(TreeSitterParser.isSupported(".css")).toBe(false);
       expect(TreeSitterParser.isSupported(".md")).toBe(false);
       expect(TreeSitterParser.isSupported("")).toBe(false);
     });
 
     it("should get language from extension", () => {
+      // TypeScript/JavaScript
       expect(TreeSitterParser.getLanguageFromExtension(".ts")).toBe("typescript");
       expect(TreeSitterParser.getLanguageFromExtension(".tsx")).toBe("tsx");
       expect(TreeSitterParser.getLanguageFromExtension(".js")).toBe("javascript");
@@ -63,7 +70,12 @@ describe("TreeSitterParser", () => {
       expect(TreeSitterParser.getLanguageFromExtension(".mjs")).toBe("javascript");
       expect(TreeSitterParser.getLanguageFromExtension(".mts")).toBe("typescript");
 
-      expect(TreeSitterParser.getLanguageFromExtension(".py")).toBeNull();
+      // Python
+      expect(TreeSitterParser.getLanguageFromExtension(".py")).toBe("python");
+      expect(TreeSitterParser.getLanguageFromExtension(".pyw")).toBe("python");
+      expect(TreeSitterParser.getLanguageFromExtension(".pyi")).toBe("python");
+
+      // Unsupported
       expect(TreeSitterParser.getLanguageFromExtension(".css")).toBeNull();
     });
   });
@@ -793,6 +805,192 @@ export function documented(): void {}
       // Documentation should be extracted
       expect(fn?.metadata?.documentation).toBeDefined();
       expect(fn?.metadata?.documentation).toContain("documented function");
+    });
+  });
+
+  // ==================== Python Parsing Tests ====================
+
+  describe("parseFile - Python Functions", () => {
+    it("should parse simple Python functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("python");
+      expect(result.errors).toHaveLength(0);
+
+      // Check entities were extracted
+      expect(result.entities.length).toBeGreaterThan(0);
+
+      // Find the simple_function
+      const simpleFunc = result.entities.find((e) => e.name === "simple_function");
+      expect(simpleFunc).toBeDefined();
+      expect(simpleFunc?.type).toBe("function");
+
+      // Find function with typed parameters
+      const paramFunc = result.entities.find((e) => e.name === "function_with_params");
+      expect(paramFunc).toBeDefined();
+      expect(paramFunc?.type).toBe("function");
+      expect(paramFunc?.metadata?.parameters).toBeDefined();
+      expect(paramFunc?.metadata?.parameters?.length).toBe(2);
+      // Check first parameter (name: str)
+      expect(paramFunc?.metadata?.parameters?.[0]?.name).toBe("name");
+      expect(paramFunc?.metadata?.parameters?.[0]?.type).toBe("str");
+      // Check second parameter (count: int = 5)
+      expect(paramFunc?.metadata?.parameters?.[1]?.name).toBe("count");
+      expect(paramFunc?.metadata?.parameters?.[1]?.hasDefault).toBe(true);
+    });
+
+    it("should parse async Python functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      const asyncFunc = result.entities.find((e) => e.name === "async_fetch_data");
+      expect(asyncFunc).toBeDefined();
+      expect(asyncFunc?.metadata?.isAsync).toBe(true);
+      expect(asyncFunc?.metadata?.returnType).toBe("Dict[str, str]");
+    });
+
+    it("should parse functions with *args and **kwargs", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      const argsFunc = result.entities.find((e) => e.name === "function_with_args_kwargs");
+      expect(argsFunc).toBeDefined();
+      expect(argsFunc?.metadata?.parameters).toBeDefined();
+      // Should have *args and **kwargs parameters
+      const params = argsFunc?.metadata?.parameters ?? [];
+      expect(params.some((p) => p.isRest)).toBe(true);
+    });
+
+    it("should extract Python docstrings as documentation", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      const docFunc = result.entities.find((e) => e.name === "function_with_params");
+      expect(docFunc?.metadata?.documentation).toBeDefined();
+      expect(docFunc?.metadata?.documentation).toContain("typed parameters");
+    });
+  });
+
+  describe("parseFile - Python Classes", () => {
+    it("should parse Python classes", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      // Find base Animal class
+      const animal = result.entities.find((e) => e.name === "Animal");
+      expect(animal).toBeDefined();
+      expect(animal?.type).toBe("class");
+
+      // Find Dog class that extends Animal
+      const dog = result.entities.find((e) => e.name === "Dog");
+      expect(dog).toBeDefined();
+      expect(dog?.type).toBe("class");
+      expect(dog?.metadata?.extends).toBe("Animal");
+    });
+
+    it("should parse decorated Python classes", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      // Find dataclass DataPoint
+      const dataPoint = result.entities.find((e) => e.name === "DataPoint");
+      expect(dataPoint).toBeDefined();
+      expect(dataPoint?.type).toBe("class");
+    });
+
+    it("should extract class docstrings", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      const animal = result.entities.find((e) => e.name === "Animal");
+      expect(animal?.metadata?.documentation).toBeDefined();
+      expect(animal?.metadata?.documentation).toContain("Base class");
+    });
+  });
+
+  describe("parseFile - Python Imports", () => {
+    it("should extract various Python import types", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Standard import: import os
+      const osImport = result.imports.find((i) => i.source === "os");
+      expect(osImport).toBeDefined();
+
+      // From import: from typing import Optional, List
+      const typingImport = result.imports.find((i) => i.source === "typing");
+      expect(typingImport).toBeDefined();
+      expect(typingImport?.importedNames).toContain("Optional");
+      expect(typingImport?.importedNames).toContain("List");
+
+      // Aliased import: import json as json_module
+      const jsonImport = result.imports.find(
+        (i) => i.source === "json" && i.aliases?.["json"] === "json_module"
+      );
+      expect(jsonImport).toBeDefined();
+
+      // From aliased import: from pathlib import Path as PathAlias
+      const pathImport = result.imports.find(
+        (i) => i.source === "pathlib" && i.aliases?.["Path"] === "PathAlias"
+      );
+      expect(pathImport).toBeDefined();
+    });
+  });
+
+  describe("parseFile - Python Function Calls", () => {
+    it("should extract Python function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find call to simple_function
+      const simpleCall = result.calls.find((c) => c.calledName === "simple_function");
+      expect(simpleCall).toBeDefined();
+
+      // Find call to private_helper within function_with_calls
+      const helperCall = result.calls.find(
+        (c) => c.calledName === "private_helper" && c.callerName === "function_with_calls"
+      );
+      expect(helperCall).toBeDefined();
+    });
+
+    it("should detect async calls (await expressions)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      // Find awaited call to async_fetch_data
+      const asyncCall = result.calls.find(
+        (c) => c.calledName === "async_fetch_data" && c.callerName === "async_caller"
+      );
+      expect(asyncCall).toBeDefined();
+      expect(asyncCall?.isAsync).toBe(true);
+    });
+
+    it("should extract method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      // Find call to Calculator.add (static method)
+      const addCall = result.calls.find((c) => c.calledName === "add");
+      expect(addCall).toBeDefined();
+    });
+  });
+
+  describe("parseFile - Python Exports", () => {
+    it("should return empty exports for Python (no explicit exports)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-python.py")).text();
+      const result = await parser.parseFile(content, "simple-python.py");
+
+      // Python doesn't have explicit export statements like JS/TS
+      // All module-level definitions are implicitly exported
+      expect(result.exports).toHaveLength(0);
     });
   });
 });

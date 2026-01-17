@@ -74,6 +74,13 @@ export const semanticSearchToolDefinition: Tool = {
           "Optional repository name to limit search scope. If omitted, searches across " +
           "all indexed repositories with 'ready' status.",
       },
+      language: {
+        type: "string",
+        description:
+          "Optional programming language filter. If provided, only returns results from files " +
+          "of the specified language (e.g., 'python', 'typescript', 'javascript'). " +
+          "Use this to narrow search results to a specific language.",
+      },
     },
     required: ["query"],
   },
@@ -110,6 +117,7 @@ export function createSemanticSearchHandler(searchService: SearchService): ToolH
           limit: validatedArgs.limit,
           threshold: validatedArgs.threshold,
           repository: validatedArgs.repository,
+          language: validatedArgs.language,
         },
         "Executing semantic_search tool"
       );
@@ -120,6 +128,7 @@ export function createSemanticSearchHandler(searchService: SearchService): ToolH
         limit: validatedArgs.limit,
         threshold: validatedArgs.threshold,
         repository: validatedArgs.repository,
+        language: validatedArgs.language,
       });
 
       // Step 3: Format response for MCP

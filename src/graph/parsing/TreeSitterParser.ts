@@ -31,7 +31,7 @@ import {
 } from "./types.js";
 
 /**
- * Node type to entity type mapping.
+ * Node type to entity type mapping for TypeScript/JavaScript.
  */
 const NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   function_declaration: "function",
@@ -48,6 +48,17 @@ const NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   variable_declaration: "variable",
   public_field_definition: "property",
   property_signature: "property",
+};
+
+/**
+ * Node type to entity type mapping for Python.
+ * Python uses different AST node types than TypeScript/JavaScript.
+ * Note: tree-sitter-python uses "function_definition" for both sync and async functions.
+ * Async is detected via an "async" child node, not a separate node type.
+ */
+const PYTHON_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  function_definition: "function",
+  class_definition: "class",
 };
 
 /**
@@ -193,17 +204,17 @@ export class TreeSitterParser {
         errors.push(...this.collectSyntaxErrors(tree.rootNode));
       }
 
-      // Extract entities
-      const entities = this.extractEntities(tree.rootNode, filePath);
+      // Extract entities (language-aware)
+      const entities = this.extractEntities(tree.rootNode, filePath, language);
 
-      // Extract imports
-      const imports = this.extractImports(tree.rootNode);
+      // Extract imports (language-aware)
+      const imports = this.extractImports(tree.rootNode, language);
 
-      // Extract exports
-      const exports = this.extractExports(tree.rootNode);
+      // Extract exports (language-aware - Python doesn't have explicit exports)
+      const exports = this.extractExports(tree.rootNode, language);
 
-      // Extract function calls
-      const calls = this.extractCalls(tree.rootNode);
+      // Extract function calls (language-aware)
+      const calls = this.extractCalls(tree.rootNode, language);
 
       const parseTimeMs = performance.now() - startTime;
 
@@ -309,15 +320,28 @@ export class TreeSitterParser {
   /**
    * Extract code entities from the parse tree.
    */
-  private extractEntities(root: Node, filePath: string): CodeEntity[] {
+  private extractEntities(root: Node, filePath: string, language: SupportedLanguage): CodeEntity[] {
     const entities: CodeEntity[] = [];
+    const isPython = language === "python";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
-      const entityType = NODE_TO_ENTITY_TYPE[node.type];
+      // Use language-specific node type mapping
+      const nodeTypeMapping = isPython ? PYTHON_NODE_TO_ENTITY_TYPE : NODE_TO_ENTITY_TYPE;
+      const entityType = nodeTypeMapping[node.type];
+
+      // Handle Python decorated definitions
+      if (isPython && node.type === "decorated_definition") {
+        // Extract the actual definition from inside the decorated_definition
+        const definition = node.childForFieldName("definition");
+        if (definition) {
+          processNode(definition, isExported);
+        }
+        return; // Don't recurse into already processed decorated definition
+      }
 
       if (entityType) {
         try {
-          const entity = this.extractEntity(node, filePath, entityType, isExported);
+          const entity = this.extractEntity(node, filePath, entityType, isExported, language);
           if (entity) {
             entities.push(entity);
           }
@@ -334,8 +358,8 @@ export class TreeSitterParser {
         }
       }
 
-      // Check for export wrapper
-      if (node.type === "export_statement") {
+      // Check for export wrapper (TypeScript/JavaScript only)
+      if (!isPython && node.type === "export_statement") {
         // Process the declaration inside the export
         const declaration = node.childForFieldName("declaration");
         if (declaration) {
@@ -364,16 +388,23 @@ export class TreeSitterParser {
     node: Node,
     filePath: string,
     entityType: EntityType,
-    isExported: boolean
+    isExported: boolean,
+    language: SupportedLanguage
   ): CodeEntity | null {
-    // Get entity name
-    const name = this.extractEntityName(node, entityType);
+    const isPython = language === "python";
+
+    // Get entity name (language-aware)
+    const name = isPython
+      ? this.extractPythonEntityName(node, entityType)
+      : this.extractEntityName(node, entityType);
     if (!name && !this.config.includeAnonymous) {
       return null;
     }
 
-    // Build metadata
-    const metadata = this.extractMetadata(node, entityType);
+    // Build metadata (language-aware)
+    const metadata = isPython
+      ? this.extractPythonMetadata(node, entityType)
+      : this.extractMetadata(node, entityType);
 
     return {
       type: entityType,
@@ -673,10 +704,522 @@ export class TreeSitterParser {
     return null;
   }
 
+  // ==================== Python-Specific Methods ====================
+
+  /**
+   * Extract entity name for Python AST nodes.
+   */
+  private extractPythonEntityName(node: Node, _entityType: EntityType): string | null {
+    // For Python functions and classes, the name is in the "name" field
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) {
+      return nameNode.text;
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a Python entity node.
+   */
+  private extractPythonMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Check for async functions
+    // In tree-sitter-python, async functions have an "async" child node
+    // The node type is still "function_definition", not "async_function_definition"
+    if (node.type === "function_definition" && this.hasChildOfType(node, "async")) {
+      metadata.isAsync = true;
+    }
+
+    // Extract parameters for functions
+    if (entityType === "function") {
+      const params = this.extractPythonParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type annotation
+      const returnType = this.extractPythonReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+    }
+
+    // Extract base classes for Python classes
+    if (entityType === "class") {
+      const superclass = this.extractPythonSuperclass(node);
+      if (superclass) {
+        metadata.extends = superclass;
+      }
+    }
+
+    // Extract docstring as documentation
+    if (this.config.extractDocumentation) {
+      const doc = this.extractPythonDocstring(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract function parameters from Python AST.
+   */
+  private extractPythonParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      // Python parameter types
+      if (
+        child.type === "identifier" ||
+        child.type === "typed_parameter" ||
+        child.type === "default_parameter" ||
+        child.type === "typed_default_parameter" ||
+        child.type === "list_splat_pattern" ||
+        child.type === "dictionary_splat_pattern"
+      ) {
+        const param = this.extractPythonParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single Python parameter.
+   */
+  private extractPythonParameter(node: Node): ParameterInfo | null {
+    let name: string | null = null;
+    let type: string | undefined;
+    let hasDefault = false;
+    let isOptional = false;
+    let isRest = false;
+
+    switch (node.type) {
+      case "identifier":
+        name = node.text;
+        // Skip 'self' and 'cls' in method parameters
+        if (name === "self" || name === "cls") {
+          return null;
+        }
+        break;
+
+      case "typed_parameter": {
+        const nameNode = node.child(0);
+        name = nameNode?.text ?? null;
+        // Skip 'self' and 'cls'
+        if (name === "self" || name === "cls") {
+          return null;
+        }
+        const typeNode = node.childForFieldName("type");
+        if (typeNode) {
+          type = typeNode.text;
+        }
+        break;
+      }
+
+      case "default_parameter": {
+        hasDefault = true;
+        isOptional = true;
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? null;
+        break;
+      }
+
+      case "typed_default_parameter": {
+        hasDefault = true;
+        isOptional = true;
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? null;
+        const typeNode = node.childForFieldName("type");
+        if (typeNode) {
+          type = typeNode.text;
+        }
+        break;
+      }
+
+      case "list_splat_pattern": {
+        // *args
+        isRest = true;
+        const nameNode = node.child(1) ?? node.child(0);
+        name = nameNode?.text ?? null;
+        break;
+      }
+
+      case "dictionary_splat_pattern": {
+        // **kwargs
+        isRest = true;
+        const nameNode = node.child(1) ?? node.child(0);
+        name = nameNode?.text ?? null;
+        break;
+      }
+
+      default:
+        return null;
+    }
+
+    if (!name) {
+      return null;
+    }
+
+    return { name, type, hasDefault, isOptional, isRest };
+  }
+
+  /**
+   * Extract return type annotation from Python function.
+   */
+  private extractPythonReturnType(node: Node): string | null {
+    const returnTypeNode = node.childForFieldName("return_type");
+    if (returnTypeNode) {
+      return returnTypeNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract superclass from Python class definition.
+   */
+  private extractPythonSuperclass(node: Node): string | null {
+    const superclassNode = node.childForFieldName("superclasses");
+    if (superclassNode) {
+      // Get the first base class (primary inheritance)
+      const firstBase = this.findFirstChild(superclassNode, ["identifier", "attribute"]);
+      if (firstBase) {
+        return firstBase.text;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract docstring from Python function or class.
+   *
+   * In Python, docstrings are the first statement if it's a string literal.
+   */
+  private extractPythonDocstring(node: Node): string | null {
+    const bodyNode = node.childForFieldName("body");
+    if (!bodyNode) {
+      return null;
+    }
+
+    // The body is typically a "block" node
+    // Look for the first expression_statement containing a string
+    for (let i = 0; i < bodyNode.childCount; i++) {
+      const child = bodyNode.child(i);
+      if (!child) continue;
+
+      if (child.type === "expression_statement") {
+        // Check if it contains a string literal
+        const stringNode = this.findFirstChild(child, ["string", "concatenated_string"]);
+        if (stringNode) {
+          // Return the docstring content (with quotes)
+          return stringNode.text;
+        }
+      }
+
+      // If the first non-comment statement isn't a string, there's no docstring
+      if (child.type !== "comment" && child.type !== "pass_statement") {
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract imports from Python import statements.
+   */
+  private extractPythonImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      if (node.type === "import_statement" || node.type === "import_from_statement") {
+        try {
+          const infos = this.extractPythonImportInfo(node);
+          imports.push(...infos);
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Python import"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from Python import statements.
+   *
+   * Handles both:
+   * - import foo, bar
+   * - from foo import bar, baz
+   */
+  private extractPythonImportInfo(node: Node): ImportInfo[] {
+    const infos: ImportInfo[] = [];
+
+    if (node.type === "import_statement") {
+      // import foo, bar as b
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (!child) continue;
+
+        if (child.type === "dotted_name") {
+          const source = child.text;
+          infos.push({
+            source,
+            isRelative: false,
+            importedNames: [source.split(".").pop() ?? source],
+            isTypeOnly: false,
+            isSideEffect: false,
+            line: node.startPosition.row + 1,
+          });
+        } else if (child.type === "aliased_import") {
+          const nameNode = child.childForFieldName("name");
+          const aliasNode = child.childForFieldName("alias");
+          if (nameNode) {
+            const source = nameNode.text;
+            const originalName = source.split(".").pop() ?? source;
+            const info: ImportInfo = {
+              source,
+              isRelative: false,
+              importedNames: [originalName],
+              isTypeOnly: false,
+              isSideEffect: false,
+              line: node.startPosition.row + 1,
+            };
+            if (aliasNode) {
+              info.aliases = { [originalName]: aliasNode.text };
+            }
+            infos.push(info);
+          }
+        }
+      }
+    } else if (node.type === "import_from_statement") {
+      // from foo import bar, baz
+      const moduleNode = node.childForFieldName("module_name");
+      const source = moduleNode?.text ?? "";
+
+      // Check for relative imports (from . import or from .. import)
+      const isRelative =
+        source.startsWith(".") ||
+        node.children.some((c) => c?.type === "relative_import" || c?.type === "import_prefix");
+
+      const importedNames: string[] = [];
+      const aliases: Record<string, string> = {};
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (!child) continue;
+
+        if (child.type === "dotted_name" || child.type === "identifier") {
+          // Simple import: from foo import bar
+          if (child !== moduleNode) {
+            importedNames.push(child.text);
+          }
+        } else if (child.type === "aliased_import") {
+          // Aliased import: from foo import bar as b
+          const nameNode = child.childForFieldName("name");
+          const aliasNode = child.childForFieldName("alias");
+          if (nameNode) {
+            importedNames.push(nameNode.text);
+            if (aliasNode) {
+              aliases[nameNode.text] = aliasNode.text;
+            }
+          }
+        } else if (child.type === "wildcard_import") {
+          // from foo import *
+          importedNames.push("*");
+        }
+      }
+
+      if (importedNames.length > 0 || source) {
+        const info: ImportInfo = {
+          source,
+          isRelative,
+          importedNames,
+          isTypeOnly: false,
+          isSideEffect: importedNames.length === 0,
+          line: node.startPosition.row + 1,
+        };
+        if (Object.keys(aliases).length > 0) {
+          info.aliases = aliases;
+        }
+        infos.push(info);
+      }
+    }
+
+    return infos;
+  }
+
+  /**
+   * Extract function calls from Python AST.
+   */
+  private extractPythonCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a function
+      if (node.type === "function_definition" || node.type === "async_function_definition") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for call expression in Python
+      if (node.type === "call") {
+        try {
+          const callInfo = this.extractPythonCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Python call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a Python call node.
+   */
+  private extractPythonCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const functionNode = node.childForFieldName("function");
+    if (!functionNode) {
+      return null;
+    }
+
+    const callTarget = this.extractPythonCallTarget(functionNode);
+    if (!callTarget) {
+      return null;
+    }
+
+    // Check if this call is awaited (parent is await expression)
+    const isAsync = node.parent?.type === "await";
+
+    return {
+      calledName: callTarget.name,
+      calledExpression: callTarget.expression,
+      isAsync,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract call target from Python call expression.
+   */
+  private extractPythonCallTarget(node: Node): { name: string; expression: string } | null {
+    // Simple identifier: foo()
+    if (node.type === "identifier") {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    // Attribute access: obj.method()
+    if (node.type === "attribute") {
+      const attrNode = node.childForFieldName("attribute");
+      if (attrNode) {
+        return {
+          name: attrNode.text,
+          expression: node.text,
+        };
+      }
+    }
+
+    // Subscript: obj["method"]()
+    if (node.type === "subscript") {
+      const subscriptNode = node.childForFieldName("subscript");
+      if (subscriptNode && subscriptNode.type === "string") {
+        const name = subscriptNode.text.slice(1, -1); // Remove quotes
+        return {
+          name,
+          expression: node.text,
+        };
+      }
+      return {
+        name: "[dynamic]",
+        expression: node.text,
+      };
+    }
+
+    // Call expression (chained): foo().bar()
+    if (node.type === "call") {
+      return {
+        name: "[chained]",
+        expression: node.text,
+      };
+    }
+
+    // Fallback
+    if (node.text) {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    return null;
+  }
+
   /**
    * Extract imports from the parse tree.
    */
-  private extractImports(root: Node): ImportInfo[] {
+  private extractImports(root: Node, language: SupportedLanguage): ImportInfo[] {
+    // Use Python-specific import extraction for Python files
+    if (language === "python") {
+      return this.extractPythonImports(root);
+    }
+
     const imports: ImportInfo[] = [];
 
     const processNode = (node: Node): void => {
@@ -813,7 +1356,13 @@ export class TreeSitterParser {
   /**
    * Extract exports from the parse tree.
    */
-  private extractExports(root: Node): ExportInfo[] {
+  private extractExports(root: Node, language: SupportedLanguage): ExportInfo[] {
+    // Python doesn't have explicit export statements like JavaScript/TypeScript
+    // All module-level definitions are implicitly exported
+    if (language === "python") {
+      return [];
+    }
+
     const exports: ExportInfo[] = [];
 
     const processNode = (node: Node): void => {
@@ -1019,9 +1568,15 @@ export class TreeSitterParser {
    * information about each function/method call for building CALLS relationships.
    *
    * @param root - Root node of the parse tree
+   * @param language - The programming language being parsed
    * @returns Array of CallInfo objects
    */
-  private extractCalls(root: Node): CallInfo[] {
+  private extractCalls(root: Node, language: SupportedLanguage): CallInfo[] {
+    // Use Python-specific call extraction for Python files
+    if (language === "python") {
+      return this.extractPythonCalls(root);
+    }
+
     const calls: CallInfo[] = [];
 
     /**

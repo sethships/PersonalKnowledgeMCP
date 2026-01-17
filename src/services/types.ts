@@ -20,6 +20,12 @@ export interface SearchQuery {
 
   /** Optional repository name filter. If omitted, searches all ready repositories */
   repository?: string;
+
+  /**
+   * Optional language filter. If provided, only returns results from files
+   * of the specified programming language (e.g., "python", "typescript", "javascript").
+   */
+  language?: string;
 }
 
 /**
@@ -46,6 +52,8 @@ export interface SearchResult {
     file_extension: string;
     file_size_bytes: number;
     indexed_at: string; // ISO 8601 timestamp
+    /** Programming language of the source file (derived from extension) */
+    language?: string;
   };
 }
 

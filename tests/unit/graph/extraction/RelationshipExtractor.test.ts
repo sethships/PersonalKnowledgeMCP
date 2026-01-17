@@ -36,6 +36,7 @@ describe("RelationshipExtractor", () => {
 
   describe("static methods", () => {
     it("should correctly identify supported files", () => {
+      // TypeScript/JavaScript files
       expect(RelationshipExtractor.isSupported("file.ts")).toBe(true);
       expect(RelationshipExtractor.isSupported("file.tsx")).toBe(true);
       expect(RelationshipExtractor.isSupported("file.js")).toBe(true);
@@ -43,7 +44,12 @@ describe("RelationshipExtractor", () => {
       expect(RelationshipExtractor.isSupported("file.mjs")).toBe(true);
       expect(RelationshipExtractor.isSupported("file.mts")).toBe(true);
 
-      expect(RelationshipExtractor.isSupported("file.py")).toBe(false);
+      // Python files
+      expect(RelationshipExtractor.isSupported("file.py")).toBe(true);
+      expect(RelationshipExtractor.isSupported("file.pyw")).toBe(true);
+      expect(RelationshipExtractor.isSupported("file.pyi")).toBe(true);
+
+      // Unsupported files
       expect(RelationshipExtractor.isSupported("file.css")).toBe(false);
       expect(RelationshipExtractor.isSupported("file.md")).toBe(false);
     });
