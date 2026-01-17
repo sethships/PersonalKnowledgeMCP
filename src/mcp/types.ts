@@ -91,7 +91,10 @@ export interface SemanticSearchArgs {
   /** Optional repository name filter */
   repository?: string;
 
-  /** Optional programming language filter */
+  /**
+   * Optional language filter. If provided, only returns results from files
+   * of the specified programming language. Supported values: typescript, tsx, javascript, jsx.
+   */
   language?: string;
 }
 

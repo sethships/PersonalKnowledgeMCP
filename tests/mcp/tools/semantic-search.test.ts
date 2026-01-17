@@ -153,6 +153,15 @@ describe("semantic_search Tool", () => {
       expect(repoProp.type).toBe("string");
       expect(semanticSearchToolDefinition.inputSchema.required).not.toContain("repository");
     });
+
+    it("should define optional language property", () => {
+      const langProp = semanticSearchToolDefinition.inputSchema.properties![
+        "language"
+      ] as JsonSchemaProperty;
+      expect(langProp).toBeDefined();
+      expect(langProp.type).toBe("string");
+      expect(semanticSearchToolDefinition.inputSchema.required).not.toContain("language");
+    });
   });
 
   describe("createSemanticSearchHandler", () => {
@@ -431,6 +440,48 @@ describe("semantic_search Tool", () => {
         });
 
         expect(mockService.lastQuery?.repository).toBe("my-repo");
+      });
+
+      it("should pass language filter to SearchService", async () => {
+        const handler = createSemanticSearchHandler(mockService);
+
+        await handler({
+          query: "typescript code",
+          language: "typescript",
+        });
+
+        expect(mockService.lastQuery?.language).toBe("typescript");
+      });
+
+      it("should handle all parameters including language", async () => {
+        const handler = createSemanticSearchHandler(mockService);
+
+        await handler({
+          query: "test",
+          limit: 20,
+          threshold: 0.8,
+          repository: "my-repo",
+          language: "typescript",
+        });
+
+        expect(mockService.lastQuery?.query).toBe("test");
+        expect(mockService.lastQuery?.limit).toBe(20);
+        expect(mockService.lastQuery?.threshold).toBe(0.8);
+        expect(mockService.lastQuery?.repository).toBe("my-repo");
+        expect(mockService.lastQuery?.language).toBe("typescript");
+      });
+
+      it("should reject invalid language values", async () => {
+        const handler = createSemanticSearchHandler(mockService);
+
+        const result = await handler({
+          query: "test",
+          language: "python",
+        });
+
+        // Invalid language values should return an error
+        expect(result.isError).toBe(true);
+        expect((result.content[0] as { text: string }).text).toContain("Error");
       });
     });
   });
