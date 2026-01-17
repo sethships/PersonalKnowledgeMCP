@@ -66,6 +66,19 @@ describe("language-detector", () => {
       });
     });
 
+    describe("Java detection", () => {
+      test("detects .java files as java", () => {
+        expect(detectLanguage("src/main/java/App.java")).toBe("java");
+        expect(detectLanguage("Main.java")).toBe("java");
+        expect(detectLanguage("com/example/service/UserService.java")).toBe("java");
+      });
+
+      test("handles uppercase Java extensions", () => {
+        expect(detectLanguage("file.JAVA")).toBe("java");
+        expect(detectLanguage("file.Java")).toBe("java");
+      });
+    });
+
     describe("Go detection", () => {
       test("detects .go files as go", () => {
         expect(detectLanguage("main.go")).toBe("go");
@@ -129,6 +142,7 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("tsx");
       expect(SUPPORTED_LANGUAGES).toContain("javascript");
       expect(SUPPORTED_LANGUAGES).toContain("jsx");
+      expect(SUPPORTED_LANGUAGES).toContain("java");
       expect(SUPPORTED_LANGUAGES).toContain("go");
     });
 
@@ -136,8 +150,8 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 5 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(5);
+    test("has exactly 6 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(6);
     });
 
     test("is readonly", () => {
@@ -154,6 +168,7 @@ describe("language-detector", () => {
         { path: "file.tsx", expected: "tsx" },
         { path: "file.js", expected: "javascript" },
         { path: "file.jsx", expected: "jsx" },
+        { path: "file.java", expected: "java" },
         { path: "file.go", expected: "go" },
         { path: "file.json", expected: "unknown" },
       ];

@@ -62,10 +62,22 @@ const PYTHON_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
 };
 
 /**
+ * Node type to entity type mapping for Java.
+ * Java uses different AST node types than TypeScript/JavaScript/Python.
+ * Note: Java doesn't have standalone functions - all are methods within classes.
+ */
+const JAVA_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  class_declaration: "class",
+  interface_declaration: "interface",
+  enum_declaration: "enum",
+  method_declaration: "method",
+  constructor_declaration: "method",
+  field_declaration: "property",
+};
+
+/**
  * Node type to entity type mapping for Go.
  * Go uses different AST node types than other languages.
- * Note: Go has package-level functions (not methods on types) as first-class entities.
- * Structs and interfaces are type declarations in Go.
  */
 const GO_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   function_declaration: "function",
@@ -335,6 +347,7 @@ export class TreeSitterParser {
   private extractEntities(root: Node, filePath: string, language: SupportedLanguage): CodeEntity[] {
     const entities: CodeEntity[] = [];
     const isPython = language === "python";
+    const isJava = language === "java";
     const isGo = language === "go";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
@@ -342,6 +355,8 @@ export class TreeSitterParser {
       let nodeTypeMapping: Record<string, EntityType>;
       if (isPython) {
         nodeTypeMapping = PYTHON_NODE_TO_ENTITY_TYPE;
+      } else if (isJava) {
+        nodeTypeMapping = JAVA_NODE_TO_ENTITY_TYPE;
       } else if (isGo) {
         nodeTypeMapping = GO_NODE_TO_ENTITY_TYPE;
       } else {
@@ -412,12 +427,15 @@ export class TreeSitterParser {
     language: SupportedLanguage
   ): CodeEntity | null {
     const isPython = language === "python";
+    const isJava = language === "java";
     const isGo = language === "go";
 
     // Get entity name (language-aware)
     let name: string | null;
     if (isPython) {
       name = this.extractPythonEntityName(node, entityType);
+    } else if (isJava) {
+      name = this.extractJavaEntityName(node, entityType);
     } else if (isGo) {
       name = this.extractGoEntityName(node, entityType);
     } else {
@@ -427,21 +445,23 @@ export class TreeSitterParser {
       return null;
     }
 
-    // In Go, exported identifiers start with uppercase letter
-    // Override the isExported flag for Go based on naming convention
-    let goExported = isExported;
-    if (isGo && name) {
-      goExported = name.charAt(0) === name.charAt(0).toUpperCase() && /[A-Z]/.test(name.charAt(0));
-    }
-
     // Build metadata (language-aware)
     let metadata: EntityMetadata;
     if (isPython) {
       metadata = this.extractPythonMetadata(node, entityType);
+    } else if (isJava) {
+      metadata = this.extractJavaMetadata(node, entityType);
     } else if (isGo) {
       metadata = this.extractGoMetadata(node, entityType);
     } else {
       metadata = this.extractMetadata(node, entityType);
+    }
+
+    // For Go, determine export status by naming convention (uppercase first letter)
+    let finalIsExported = isExported;
+    if (isGo && name) {
+      finalIsExported =
+        name.charAt(0) === name.charAt(0).toUpperCase() && /[A-Z]/.test(name.charAt(0));
     }
 
     return {
@@ -452,7 +472,7 @@ export class TreeSitterParser {
       lineEnd: node.endPosition.row + 1,
       columnStart: node.startPosition.column,
       columnEnd: node.endPosition.column,
-      isExported: isGo ? goExported : isExported,
+      isExported: finalIsExported,
       metadata,
     };
   }
@@ -1258,30 +1278,567 @@ export class TreeSitterParser {
     return null;
   }
 
+  // ==================== Java-Specific Methods ====================
+
+  /**
+   * Extract entity name for Java AST nodes.
+   */
+  private extractJavaEntityName(node: Node, entityType: EntityType): string | null {
+    // For Java classes, interfaces, enums - the name is in the "name" field
+    if (entityType === "class" || entityType === "interface" || entityType === "enum") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For Java methods/constructors - the name is in the "name" field
+    if (entityType === "method") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For Java fields (field_declaration) - extract from variable_declarator
+    if (entityType === "property") {
+      const declarator = this.findFirstChild(node, ["variable_declarator"]);
+      if (declarator) {
+        const nameNode = declarator.childForFieldName("name");
+        if (nameNode) {
+          return nameNode.text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a Java entity node.
+   */
+  private extractJavaMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract modifiers (public, private, protected, static, final, abstract)
+    const modifiers = this.extractJavaModifiers(node);
+    if (modifiers.isStatic) {
+      metadata.isStatic = true;
+    }
+    if (modifiers.isAbstract) {
+      metadata.isAbstract = true;
+    }
+
+    // Extract parameters for methods
+    if (entityType === "method") {
+      const params = this.extractJavaParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type
+      const returnType = this.extractJavaReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+    }
+
+    // Extract inheritance for classes
+    if (entityType === "class") {
+      const superclass = this.extractJavaSuperclass(node);
+      if (superclass) {
+        metadata.extends = superclass;
+      }
+
+      const interfaces = this.extractJavaInterfaces(node);
+      if (interfaces.length > 0) {
+        metadata.implements = interfaces;
+      }
+    }
+
+    // Extract interfaces for interface declarations (extends)
+    if (entityType === "interface") {
+      const extendedInterfaces = this.extractJavaExtendedInterfaces(node);
+      if (extendedInterfaces.length > 0) {
+        metadata.implements = extendedInterfaces;
+      }
+    }
+
+    // Extract type parameters (generics)
+    const typeParams = node.childForFieldName("type_parameters");
+    if (typeParams) {
+      metadata.typeParameters = this.extractJavaTypeParameters(typeParams);
+    }
+
+    // Extract Javadoc comment
+    if (this.config.extractDocumentation) {
+      const doc = this.extractJavaDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract Java modifiers from a node (public, private, static, final, abstract, etc.)
+   */
+  private extractJavaModifiers(node: Node): {
+    isPublic: boolean;
+    isPrivate: boolean;
+    isProtected: boolean;
+    isStatic: boolean;
+    isFinal: boolean;
+    isAbstract: boolean;
+  } {
+    const result = {
+      isPublic: false,
+      isPrivate: false,
+      isProtected: false,
+      isStatic: false,
+      isFinal: false,
+      isAbstract: false,
+    };
+
+    // Look for modifiers node
+    const modifiersNode = this.findFirstChild(node, ["modifiers"]);
+    if (modifiersNode) {
+      for (let i = 0; i < modifiersNode.childCount; i++) {
+        const child = modifiersNode.child(i);
+        if (!child) continue;
+        switch (child.text) {
+          case "public":
+            result.isPublic = true;
+            break;
+          case "private":
+            result.isPrivate = true;
+            break;
+          case "protected":
+            result.isProtected = true;
+            break;
+          case "static":
+            result.isStatic = true;
+            break;
+          case "final":
+            result.isFinal = true;
+            break;
+          case "abstract":
+            result.isAbstract = true;
+            break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Extract function parameters from Java AST.
+   */
+  private extractJavaParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      // Java parameter types: formal_parameter, spread_parameter (varargs)
+      if (child.type === "formal_parameter" || child.type === "spread_parameter") {
+        const param = this.extractJavaParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single Java parameter.
+   */
+  private extractJavaParameter(node: Node): ParameterInfo | null {
+    let name: string | null = null;
+    let type: string | undefined;
+    const hasDefault = false; // Java doesn't support default parameters
+    const isOptional = false;
+    let isRest = false;
+
+    if (node.type === "spread_parameter") {
+      // Varargs: Type... name
+      // tree-sitter-java structure: spread_parameter -> variable_declarator -> identifier
+      isRest = true;
+      const variableDeclarator = this.findFirstChild(node, ["variable_declarator"]);
+      if (variableDeclarator) {
+        const nameNode = variableDeclarator.childForFieldName("name");
+        if (nameNode) {
+          name = nameNode.text;
+        } else {
+          // Fallback: try to find an identifier directly
+          const idNode = this.findFirstChild(variableDeclarator, ["identifier"]);
+          name = idNode?.text ?? null;
+        }
+      }
+      // Type is the first type_identifier child
+      const typeNode = this.findFirstChild(node, ["type_identifier", "generic_type", "array_type"]);
+      if (typeNode) {
+        type = typeNode.text;
+      }
+    } else if (node.type === "formal_parameter") {
+      const nameNode = node.childForFieldName("name");
+      name = nameNode?.text ?? null;
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        type = typeNode.text;
+      }
+    }
+
+    if (!name) {
+      return null;
+    }
+
+    return { name, type, hasDefault, isOptional, isRest };
+  }
+
+  /**
+   * Extract return type from Java method.
+   */
+  private extractJavaReturnType(node: Node): string | null {
+    const typeNode = node.childForFieldName("type");
+    if (typeNode) {
+      return typeNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract superclass from Java class declaration.
+   */
+  private extractJavaSuperclass(node: Node): string | null {
+    const superclassNode = node.childForFieldName("superclass");
+    if (superclassNode) {
+      // The superclass field contains the type directly
+      return superclassNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract implemented interfaces from Java class declaration.
+   */
+  private extractJavaInterfaces(node: Node): string[] {
+    const interfaces: string[] = [];
+    const interfacesNode = node.childForFieldName("interfaces");
+    if (interfacesNode) {
+      // Interfaces are in a type_list
+      for (let i = 0; i < interfacesNode.childCount; i++) {
+        const child = interfacesNode.child(i);
+        if (child && child.type !== ",") {
+          interfaces.push(child.text);
+        }
+      }
+    }
+    return interfaces;
+  }
+
+  /**
+   * Extract extended interfaces from Java interface declaration.
+   */
+  private extractJavaExtendedInterfaces(node: Node): string[] {
+    const interfaces: string[] = [];
+    // In Java, interface extends is captured similarly
+    const extendsNode = this.findFirstChild(node, ["extends_interfaces"]);
+    if (extendsNode) {
+      for (let i = 0; i < extendsNode.childCount; i++) {
+        const child = extendsNode.child(i);
+        if (child && child.type !== "," && child.type !== "extends") {
+          interfaces.push(child.text);
+        }
+      }
+    }
+    return interfaces;
+  }
+
+  /**
+   * Extract type parameters from Java generic declarations.
+   */
+  private extractJavaTypeParameters(node: Node): string[] {
+    const params: string[] = [];
+
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child?.type === "type_parameter") {
+        const nameNode = child.child(0);
+        if (nameNode) {
+          params.push(nameNode.text);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract Javadoc comment from preceding comment.
+   */
+  private extractJavaDocumentation(node: Node): string | null {
+    let prevSibling = node.previousSibling;
+    while (prevSibling) {
+      if (prevSibling.type === "block_comment") {
+        const text = prevSibling.text;
+        // Javadoc starts with /**
+        if (text.startsWith("/**")) {
+          return text;
+        }
+      }
+      // Skip whitespace/newlines but stop at other node types
+      if (prevSibling.type !== "line_comment" && prevSibling.type !== "block_comment") {
+        break;
+      }
+      prevSibling = prevSibling.previousSibling;
+    }
+    return null;
+  }
+
+  /**
+   * Extract imports from Java import declarations.
+   */
+  private extractJavaImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      if (node.type === "import_declaration") {
+        try {
+          const info = this.extractJavaImportInfo(node);
+          if (info) {
+            imports.push(info);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java import"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from a Java import declaration.
+   *
+   * Handles:
+   * - import java.util.List;
+   * - import java.util.*;
+   * - import static java.lang.Math.PI;
+   */
+  private extractJavaImportInfo(node: Node): ImportInfo | null {
+    // Check for static import
+    const isStatic = this.hasChildOfType(node, "static");
+
+    // The import path is in a scoped_identifier or identifier
+    const scopedId = this.findFirstChild(node, ["scoped_identifier"]);
+    const wildcardNode = this.findFirstChild(node, ["asterisk"]);
+
+    let source = "";
+    const importedNames: string[] = [];
+
+    if (scopedId) {
+      source = scopedId.text;
+    } else {
+      // Simple import like "import SomeClass;"
+      const id = this.findFirstChild(node, ["identifier"]);
+      if (id) {
+        source = id.text;
+      }
+    }
+
+    if (!source) {
+      return null;
+    }
+
+    // For wildcard imports (import java.util.*)
+    if (wildcardNode) {
+      importedNames.push("*");
+    } else {
+      // Extract the last part as the imported name
+      const parts = source.split(".");
+      const lastPart = parts[parts.length - 1];
+      if (lastPart) {
+        importedNames.push(lastPart);
+      }
+    }
+
+    return {
+      source,
+      isRelative: false, // Java imports are always absolute
+      importedNames,
+      isTypeOnly: !isStatic, // Regular imports are type imports in Java
+      isSideEffect: false,
+      line: node.startPosition.row + 1,
+    };
+  }
+
+  /**
+   * Extract function calls from Java AST.
+   */
+  private extractJavaCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a method
+      if (node.type === "method_declaration" || node.type === "constructor_declaration") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for method invocation
+      if (node.type === "method_invocation") {
+        try {
+          const callInfo = this.extractJavaCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java call"
+          );
+        }
+      }
+
+      // Check for object creation (new expressions)
+      if (node.type === "object_creation_expression") {
+        try {
+          const callInfo = this.extractJavaConstructorCall(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java constructor call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a Java method invocation.
+   */
+  private extractJavaCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      return null;
+    }
+
+    const calledName = nameNode.text;
+
+    // Build expression including object if present
+    const objectNode = node.childForFieldName("object");
+    let calledExpression = calledName;
+    if (objectNode) {
+      calledExpression = `${objectNode.text}.${calledName}`;
+    }
+
+    return {
+      calledName,
+      calledExpression,
+      isAsync: false, // Java doesn't have async/await like JS
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract information from a Java constructor call (new expression).
+   */
+  private extractJavaConstructorCall(node: Node, callerName?: string): CallInfo | null {
+    const typeNode = node.childForFieldName("type");
+    if (!typeNode) {
+      return null;
+    }
+
+    const calledName = typeNode.text;
+
+    return {
+      calledName,
+      calledExpression: `new ${calledName}`,
+      isAsync: false,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
   // ==================== Go-Specific Methods ====================
 
   /**
    * Extract entity name for Go AST nodes.
    *
-   * Go entities have specific naming patterns:
-   * - function_declaration: name is in "name" field
-   * - method_declaration: name is in "name" field, receiver is separate
-   * - type_declaration: contains type_spec children with names
+   * Handles:
+   * - function_declaration: func name() {}
+   * - method_declaration: func (r *Receiver) name() {}
+   * - type_declaration: type Name struct/interface {}
    */
   private extractGoEntityName(node: Node, entityType: EntityType): string | null {
-    // For functions and methods, the name is in the "name" field
-    const nameNode = node.childForFieldName("name");
-    if (nameNode) {
-      return nameNode.text;
+    // For Go functions and methods - the name is in the "name" field
+    if (entityType === "function" || entityType === "method") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
     }
 
-    // For type declarations, look for type_spec children
+    // For Go type declarations (struct/interface) - name is in the type_spec
     if (entityType === "class") {
+      // type_declaration contains type_spec which has the name
       const typeSpec = this.findFirstChild(node, ["type_spec"]);
       if (typeSpec) {
-        const typeName = typeSpec.childForFieldName("name");
-        if (typeName) {
-          return typeName.text;
+        const nameNode = typeSpec.childForFieldName("name");
+        if (nameNode) {
+          return nameNode.text;
         }
       }
     }
@@ -1291,11 +1848,6 @@ export class TreeSitterParser {
 
   /**
    * Extract metadata from a Go entity node.
-   *
-   * Extracts:
-   * - Parameters and return types for functions/methods
-   * - Receiver type for methods (stored in metadata.extends)
-   * - Documentation comments
    */
   private extractGoMetadata(node: Node, entityType: EntityType): EntityMetadata {
     const metadata: EntityMetadata = {};
@@ -1312,17 +1864,17 @@ export class TreeSitterParser {
       if (returnType) {
         metadata.returnType = returnType;
       }
-    }
 
-    // Extract receiver for methods (stored in extends for consistency)
-    if (entityType === "method") {
-      const receiver = this.extractGoReceiver(node);
-      if (receiver) {
-        metadata.extends = receiver;
+      // For methods, extract the receiver type as "extends"
+      if (entityType === "method") {
+        const receiver = this.extractGoReceiver(node);
+        if (receiver) {
+          metadata.extends = receiver;
+        }
       }
     }
 
-    // Extract documentation
+    // Extract documentation (Go doc comment)
     if (this.config.extractDocumentation) {
       const doc = this.extractGoDocumentation(node);
       if (doc) {
@@ -1336,8 +1888,8 @@ export class TreeSitterParser {
   /**
    * Extract function parameters from Go AST.
    *
-   * Go parameters are in a parameter_list node, each parameter_declaration
-   * can contain multiple identifiers with the same type.
+   * Go parameters can have the type after the name (e.g., `x int, y int`)
+   * or grouped (e.g., `x, y int`).
    */
   private extractGoParameters(node: Node): ParameterInfo[] {
     const params: ParameterInfo[] = [];
@@ -1347,16 +1899,34 @@ export class TreeSitterParser {
       return params;
     }
 
+    // Go uses parameter_list -> parameter_declaration
     for (let i = 0; i < paramsNode.childCount; i++) {
       const child = paramsNode.child(i);
       if (!child) continue;
 
       if (child.type === "parameter_declaration") {
-        // Go parameter_declaration can have multiple names with same type
-        // e.g., func foo(a, b int, c string)
-        const extractedParams = this.extractGoParameterDeclaration(child);
-        params.push(...extractedParams);
+        // A parameter_declaration can have multiple names with one type
+        const typeNode = child.childForFieldName("type");
+        const type = typeNode?.text;
+
+        // Check for variadic parameter (...Type)
+        const isVariadic = this.findFirstChild(child, ["variadic_parameter_declaration"]) !== null;
+
+        // Get all identifier names in this declaration
+        for (let j = 0; j < child.childCount; j++) {
+          const nameChild = child.child(j);
+          if (nameChild?.type === "identifier") {
+            params.push({
+              name: nameChild.text,
+              type,
+              hasDefault: false, // Go doesn't have default parameters
+              isOptional: false, // Go doesn't have optional parameters
+              isRest: isVariadic,
+            });
+          }
+        }
       } else if (child.type === "variadic_parameter_declaration") {
+        // Variadic: ...Type or name ...Type
         const param = this.extractGoVariadicParameter(child);
         if (param) {
           params.push(param);
@@ -1368,84 +1938,19 @@ export class TreeSitterParser {
   }
 
   /**
-   * Extract parameters from a Go parameter_declaration node.
-   *
-   * In Go, a single parameter_declaration can define multiple parameters
-   * with the same type: `a, b, c int` defines three int parameters.
-   */
-  private extractGoParameterDeclaration(node: Node): ParameterInfo[] {
-    const params: ParameterInfo[] = [];
-    const names: string[] = [];
-    let typeText: string | undefined;
-
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
-
-      if (child.type === "identifier") {
-        names.push(child.text);
-      } else if (
-        child.type !== "," &&
-        child.type !== "(" &&
-        child.type !== ")" &&
-        !child.type.startsWith("comment")
-      ) {
-        // This is likely the type
-        typeText = child.text;
-      }
-    }
-
-    // Create a ParameterInfo for each name
-    for (const name of names) {
-      params.push({
-        name,
-        type: typeText,
-        hasDefault: false, // Go doesn't have default parameters
-        isOptional: false, // Go doesn't have optional parameters
-        isRest: false,
-      });
-    }
-
-    // Handle case where there's only a type (unnamed parameter in interface)
-    if (names.length === 0 && typeText) {
-      params.push({
-        name: "_",
-        type: typeText,
-        hasDefault: false,
-        isOptional: false,
-        isRest: false,
-      });
-    }
-
-    return params;
-  }
-
-  /**
-   * Extract variadic parameter from Go (...T).
+   * Extract a Go variadic parameter (...Type).
    */
   private extractGoVariadicParameter(node: Node): ParameterInfo | null {
-    let name: string | null = null;
-    let typeText: string | undefined;
+    const nameNode = node.childForFieldName("name");
+    const typeNode = node.childForFieldName("type");
 
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
-
-      if (child.type === "identifier") {
-        name = child.text;
-      } else if (child.type !== "..." && child.type !== "," && !child.type.startsWith("comment")) {
-        // This is the type (without the ...)
-        typeText = "..." + child.text;
-      }
-    }
-
-    if (!name) {
-      return null;
-    }
+    // Variadic parameter might not have a name (just ...Type)
+    const name = nameNode?.text ?? "args";
+    const type = typeNode ? `...${typeNode.text}` : undefined;
 
     return {
       name,
-      type: typeText,
+      type,
       hasDefault: false,
       isOptional: false,
       isRest: true,
@@ -1455,27 +1960,23 @@ export class TreeSitterParser {
   /**
    * Extract return type from Go function.
    *
-   * Go functions can have:
-   * - Single return type: func() int
-   * - Multiple return types: func() (int, error)
+   * Handles:
+   * - Single return: func() int
+   * - Multiple returns: func() (int, error)
    * - Named returns: func() (result int, err error)
    */
   private extractGoReturnType(node: Node): string | null {
     const resultNode = node.childForFieldName("result");
-    if (!resultNode) {
-      return null;
+    if (resultNode) {
+      return resultNode.text;
     }
-
-    // For single type return, the text is the type
-    // For multiple returns, the text includes the parentheses and all types
-    return resultNode.text;
+    return null;
   }
 
   /**
-   * Extract method receiver from Go method declaration.
+   * Extract the receiver type from a Go method declaration.
    *
-   * In Go, methods have receivers: func (r *Receiver) Method()
-   * We extract the receiver type to store in metadata.extends.
+   * For `func (r *Receiver) Method()`, returns "*Receiver" or "Receiver".
    */
   private extractGoReceiver(node: Node): string | null {
     const receiverNode = node.childForFieldName("receiver");
@@ -1483,16 +1984,12 @@ export class TreeSitterParser {
       return null;
     }
 
-    // The receiver contains a parameter_list with the receiver parameter
-    // Look for the type (could be pointer or value type)
+    // The receiver is in a parameter_list with parameter_declaration
     const paramDecl = this.findFirstChild(receiverNode, ["parameter_declaration"]);
     if (paramDecl) {
-      // Get the type (last non-identifier child or type_identifier)
-      for (let i = paramDecl.childCount - 1; i >= 0; i--) {
-        const child = paramDecl.child(i);
-        if (child && child.type !== "identifier" && child.type !== ",") {
-          return child.text;
-        }
+      const typeNode = paramDecl.childForFieldName("type");
+      if (typeNode) {
+        return typeNode.text;
       }
     }
 
@@ -1500,32 +1997,29 @@ export class TreeSitterParser {
   }
 
   /**
-   * Extract documentation comment from Go entity.
+   * Extract Go doc comment from preceding comment.
    *
-   * Go uses single-line (//) comments immediately preceding declarations
-   * as documentation, not block comments like JSDoc.
+   * In Go, doc comments are regular // comments immediately preceding declarations.
    */
   private extractGoDocumentation(node: Node): string | null {
-    // In Go, documentation is the comment(s) immediately preceding the declaration
-    const comments: string[] = [];
+    const docLines: string[] = [];
     let prevSibling = node.previousSibling;
 
+    // Collect consecutive comment lines
     while (prevSibling) {
       if (prevSibling.type === "comment") {
-        // Prepend to maintain order
-        comments.unshift(prevSibling.text);
-        prevSibling = prevSibling.previousSibling;
-      } else if (prevSibling.type === "\n" || prevSibling.type.includes("whitespace")) {
-        // Skip whitespace/newlines between comments
-        prevSibling = prevSibling.previousSibling;
-      } else {
-        // Stop at any other node type
+        // Go uses // for comments
+        const text = prevSibling.text;
+        docLines.unshift(text);
+      } else if (prevSibling.type !== "\n") {
+        // Stop at non-comment, non-newline
         break;
       }
+      prevSibling = prevSibling.previousSibling;
     }
 
-    if (comments.length > 0) {
-      return comments.join("\n");
+    if (docLines.length > 0) {
+      return docLines.join("\n");
     }
 
     return null;
@@ -1533,6 +2027,13 @@ export class TreeSitterParser {
 
   /**
    * Extract imports from Go import declarations.
+   *
+   * Handles:
+   * - import "fmt"
+   * - import ( "fmt"; "os" )
+   * - import alias "package"
+   * - import . "package" (dot import)
+   * - import _ "package" (blank import for side effects)
    */
   private extractGoImports(root: Node): ImportInfo[] {
     const imports: ImportInfo[] = [];
@@ -1566,77 +2067,67 @@ export class TreeSitterParser {
   }
 
   /**
-   * Extract information from Go import declaration.
-   *
-   * Go imports can be:
-   * - Single: import "fmt"
-   * - Grouped: import ("fmt"; "os")
-   * - Aliased: import f "fmt"
-   * - Blank: import _ "pkg/init"
-   * - Dot: import . "math"
+   * Extract information from Go import declarations.
    */
   private extractGoImportInfo(node: Node): ImportInfo[] {
     const infos: ImportInfo[] = [];
 
+    // Process import_spec nodes
     const processImportSpec = (spec: Node): void => {
-      let source: string | null = null;
-      let alias: string | undefined;
-      let isBlankImport = false;
-      let isDotImport = false;
+      // Get the import path (string literal)
+      const pathNode = spec.childForFieldName("path");
+      if (!pathNode) return;
 
-      for (let i = 0; i < spec.childCount; i++) {
-        const child = spec.child(i);
-        if (!child) continue;
+      // Remove quotes from the import path
+      const source = pathNode.text.replace(/^"|"$/g, "");
 
-        if (child.type === "interpreted_string_literal" || child.type === "raw_string_literal") {
-          // Remove quotes from import path
-          source = child.text.slice(1, -1);
-        } else if (child.type === "package_identifier" || child.type === "identifier") {
-          alias = child.text;
-        } else if (child.type === "blank_identifier") {
-          isBlankImport = true;
-        } else if (child.type === "dot") {
-          isDotImport = true;
+      // Get alias if present (name field)
+      const aliasNode = spec.childForFieldName("name");
+      let aliases: Record<string, string> | undefined;
+      let isSideEffect = false;
+
+      if (aliasNode) {
+        const aliasText = aliasNode.text;
+        if (aliasText === "_") {
+          // Blank import for side effects
+          isSideEffect = true;
+        } else if (aliasText === ".") {
+          // Dot import - imports all exported names into current namespace
+          // We'll represent this as a special case
+        } else {
+          // Regular alias
+          const pkgName = source.split("/").pop() ?? source;
+          aliases = { [pkgName]: aliasText };
         }
       }
 
-      if (source) {
-        const info: ImportInfo = {
-          source,
-          isRelative: source.startsWith(".") || source.startsWith("/"),
-          importedNames: isDotImport ? ["*"] : [source.split("/").pop() ?? source],
-          isTypeOnly: false,
-          isSideEffect: isBlankImport,
-          line: spec.startPosition.row + 1,
-        };
+      // Extract the package name (last part of path)
+      const pkgName = source.split("/").pop() ?? source;
 
-        if (alias && !isBlankImport && !isDotImport) {
-          const originalName = source.split("/").pop() ?? source;
-          info.aliases = { [originalName]: alias };
-        }
-
-        if (isDotImport) {
-          info.namespaceImport = ".";
-        }
-
-        infos.push(info);
-      }
+      infos.push({
+        source,
+        isRelative: source.startsWith("./") || source.startsWith("../"),
+        importedNames: isSideEffect ? [] : [pkgName],
+        aliases,
+        isTypeOnly: false,
+        isSideEffect,
+        line: spec.startPosition.row + 1,
+      });
     };
 
-    // Handle single import or import spec list
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
+    // Handle single import: import "fmt"
+    const singleSpec = this.findFirstChild(node, ["import_spec"]);
+    if (singleSpec) {
+      processImportSpec(singleSpec);
+    }
 
-      if (child.type === "import_spec") {
-        processImportSpec(child);
-      } else if (child.type === "import_spec_list") {
-        // Grouped imports
-        for (let j = 0; j < child.childCount; j++) {
-          const spec = child.child(j);
-          if (spec?.type === "import_spec") {
-            processImportSpec(spec);
-          }
+    // Handle grouped imports: import ( "fmt"; "os" )
+    const specList = this.findFirstChild(node, ["import_spec_list"]);
+    if (specList) {
+      for (let i = 0; i < specList.childCount; i++) {
+        const child = specList.child(i);
+        if (child?.type === "import_spec") {
+          processImportSpec(child);
         }
       }
     }
@@ -1693,7 +2184,7 @@ export class TreeSitterParser {
   }
 
   /**
-   * Extract information from a Go call expression node.
+   * Extract information from a Go call expression.
    */
   private extractGoCallInfo(node: Node, callerName?: string): CallInfo | null {
     const functionNode = node.childForFieldName("function");
@@ -1706,14 +2197,11 @@ export class TreeSitterParser {
       return null;
     }
 
-    // Go doesn't have async/await like JavaScript
-    // Goroutines are started with 'go' keyword, not awaited
-    const isAsync = false;
-
+    // Go doesn't have async/await
     return {
       calledName: callTarget.name,
       calledExpression: callTarget.expression,
-      isAsync,
+      isAsync: false,
       line: node.startPosition.row + 1,
       column: node.startPosition.column,
       callerName,
@@ -1732,7 +2220,7 @@ export class TreeSitterParser {
       };
     }
 
-    // Selector expression: pkg.Function() or obj.Method()
+    // Selector expression: obj.Method() or pkg.Function()
     if (node.type === "selector_expression") {
       const fieldNode = node.childForFieldName("field");
       if (fieldNode) {
@@ -1743,12 +2231,14 @@ export class TreeSitterParser {
       }
     }
 
-    // Index expression: arr[0]()
-    if (node.type === "index_expression") {
-      return {
-        name: "[indexed]",
-        expression: node.text,
-      };
+    // Parenthesized expression
+    if (node.type === "parenthesized_expression") {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          return this.extractGoCallTarget(child);
+        }
+      }
     }
 
     // Call expression (chained): foo().bar()
@@ -1759,10 +2249,18 @@ export class TreeSitterParser {
       };
     }
 
+    // Index expression: arr[0]()
+    if (node.type === "index_expression") {
+      return {
+        name: "[indexed]",
+        expression: node.text,
+      };
+    }
+
     // Type assertion: x.(Type)
     if (node.type === "type_assertion_expression") {
       return {
-        name: "[type_assertion]",
+        name: "[type_asserted]",
         expression: node.text,
       };
     }
@@ -1782,12 +2280,13 @@ export class TreeSitterParser {
    * Extract imports from the parse tree.
    */
   private extractImports(root: Node, language: SupportedLanguage): ImportInfo[] {
-    // Use Python-specific import extraction for Python files
+    // Use language-specific import extraction
     if (language === "python") {
       return this.extractPythonImports(root);
     }
-
-    // Use Go-specific import extraction for Go files
+    if (language === "java") {
+      return this.extractJavaImports(root);
+    }
     if (language === "go") {
       return this.extractGoImports(root);
     }
@@ -1935,9 +2434,15 @@ export class TreeSitterParser {
       return [];
     }
 
-    // Go doesn't have explicit export statements like JavaScript/TypeScript
-    // Visibility is determined by identifier case (uppercase = exported)
+    // Go uses naming convention for exports (uppercase first letter)
+    // Export info is captured in entity extraction, not here
     if (language === "go") {
+      return [];
+    }
+
+    // Java doesn't have explicit export statements like JavaScript/TypeScript
+    // Visibility is controlled by access modifiers, not exports
+    if (language === "java") {
       return [];
     }
 
@@ -2150,12 +2655,13 @@ export class TreeSitterParser {
    * @returns Array of CallInfo objects
    */
   private extractCalls(root: Node, language: SupportedLanguage): CallInfo[] {
-    // Use Python-specific call extraction for Python files
+    // Use language-specific call extraction
     if (language === "python") {
       return this.extractPythonCalls(root);
     }
-
-    // Use Go-specific call extraction for Go files
+    if (language === "java") {
+      return this.extractJavaCalls(root);
+    }
     if (language === "go") {
       return this.extractGoCalls(root);
     }
