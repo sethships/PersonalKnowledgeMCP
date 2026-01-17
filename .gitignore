@@ -152,7 +152,14 @@ docs/pm/*plan*.md
 # Claude Code MCP configuration (machine-specific paths)
 .claude/mcp.json
 
-# .NET build artifacts
+# Claude Code temporary files
+tmpclaude-*-cwd
+
+# Test runtime directories
+test-data/
+test-temp/
+
+# .NET Build Artifacts (for tools/roslyn-analyzer)
 **/bin/
 **/obj/
 *.dll
@@ -160,6 +167,9 @@ docs/pm/*plan*.md
 *.pdb
 *.user
 *.suo
-*.cache
 *.nupkg
+*.csproj.user
 project.lock.json
+
+# Windows null device filename collision
+nul
