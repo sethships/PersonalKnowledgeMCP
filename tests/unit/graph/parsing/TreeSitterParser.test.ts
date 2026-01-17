@@ -1630,6 +1630,18 @@ export function documented(): void {}
       expect(superImport).toBeDefined();
       expect(superImport?.isRelative).toBe(true);
     });
+
+    it("should handle wildcard (glob) imports", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find wildcard import: use std::collections::*
+      // The wildcard import should have source as the path before * and namespaceImport as "*"
+      const wildcardImport = result.imports.find((i) => i.namespaceImport === "*");
+      expect(wildcardImport).toBeDefined();
+      expect(wildcardImport?.source).toBe("std::collections");
+      expect(wildcardImport?.isSideEffect).toBe(true); // Glob imports are side-effect imports
+    });
   });
 
   describe("parseFile - Rust Function Calls", () => {

@@ -14,6 +14,9 @@ use super::parent::ParentStruct;
 // Aliased import
 use std::path::PathBuf as Path;
 
+// Wildcard (glob) import
+use std::collections::*;
+
 /// A simple public function with no parameters.
 pub fn simple_function() -> String {
     String::from("hello")

@@ -1,8 +1,18 @@
 /**
- * Tree-sitter based AST parser for TypeScript and JavaScript.
+ * Tree-sitter based AST parser for multiple programming languages.
+ *
+ * Supported languages:
+ * - TypeScript (.ts)
+ * - TSX (.tsx)
+ * - JavaScript (.js, .mjs, .cjs)
+ * - JSX (.jsx)
+ * - Python (.py)
+ * - Java (.java)
+ * - Go (.go)
+ * - Rust (.rs)
  *
  * Parses source files and extracts code entities (functions, classes,
- * interfaces) and imports for knowledge graph population.
+ * interfaces, etc.) and imports for knowledge graph population.
  *
  * @module graph/parsing/TreeSitterParser
  */
@@ -3219,7 +3229,12 @@ export class TreeSitterParser {
     const infos: ImportInfo[] = [];
 
     // Get the use tree (argument to use)
-    const useTree = this.findFirstChild(node, ["use_tree", "scoped_use_list", "use_list"]);
+    const useTree = this.findFirstChild(node, [
+      "use_tree",
+      "scoped_use_list",
+      "use_list",
+      "use_wildcard",
+    ]);
     if (!useTree) {
       // Try to get the path directly
       const pathNode = this.findFirstChild(node, [
@@ -3270,10 +3285,20 @@ export class TreeSitterParser {
 
     // Handle use_wildcard (use std::io::*)
     if (node.type === "use_wildcard") {
-      const pathNode = node.childForFieldName("path");
-      const path = pathNode?.text ?? prefix;
-      const fullPath = prefix && pathNode ? `${prefix}::${path}` : path || prefix;
-      const info = this.createRustImportInfo(fullPath + "::*", line);
+      // The path is a child node containing the module path before the *
+      // For `use std::collections::*`, tree-sitter parses it as:
+      //   use_wildcard with children: scoped_identifier("std::collections") + "*"
+      let modulePath = "";
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "*" && child.text !== "*") {
+          modulePath = child.text;
+          break;
+        }
+      }
+      const fullPath = prefix ? `${prefix}::${modulePath}` : modulePath;
+      const info = this.createRustImportInfo(fullPath, line);
+      info.namespaceImport = "*"; // Mark as wildcard import
       info.isSideEffect = true; // Wildcard import has side effects
       infos.push(info);
       return;
