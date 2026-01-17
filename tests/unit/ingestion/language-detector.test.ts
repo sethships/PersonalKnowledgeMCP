@@ -66,8 +66,21 @@ describe("language-detector", () => {
       });
     });
 
+    describe("Java detection", () => {
+      test("detects .java files as java", () => {
+        expect(detectLanguage("src/main/java/App.java")).toBe("java");
+        expect(detectLanguage("Main.java")).toBe("java");
+        expect(detectLanguage("com/example/service/UserService.java")).toBe("java");
+      });
+
+      test("handles uppercase Java extensions", () => {
+        expect(detectLanguage("file.JAVA")).toBe("java");
+        expect(detectLanguage("file.Java")).toBe("java");
+      });
+    });
+
     describe("unknown language detection", () => {
-      test("returns unknown for non-JS/TS extensions", () => {
+      test("returns unknown for non-supported extensions", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
         expect(detectLanguage("README.md")).toBe("unknown");
         expect(detectLanguage("style.css")).toBe("unknown");
@@ -117,14 +130,15 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("tsx");
       expect(SUPPORTED_LANGUAGES).toContain("javascript");
       expect(SUPPORTED_LANGUAGES).toContain("jsx");
+      expect(SUPPORTED_LANGUAGES).toContain("java");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 4 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(4);
+    test("has exactly 5 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(5);
     });
 
     test("is readonly", () => {
@@ -141,6 +155,7 @@ describe("language-detector", () => {
         { path: "file.tsx", expected: "tsx" },
         { path: "file.js", expected: "javascript" },
         { path: "file.jsx", expected: "jsx" },
+        { path: "file.java", expected: "java" },
         { path: "file.json", expected: "unknown" },
       ];
 
