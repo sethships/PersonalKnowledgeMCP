@@ -64,8 +64,11 @@ export class ParsingError extends Error {
 export class LanguageNotSupportedError extends ParsingError {
   public readonly extension: string;
 
-  constructor(filePath: string, extension: string) {
-    super(`Language not supported for extension: ${extension}`, filePath, "LANGUAGE_NOT_SUPPORTED");
+  constructor(filePath: string, extension: string, reason?: string) {
+    const message = reason
+      ? `Language not supported for extension: ${extension} - ${reason}`
+      : `Language not supported for extension: ${extension}`;
+    super(message, filePath, "LANGUAGE_NOT_SUPPORTED");
     this.name = "LanguageNotSupportedError";
     this.extension = extension;
   }
@@ -185,6 +188,36 @@ export class ExtractionError extends ParsingError {
     super(message, filePath, "EXTRACTION_ERROR", cause);
     this.name = "ExtractionError";
     this.nodeType = nodeType;
+  }
+}
+
+/**
+ * Error thrown when Roslyn/.NET SDK is not available for C# parsing.
+ *
+ * C# parsing requires the .NET SDK to be installed. This error provides
+ * helpful guidance on how to install it.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await parser.parseFile(content, 'MyClass.cs');
+ * } catch (error) {
+ *   if (error instanceof RoslynNotAvailableError) {
+ *     console.log('Please install .NET SDK to parse C# files');
+ *   }
+ * }
+ * ```
+ */
+export class RoslynNotAvailableError extends ParsingError {
+  constructor(filePath: string) {
+    super(
+      "C# parsing requires .NET SDK 6.0 or later. Install from https://dot.net/download",
+      filePath,
+      "ROSLYN_NOT_AVAILABLE",
+      undefined,
+      false // Not retryable without user action
+    );
+    this.name = "RoslynNotAvailableError";
   }
 }
 

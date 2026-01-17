@@ -25,6 +25,7 @@ import { LanguageLoader } from "./LanguageLoader.js";
 import { LanguageNotSupportedError, FileTooLargeError, ParseTimeoutError } from "./errors.js";
 import {
   type SupportedLanguage,
+  type TreeSitterLanguage,
   type CodeEntity,
   type EntityType,
   type EntityMetadata,
@@ -38,6 +39,7 @@ import {
   DEFAULT_PARSER_CONFIG,
   getLanguageFromExtension,
   isSupportedExtension,
+  isTreeSitterLanguage,
 } from "./types.js";
 
 /**
@@ -201,11 +203,22 @@ export class TreeSitterParser {
 
     // Get language from extension
     const extension = path.extname(filePath).toLowerCase();
-    const language = getLanguageFromExtension(extension);
+    const detectedLanguage = getLanguageFromExtension(extension);
 
-    if (!language) {
+    if (!detectedLanguage) {
       throw new LanguageNotSupportedError(filePath, extension);
     }
+
+    // C# uses Roslyn, not tree-sitter - this parser shouldn't receive C# files
+    if (!isTreeSitterLanguage(detectedLanguage)) {
+      throw new LanguageNotSupportedError(
+        filePath,
+        extension,
+        `${detectedLanguage} requires Roslyn parser, not tree-sitter`
+      );
+    }
+
+    const language: TreeSitterLanguage = detectedLanguage;
 
     this.logger.debug({ filePath, language, sizeBytes }, "Parsing file");
 

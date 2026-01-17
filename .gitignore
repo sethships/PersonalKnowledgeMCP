@@ -151,3 +151,15 @@ docs/pm/*plan*.md
 
 # Claude Code MCP configuration (machine-specific paths)
 .claude/mcp.json
+
+# .NET build artifacts
+**/bin/
+**/obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+*.cache
+*.nupkg
+project.lock.json

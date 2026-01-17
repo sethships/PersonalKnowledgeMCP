@@ -2,9 +2,14 @@
  * Relationship extractor for code analysis.
  *
  * Provides a focused API for extracting import and export relationships
- * from TypeScript and JavaScript source files using tree-sitter AST parsing.
+ * from source files using AST parsing.
  *
- * This class serves as the bridge between the low-level TreeSitterParser
+ * Supports multiple languages through the unified CodeParser:
+ * - TypeScript, JavaScript, TSX, JSX (via tree-sitter)
+ * - Python, Java, Go, Rust (via tree-sitter)
+ * - C# (via Roslyn - requires .NET SDK)
+ *
+ * This class serves as the bridge between the low-level CodeParser
  * and the knowledge graph storage layer, providing filtering and
  * convenience methods for relationship extraction.
  *
@@ -34,8 +39,7 @@
 import path from "node:path";
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
-import { TreeSitterParser } from "../parsing/TreeSitterParser.js";
-import type { LanguageLoader } from "../parsing/LanguageLoader.js";
+import { CodeParser } from "../parsing/CodeParser.js";
 import type { SupportedLanguage, ImportInfo, ExportInfo } from "../parsing/types.js";
 import type {
   RelationshipExtractorConfig,
@@ -53,12 +57,12 @@ import {
 /**
  * Relationship extractor for code analysis.
  *
- * Wraps TreeSitterParser to provide a focused API for extracting
+ * Wraps CodeParser to provide a focused API for extracting
  * import and export relationships from source files with filtering
  * and batch processing capabilities.
  */
 export class RelationshipExtractor {
-  private readonly parser: TreeSitterParser;
+  private readonly parser: CodeParser;
   private readonly config: Required<RelationshipExtractorConfig>;
   private _logger: pino.Logger | null = null;
 
@@ -66,15 +70,14 @@ export class RelationshipExtractor {
    * Create a new RelationshipExtractor instance.
    *
    * @param config - Optional configuration options
-   * @param languageLoader - Optional custom language loader for testing
    */
-  constructor(config?: RelationshipExtractorConfig, languageLoader?: LanguageLoader) {
+  constructor(config?: RelationshipExtractorConfig) {
     this.config = {
       ...DEFAULT_RELATIONSHIP_EXTRACTOR_CONFIG,
       ...config,
     };
 
-    this.parser = new TreeSitterParser(languageLoader, {
+    this.parser = new CodeParser({
       extractDocumentation: false, // Not needed for relationships
       includeAnonymous: false,
       maxFileSizeBytes: this.config.maxFileSizeBytes,
@@ -103,7 +106,7 @@ export class RelationshipExtractor {
     // Files without extensions or starting with dot (hidden files) are not supported
     if (lastDot === -1 || lastDot === 0) return false;
     const extension = filePath.substring(lastDot).toLowerCase();
-    return TreeSitterParser.isSupported(extension);
+    return CodeParser.isSupported(extension);
   }
 
   /**
@@ -502,6 +505,11 @@ export class RelationshipExtractor {
       ".js": "javascript",
       ".mjs": "javascript",
       ".jsx": "jsx",
+      ".py": "python",
+      ".java": "java",
+      ".go": "go",
+      ".rs": "rust",
+      ".cs": "csharp",
     };
     return extensionMap[extension] ?? "typescript";
   }

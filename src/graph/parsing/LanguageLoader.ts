@@ -13,17 +13,21 @@ import { existsSync as fsExistsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
-import type { SupportedLanguage } from "./types.js";
+import type { TreeSitterLanguage } from "./types.js";
 import { LanguageLoadError, ParserInitializationError } from "./errors.js";
 
 /**
  * Maps supported languages to their WASM file paths.
+ *
+ * Note: Only tree-sitter languages are included here.
+ * C# (csharp) uses Roslyn instead of tree-sitter and is
+ * handled by the RoslynParser class.
  */
 interface WasmPathConfig {
   /** Path to the main tree-sitter WASM module */
   treeSitterWasm: string;
-  /** Paths to language-specific WASM files */
-  languages: Record<SupportedLanguage, string>;
+  /** Paths to language-specific WASM files (tree-sitter only) */
+  languages: Record<TreeSitterLanguage, string>;
 }
 
 /**
@@ -130,26 +134,16 @@ export class LanguageLoader {
    *
    * Design Decision: Languages are cached indefinitely without an eviction policy.
    * This is acceptable because:
-   * 1. The current supported language set is small (4 languages: TypeScript, TSX, JavaScript, JSX)
+   * 1. The current supported language set is small (8 languages)
    * 2. Each WASM language grammar is relatively small (~100-200KB)
    * 3. Languages are typically loaded once and reused throughout the application lifecycle
    *
    * If language support is expanded significantly in the future, consider implementing
    * an LRU cache with configurable max size to bound memory usage.
-   */
-  /**
-   * Cache of loaded language grammars.
    *
-   * Design Decision: Languages are cached indefinitely without an eviction policy.
-   * This is acceptable because:
-   * 1. The current supported language set is small (4 languages: TypeScript, TSX, JavaScript, JSX)
-   * 2. Each WASM language grammar is relatively small (~100-200KB)
-   * 3. Languages are typically loaded once and reused throughout the application lifecycle
-   *
-   * If language support is expanded significantly in the future, consider implementing
-   * an LRU cache with configurable max size to bound memory usage.
+   * Note: Only tree-sitter languages are cached here. C# uses Roslyn (see RoslynParser).
    */
-  private languages: Map<SupportedLanguage, Language> = new Map();
+  private languages: Map<TreeSitterLanguage, Language> = new Map();
   private initPromise: Promise<void> | null = null;
   private readonly wasmPaths: WasmPathConfig;
   private _logger: pino.Logger | null = null;
@@ -293,10 +287,10 @@ export class LanguageLoader {
   /**
    * Check if a language is already loaded.
    *
-   * @param language - The language to check
+   * @param language - The tree-sitter language to check
    * @returns true if the language is cached
    */
-  isLanguageLoaded(language: SupportedLanguage): boolean {
+  isLanguageLoaded(language: TreeSitterLanguage): boolean {
     return this.languages.has(language);
   }
 
@@ -304,12 +298,13 @@ export class LanguageLoader {
    * Get a loaded language grammar.
    *
    * Loads the language WASM file if not already cached.
+   * Only supports tree-sitter languages. For C#, use RoslynParser instead.
    *
-   * @param language - The language to load
+   * @param language - The tree-sitter language to load
    * @returns The loaded language grammar
    * @throws {LanguageLoadError} If the language fails to load
    */
-  async getLanguage(language: SupportedLanguage): Promise<Language> {
+  async getLanguage(language: TreeSitterLanguage): Promise<Language> {
     // Return cached language
     const cached = this.languages.get(language);
     if (cached) {
@@ -357,15 +352,16 @@ export class LanguageLoader {
   }
 
   /**
-   * Preload all supported languages.
+   * Preload all tree-sitter languages.
    *
    * Useful for warming up the cache during application startup.
+   * Note: C# uses Roslyn and is not preloaded here.
    *
    * @returns Map of languages to their load status (true = success)
    */
-  async preloadAllLanguages(): Promise<Map<SupportedLanguage, boolean>> {
-    const results = new Map<SupportedLanguage, boolean>();
-    const languages: SupportedLanguage[] = [
+  async preloadAllLanguages(): Promise<Map<TreeSitterLanguage, boolean>> {
+    const results = new Map<TreeSitterLanguage, boolean>();
+    const languages: TreeSitterLanguage[] = [
       "typescript",
       "tsx",
       "javascript",
@@ -393,11 +389,11 @@ export class LanguageLoader {
   /**
    * Get information about loaded languages.
    *
-   * @returns Object with initialization status and loaded languages
+   * @returns Object with initialization status and loaded tree-sitter languages
    */
   getStatus(): {
     initialized: boolean;
-    loadedLanguages: SupportedLanguage[];
+    loadedLanguages: TreeSitterLanguage[];
     wasmPaths: WasmPathConfig;
   } {
     return {

@@ -28,6 +28,9 @@ export type ProgrammingLanguage =
   | "jsx"
   | "java"
   | "go"
+  | "python"
+  | "rust"
+  | "csharp"
   | "unknown";
 
 /**
@@ -50,6 +53,9 @@ export const SUPPORTED_LANGUAGES: readonly Exclude<ProgrammingLanguage, "unknown
   "jsx",
   "java",
   "go",
+  "python",
+  "rust",
+  "csharp",
 ] as const;
 
 /**
@@ -75,6 +81,8 @@ export function detectLanguage(filePath: string): ProgrammingLanguage {
 
   switch (extension) {
     case ".ts":
+    case ".mts":
+    case ".cts":
       return "typescript";
     case ".tsx":
       return "tsx";
@@ -88,6 +96,14 @@ export function detectLanguage(filePath: string): ProgrammingLanguage {
       return "java";
     case ".go":
       return "go";
+    case ".py":
+    case ".pyw":
+    case ".pyi":
+      return "python";
+    case ".rs":
+      return "rust";
+    case ".cs":
+      return "csharp";
     default:
       return "unknown";
   }
