@@ -7,11 +7,9 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { RoslynParser } from "../../../../src/graph/parsing/roslyn/RoslynParser.js";
-import {
-  isDotNetAvailable,
-  resetDetectionCache,
-} from "../../../../src/graph/parsing/roslyn/RoslynDetector.js";
+import { resetDetectionCache } from "../../../../src/graph/parsing/roslyn/RoslynDetector.js";
 import { RoslynNotAvailableError } from "../../../../src/graph/parsing/errors.js";
 import { CodeParser } from "../../../../src/graph/parsing/CodeParser.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
@@ -19,9 +17,37 @@ import { initializeLogger, resetLogger } from "../../../../src/logging/index.js"
 // Path to test fixtures
 const FIXTURES_DIR = path.join(process.cwd(), "tests/fixtures/parsing");
 
+// Synchronously check if .NET is available before tests run
+// This avoids async issues in test setup and allows proper skip behavior
+function checkDotNetSync(): boolean {
+  try {
+    const result = spawnSync("dotnet", ["--version"], {
+      timeout: 5000,
+      encoding: "utf-8",
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+const dotNetAvailableSync = checkDotNetSync();
+
+// Helper to create tests that skip when .NET is not available
+// This immediately passes the test if .NET is not available, avoiding timeouts
+const itIfDotNet = (name: string, fn: () => Promise<void>) => {
+  it(name, async () => {
+    if (!dotNetAvailableSync) {
+      // Skip test by immediately passing when .NET is not available
+      expect(true).toBe(true);
+      return;
+    }
+    await fn();
+  });
+};
+
 describe("RoslynParser", () => {
   let parser: RoslynParser;
-  let dotNetAvailable = false;
 
   beforeAll(async () => {
     // Initialize logger for tests
@@ -29,9 +55,6 @@ describe("RoslynParser", () => {
 
     // Reset detection cache for clean test
     resetDetectionCache();
-
-    // Check if .NET is available
-    dotNetAvailable = await isDotNetAvailable();
 
     // Create parser instance
     parser = new RoslynParser();
@@ -60,9 +83,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Methods", () => {
-    it("should parse simple C# methods", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse simple C# methods", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -80,9 +101,7 @@ describe("RoslynParser", () => {
       expect(addItem?.isExported).toBe(true);
     });
 
-    it("should parse methods with parameters", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse methods with parameters", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -99,9 +118,7 @@ describe("RoslynParser", () => {
       expect(optionalParam?.hasDefault).toBe(true);
     });
 
-    it("should parse async methods", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse async methods", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -114,9 +131,7 @@ describe("RoslynParser", () => {
       expect(asyncMethod?.lineStart).toBe(113); // The implementation in DataProcessor class
     });
 
-    it("should parse static methods", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse static methods", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -126,9 +141,7 @@ describe("RoslynParser", () => {
       expect(truncate?.metadata?.isStatic).toBe(true);
     });
 
-    it("should parse methods with params array", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse methods with params array", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -140,9 +153,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Types", () => {
-    it("should parse classes", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse classes", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -154,9 +165,7 @@ describe("RoslynParser", () => {
       expect(simpleClass?.isExported).toBe(true);
     });
 
-    it("should parse interfaces", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse interfaces", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -167,9 +176,7 @@ describe("RoslynParser", () => {
       expect(processor?.isExported).toBe(true);
     });
 
-    it("should parse structs as class type", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse structs as class type", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -179,9 +186,7 @@ describe("RoslynParser", () => {
       expect(point?.isExported).toBe(true);
     });
 
-    it("should parse records as class type", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse records as class type", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -191,9 +196,7 @@ describe("RoslynParser", () => {
       expect(person?.isExported).toBe(true);
     });
 
-    it("should parse enums", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse enums", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -204,9 +207,7 @@ describe("RoslynParser", () => {
       expect(status?.isExported).toBe(true);
     });
 
-    it("should parse delegates as type_alias", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse delegates as type_alias", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -216,9 +217,7 @@ describe("RoslynParser", () => {
       expect(delegate?.type).toBe("type_alias");
     });
 
-    it("should parse abstract classes", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse abstract classes", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -228,9 +227,7 @@ describe("RoslynParser", () => {
       expect(baseEntity?.metadata?.isAbstract).toBe(true);
     });
 
-    it("should parse generic classes with type parameters", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse generic classes with type parameters", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -244,9 +241,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Properties and Fields", () => {
-    it("should parse properties", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse properties", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -256,9 +251,7 @@ describe("RoslynParser", () => {
       expect(nameProp?.isExported).toBe(true);
     });
 
-    it("should parse fields", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse fields", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -270,9 +263,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Imports (using directives)", () => {
-    it("should extract using directives", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should extract using directives", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -285,9 +276,7 @@ describe("RoslynParser", () => {
       expect(systemImport?.isRelative).toBe(false);
     });
 
-    it("should parse aliased using directives", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse aliased using directives", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -296,9 +285,7 @@ describe("RoslynParser", () => {
       expect(aliasedImport).toBeDefined();
     });
 
-    it("should parse static using directives", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should parse static using directives", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -307,9 +294,7 @@ describe("RoslynParser", () => {
       expect(staticImport).toBeDefined();
     });
 
-    it("should mark all C# imports as non-relative", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should mark all C# imports as non-relative", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -320,9 +305,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Function Calls", () => {
-    it("should extract method calls", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should extract method calls", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -330,9 +313,7 @@ describe("RoslynParser", () => {
       expect(result.calls.length).toBeGreaterThan(0);
     });
 
-    it("should extract constructor calls", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should extract constructor calls", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -341,9 +322,7 @@ describe("RoslynParser", () => {
       expect(ctorCall).toBeDefined();
     });
 
-    it("should track caller context", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should track caller context", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -352,9 +331,7 @@ describe("RoslynParser", () => {
       expect(callsInDemo.length).toBeGreaterThan(0);
     });
 
-    it("should mark awaited calls as async", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should mark awaited calls as async", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -367,9 +344,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Exports", () => {
-    it("should return empty exports for C# (visibility by modifiers)", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should return empty exports for C# (visibility by modifiers)", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -380,9 +355,7 @@ describe("RoslynParser", () => {
   });
 
   describe("parseFile - C# Visibility Modifiers", () => {
-    it("should detect public as exported", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should detect public as exported", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -390,9 +363,7 @@ describe("RoslynParser", () => {
       expect(publicClass?.isExported).toBe(true);
     });
 
-    it("should detect internal as exported", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should detect internal as exported", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -400,9 +371,7 @@ describe("RoslynParser", () => {
       expect(internalClass?.isExported).toBe(true);
     });
 
-    it("should detect private as not exported", async () => {
-      if (!dotNetAvailable) return;
-
+    itIfDotNet("should detect private as not exported", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-csharp.cs")).text();
       const result = await parser.parseFile(content, "simple-csharp.cs");
 
@@ -432,12 +401,10 @@ describe("RoslynParser", () => {
 
 describe("CodeParser - C# Routing", () => {
   let codeParser: CodeParser;
-  let dotNetAvailable = false;
 
   beforeAll(async () => {
     initializeLogger({ level: "error", format: "json" });
     resetDetectionCache();
-    dotNetAvailable = await isDotNetAvailable();
     codeParser = new CodeParser();
   });
 
@@ -462,9 +429,7 @@ describe("CodeParser - C# Routing", () => {
     expect(CodeParser.usesRoslyn("typescript")).toBe(false);
   });
 
-  it("should route C# files to Roslyn parser", async () => {
-    if (!dotNetAvailable) return;
-
+  itIfDotNet("should route C# files to Roslyn parser", async () => {
     const content = "public class Test { public void Method() {} }";
     const result = await codeParser.parseFile(content, "test.cs");
 

@@ -47,9 +47,17 @@ describe("file-scanner utilities", () => {
       expect(SUPPORTED_EXTENSIONS.has(".go")).toBe(true);
     });
 
-    test("has exactly 9 extensions", () => {
-      // 4 JS/TS extensions + 3 Python extensions + 1 Java extension + 1 Go extension
-      expect(SUPPORTED_EXTENSIONS.size).toBe(9);
+    test("contains Rust extension", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".rs")).toBe(true);
+    });
+
+    test("contains C# extension", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".cs")).toBe(true);
+    });
+
+    test("has exactly 11 extensions", () => {
+      // 4 JS/TS extensions + 3 Python extensions + 1 Java + 1 Go + 1 Rust + 1 C#
+      expect(SUPPORTED_EXTENSIONS.size).toBe(11);
     });
   });
 
