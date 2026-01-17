@@ -819,6 +819,135 @@ describe("GraphServiceImpl", () => {
       expect(typeof stats.dependency.size).toBe("number");
       expect(typeof stats.dependency.hitRate).toBe("number");
     });
+
+    describe("clearCacheForRepository", () => {
+      test("clears cache for specified repository only", async () => {
+        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+
+        // Populate cache with entries from two different repositories
+        const queryRepoA = { ...TEST_QUERIES.dependency.valid, repository: "repo-a" };
+        const queryRepoB = { ...TEST_QUERIES.dependency.valid, repository: "repo-b" };
+
+        await service.getDependencies(queryRepoA);
+        await service.getDependencies(queryRepoB);
+
+        // Verify both are cached
+        const cachedA = await service.getDependencies(queryRepoA);
+        const cachedB = await service.getDependencies(queryRepoB);
+        expect(cachedA.metadata.from_cache).toBe(true);
+        expect(cachedB.metadata.from_cache).toBe(true);
+
+        // Clear cache for repo-a only
+        service.clearCacheForRepository("repo-a");
+
+        // repo-a should no longer be cached
+        const resultA = await service.getDependencies(queryRepoA);
+        expect(resultA.metadata.from_cache).toBe(false);
+
+        // repo-b should still be cached
+        const resultB = await service.getDependencies(queryRepoB);
+        expect(resultB.metadata.from_cache).toBe(true);
+      });
+
+      test("does not affect cache for other repositories", async () => {
+        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+
+        // Populate cache for multiple repositories
+        await service.getDependencies({
+          ...TEST_QUERIES.dependency.valid,
+          repository: "alpha",
+        });
+        await service.getDependencies({
+          ...TEST_QUERIES.dependency.valid,
+          repository: "beta",
+        });
+        await service.getDependencies({
+          ...TEST_QUERIES.dependency.valid,
+          repository: "gamma",
+        });
+
+        // Clear only beta
+        service.clearCacheForRepository("beta");
+
+        // alpha and gamma should still be cached
+        const alphaResult = await service.getDependencies({
+          ...TEST_QUERIES.dependency.valid,
+          repository: "alpha",
+        });
+        const gammaResult = await service.getDependencies({
+          ...TEST_QUERIES.dependency.valid,
+          repository: "gamma",
+        });
+
+        expect(alphaResult.metadata.from_cache).toBe(true);
+        expect(gammaResult.metadata.from_cache).toBe(true);
+      });
+
+      test("works when repository has no cached entries", async () => {
+        // Should not throw when clearing non-existent repository cache
+        expect(() => service.clearCacheForRepository("nonexistent-repo")).not.toThrow();
+      });
+
+      test("clears all query types for the repository", async () => {
+        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockClient.traverse = mock(() => Promise.resolve(MOCK_TRAVERSE_RESULT));
+        mockClient.runQuery = mock(() =>
+          Promise.resolve([{ package: "src", fileCount: 5 }])
+        ) as Neo4jStorageClient["runQuery"];
+
+        const repository = "multi-query-repo";
+
+        // Populate all cache types for the same repository
+        await service.getDependencies({
+          entity_type: "file",
+          entity_path: "src/auth.ts",
+          repository,
+        });
+        await service.getDependents({
+          entity_type: "file",
+          entity_path: "src/utils.ts",
+          repository,
+        });
+        await service.getPath({
+          from_entity: { type: "function", path: "handleRequest", repository },
+          to_entity: { type: "function", path: "queryDatabase", repository },
+        });
+        await service.getArchitecture({
+          repository,
+          detail_level: "packages",
+        });
+
+        // Clear cache for this repository
+        service.clearCacheForRepository(repository);
+
+        // All query types should no longer be cached
+        const depResult = await service.getDependencies({
+          entity_type: "file",
+          entity_path: "src/auth.ts",
+          repository,
+        });
+        expect(depResult.metadata.from_cache).toBe(false);
+
+        const dntResult = await service.getDependents({
+          entity_type: "file",
+          entity_path: "src/utils.ts",
+          repository,
+        });
+        expect(dntResult.metadata.from_cache).toBe(false);
+
+        const pathResult = await service.getPath({
+          from_entity: { type: "function", path: "handleRequest", repository },
+          to_entity: { type: "function", path: "queryDatabase", repository },
+        });
+        expect(pathResult.metadata.from_cache).toBe(false);
+
+        const archResult = await service.getArchitecture({
+          repository,
+          detail_level: "packages",
+        });
+        expect(archResult.metadata.from_cache).toBe(false);
+      });
+    });
   });
 
   // ===========================================================================
@@ -1007,6 +1136,156 @@ describe("QueryCache", () => {
       const removed = cache.cleanup();
       expect(removed).toBe(2);
       expect(cache.stats().size).toBe(0);
+    });
+  });
+
+  describe("clearByPrefix", () => {
+    test("clears entries matching prefix", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+      cache.set("dep:repo-b:hash1", "value3");
+      cache.set("arch:repo-a:hash1", "value4");
+
+      const removed = cache.clearByPrefix("dep:repo-a:");
+
+      expect(removed).toBe(2);
+      expect(cache.has("dep:repo-a:hash1")).toBe(false);
+      expect(cache.has("dep:repo-a:hash2")).toBe(false);
+      expect(cache.has("dep:repo-b:hash1")).toBe(true);
+      expect(cache.has("arch:repo-a:hash1")).toBe(true);
+    });
+
+    test("returns count of removed entries", () => {
+      const cache = new QueryCache<string>();
+      cache.set("prefix:a", "value1");
+      cache.set("prefix:b", "value2");
+      cache.set("prefix:c", "value3");
+      cache.set("other:a", "value4");
+
+      const removed = cache.clearByPrefix("prefix:");
+
+      expect(removed).toBe(3);
+      expect(cache.stats().size).toBe(1);
+    });
+
+    test("does not affect entries with different prefixes", () => {
+      const cache = new QueryCache<string>();
+      cache.set("alpha:key1", "value1");
+      cache.set("beta:key1", "value2");
+      cache.set("gamma:key1", "value3");
+
+      cache.clearByPrefix("alpha:");
+
+      expect(cache.has("alpha:key1")).toBe(false);
+      expect(cache.has("beta:key1")).toBe(true);
+      expect(cache.has("gamma:key1")).toBe(true);
+    });
+
+    test("handles empty cache gracefully", () => {
+      const cache = new QueryCache<string>();
+
+      const removed = cache.clearByPrefix("any:");
+
+      expect(removed).toBe(0);
+    });
+
+    test("handles no matching entries gracefully", () => {
+      const cache = new QueryCache<string>();
+      cache.set("other:key1", "value1");
+      cache.set("different:key2", "value2");
+
+      const removed = cache.clearByPrefix("nonexistent:");
+
+      expect(removed).toBe(0);
+      expect(cache.stats().size).toBe(2);
+    });
+
+    test("clears all entries when prefix matches all keys", () => {
+      const cache = new QueryCache<string>();
+      cache.set("common:a", "value1");
+      cache.set("common:b", "value2");
+      cache.set("common:c", "value3");
+
+      const removed = cache.clearByPrefix("common:");
+
+      expect(removed).toBe(3);
+      expect(cache.stats().size).toBe(0);
+    });
+  });
+
+  describe("secondary index for O(1) prefix lookups", () => {
+    test("uses indexed prefix for O(1) lookup with standard key format", () => {
+      const cache = new QueryCache<string>();
+      // Standard format: {queryType}:{repository}:{hash}
+      cache.set("dep:repo-alpha:abc123", "value1");
+      cache.set("dep:repo-alpha:def456", "value2");
+      cache.set("dep:repo-beta:ghi789", "value3");
+      cache.set("arch:repo-alpha:jkl012", "value4");
+
+      // Clear using indexed prefix (O(1) lookup)
+      const removed = cache.clearByPrefix("dep:repo-alpha:");
+
+      expect(removed).toBe(2);
+      expect(cache.has("dep:repo-alpha:abc123")).toBe(false);
+      expect(cache.has("dep:repo-alpha:def456")).toBe(false);
+      expect(cache.has("dep:repo-beta:ghi789")).toBe(true);
+      expect(cache.has("arch:repo-alpha:jkl012")).toBe(true);
+    });
+
+    test("maintains index correctly through set/delete operations", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+
+      // Delete one entry
+      cache.delete("dep:repo-a:hash1");
+
+      // Should only clear the remaining entry
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      expect(removed).toBe(1);
+      expect(cache.stats().size).toBe(0);
+    });
+
+    test("handles clear() by resetting index", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-b:hash2", "value2");
+
+      cache.clear();
+
+      // After clear, clearByPrefix should find nothing
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      expect(removed).toBe(0);
+    });
+
+    test("falls back to O(n) scan for non-standard prefixes", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+      cache.set("dep:repo-b:hash3", "value3");
+
+      // Partial prefix that doesn't match index format
+      const removed = cache.clearByPrefix("dep:");
+
+      // Should still work via fallback O(n) scan
+      expect(removed).toBe(3);
+      expect(cache.stats().size).toBe(0);
+    });
+
+    test("index is maintained during eviction", () => {
+      const cache = new QueryCache<string>({ maxEntries: 3, ttlMs: 60000 });
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+      cache.set("dep:repo-a:hash3", "value3");
+
+      // This should trigger eviction of the oldest entry
+      cache.set("dep:repo-b:hash4", "value4");
+
+      // After eviction, clearByPrefix should only find remaining entries
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      // Oldest entry (hash1) should have been evicted, so only 2 remain
+      expect(removed).toBe(2);
     });
   });
 });

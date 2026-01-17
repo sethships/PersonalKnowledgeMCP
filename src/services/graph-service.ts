@@ -172,8 +172,8 @@ export class GraphServiceImpl implements GraphService {
       // 1. Validate input
       const validated = this.validateDependencyQuery(query);
 
-      // 2. Check cache
-      const cacheKey = QueryCache.generateKey("dep", validated);
+      // 2. Check cache (include repository in key prefix for per-repo invalidation)
+      const cacheKey = `dep:${validated.repository}:${QueryCache.generateKey("", validated)}`;
       const cached = this.dependencyCache.get(cacheKey);
       if (cached) {
         const queryTimeMs = Math.round(performance.now() - startTime);
@@ -264,8 +264,9 @@ export class GraphServiceImpl implements GraphService {
       // 1. Validate input
       const validated = this.validateDependentQuery(query);
 
-      // 2. Check cache
-      const cacheKey = QueryCache.generateKey("dnt", validated);
+      // 2. Check cache (include repository in key prefix for per-repo invalidation)
+      const repositoryKey = validated.repository ?? "unknown";
+      const cacheKey = `dnt:${repositoryKey}:${QueryCache.generateKey("", validated)}`;
       const cached = this.dependentCache.get(cacheKey);
       if (cached) {
         const queryTimeMs = Math.round(performance.now() - startTime);
@@ -354,8 +355,8 @@ export class GraphServiceImpl implements GraphService {
       // 1. Validate input
       const validated = this.validatePathQuery(query);
 
-      // 2. Check cache
-      const cacheKey = QueryCache.generateKey("path", validated);
+      // 2. Check cache (use from_entity.repository as primary key for per-repo invalidation)
+      const cacheKey = `path:${validated.from_entity.repository}:${QueryCache.generateKey("", validated)}`;
       const cached = this.pathCache.get(cacheKey);
       if (cached) {
         const queryTimeMs = Math.round(performance.now() - startTime);
@@ -441,8 +442,8 @@ export class GraphServiceImpl implements GraphService {
       // 1. Validate input
       const validated = this.validateArchitectureQuery(query);
 
-      // 2. Check cache
-      const cacheKey = QueryCache.generateKey("arch", validated);
+      // 2. Check cache (include repository in key prefix for per-repo invalidation)
+      const cacheKey = `arch:${validated.repository}:${QueryCache.generateKey("", validated)}`;
       const cached = this.architectureCache.get(cacheKey);
       if (cached) {
         const queryTimeMs = Math.round(performance.now() - startTime);
@@ -543,6 +544,53 @@ export class GraphServiceImpl implements GraphService {
     this.pathCache.clear();
     this.architectureCache.clear();
     this.logger.info("GraphService caches cleared");
+  }
+
+  /**
+   * Clear cached results for a specific repository
+   *
+   * This enables targeted cache invalidation when a repository's knowledge graph
+   * is updated without affecting cached results from other repositories.
+   *
+   * Note: Cross-repository dependent queries (where repository is not specified)
+   * are cached under the key "unknown". To clear these entries, call
+   * `clearCacheForRepository("unknown")`.
+   *
+   * @param repository - Repository name to clear cache for
+   */
+  clearCacheForRepository(repository: string): void {
+    // Clear dependency cache entries for this repository
+    const depPrefix = `dep:${repository}:`;
+    const depRemoved = this.dependencyCache.clearByPrefix(depPrefix);
+
+    // Clear dependent cache entries for this repository
+    const dntPrefix = `dnt:${repository}:`;
+    const dntRemoved = this.dependentCache.clearByPrefix(dntPrefix);
+
+    // Clear path cache entries for this repository (uses from_entity.repository as prefix)
+    // Note: Cross-repository paths may also reference this repository in to_entity,
+    // but those will be cleared when from_entity.repository cache is invalidated
+    const pathPrefix = `path:${repository}:`;
+    const pathRemoved = this.pathCache.clearByPrefix(pathPrefix);
+
+    // Clear architecture cache entries for this repository
+    const archPrefix = `arch:${repository}:`;
+    const archRemoved = this.architectureCache.clearByPrefix(archPrefix);
+
+    const totalRemoved = depRemoved + dntRemoved + pathRemoved + archRemoved;
+    this.logger.info(
+      {
+        repository,
+        entriesRemoved: {
+          dependency: depRemoved,
+          dependent: dntRemoved,
+          path: pathRemoved,
+          architecture: archRemoved,
+          total: totalRemoved,
+        },
+      },
+      "GraphService cache cleared for repository"
+    );
   }
 
   /**

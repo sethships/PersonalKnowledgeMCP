@@ -76,6 +76,14 @@ class MockGraphService implements GraphService {
   async healthCheck(): Promise<boolean> {
     return true;
   }
+
+  clearCache(): void {
+    // Mock implementation - no-op
+  }
+
+  clearCacheForRepository(_repository: string): void {
+    // Mock implementation - no-op
+  }
 }
 
 describe("find_path MCP Tool", () => {

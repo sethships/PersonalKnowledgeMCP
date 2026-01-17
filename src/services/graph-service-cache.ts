@@ -132,6 +132,12 @@ export class QueryCache<T> {
   private misses: number = 0;
 
   /**
+   * Secondary index mapping prefixes to cache keys for O(1) prefix-based invalidation.
+   * Keys are prefixes (e.g., "dep:repo-name:"), values are Sets of full cache keys.
+   */
+  private readonly prefixIndex: Map<string, Set<string>>;
+
+  /**
    * Create a new QueryCache instance
    *
    * @param config - Cache configuration options
@@ -139,6 +145,7 @@ export class QueryCache<T> {
   constructor(config: Partial<CacheConfig> = {}) {
     this.config = { ...DEFAULT_CACHE_CONFIG, ...config };
     this.cache = new Map();
+    this.prefixIndex = new Map();
   }
 
   /**
@@ -183,6 +190,7 @@ export class QueryCache<T> {
     // Check if entry has expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
+      this.removeFromIndex(key);
       this.misses++;
       return undefined;
     }
@@ -206,6 +214,7 @@ export class QueryCache<T> {
 
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
+      this.removeFromIndex(key);
       return false;
     }
 
@@ -232,6 +241,62 @@ export class QueryCache<T> {
       expiresAt: now + this.config.ttlMs,
       createdAt: now,
     });
+
+    // Update prefix index for O(1) prefix-based invalidation
+    this.addToIndex(key);
+  }
+
+  /**
+   * Extract the prefix from a cache key.
+   * Keys follow the format "{queryType}:{repository}:{hash}".
+   * Returns the prefix "{queryType}:{repository}:" for indexing.
+   *
+   * @param key - Full cache key
+   * @returns Prefix portion of the key, or the full key if no valid prefix found
+   */
+  private extractPrefix(key: string): string {
+    // Find the second colon to extract "{queryType}:{repository}:"
+    const firstColon = key.indexOf(":");
+    if (firstColon === -1) {
+      return key;
+    }
+    const secondColon = key.indexOf(":", firstColon + 1);
+    if (secondColon === -1) {
+      return key;
+    }
+    return key.substring(0, secondColon + 1);
+  }
+
+  /**
+   * Add a key to the prefix index
+   *
+   * @param key - Cache key to index
+   */
+  private addToIndex(key: string): void {
+    const prefix = this.extractPrefix(key);
+    let keySet = this.prefixIndex.get(prefix);
+    if (!keySet) {
+      keySet = new Set();
+      this.prefixIndex.set(prefix, keySet);
+    }
+    keySet.add(key);
+  }
+
+  /**
+   * Remove a key from the prefix index
+   *
+   * @param key - Cache key to remove from index
+   */
+  private removeFromIndex(key: string): void {
+    const prefix = this.extractPrefix(key);
+    const keySet = this.prefixIndex.get(prefix);
+    if (keySet) {
+      keySet.delete(key);
+      // Clean up empty sets to avoid memory leaks
+      if (keySet.size === 0) {
+        this.prefixIndex.delete(prefix);
+      }
+    }
   }
 
   /**
@@ -241,7 +306,11 @@ export class QueryCache<T> {
    * @returns true if entry was deleted
    */
   delete(key: string): boolean {
-    return this.cache.delete(key);
+    const deleted = this.cache.delete(key);
+    if (deleted) {
+      this.removeFromIndex(key);
+    }
+    return deleted;
   }
 
   /**
@@ -249,6 +318,7 @@ export class QueryCache<T> {
    */
   clear(): void {
     this.cache.clear();
+    this.prefixIndex.clear();
     this.hits = 0;
     this.misses = 0;
   }
@@ -294,11 +364,16 @@ export class QueryCache<T> {
   private evict(): void {
     const now = Date.now();
 
-    // First pass: remove expired entries
+    // First pass: collect and remove expired entries
+    const expiredKeys: string[] = [];
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiresAt) {
-        this.cache.delete(key);
+        expiredKeys.push(key);
       }
+    }
+    for (const key of expiredKeys) {
+      this.cache.delete(key);
+      this.removeFromIndex(key);
     }
 
     // If still at capacity, remove oldest entries
@@ -307,6 +382,7 @@ export class QueryCache<T> {
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
         this.cache.delete(firstKey);
+        this.removeFromIndex(firstKey);
       } else {
         break;
       }
@@ -323,15 +399,57 @@ export class QueryCache<T> {
    */
   cleanup(): number {
     const now = Date.now();
-    let removed = 0;
+    const expiredKeys: string[] = [];
 
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiresAt) {
-        this.cache.delete(key);
-        removed++;
+        expiredKeys.push(key);
       }
     }
 
-    return removed;
+    for (const key of expiredKeys) {
+      this.cache.delete(key);
+      this.removeFromIndex(key);
+    }
+
+    return expiredKeys.length;
+  }
+
+  /**
+   * Clear all entries whose keys start with the given prefix
+   *
+   * This method uses a secondary index for O(1) lookup when the prefix
+   * matches the indexed format "{queryType}:{repository}:". Falls back
+   * to O(n) scan for non-standard prefixes.
+   *
+   * @param prefix - Key prefix to match
+   * @returns Number of entries removed
+   */
+  clearByPrefix(prefix: string): number {
+    // Try O(1) lookup using the prefix index first
+    const indexedKeys = this.prefixIndex.get(prefix);
+    if (indexedKeys && indexedKeys.size > 0) {
+      // Copy the set to avoid mutation during iteration
+      const keysToDelete = [...indexedKeys];
+      for (const key of keysToDelete) {
+        this.cache.delete(key);
+        // removeFromIndex is called by delete(), which cleans up the set
+      }
+      return keysToDelete.length;
+    }
+
+    // Fallback to O(n) scan for non-indexed prefixes or partial matches
+    const keysToDelete: string[] = [];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        keysToDelete.push(key);
+      }
+    }
+
+    for (const key of keysToDelete) {
+      this.cache.delete(key);
+    }
+
+    return keysToDelete.length;
   }
 }
