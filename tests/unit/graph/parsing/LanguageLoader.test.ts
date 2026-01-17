@@ -220,6 +220,7 @@ describe("LanguageLoader", () => {
           jsx: "/nonexistent/path.wasm",
           python: "/nonexistent/path.wasm",
           java: "/nonexistent/path.wasm",
+          go: "/nonexistent/path.wasm",
         },
       });
 
@@ -248,6 +249,7 @@ describe("LanguageLoader", () => {
           jsx: "/custom/jsx.wasm",
           python: "/custom/python.wasm",
           java: "/custom/java.wasm",
+          go: "/custom/go.wasm",
         },
       };
 

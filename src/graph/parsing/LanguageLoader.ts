@@ -96,6 +96,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       jsx: resolveWasmPath("tree-sitter-javascript/tree-sitter-javascript.wasm"),
       python: resolveWasmPath("tree-sitter-python/tree-sitter-python.wasm"),
       java: resolveWasmPath("tree-sitter-java/tree-sitter-java.wasm"),
+      go: resolveWasmPath("tree-sitter-go/tree-sitter-go.wasm"),
     },
   };
 }
@@ -370,6 +371,7 @@ export class LanguageLoader {
       "jsx",
       "python",
       "java",
+      "go",
     ];
 
     await Promise.all(
