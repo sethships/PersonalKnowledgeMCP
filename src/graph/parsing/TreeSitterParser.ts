@@ -1,8 +1,18 @@
 /**
- * Tree-sitter based AST parser for TypeScript and JavaScript.
+ * Tree-sitter based AST parser for multiple programming languages.
+ *
+ * Supported languages:
+ * - TypeScript (.ts)
+ * - TSX (.tsx)
+ * - JavaScript (.js, .mjs, .cjs)
+ * - JSX (.jsx)
+ * - Python (.py)
+ * - Java (.java)
+ * - Go (.go)
+ * - Rust (.rs)
  *
  * Parses source files and extracts code entities (functions, classes,
- * interfaces) and imports for knowledge graph population.
+ * interfaces, etc.) and imports for knowledge graph population.
  *
  * @module graph/parsing/TreeSitterParser
  */
@@ -83,6 +93,20 @@ const GO_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   function_declaration: "function",
   method_declaration: "method",
   type_declaration: "class", // structs and interfaces become "class" type
+};
+
+/**
+ * Node type to entity type mapping for Rust.
+ * Rust uses different AST node types than other languages.
+ */
+const RUST_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  function_item: "function",
+  struct_item: "class", // structs become "class" type (similar to Go)
+  enum_item: "enum",
+  trait_item: "interface", // traits are Rust's interface equivalent
+  type_item: "type_alias",
+  const_item: "variable",
+  static_item: "variable",
 };
 
 /**
@@ -349,6 +373,7 @@ export class TreeSitterParser {
     const isPython = language === "python";
     const isJava = language === "java";
     const isGo = language === "go";
+    const isRust = language === "rust";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
@@ -359,6 +384,8 @@ export class TreeSitterParser {
         nodeTypeMapping = JAVA_NODE_TO_ENTITY_TYPE;
       } else if (isGo) {
         nodeTypeMapping = GO_NODE_TO_ENTITY_TYPE;
+      } else if (isRust) {
+        nodeTypeMapping = RUST_NODE_TO_ENTITY_TYPE;
       } else {
         nodeTypeMapping = NODE_TO_ENTITY_TYPE;
       }
@@ -429,6 +456,7 @@ export class TreeSitterParser {
     const isPython = language === "python";
     const isJava = language === "java";
     const isGo = language === "go";
+    const isRust = language === "rust";
 
     // Get entity name (language-aware)
     let name: string | null;
@@ -438,6 +466,8 @@ export class TreeSitterParser {
       name = this.extractJavaEntityName(node, entityType);
     } else if (isGo) {
       name = this.extractGoEntityName(node, entityType);
+    } else if (isRust) {
+      name = this.extractRustEntityName(node, entityType);
     } else {
       name = this.extractEntityName(node, entityType);
     }
@@ -453,6 +483,8 @@ export class TreeSitterParser {
       metadata = this.extractJavaMetadata(node, entityType);
     } else if (isGo) {
       metadata = this.extractGoMetadata(node, entityType);
+    } else if (isRust) {
+      metadata = this.extractRustMetadata(node, entityType);
     } else {
       metadata = this.extractMetadata(node, entityType);
     }
@@ -462,6 +494,11 @@ export class TreeSitterParser {
     if (isGo && name) {
       finalIsExported =
         name.charAt(0) === name.charAt(0).toUpperCase() && /[A-Z]/.test(name.charAt(0));
+    }
+
+    // For Rust, determine export status by pub visibility modifier
+    if (isRust) {
+      finalIsExported = this.isRustPublic(node);
     }
 
     return {
@@ -2290,6 +2327,9 @@ export class TreeSitterParser {
     if (language === "go") {
       return this.extractGoImports(root);
     }
+    if (language === "rust") {
+      return this.extractRustImports(root);
+    }
 
     const imports: ImportInfo[] = [];
 
@@ -2443,6 +2483,12 @@ export class TreeSitterParser {
     // Java doesn't have explicit export statements like JavaScript/TypeScript
     // Visibility is controlled by access modifiers, not exports
     if (language === "java") {
+      return [];
+    }
+
+    // Rust uses pub visibility modifier for exports
+    // Export info is captured in entity extraction via isExported flag
+    if (language === "rust") {
       return [];
     }
 
@@ -2665,6 +2711,9 @@ export class TreeSitterParser {
     if (language === "go") {
       return this.extractGoCalls(root);
     }
+    if (language === "rust") {
+      return this.extractRustCalls(root);
+    }
 
     const calls: CallInfo[] = [];
 
@@ -2864,6 +2913,609 @@ export class TreeSitterParser {
 
     // Fallback for any other expression type
     // Use the text as both name and expression
+    if (node.text) {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    return null;
+  }
+
+  // =====================================================
+  // Rust-specific extraction methods
+  // =====================================================
+
+  /**
+   * Extract the name of a Rust entity.
+   *
+   * Handles:
+   * - function_item: fn name() {}
+   * - struct_item: struct Name {}
+   * - enum_item: enum Name {}
+   * - trait_item: trait Name {}
+   * - type_item: type Name = ...
+   * - const_item: const NAME: Type = ...
+   * - static_item: static NAME: Type = ...
+   */
+  private extractRustEntityName(node: Node, _entityType: EntityType): string | null {
+    // All Rust entity types use the "name" field for their identifier
+    const nameNode = node.childForFieldName("name");
+    return nameNode?.text ?? null;
+  }
+
+  /**
+   * Check if a Rust entity has pub visibility.
+   *
+   * Rust uses various pub modifiers:
+   * - pub: publicly visible
+   * - pub(crate): visible within the crate
+   * - pub(super): visible to parent module
+   * - pub(self): visible only in current module (equivalent to private)
+   * - pub(in path): visible within specified path
+   *
+   * All pub* variants are treated as "exported" since they indicate
+   * intentional visibility beyond private scope.
+   */
+  private isRustPublic(node: Node): boolean {
+    // Look for visibility_modifier child
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child?.type === "visibility_modifier") {
+        // Any visibility modifier that starts with "pub" indicates export
+        return child.text.startsWith("pub");
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Extract metadata from a Rust entity node.
+   */
+  private extractRustMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract parameters for functions
+    if (entityType === "function") {
+      const params = this.extractRustParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type
+      const returnType = this.extractRustReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+
+      // Check for async fn
+      metadata.isAsync = this.isRustAsync(node);
+    }
+
+    // Extract type parameters (generics) for structs, enums, traits, and functions
+    if (
+      entityType === "class" ||
+      entityType === "enum" ||
+      entityType === "interface" ||
+      entityType === "function"
+    ) {
+      const typeParams = this.extractRustTypeParameters(node);
+      if (typeParams.length > 0) {
+        metadata.typeParameters = typeParams;
+      }
+    }
+
+    // Extract documentation (Rust doc comments)
+    if (this.config.extractDocumentation) {
+      const doc = this.extractRustDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Check if a Rust function is async.
+   */
+  private isRustAsync(node: Node): boolean {
+    // Look for "async" keyword before "fn"
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child?.type === "fn") {
+        break; // Stop when we reach "fn" keyword
+      }
+      if (child?.text === "async") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Extract function parameters from Rust AST.
+   *
+   * Rust parameters are in the format: name: Type
+   * Self parameters are handled specially.
+   */
+  private extractRustParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    // Rust uses parameters -> parameter nodes
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      // Handle regular parameters
+      if (child.type === "parameter") {
+        const patternNode = child.childForFieldName("pattern");
+        const typeNode = child.childForFieldName("type");
+
+        const name = patternNode?.text ?? "unknown";
+        const type = typeNode?.text;
+
+        params.push({
+          name,
+          type,
+          hasDefault: false, // Rust doesn't have default parameters
+          isOptional: false, // Rust doesn't have optional parameters
+          isRest: false,
+        });
+      }
+
+      // Handle self parameter (self, &self, &mut self)
+      if (child.type === "self_parameter") {
+        params.push({
+          name: "self",
+          type: child.text, // e.g., "&self", "&mut self", "self"
+          hasDefault: false,
+          isOptional: false,
+          isRest: false,
+        });
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract return type from Rust function.
+   *
+   * Handles: fn foo() -> Type
+   */
+  private extractRustReturnType(node: Node): string | null {
+    const returnTypeNode = node.childForFieldName("return_type");
+    if (returnTypeNode) {
+      return returnTypeNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract generic type parameters from Rust entity.
+   *
+   * Handles: struct Foo<T, U: Display> or fn foo<T: Clone>()
+   */
+  private extractRustTypeParameters(node: Node): string[] {
+    const typeParams: string[] = [];
+
+    const typeParamsNode = node.childForFieldName("type_parameters");
+    if (!typeParamsNode) {
+      return typeParams;
+    }
+
+    // Iterate through type parameter children
+    for (let i = 0; i < typeParamsNode.childCount; i++) {
+      const child = typeParamsNode.child(i);
+      if (!child) continue;
+
+      // Handle type_identifier (simple generic like T)
+      if (child.type === "type_identifier") {
+        typeParams.push(child.text);
+      }
+
+      // Handle constrained_type_parameter (T: Display)
+      if (child.type === "constrained_type_parameter") {
+        typeParams.push(child.text);
+      }
+
+      // Handle lifetime parameters ('a)
+      if (child.type === "lifetime") {
+        typeParams.push(child.text);
+      }
+    }
+
+    return typeParams;
+  }
+
+  /**
+   * Extract Rust doc comments from preceding comments.
+   *
+   * In Rust, doc comments are:
+   * - /// for outer doc comments (document the following item)
+   * - //! for inner doc comments (document the enclosing item)
+   */
+  private extractRustDocumentation(node: Node): string | null {
+    const docLines: string[] = [];
+    let prevSibling = node.previousSibling;
+
+    // Collect consecutive doc comment lines
+    while (prevSibling) {
+      if (prevSibling.type === "line_comment") {
+        const text = prevSibling.text;
+        // Check if it's a doc comment (starts with /// or //!)
+        if (text.startsWith("///") || text.startsWith("//!")) {
+          docLines.unshift(text);
+        } else {
+          // Stop at regular comment
+          break;
+        }
+      } else if (prevSibling.type === "block_comment") {
+        // Block doc comments /** ... */ or /*! ... */
+        const text = prevSibling.text;
+        if (text.startsWith("/**") || text.startsWith("/*!")) {
+          docLines.unshift(text);
+        }
+        break; // Block comments don't chain like line comments
+      } else if (prevSibling.type !== "\n" && prevSibling.type !== "attribute_item") {
+        // Stop at non-comment, non-newline, non-attribute
+        break;
+      }
+      prevSibling = prevSibling.previousSibling;
+    }
+
+    if (docLines.length > 0) {
+      return docLines.join("\n");
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract imports from Rust use declarations.
+   *
+   * Handles:
+   * - use std::io;
+   * - use std::io::Read;
+   * - use std::collections::{HashMap, HashSet};
+   * - use std::io::prelude::*;
+   * - use crate::module;
+   * - use self::submodule;
+   * - use super::parent;
+   * - pub use re_export;
+   */
+  private extractRustImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      if (node.type === "use_declaration") {
+        try {
+          const infos = this.extractRustUseDeclaration(node);
+          imports.push(...infos);
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Rust use declaration"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from Rust use declarations.
+   */
+  private extractRustUseDeclaration(node: Node): ImportInfo[] {
+    const infos: ImportInfo[] = [];
+
+    // Get the use tree (argument to use)
+    const useTree = this.findFirstChild(node, [
+      "use_tree",
+      "scoped_use_list",
+      "use_list",
+      "use_wildcard",
+    ]);
+    if (!useTree) {
+      // Try to get the path directly
+      const pathNode = this.findFirstChild(node, [
+        "scoped_identifier",
+        "identifier",
+        "crate",
+        "self",
+        "super",
+      ]);
+      if (pathNode) {
+        infos.push(this.createRustImportInfo(pathNode.text, node.startPosition.row + 1));
+      }
+      return infos;
+    }
+
+    // Extract all imports from the use tree
+    this.extractRustUseTree(useTree, "", infos, node.startPosition.row + 1);
+
+    return infos;
+  }
+
+  /**
+   * Recursively extract imports from Rust use tree.
+   */
+  private extractRustUseTree(node: Node, prefix: string, infos: ImportInfo[], line: number): void {
+    // Handle scoped identifier (std::io)
+    if (node.type === "scoped_identifier" || node.type === "identifier") {
+      const fullPath = prefix ? `${prefix}::${node.text}` : node.text;
+      infos.push(this.createRustImportInfo(fullPath, line));
+      return;
+    }
+
+    // Handle use_as_clause (use foo as bar)
+    if (node.type === "use_as_clause") {
+      const pathNode = node.childForFieldName("path");
+      const aliasNode = node.childForFieldName("alias");
+      if (pathNode) {
+        const fullPath = prefix ? `${prefix}::${pathNode.text}` : pathNode.text;
+        const info = this.createRustImportInfo(fullPath, line);
+        if (aliasNode) {
+          const originalName = pathNode.text.split("::").pop() ?? pathNode.text;
+          info.aliases = { [originalName]: aliasNode.text };
+        }
+        infos.push(info);
+      }
+      return;
+    }
+
+    // Handle use_wildcard (use std::io::*)
+    if (node.type === "use_wildcard") {
+      // The path is a child node containing the module path before the *
+      // For `use std::collections::*`, tree-sitter parses it as:
+      //   use_wildcard with children: scoped_identifier("std::collections") + "*"
+      let modulePath = "";
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "*" && child.text !== "*") {
+          modulePath = child.text;
+          break;
+        }
+      }
+      const fullPath = prefix ? `${prefix}::${modulePath}` : modulePath;
+      const info = this.createRustImportInfo(fullPath, line);
+      info.namespaceImport = "*"; // Mark as wildcard import
+      info.isSideEffect = true; // Wildcard import has side effects
+      infos.push(info);
+      return;
+    }
+
+    // Handle scoped_use_list (use std::{io, fs})
+    if (node.type === "scoped_use_list") {
+      const pathNode = node.childForFieldName("path");
+      const listNode = node.childForFieldName("list");
+      const newPrefix = pathNode
+        ? prefix
+          ? `${prefix}::${pathNode.text}`
+          : pathNode.text
+        : prefix;
+
+      if (listNode) {
+        this.extractRustUseTree(listNode, newPrefix, infos, line);
+      }
+      return;
+    }
+
+    // Handle use_list ({HashMap, HashSet})
+    if (node.type === "use_list") {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "," && child.type !== "{" && child.type !== "}") {
+          this.extractRustUseTree(child, prefix, infos, line);
+        }
+      }
+      return;
+    }
+
+    // Handle crate, self, super keywords
+    if (node.type === "crate" || node.type === "self" || node.type === "super") {
+      const fullPath = prefix ? `${prefix}::${node.text}` : node.text;
+      infos.push(this.createRustImportInfo(fullPath, line));
+      return;
+    }
+
+    // Recurse for other node types
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) {
+        this.extractRustUseTree(child, prefix, infos, line);
+      }
+    }
+  }
+
+  /**
+   * Create an ImportInfo object for Rust.
+   */
+  private createRustImportInfo(source: string, line: number): ImportInfo {
+    // Check if relative (starts with crate, self, or super)
+    const isRelative =
+      source.startsWith("crate") || source.startsWith("self") || source.startsWith("super");
+
+    // Extract the imported name (last part of the path)
+    const parts = source.split("::");
+    const importedName = parts[parts.length - 1] ?? source;
+    const importedNames: string[] = importedName === "*" ? [] : [importedName];
+
+    return {
+      source,
+      isRelative,
+      importedNames,
+      isTypeOnly: false, // Rust doesn't have type-only imports
+      isSideEffect: false,
+      line,
+    };
+  }
+
+  /**
+   * Extract function calls from Rust AST.
+   */
+  private extractRustCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a function
+      if (node.type === "function_item") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for call expression in Rust
+      if (node.type === "call_expression") {
+        try {
+          const callInfo = this.extractRustCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Rust call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a Rust call expression.
+   */
+  private extractRustCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const functionNode = node.childForFieldName("function");
+    if (!functionNode) {
+      return null;
+    }
+
+    const callTarget = this.extractRustCallTarget(functionNode);
+    if (!callTarget) {
+      return null;
+    }
+
+    // Rust doesn't have async/await at call site (uses .await suffix on futures)
+    return {
+      calledName: callTarget.name,
+      calledExpression: callTarget.expression,
+      isAsync: false,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract call target from Rust call expression.
+   */
+  private extractRustCallTarget(node: Node): { name: string; expression: string } | null {
+    // Simple identifier: foo()
+    if (node.type === "identifier") {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    // Scoped identifier: std::io::read()
+    if (node.type === "scoped_identifier") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return {
+          name: nameNode.text,
+          expression: node.text,
+        };
+      }
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    // Field expression (method call): obj.method()
+    if (node.type === "field_expression") {
+      const fieldNode = node.childForFieldName("field");
+      if (fieldNode) {
+        return {
+          name: fieldNode.text,
+          expression: node.text,
+        };
+      }
+    }
+
+    // Generic function: foo::<T>()
+    if (node.type === "generic_function") {
+      const functionNode = node.childForFieldName("function");
+      if (functionNode) {
+        return this.extractRustCallTarget(functionNode);
+      }
+    }
+
+    // Parenthesized expression
+    if (node.type === "parenthesized_expression") {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          return this.extractRustCallTarget(child);
+        }
+      }
+    }
+
+    // Call expression (chained): foo().bar()
+    if (node.type === "call_expression") {
+      return {
+        name: "[chained]",
+        expression: node.text,
+      };
+    }
+
+    // Index expression: arr[0]()
+    if (node.type === "index_expression") {
+      return {
+        name: "[indexed]",
+        expression: node.text,
+      };
+    }
+
+    // Fallback
     if (node.text) {
       return {
         name: node.text,

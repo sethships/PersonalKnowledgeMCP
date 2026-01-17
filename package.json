@@ -73,6 +73,7 @@
     "simple-git": "^3.25.0",
     "tree-sitter-go": "0.25.0",
     "tree-sitter-java": "0.23.5",
+    "tree-sitter-rust": "0.23.2",
     "web-tree-sitter": "0.26.3",
     "zod": "4.1.13"
   },
