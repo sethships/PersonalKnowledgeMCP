@@ -79,13 +79,25 @@ describe("language-detector", () => {
       });
     });
 
+    describe("Go detection", () => {
+      test("detects .go files as go", () => {
+        expect(detectLanguage("main.go")).toBe("go");
+        expect(detectLanguage("cmd/server/main.go")).toBe("go");
+        expect(detectLanguage("pkg/utils/helpers.go")).toBe("go");
+      });
+
+      test("handles uppercase Go extension", () => {
+        expect(detectLanguage("file.GO")).toBe("go");
+        expect(detectLanguage("file.Go")).toBe("go");
+      });
+    });
+
     describe("unknown language detection", () => {
       test("returns unknown for non-supported extensions", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
         expect(detectLanguage("README.md")).toBe("unknown");
         expect(detectLanguage("style.css")).toBe("unknown");
         expect(detectLanguage("app.py")).toBe("unknown");
-        expect(detectLanguage("main.go")).toBe("unknown");
         expect(detectLanguage("lib.rs")).toBe("unknown");
       });
 
@@ -131,14 +143,15 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("javascript");
       expect(SUPPORTED_LANGUAGES).toContain("jsx");
       expect(SUPPORTED_LANGUAGES).toContain("java");
+      expect(SUPPORTED_LANGUAGES).toContain("go");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 5 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(5);
+    test("has exactly 6 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(6);
     });
 
     test("is readonly", () => {
@@ -156,6 +169,7 @@ describe("language-detector", () => {
         { path: "file.js", expected: "javascript" },
         { path: "file.jsx", expected: "jsx" },
         { path: "file.java", expected: "java" },
+        { path: "file.go", expected: "go" },
         { path: "file.json", expected: "unknown" },
       ];
 

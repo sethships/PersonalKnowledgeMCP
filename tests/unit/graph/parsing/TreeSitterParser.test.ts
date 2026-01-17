@@ -1164,4 +1164,266 @@ export function documented(): void {}
       expect(TreeSitterParser.getLanguageFromExtension(".java")).toBe("java");
     });
   });
+
+  // ==================== Go Parsing Tests ====================
+
+  describe("parseFile - Go Functions", () => {
+    it("should parse simple Go functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("go");
+      expect(result.errors).toHaveLength(0);
+
+      // Check entities were extracted
+      expect(result.entities.length).toBeGreaterThan(0);
+
+      // Find SimpleFunction (exported - starts with uppercase)
+      const simpleFunc = result.entities.find((e) => e.name === "SimpleFunction");
+      expect(simpleFunc).toBeDefined();
+      expect(simpleFunc?.type).toBe("function");
+      expect(simpleFunc?.isExported).toBe(true);
+
+      // Find privateHelper (not exported - starts with lowercase)
+      const privateFunc = result.entities.find((e) => e.name === "privateHelper");
+      expect(privateFunc).toBeDefined();
+      expect(privateFunc?.type).toBe("function");
+      expect(privateFunc?.isExported).toBe(false);
+    });
+
+    it("should parse Go functions with parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find FunctionWithParams
+      const paramFunc = result.entities.find((e) => e.name === "FunctionWithParams");
+      expect(paramFunc).toBeDefined();
+      expect(paramFunc?.metadata?.parameters).toBeDefined();
+      expect(paramFunc?.metadata?.parameters?.length).toBe(2);
+      // Check parameters
+      expect(paramFunc?.metadata?.parameters?.[0]?.name).toBe("name");
+      expect(paramFunc?.metadata?.parameters?.[0]?.type).toBe("string");
+      expect(paramFunc?.metadata?.parameters?.[1]?.name).toBe("count");
+      expect(paramFunc?.metadata?.parameters?.[1]?.type).toBe("int");
+    });
+
+    it("should parse Go functions with multiple return values", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      const multiReturnFunc = result.entities.find((e) => e.name === "FunctionWithMultipleReturns");
+      expect(multiReturnFunc).toBeDefined();
+      // Return type includes both types
+      expect(multiReturnFunc?.metadata?.returnType).toContain("int");
+      expect(multiReturnFunc?.metadata?.returnType).toContain("error");
+    });
+
+    it("should parse Go functions with variadic parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      const variadicFunc = result.entities.find((e) => e.name === "FunctionWithVariadic");
+      expect(variadicFunc).toBeDefined();
+      expect(variadicFunc?.metadata?.parameters).toBeDefined();
+      const params = variadicFunc?.metadata?.parameters ?? [];
+      // Should have prefix (string) and values (...int)
+      expect(params.some((p) => p.isRest)).toBe(true);
+    });
+  });
+
+  describe("parseFile - Go Methods", () => {
+    it("should parse Go methods with receivers", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find Distance method on Point
+      const distanceMethod = result.entities.find((e) => e.name === "Distance");
+      expect(distanceMethod).toBeDefined();
+      expect(distanceMethod?.type).toBe("method");
+      // Receiver type stored in extends field
+      expect(distanceMethod?.metadata?.extends).toBe("*Point");
+
+      // Find Scale method on Point
+      const scaleMethod = result.entities.find((e) => e.name === "Scale");
+      expect(scaleMethod).toBeDefined();
+      expect(scaleMethod?.type).toBe("method");
+      expect(scaleMethod?.metadata?.extends).toBe("*Point");
+    });
+
+    it("should parse methods with parameters and return types", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find Fetch method on Dog
+      const fetchMethod = result.entities.find((e) => e.name === "Fetch" && e.type === "method");
+      expect(fetchMethod).toBeDefined();
+      expect(fetchMethod?.metadata?.parameters?.length).toBe(1);
+      expect(fetchMethod?.metadata?.parameters?.[0]?.name).toBe("item");
+      expect(fetchMethod?.metadata?.parameters?.[0]?.type).toBe("string");
+      expect(fetchMethod?.metadata?.returnType).toBe("string");
+    });
+  });
+
+  describe("parseFile - Go Types (Structs and Interfaces)", () => {
+    it("should parse Go structs as class type", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find Point struct
+      const point = result.entities.find((e) => e.name === "Point");
+      expect(point).toBeDefined();
+      expect(point?.type).toBe("class");
+      expect(point?.isExported).toBe(true);
+
+      // Find Dog struct
+      const dog = result.entities.find((e) => e.name === "Dog" && e.type === "class");
+      expect(dog).toBeDefined();
+    });
+
+    it("should parse Go interfaces as class type", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find Animal interface
+      const animal = result.entities.find((e) => e.name === "Animal");
+      expect(animal).toBeDefined();
+      expect(animal?.type).toBe("class");
+      expect(animal?.isExported).toBe(true);
+    });
+
+    it("should parse Go generics (type parameters)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find Pair generic struct
+      const pair = result.entities.find((e) => e.name === "Pair");
+      expect(pair).toBeDefined();
+      expect(pair?.type).toBe("class");
+
+      // Find GenericFunction
+      const genericFunc = result.entities.find((e) => e.name === "GenericFunction");
+      expect(genericFunc).toBeDefined();
+    });
+  });
+
+  describe("parseFile - Go Imports", () => {
+    it("should extract various Go import types", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Standard library import: "fmt"
+      const fmtImport = result.imports.find((i) => i.source === "fmt");
+      expect(fmtImport).toBeDefined();
+
+      // Aliased import: customalias "path/filepath"
+      const aliasedImport = result.imports.find((i) => i.source === "path/filepath");
+      expect(aliasedImport).toBeDefined();
+      expect(aliasedImport?.aliases?.["filepath"]).toBe("customalias");
+
+      // Blank import: _ "database/sql"
+      const blankImport = result.imports.find((i) => i.source === "database/sql");
+      expect(blankImport).toBeDefined();
+      expect(blankImport?.isSideEffect).toBe(true);
+    });
+  });
+
+  describe("parseFile - Go Function Calls", () => {
+    it("should extract Go function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find call to SimpleFunction within FunctionWithCalls
+      const simpleCall = result.calls.find(
+        (c) => c.calledName === "SimpleFunction" && c.callerName === "FunctionWithCalls"
+      );
+      expect(simpleCall).toBeDefined();
+
+      // Find call to fmt.Println
+      const printlnCall = result.calls.find((c) => c.calledName === "Println");
+      expect(printlnCall).toBeDefined();
+      expect(printlnCall?.calledExpression).toBe("fmt.Println");
+    });
+
+    it("should extract method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find calc.Add() call
+      const addCall = result.calls.find(
+        (c) => c.calledName === "Add" && c.callerName === "FunctionWithCalls"
+      );
+      expect(addCall).toBeDefined();
+      expect(addCall?.calledExpression).toBe("calc.Add");
+
+      // Find point.Scale() call
+      const scaleCall = result.calls.find(
+        (c) => c.calledName === "Scale" && c.callerName === "FunctionWithCalls"
+      );
+      expect(scaleCall).toBeDefined();
+    });
+
+    it("should track caller context correctly", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Calls within FunctionWithCalls
+      const callsInFunc = result.calls.filter((c) => c.callerName === "FunctionWithCalls");
+      expect(callsInFunc.length).toBeGreaterThan(0);
+
+      // Calls within HTTPHandler
+      const callsInHandler = result.calls.filter((c) => c.callerName === "HTTPHandler");
+      expect(callsInHandler.length).toBeGreaterThan(0);
+    });
+
+    it("should not mark Go calls as async (Go has goroutines, not async/await)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // All Go calls should have isAsync = false since Go doesn't use async/await
+      for (const call of result.calls) {
+        expect(call.isAsync).toBe(false);
+      }
+    });
+  });
+
+  describe("parseFile - Go Exports", () => {
+    it("should return empty exports for Go (visibility by naming convention)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Go doesn't have explicit export statements like JS/TS
+      // Visibility is determined by identifier case (uppercase = exported)
+      expect(result.exports).toHaveLength(0);
+    });
+  });
+
+  describe("parseFile - Go Documentation", () => {
+    it("should extract Go documentation comments", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-go.go")).text();
+      const result = await parser.parseFile(content, "simple-go.go");
+
+      // Find SimpleFunction and check documentation
+      const simpleFunc = result.entities.find((e) => e.name === "SimpleFunction");
+      expect(simpleFunc?.metadata?.documentation).toBeDefined();
+      expect(simpleFunc?.metadata?.documentation).toContain("simple function");
+    });
+  });
+
+  describe("parseFile - Go Extension Support", () => {
+    it("should correctly identify .go extension as supported", () => {
+      expect(TreeSitterParser.isSupported(".go")).toBe(true);
+      expect(TreeSitterParser.isSupported(".GO")).toBe(true);
+    });
+
+    it("should get language from .go extension", () => {
+      expect(TreeSitterParser.getLanguageFromExtension(".go")).toBe("go");
+    });
+  });
 });

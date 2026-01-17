@@ -30,6 +30,7 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".pyw",
   ".pyi",
   ".java",
+  ".go",
 ]);
 
 /**

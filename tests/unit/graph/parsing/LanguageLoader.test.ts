@@ -229,6 +229,7 @@ describe("LanguageLoader", () => {
           jsx: "/nonexistent/path.wasm",
           python: "/nonexistent/path.wasm",
           java: "/nonexistent/path.wasm",
+          go: "/nonexistent/path.wasm",
         },
       });
 
@@ -257,6 +258,7 @@ describe("LanguageLoader", () => {
           jsx: "/custom/jsx.wasm",
           python: "/custom/python.wasm",
           java: "/custom/java.wasm",
+          go: "/custom/go.wasm",
         },
       };
 
@@ -265,6 +267,16 @@ describe("LanguageLoader", () => {
 
       expect(status.wasmPaths.treeSitterWasm).toBe("/custom/tree-sitter.wasm");
       expect(status.wasmPaths.languages.typescript).toBe("/custom/typescript.wasm");
+    });
+  });
+
+  describe("Go language support", () => {
+    it("should load Go language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("go");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("go")).toBe(true);
     });
   });
 });
