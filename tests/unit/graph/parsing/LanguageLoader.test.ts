@@ -107,6 +107,15 @@ describe("LanguageLoader", () => {
       expect(loader.isLanguageLoaded("jsx")).toBe(true);
     });
 
+    it("should load Java language", async () => {
+      const loader = new LanguageLoader();
+
+      const lang = await loader.getLanguage("java");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("java")).toBe(true);
+    });
+
     it("should cache loaded languages", async () => {
       const loader = new LanguageLoader();
 
