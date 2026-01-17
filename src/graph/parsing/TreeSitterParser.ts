@@ -707,6 +707,14 @@ export class TreeSitterParser {
   // ==================== Python-Specific Methods ====================
 
   /**
+   * Check if a parameter name is a Python implicit parameter (self/cls).
+   * These are automatically passed by Python for instance/class methods.
+   */
+  private isPythonImplicitParameter(name: string): boolean {
+    return name === "self" || name === "cls";
+  }
+
+  /**
    * Extract entity name for Python AST nodes.
    */
   private extractPythonEntityName(node: Node, _entityType: EntityType): string | null {
@@ -812,8 +820,8 @@ export class TreeSitterParser {
     switch (node.type) {
       case "identifier":
         name = node.text;
-        // Skip 'self' and 'cls' in method parameters
-        if (name === "self" || name === "cls") {
+        // Skip implicit parameters in method definitions
+        if (this.isPythonImplicitParameter(name)) {
           return null;
         }
         break;
@@ -821,8 +829,8 @@ export class TreeSitterParser {
       case "typed_parameter": {
         const nameNode = node.child(0);
         name = nameNode?.text ?? null;
-        // Skip 'self' and 'cls'
-        if (name === "self" || name === "cls") {
+        // Skip implicit parameters in method definitions
+        if (name && this.isPythonImplicitParameter(name)) {
           return null;
         }
         const typeNode = node.childForFieldName("type");
@@ -1088,7 +1096,8 @@ export class TreeSitterParser {
       let currentCaller = callerName;
 
       // Update caller context when entering a function
-      if (node.type === "function_definition" || node.type === "async_function_definition") {
+      // Note: tree-sitter-python uses "function_definition" for both sync and async functions
+      if (node.type === "function_definition") {
         const nameNode = node.childForFieldName("name");
         if (nameNode) {
           currentCaller = nameNode.text;
