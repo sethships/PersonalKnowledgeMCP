@@ -1213,4 +1213,79 @@ describe("QueryCache", () => {
       expect(cache.stats().size).toBe(0);
     });
   });
+
+  describe("secondary index for O(1) prefix lookups", () => {
+    test("uses indexed prefix for O(1) lookup with standard key format", () => {
+      const cache = new QueryCache<string>();
+      // Standard format: {queryType}:{repository}:{hash}
+      cache.set("dep:repo-alpha:abc123", "value1");
+      cache.set("dep:repo-alpha:def456", "value2");
+      cache.set("dep:repo-beta:ghi789", "value3");
+      cache.set("arch:repo-alpha:jkl012", "value4");
+
+      // Clear using indexed prefix (O(1) lookup)
+      const removed = cache.clearByPrefix("dep:repo-alpha:");
+
+      expect(removed).toBe(2);
+      expect(cache.has("dep:repo-alpha:abc123")).toBe(false);
+      expect(cache.has("dep:repo-alpha:def456")).toBe(false);
+      expect(cache.has("dep:repo-beta:ghi789")).toBe(true);
+      expect(cache.has("arch:repo-alpha:jkl012")).toBe(true);
+    });
+
+    test("maintains index correctly through set/delete operations", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+
+      // Delete one entry
+      cache.delete("dep:repo-a:hash1");
+
+      // Should only clear the remaining entry
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      expect(removed).toBe(1);
+      expect(cache.stats().size).toBe(0);
+    });
+
+    test("handles clear() by resetting index", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-b:hash2", "value2");
+
+      cache.clear();
+
+      // After clear, clearByPrefix should find nothing
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      expect(removed).toBe(0);
+    });
+
+    test("falls back to O(n) scan for non-standard prefixes", () => {
+      const cache = new QueryCache<string>();
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+      cache.set("dep:repo-b:hash3", "value3");
+
+      // Partial prefix that doesn't match index format
+      const removed = cache.clearByPrefix("dep:");
+
+      // Should still work via fallback O(n) scan
+      expect(removed).toBe(3);
+      expect(cache.stats().size).toBe(0);
+    });
+
+    test("index is maintained during eviction", () => {
+      const cache = new QueryCache<string>({ maxEntries: 3, ttlMs: 60000 });
+      cache.set("dep:repo-a:hash1", "value1");
+      cache.set("dep:repo-a:hash2", "value2");
+      cache.set("dep:repo-a:hash3", "value3");
+
+      // This should trigger eviction of the oldest entry
+      cache.set("dep:repo-b:hash4", "value4");
+
+      // After eviction, clearByPrefix should only find remaining entries
+      const removed = cache.clearByPrefix("dep:repo-a:");
+      // Oldest entry (hash1) should have been evicted, so only 2 remain
+      expect(removed).toBe(2);
+    });
+  });
 });

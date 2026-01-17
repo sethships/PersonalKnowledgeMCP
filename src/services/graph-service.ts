@@ -552,6 +552,10 @@ export class GraphServiceImpl implements GraphService {
    * This enables targeted cache invalidation when a repository's knowledge graph
    * is updated without affecting cached results from other repositories.
    *
+   * Note: Cross-repository dependent queries (where repository is not specified)
+   * are cached under the key "unknown". To clear these entries, call
+   * `clearCacheForRepository("unknown")`.
+   *
    * @param repository - Repository name to clear cache for
    */
   clearCacheForRepository(repository: string): void {
