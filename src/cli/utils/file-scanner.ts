@@ -21,7 +21,16 @@ import type { FileInput } from "../../graph/ingestion/types.js";
  *
  * These are extensions supported by tree-sitter parsing.
  */
-export const SUPPORTED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".pyw", ".pyi"]);
+export const SUPPORTED_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".pyw",
+  ".pyi",
+  ".java",
+]);
 
 /**
  * Directories to exclude from file scanning.

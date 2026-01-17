@@ -993,4 +993,175 @@ export function documented(): void {}
       expect(result.exports).toHaveLength(0);
     });
   });
+
+  // ==================== Java Tests ====================
+
+  describe("parseFile - Java Classes and Methods", () => {
+    it("should parse simple Java class", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-class.java")).text();
+      const result = await parser.parseFile(content, "simple-class.java");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("java");
+      expect(result.errors).toHaveLength(0);
+
+      // Find SimpleClass
+      const simpleClass = result.entities.find((e) => e.name === "SimpleClass");
+      expect(simpleClass).toBeDefined();
+      expect(simpleClass?.type).toBe("class");
+
+      // Find methods
+      const getName = result.entities.find((e) => e.name === "getName");
+      expect(getName).toBeDefined();
+      expect(getName?.type).toBe("method");
+      expect(getName?.metadata?.returnType).toBe("String");
+
+      const setName = result.entities.find((e) => e.name === "setName");
+      expect(setName).toBeDefined();
+      expect(setName?.metadata?.parameters).toBeDefined();
+      expect(setName?.metadata?.parameters?.length).toBe(1);
+      expect(setName?.metadata?.parameters?.[0]?.name).toBe("name");
+      expect(setName?.metadata?.parameters?.[0]?.type).toBe("String");
+
+      const calculate = result.entities.find((e) => e.name === "calculate");
+      expect(calculate).toBeDefined();
+      expect(calculate?.metadata?.parameters?.[0]?.type).toBe("int");
+
+      // Find static method
+      const staticMethod = result.entities.find((e) => e.name === "staticMethod");
+      expect(staticMethod).toBeDefined();
+      expect(staticMethod?.metadata?.isStatic).toBe(true);
+
+      // Find fields (properties)
+      const nameField = result.entities.find((e) => e.name === "name" && e.type === "property");
+      expect(nameField).toBeDefined();
+    });
+
+    it("should extract Javadoc documentation", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-class.java")).text();
+      const result = await parser.parseFile(content, "simple-class.java");
+
+      const simpleClass = result.entities.find((e) => e.name === "SimpleClass");
+      expect(simpleClass?.metadata?.documentation).toBeDefined();
+      expect(simpleClass?.metadata?.documentation).toContain("Simple class");
+    });
+  });
+
+  describe("parseFile - Java Inheritance", () => {
+    it("should parse interfaces and abstract classes", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "complex-inheritance.java")).text();
+      const result = await parser.parseFile(content, "complex-inheritance.java");
+
+      expect(result.success).toBe(true);
+
+      // Find interface
+      const dataProcessor = result.entities.find((e) => e.name === "DataProcessor");
+      expect(dataProcessor).toBeDefined();
+      expect(dataProcessor?.type).toBe("interface");
+
+      // Find abstract class with generics
+      const baseHandler = result.entities.find((e) => e.name === "BaseHandler");
+      expect(baseHandler).toBeDefined();
+      expect(baseHandler?.type).toBe("class");
+      expect(baseHandler?.metadata?.isAbstract).toBe(true);
+      expect(baseHandler?.metadata?.typeParameters).toContain("T");
+
+      // Find concrete class with extends and implements
+      const concreteHandler = result.entities.find((e) => e.name === "ConcreteHandler");
+      expect(concreteHandler).toBeDefined();
+      expect(concreteHandler?.metadata?.extends).toContain("BaseHandler");
+      expect(concreteHandler?.metadata?.implements).toBeDefined();
+      // Check that ConcreteHandler implements DataProcessor
+      expect(concreteHandler?.metadata?.implements).toContain("DataProcessor");
+
+      // Find enum
+      const processingStatus = result.entities.find((e) => e.name === "ProcessingStatus");
+      expect(processingStatus).toBeDefined();
+      expect(processingStatus?.type).toBe("enum");
+    });
+
+    it("should parse varargs parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "complex-inheritance.java")).text();
+      const result = await parser.parseFile(content, "complex-inheritance.java");
+
+      const processMultiple = result.entities.find((e) => e.name === "processMultiple");
+      expect(processMultiple).toBeDefined();
+      expect(processMultiple?.metadata?.parameters).toBeDefined();
+      // Varargs parameter should be marked as isRest
+      const itemsParam = processMultiple?.metadata?.parameters?.find((p) => p.name === "items");
+      expect(itemsParam).toBeDefined();
+      expect(itemsParam?.isRest).toBe(true);
+    });
+  });
+
+  describe("parseFile - Java Imports", () => {
+    it("should parse Java import statements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "java-imports.java")).text();
+      const result = await parser.parseFile(content, "java-imports.java");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Check for standard import
+      const listImport = result.imports.find((i) => i.source.includes("java.util.List"));
+      expect(listImport).toBeDefined();
+      expect(listImport?.isRelative).toBe(false);
+
+      // Check for wildcard import
+      const ioImport = result.imports.find(
+        (i) => i.source.includes("java.io") && i.importedNames.includes("*")
+      );
+      expect(ioImport).toBeDefined();
+
+      // Check for static import
+      const staticImport = result.imports.find((i) => i.source.includes("Math.PI"));
+      expect(staticImport).toBeDefined();
+    });
+  });
+
+  describe("parseFile - Java Function Calls", () => {
+    it("should parse Java method invocations", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-class.java")).text();
+      const result = await parser.parseFile(content, "simple-class.java");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find System.out.println call
+      const printCall = result.calls.find((c) => c.calledName === "println");
+      expect(printCall).toBeDefined();
+      expect(printCall?.calledExpression).toContain("println");
+    });
+
+    it("should track caller context for Java methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-class.java")).text();
+      const result = await parser.parseFile(content, "simple-class.java");
+
+      // Find a call inside the calculate method
+      const callsInCalculate = result.calls.filter((c) => c.callerName === "calculate");
+      expect(callsInCalculate.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("parseFile - Java Exports", () => {
+    it("should return empty exports for Java (no explicit exports)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-class.java")).text();
+      const result = await parser.parseFile(content, "simple-class.java");
+
+      // Java doesn't have explicit export statements like JS/TS
+      // Visibility is controlled by access modifiers (public/private/protected)
+      expect(result.exports).toHaveLength(0);
+    });
+  });
+
+  describe("static methods - Java support", () => {
+    it("should correctly identify Java extensions", () => {
+      expect(TreeSitterParser.isSupported(".java")).toBe(true);
+      expect(TreeSitterParser.isSupported(".JAVA")).toBe(true);
+    });
+
+    it("should get language from Java extension", () => {
+      expect(TreeSitterParser.getLanguageFromExtension(".java")).toBe("java");
+    });
+  });
 });

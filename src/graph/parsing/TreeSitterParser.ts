@@ -62,6 +62,20 @@ const PYTHON_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
 };
 
 /**
+ * Node type to entity type mapping for Java.
+ * Java uses different AST node types than TypeScript/JavaScript/Python.
+ * Note: Java doesn't have standalone functions - all are methods within classes.
+ */
+const JAVA_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  class_declaration: "class",
+  interface_declaration: "interface",
+  enum_declaration: "enum",
+  method_declaration: "method",
+  constructor_declaration: "method",
+  field_declaration: "property",
+};
+
+/**
  * Node types that represent entities we want to extract.
  * Currently used implicitly via NODE_TO_ENTITY_TYPE lookup.
  */
@@ -323,10 +337,18 @@ export class TreeSitterParser {
   private extractEntities(root: Node, filePath: string, language: SupportedLanguage): CodeEntity[] {
     const entities: CodeEntity[] = [];
     const isPython = language === "python";
+    const isJava = language === "java";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
-      const nodeTypeMapping = isPython ? PYTHON_NODE_TO_ENTITY_TYPE : NODE_TO_ENTITY_TYPE;
+      let nodeTypeMapping: Record<string, EntityType>;
+      if (isPython) {
+        nodeTypeMapping = PYTHON_NODE_TO_ENTITY_TYPE;
+      } else if (isJava) {
+        nodeTypeMapping = JAVA_NODE_TO_ENTITY_TYPE;
+      } else {
+        nodeTypeMapping = NODE_TO_ENTITY_TYPE;
+      }
       const entityType = nodeTypeMapping[node.type];
 
       // Handle Python decorated definitions
@@ -392,19 +414,30 @@ export class TreeSitterParser {
     language: SupportedLanguage
   ): CodeEntity | null {
     const isPython = language === "python";
+    const isJava = language === "java";
 
     // Get entity name (language-aware)
-    const name = isPython
-      ? this.extractPythonEntityName(node, entityType)
-      : this.extractEntityName(node, entityType);
+    let name: string | null;
+    if (isPython) {
+      name = this.extractPythonEntityName(node, entityType);
+    } else if (isJava) {
+      name = this.extractJavaEntityName(node, entityType);
+    } else {
+      name = this.extractEntityName(node, entityType);
+    }
     if (!name && !this.config.includeAnonymous) {
       return null;
     }
 
     // Build metadata (language-aware)
-    const metadata = isPython
-      ? this.extractPythonMetadata(node, entityType)
-      : this.extractMetadata(node, entityType);
+    let metadata: EntityMetadata;
+    if (isPython) {
+      metadata = this.extractPythonMetadata(node, entityType);
+    } else if (isJava) {
+      metadata = this.extractJavaMetadata(node, entityType);
+    } else {
+      metadata = this.extractMetadata(node, entityType);
+    }
 
     return {
       type: entityType,
@@ -1220,13 +1253,550 @@ export class TreeSitterParser {
     return null;
   }
 
+  // ==================== Java-Specific Methods ====================
+
+  /**
+   * Extract entity name for Java AST nodes.
+   */
+  private extractJavaEntityName(node: Node, entityType: EntityType): string | null {
+    // For Java classes, interfaces, enums - the name is in the "name" field
+    if (entityType === "class" || entityType === "interface" || entityType === "enum") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For Java methods/constructors - the name is in the "name" field
+    if (entityType === "method") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For Java fields (field_declaration) - extract from variable_declarator
+    if (entityType === "property") {
+      const declarator = this.findFirstChild(node, ["variable_declarator"]);
+      if (declarator) {
+        const nameNode = declarator.childForFieldName("name");
+        if (nameNode) {
+          return nameNode.text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a Java entity node.
+   */
+  private extractJavaMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract modifiers (public, private, protected, static, final, abstract)
+    const modifiers = this.extractJavaModifiers(node);
+    if (modifiers.isStatic) {
+      metadata.isStatic = true;
+    }
+    if (modifiers.isAbstract) {
+      metadata.isAbstract = true;
+    }
+
+    // Extract parameters for methods
+    if (entityType === "method") {
+      const params = this.extractJavaParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type
+      const returnType = this.extractJavaReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+    }
+
+    // Extract inheritance for classes
+    if (entityType === "class") {
+      const superclass = this.extractJavaSuperclass(node);
+      if (superclass) {
+        metadata.extends = superclass;
+      }
+
+      const interfaces = this.extractJavaInterfaces(node);
+      if (interfaces.length > 0) {
+        metadata.implements = interfaces;
+      }
+    }
+
+    // Extract interfaces for interface declarations (extends)
+    if (entityType === "interface") {
+      const extendedInterfaces = this.extractJavaExtendedInterfaces(node);
+      if (extendedInterfaces.length > 0) {
+        metadata.implements = extendedInterfaces;
+      }
+    }
+
+    // Extract type parameters (generics)
+    const typeParams = node.childForFieldName("type_parameters");
+    if (typeParams) {
+      metadata.typeParameters = this.extractJavaTypeParameters(typeParams);
+    }
+
+    // Extract Javadoc comment
+    if (this.config.extractDocumentation) {
+      const doc = this.extractJavaDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract Java modifiers from a node (public, private, static, final, abstract, etc.)
+   */
+  private extractJavaModifiers(node: Node): {
+    isPublic: boolean;
+    isPrivate: boolean;
+    isProtected: boolean;
+    isStatic: boolean;
+    isFinal: boolean;
+    isAbstract: boolean;
+  } {
+    const result = {
+      isPublic: false,
+      isPrivate: false,
+      isProtected: false,
+      isStatic: false,
+      isFinal: false,
+      isAbstract: false,
+    };
+
+    // Look for modifiers node
+    const modifiersNode = this.findFirstChild(node, ["modifiers"]);
+    if (modifiersNode) {
+      for (let i = 0; i < modifiersNode.childCount; i++) {
+        const child = modifiersNode.child(i);
+        if (!child) continue;
+        switch (child.text) {
+          case "public":
+            result.isPublic = true;
+            break;
+          case "private":
+            result.isPrivate = true;
+            break;
+          case "protected":
+            result.isProtected = true;
+            break;
+          case "static":
+            result.isStatic = true;
+            break;
+          case "final":
+            result.isFinal = true;
+            break;
+          case "abstract":
+            result.isAbstract = true;
+            break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Extract function parameters from Java AST.
+   */
+  private extractJavaParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      // Java parameter types: formal_parameter, spread_parameter (varargs)
+      if (child.type === "formal_parameter" || child.type === "spread_parameter") {
+        const param = this.extractJavaParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single Java parameter.
+   */
+  private extractJavaParameter(node: Node): ParameterInfo | null {
+    let name: string | null = null;
+    let type: string | undefined;
+    const hasDefault = false; // Java doesn't support default parameters
+    const isOptional = false;
+    let isRest = false;
+
+    if (node.type === "spread_parameter") {
+      // Varargs: Type... name
+      // tree-sitter-java structure: spread_parameter -> variable_declarator -> identifier
+      isRest = true;
+      const variableDeclarator = this.findFirstChild(node, ["variable_declarator"]);
+      if (variableDeclarator) {
+        const nameNode = variableDeclarator.childForFieldName("name");
+        if (nameNode) {
+          name = nameNode.text;
+        } else {
+          // Fallback: try to find an identifier directly
+          const idNode = this.findFirstChild(variableDeclarator, ["identifier"]);
+          name = idNode?.text ?? null;
+        }
+      }
+      // Type is the first type_identifier child
+      const typeNode = this.findFirstChild(node, ["type_identifier", "generic_type", "array_type"]);
+      if (typeNode) {
+        type = typeNode.text;
+      }
+    } else if (node.type === "formal_parameter") {
+      const nameNode = node.childForFieldName("name");
+      name = nameNode?.text ?? null;
+      const typeNode = node.childForFieldName("type");
+      if (typeNode) {
+        type = typeNode.text;
+      }
+    }
+
+    if (!name) {
+      return null;
+    }
+
+    return { name, type, hasDefault, isOptional, isRest };
+  }
+
+  /**
+   * Extract return type from Java method.
+   */
+  private extractJavaReturnType(node: Node): string | null {
+    const typeNode = node.childForFieldName("type");
+    if (typeNode) {
+      return typeNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract superclass from Java class declaration.
+   */
+  private extractJavaSuperclass(node: Node): string | null {
+    const superclassNode = node.childForFieldName("superclass");
+    if (superclassNode) {
+      // The superclass field contains the type directly
+      return superclassNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract implemented interfaces from Java class declaration.
+   */
+  private extractJavaInterfaces(node: Node): string[] {
+    const interfaces: string[] = [];
+    const interfacesNode = node.childForFieldName("interfaces");
+    if (interfacesNode) {
+      // Interfaces are in a type_list
+      for (let i = 0; i < interfacesNode.childCount; i++) {
+        const child = interfacesNode.child(i);
+        if (child && child.type !== ",") {
+          interfaces.push(child.text);
+        }
+      }
+    }
+    return interfaces;
+  }
+
+  /**
+   * Extract extended interfaces from Java interface declaration.
+   */
+  private extractJavaExtendedInterfaces(node: Node): string[] {
+    const interfaces: string[] = [];
+    // In Java, interface extends is captured similarly
+    const extendsNode = this.findFirstChild(node, ["extends_interfaces"]);
+    if (extendsNode) {
+      for (let i = 0; i < extendsNode.childCount; i++) {
+        const child = extendsNode.child(i);
+        if (child && child.type !== "," && child.type !== "extends") {
+          interfaces.push(child.text);
+        }
+      }
+    }
+    return interfaces;
+  }
+
+  /**
+   * Extract type parameters from Java generic declarations.
+   */
+  private extractJavaTypeParameters(node: Node): string[] {
+    const params: string[] = [];
+
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child?.type === "type_parameter") {
+        const nameNode = child.child(0);
+        if (nameNode) {
+          params.push(nameNode.text);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract Javadoc comment from preceding comment.
+   */
+  private extractJavaDocumentation(node: Node): string | null {
+    let prevSibling = node.previousSibling;
+    while (prevSibling) {
+      if (prevSibling.type === "block_comment") {
+        const text = prevSibling.text;
+        // Javadoc starts with /**
+        if (text.startsWith("/**")) {
+          return text;
+        }
+      }
+      // Skip whitespace/newlines but stop at other node types
+      if (prevSibling.type !== "line_comment" && prevSibling.type !== "block_comment") {
+        break;
+      }
+      prevSibling = prevSibling.previousSibling;
+    }
+    return null;
+  }
+
+  /**
+   * Extract imports from Java import declarations.
+   */
+  private extractJavaImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      if (node.type === "import_declaration") {
+        try {
+          const info = this.extractJavaImportInfo(node);
+          if (info) {
+            imports.push(info);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java import"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from a Java import declaration.
+   *
+   * Handles:
+   * - import java.util.List;
+   * - import java.util.*;
+   * - import static java.lang.Math.PI;
+   */
+  private extractJavaImportInfo(node: Node): ImportInfo | null {
+    // Check for static import
+    const isStatic = this.hasChildOfType(node, "static");
+
+    // The import path is in a scoped_identifier or identifier
+    const scopedId = this.findFirstChild(node, ["scoped_identifier"]);
+    const wildcardNode = this.findFirstChild(node, ["asterisk"]);
+
+    let source = "";
+    const importedNames: string[] = [];
+
+    if (scopedId) {
+      source = scopedId.text;
+    } else {
+      // Simple import like "import SomeClass;"
+      const id = this.findFirstChild(node, ["identifier"]);
+      if (id) {
+        source = id.text;
+      }
+    }
+
+    if (!source) {
+      return null;
+    }
+
+    // For wildcard imports (import java.util.*)
+    if (wildcardNode) {
+      importedNames.push("*");
+    } else {
+      // Extract the last part as the imported name
+      const parts = source.split(".");
+      const lastPart = parts[parts.length - 1];
+      if (lastPart) {
+        importedNames.push(lastPart);
+      }
+    }
+
+    return {
+      source,
+      isRelative: false, // Java imports are always absolute
+      importedNames,
+      isTypeOnly: !isStatic, // Regular imports are type imports in Java
+      isSideEffect: false,
+      line: node.startPosition.row + 1,
+    };
+  }
+
+  /**
+   * Extract function calls from Java AST.
+   */
+  private extractJavaCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a method
+      if (node.type === "method_declaration" || node.type === "constructor_declaration") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for method invocation
+      if (node.type === "method_invocation") {
+        try {
+          const callInfo = this.extractJavaCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java call"
+          );
+        }
+      }
+
+      // Check for object creation (new expressions)
+      if (node.type === "object_creation_expression") {
+        try {
+          const callInfo = this.extractJavaConstructorCall(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Java constructor call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a Java method invocation.
+   */
+  private extractJavaCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      return null;
+    }
+
+    const calledName = nameNode.text;
+
+    // Build expression including object if present
+    const objectNode = node.childForFieldName("object");
+    let calledExpression = calledName;
+    if (objectNode) {
+      calledExpression = `${objectNode.text}.${calledName}`;
+    }
+
+    return {
+      calledName,
+      calledExpression,
+      isAsync: false, // Java doesn't have async/await like JS
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract information from a Java constructor call (new expression).
+   */
+  private extractJavaConstructorCall(node: Node, callerName?: string): CallInfo | null {
+    const typeNode = node.childForFieldName("type");
+    if (!typeNode) {
+      return null;
+    }
+
+    const calledName = typeNode.text;
+
+    return {
+      calledName,
+      calledExpression: `new ${calledName}`,
+      isAsync: false,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
   /**
    * Extract imports from the parse tree.
    */
   private extractImports(root: Node, language: SupportedLanguage): ImportInfo[] {
-    // Use Python-specific import extraction for Python files
+    // Use language-specific import extraction
     if (language === "python") {
       return this.extractPythonImports(root);
+    }
+    if (language === "java") {
+      return this.extractJavaImports(root);
     }
 
     const imports: ImportInfo[] = [];
@@ -1581,9 +2151,12 @@ export class TreeSitterParser {
    * @returns Array of CallInfo objects
    */
   private extractCalls(root: Node, language: SupportedLanguage): CallInfo[] {
-    // Use Python-specific call extraction for Python files
+    // Use language-specific call extraction
     if (language === "python") {
       return this.extractPythonCalls(root);
+    }
+    if (language === "java") {
+      return this.extractJavaCalls(root);
     }
 
     const calls: CallInfo[] = [];

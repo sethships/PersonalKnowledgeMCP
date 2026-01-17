@@ -219,6 +219,7 @@ describe("LanguageLoader", () => {
           javascript: "/nonexistent/path.wasm",
           jsx: "/nonexistent/path.wasm",
           python: "/nonexistent/path.wasm",
+          java: "/nonexistent/path.wasm",
         },
       });
 
@@ -246,6 +247,7 @@ describe("LanguageLoader", () => {
           javascript: "/custom/javascript.wasm",
           jsx: "/custom/jsx.wasm",
           python: "/custom/python.wasm",
+          java: "/custom/java.wasm",
         },
       };
 

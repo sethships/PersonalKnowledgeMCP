@@ -39,9 +39,13 @@ describe("file-scanner utilities", () => {
       expect(SUPPORTED_EXTENSIONS.has(".pyi")).toBe(true);
     });
 
-    test("has exactly 7 extensions", () => {
-      // 4 JS/TS extensions + 3 Python extensions
-      expect(SUPPORTED_EXTENSIONS.size).toBe(7);
+    test("contains Java extensions", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".java")).toBe(true);
+    });
+
+    test("has exactly 8 extensions", () => {
+      // 4 JS/TS extensions + 3 Python extensions + 1 Java extension
+      expect(SUPPORTED_EXTENSIONS.size).toBe(8);
     });
   });
 
