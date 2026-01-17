@@ -396,24 +396,35 @@ describeIntegration("SearchService Integration Tests", () => {
     // Generate embeddings and prepare documents
     const embeddings = await embeddingProvider.generateEmbeddings(documents.map((d) => d.content));
 
-    const documentInputs: DocumentInput[] = documents.map((doc, index) => ({
-      id: `${repoName}:${doc.filePath}:${doc.chunkIndex}`,
-      content: doc.content,
-      embedding: embeddings[index]!,
-      metadata: {
-        file_path: doc.filePath,
-        repository: repoName,
-        chunk_index: doc.chunkIndex,
-        total_chunks: 1,
-        chunk_start_line: 1,
-        chunk_end_line: 10,
-        file_extension: path.extname(doc.filePath),
-        file_size_bytes: doc.content.length,
-        content_hash: `hash_${index}`,
-        indexed_at: new Date().toISOString(),
-        file_modified_at: new Date().toISOString(),
-      },
-    }));
+    const documentInputs: DocumentInput[] = documents.map((doc, index) => {
+      const ext = path.extname(doc.filePath);
+      // Simple language detection for tests
+      const language =
+        ext === ".ts" || ext === ".tsx"
+          ? "typescript"
+          : ext === ".js" || ext === ".jsx"
+            ? "javascript"
+            : "unknown";
+      return {
+        id: `${repoName}:${doc.filePath}:${doc.chunkIndex}`,
+        content: doc.content,
+        embedding: embeddings[index]!,
+        metadata: {
+          file_path: doc.filePath,
+          repository: repoName,
+          chunk_index: doc.chunkIndex,
+          total_chunks: 1,
+          chunk_start_line: 1,
+          chunk_end_line: 10,
+          file_extension: ext,
+          language,
+          file_size_bytes: doc.content.length,
+          content_hash: `hash_${index}`,
+          indexed_at: new Date().toISOString(),
+          file_modified_at: new Date().toISOString(),
+        },
+      };
+    });
 
     // Add documents to ChromaDB
     await storageClient.addDocuments(collectionName, documentInputs);

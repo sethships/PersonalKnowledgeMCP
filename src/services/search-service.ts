@@ -181,7 +181,8 @@ export class SearchServiceImpl implements SearchService {
           validated.query,
           validated.limit ?? 10,
           validated.threshold ?? 0.7,
-          warnings
+          warnings,
+          validated.language
         );
 
         if (result) {
@@ -431,6 +432,7 @@ export class SearchServiceImpl implements SearchService {
    * @param limit - Maximum results per search
    * @param threshold - Minimum similarity threshold
    * @param warnings - Array to collect warnings
+   * @param language - Optional language filter
    * @returns Search results or null if provider unavailable
    */
   private async searchProviderGroup(
@@ -438,7 +440,8 @@ export class SearchServiceImpl implements SearchService {
     queryText: string,
     limit: number,
     threshold: number,
-    warnings: SearchWarning[]
+    warnings: SearchWarning[],
+    language?: string
   ): Promise<ProviderSearchResult | null> {
     try {
       // Get or create provider for this group
@@ -469,11 +472,13 @@ export class SearchServiceImpl implements SearchService {
       // Execute vector similarity search
       const searchStart = performance.now();
       const collections = group.repositories.map((r) => r.collectionName);
+      const where = language ? { language } : undefined;
       const results = await this.storageClient.similaritySearch({
         embedding,
         collections,
         limit,
         threshold,
+        where,
       });
       const searchTime = performance.now() - searchStart;
 

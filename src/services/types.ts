@@ -20,6 +20,9 @@ export interface SearchQuery {
 
   /** Optional repository name filter. If omitted, searches all ready repositories */
   repository?: string;
+
+  /** Optional programming language filter (e.g., "typescript", "javascript") */
+  language?: string;
 }
 
 /**

@@ -550,8 +550,14 @@ function createMockRepo(name: string, status: "ready" | "indexing" | "error"): R
 function createMockResult(
   filePath: string,
   similarity: number,
-  content?: string
+  content?: string,
+  language?: string
 ): SimilarityResult {
+  // Extract extension and infer language if not provided
+  const ext = "." + filePath.split(".").pop();
+  const inferredLanguage =
+    language ?? (ext === ".ts" ? "typescript" : ext === ".js" ? "javascript" : "unknown");
+
   return {
     id: `test-repo:${filePath}:0`,
     content: content || "This is test content for the search result",
@@ -562,7 +568,8 @@ function createMockResult(
       total_chunks: 1,
       chunk_start_line: 1,
       chunk_end_line: 10,
-      file_extension: ".ts",
+      file_extension: ext,
+      language: inferredLanguage,
       file_size_bytes: 1024,
       content_hash: "abc123",
       indexed_at: new Date().toISOString(),

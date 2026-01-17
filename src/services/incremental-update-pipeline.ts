@@ -754,6 +754,7 @@ export class IncrementalUpdatePipeline {
           chunk_start_line: chunk.startLine,
           chunk_end_line: chunk.endLine,
           file_extension: chunk.metadata.extension,
+          language: chunk.metadata.language,
           file_size_bytes: chunk.metadata.fileSizeBytes,
           content_hash: chunk.metadata.contentHash,
           indexed_at: new Date().toISOString(),

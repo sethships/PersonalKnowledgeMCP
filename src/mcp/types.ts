@@ -90,6 +90,9 @@ export interface SemanticSearchArgs {
 
   /** Optional repository name filter */
   repository?: string;
+
+  /** Optional programming language filter */
+  language?: string;
 }
 
 /**
