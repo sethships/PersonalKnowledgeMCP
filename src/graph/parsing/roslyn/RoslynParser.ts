@@ -146,7 +146,7 @@ export class RoslynParser {
   /**
    * Resolve the path to the Roslyn analyzer project.
    */
-  private resolveAnalyzerPath(): string {
+  private async resolveAnalyzerPath(): Promise<string> {
     if (this.analyzerPath) {
       return this.analyzerPath;
     }
@@ -162,7 +162,8 @@ export class RoslynParser {
     for (const p of possiblePaths) {
       try {
         const projectFile = path.join(p, "RoslynAnalyzer.csproj");
-        if (Bun.file(projectFile).size) {
+        // Use exists() for safe async file detection (Bun.file().size may be a Promise)
+        if (await Bun.file(projectFile).exists()) {
           this.analyzerPath = p;
           return p;
         }
@@ -180,7 +181,7 @@ export class RoslynParser {
    * Invoke Roslyn analyzer for a single file.
    */
   private async invokeRoslyn(content: string, filePath: string): Promise<ParseResult> {
-    const analyzerPath = this.resolveAnalyzerPath();
+    const analyzerPath = await this.resolveAnalyzerPath();
 
     const proc = spawn({
       cmd: ["dotnet", "run", "--project", analyzerPath, "--", filePath],
@@ -189,9 +190,10 @@ export class RoslynParser {
       stderr: "pipe",
     });
 
-    // Set up timeout
+    // Set up timeout with proper cleanup to prevent memory leaks
+    let timeoutId: Timer | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         proc.kill();
         reject(new Error(`Roslyn parsing timed out after ${this.config.parseTimeoutMs}ms`));
       }, this.config.parseTimeoutMs);
@@ -218,6 +220,11 @@ export class RoslynParser {
         throw new Error(`Failed to parse Roslyn output: ${error.message}`);
       }
       throw error;
+    } finally {
+      // Clear timeout to prevent memory leak
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
@@ -227,7 +234,7 @@ export class RoslynParser {
   private async invokeRoslynBatch(
     files: Array<{ content: string; filePath: string }>
   ): Promise<ParseResult[]> {
-    const analyzerPath = this.resolveAnalyzerPath();
+    const analyzerPath = await this.resolveAnalyzerPath();
 
     const input = JSON.stringify(
       files.map((f) => ({
@@ -243,29 +250,37 @@ export class RoslynParser {
       stderr: "pipe",
     });
 
-    // Longer timeout for batch processing
+    // Longer timeout for batch processing with proper cleanup to prevent memory leaks
     const batchTimeout = this.config.parseTimeoutMs * Math.min(files.length, 10);
+    let timeoutId: Timer | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         proc.kill();
         reject(new Error(`Batch parsing timed out after ${batchTimeout}ms`));
       }, batchTimeout);
     });
 
-    const exitCode = await Promise.race([proc.exited, timeoutPromise]);
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    try {
+      const exitCode = await Promise.race([proc.exited, timeoutPromise]);
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
 
-    if (exitCode !== 0) {
-      throw new Error(`Roslyn batch analyzer failed (exit ${exitCode}): ${stderr.trim()}`);
+      if (exitCode !== 0) {
+        throw new Error(`Roslyn batch analyzer failed (exit ${exitCode}): ${stderr.trim()}`);
+      }
+
+      const results = JSON.parse(stdout) as ParseResult[];
+
+      // Ensure language is set correctly for all results
+      return results.map((r) => ({
+        ...r,
+        language: "csharp" as const,
+      }));
+    } finally {
+      // Clear timeout to prevent memory leak
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
-
-    const results = JSON.parse(stdout) as ParseResult[];
-
-    // Ensure language is set correctly for all results
-    return results.map((r) => ({
-      ...r,
-      language: "csharp" as const,
-    }));
   }
 }
