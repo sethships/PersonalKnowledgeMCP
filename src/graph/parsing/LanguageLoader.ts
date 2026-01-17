@@ -95,6 +95,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       javascript: resolveWasmPath("tree-sitter-javascript/tree-sitter-javascript.wasm"),
       jsx: resolveWasmPath("tree-sitter-javascript/tree-sitter-javascript.wasm"),
       python: resolveWasmPath("tree-sitter-python/tree-sitter-python.wasm"),
+      go: resolveWasmPath("tree-sitter-go/tree-sitter-go.wasm"),
     },
   };
 }
@@ -362,7 +363,14 @@ export class LanguageLoader {
    */
   async preloadAllLanguages(): Promise<Map<SupportedLanguage, boolean>> {
     const results = new Map<SupportedLanguage, boolean>();
-    const languages: SupportedLanguage[] = ["typescript", "tsx", "javascript", "jsx", "python"];
+    const languages: SupportedLanguage[] = [
+      "typescript",
+      "tsx",
+      "javascript",
+      "jsx",
+      "python",
+      "go",
+    ];
 
     await Promise.all(
       languages.map(async (lang) => {

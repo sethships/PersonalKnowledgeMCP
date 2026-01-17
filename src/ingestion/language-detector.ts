@@ -21,7 +21,7 @@ import * as path from "path";
  * // Use in semantic search: { language: "typescript" }
  * ```
  */
-export type ProgrammingLanguage = "typescript" | "tsx" | "javascript" | "jsx" | "unknown";
+export type ProgrammingLanguage = "typescript" | "tsx" | "javascript" | "jsx" | "go" | "unknown";
 
 /**
  * Valid language values for MCP tool enum.
@@ -41,6 +41,7 @@ export const SUPPORTED_LANGUAGES: readonly Exclude<ProgrammingLanguage, "unknown
   "tsx",
   "javascript",
   "jsx",
+  "go",
 ] as const;
 
 /**
@@ -75,6 +76,8 @@ export function detectLanguage(filePath: string): ProgrammingLanguage {
       return "javascript";
     case ".jsx":
       return "jsx";
+    case ".go":
+      return "go";
     default:
       return "unknown";
   }
