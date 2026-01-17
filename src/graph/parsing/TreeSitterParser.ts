@@ -1,5 +1,5 @@
 /**
- * Tree-sitter based AST parser for multiple languages (TypeScript, JavaScript, Python, Java, Go).
+ * Tree-sitter based AST parser for TypeScript and JavaScript.
  *
  * Parses source files and extracts code entities (functions, classes,
  * interfaces) and imports for knowledge graph population.
@@ -73,18 +73,6 @@ const JAVA_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   method_declaration: "method",
   constructor_declaration: "method",
   field_declaration: "property",
-};
-
-/**
- * Node type to entity type mapping for Go.
- * Go uses different AST node types than other languages.
- * Note: Go has package-level functions (not methods on types) as first-class entities.
- * Structs and interfaces are type declarations in Go.
- */
-const GO_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
-  function_declaration: "function",
-  method_declaration: "method",
-  type_declaration: "class", // structs and interfaces become "class" type
 };
 
 /**
@@ -350,7 +338,6 @@ export class TreeSitterParser {
     const entities: CodeEntity[] = [];
     const isPython = language === "python";
     const isJava = language === "java";
-    const isGo = language === "go";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
@@ -359,8 +346,6 @@ export class TreeSitterParser {
         nodeTypeMapping = PYTHON_NODE_TO_ENTITY_TYPE;
       } else if (isJava) {
         nodeTypeMapping = JAVA_NODE_TO_ENTITY_TYPE;
-      } else if (isGo) {
-        nodeTypeMapping = GO_NODE_TO_ENTITY_TYPE;
       } else {
         nodeTypeMapping = NODE_TO_ENTITY_TYPE;
       }
@@ -430,7 +415,6 @@ export class TreeSitterParser {
   ): CodeEntity | null {
     const isPython = language === "python";
     const isJava = language === "java";
-    const isGo = language === "go";
 
     // Get entity name (language-aware)
     let name: string | null;
@@ -438,20 +422,11 @@ export class TreeSitterParser {
       name = this.extractPythonEntityName(node, entityType);
     } else if (isJava) {
       name = this.extractJavaEntityName(node, entityType);
-    } else if (isGo) {
-      name = this.extractGoEntityName(node, entityType);
     } else {
       name = this.extractEntityName(node, entityType);
     }
     if (!name && !this.config.includeAnonymous) {
       return null;
-    }
-
-    // In Go, exported identifiers start with uppercase letter
-    // Override the isExported flag for Go based on naming convention
-    let goExported = isExported;
-    if (isGo && name) {
-      goExported = name.charAt(0) === name.charAt(0).toUpperCase() && /[A-Z]/.test(name.charAt(0));
     }
 
     // Build metadata (language-aware)
@@ -460,8 +435,6 @@ export class TreeSitterParser {
       metadata = this.extractPythonMetadata(node, entityType);
     } else if (isJava) {
       metadata = this.extractJavaMetadata(node, entityType);
-    } else if (isGo) {
-      metadata = this.extractGoMetadata(node, entityType);
     } else {
       metadata = this.extractMetadata(node, entityType);
     }
@@ -474,7 +447,7 @@ export class TreeSitterParser {
       lineEnd: node.endPosition.row + 1,
       columnStart: node.startPosition.column,
       columnEnd: node.endPosition.column,
-      isExported: isGo ? goExported : isExported,
+      isExported,
       metadata,
     };
   }
@@ -1814,508 +1787,6 @@ export class TreeSitterParser {
     };
   }
 
-  // ==================== Go-Specific Methods ====================
-
-  /**
-   * Extract entity name for Go AST nodes.
-   */
-  private extractGoEntityName(node: Node, entityType: EntityType): string | null {
-    // For Go functions and methods, the name is in the "name" field
-    if (entityType === "function" || entityType === "method") {
-      const nameNode = node.childForFieldName("name");
-      if (nameNode) {
-        return nameNode.text;
-      }
-    }
-
-    // For Go type declarations (struct, interface)
-    if (entityType === "class") {
-      // type_declaration contains type_spec children
-      // type_spec has a name field
-      const typeSpec = this.findFirstChild(node, ["type_spec"]);
-      if (typeSpec) {
-        const nameNode = typeSpec.childForFieldName("name");
-        if (nameNode) {
-          return nameNode.text;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Extract metadata from a Go entity node.
-   */
-  private extractGoMetadata(node: Node, entityType: EntityType): EntityMetadata {
-    const metadata: EntityMetadata = {};
-
-    // Extract parameters for functions and methods
-    if (entityType === "function" || entityType === "method") {
-      const params = this.extractGoParameters(node);
-      if (params.length > 0) {
-        metadata.parameters = params;
-      }
-
-      // Extract return type
-      const returnType = this.extractGoReturnType(node);
-      if (returnType) {
-        metadata.returnType = returnType;
-      }
-    }
-
-    // Extract receiver type for methods (Go's version of "this")
-    if (entityType === "method") {
-      const receiver = this.extractGoReceiver(node);
-      if (receiver) {
-        // Store receiver info in extends field for now
-        // This indicates which type the method belongs to
-        metadata.extends = receiver;
-      }
-    }
-
-    // Extract Go doc comments
-    if (this.config.extractDocumentation) {
-      const doc = this.extractGoDocumentation(node);
-      if (doc) {
-        metadata.documentation = doc;
-      }
-    }
-
-    return metadata;
-  }
-
-  /**
-   * Extract function parameters from Go AST.
-   */
-  private extractGoParameters(node: Node): ParameterInfo[] {
-    const params: ParameterInfo[] = [];
-
-    const paramsNode = node.childForFieldName("parameters");
-    if (!paramsNode) {
-      return params;
-    }
-
-    for (let i = 0; i < paramsNode.childCount; i++) {
-      const child = paramsNode.child(i);
-      if (!child) continue;
-
-      // Go parameter_declaration contains identifier(s) and type
-      if (child.type === "parameter_declaration") {
-        const extractedParams = this.extractGoParameterDeclaration(child);
-        params.push(...extractedParams);
-      } else if (child.type === "variadic_parameter_declaration") {
-        // Variadic parameter: ...T
-        const param = this.extractGoVariadicParameter(child);
-        if (param) {
-          params.push(param);
-        }
-      }
-    }
-
-    return params;
-  }
-
-  /**
-   * Extract parameters from a Go parameter_declaration node.
-   * In Go, multiple parameters can share a type: (a, b int)
-   */
-  private extractGoParameterDeclaration(node: Node): ParameterInfo[] {
-    const params: ParameterInfo[] = [];
-    const names: string[] = [];
-    let type: string | undefined;
-
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
-
-      if (child.type === "identifier") {
-        names.push(child.text);
-      } else if (child.type !== "," && child.type !== "(" && child.type !== ")") {
-        // This is likely the type
-        type = child.text;
-      }
-    }
-
-    // Create parameter info for each name
-    for (const name of names) {
-      params.push({
-        name,
-        type,
-        hasDefault: false, // Go doesn't support default parameters
-        isOptional: false,
-        isRest: false,
-      });
-    }
-
-    // Handle case where there's just a type and no names (anonymous parameter)
-    if (names.length === 0 && type) {
-      params.push({
-        name: "_",
-        type,
-        hasDefault: false,
-        isOptional: false,
-        isRest: false,
-      });
-    }
-
-    return params;
-  }
-
-  /**
-   * Extract a Go variadic parameter (...args).
-   */
-  private extractGoVariadicParameter(node: Node): ParameterInfo | null {
-    let name: string | null = null;
-    let type: string | undefined;
-
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
-
-      if (child.type === "identifier") {
-        name = child.text;
-      } else if (child.type !== "...") {
-        // This is the type
-        type = child.text;
-      }
-    }
-
-    if (!name) {
-      return null;
-    }
-
-    return {
-      name,
-      type: type ? `...${type}` : undefined,
-      hasDefault: false,
-      isOptional: false,
-      isRest: true,
-    };
-  }
-
-  /**
-   * Extract return type from Go function.
-   */
-  private extractGoReturnType(node: Node): string | null {
-    const resultNode = node.childForFieldName("result");
-    if (resultNode) {
-      return resultNode.text;
-    }
-    return null;
-  }
-
-  /**
-   * Extract receiver type from Go method.
-   * Methods in Go have receivers: func (r *Receiver) Method()
-   */
-  private extractGoReceiver(node: Node): string | null {
-    const receiverNode = node.childForFieldName("receiver");
-    if (!receiverNode) {
-      return null;
-    }
-
-    // Find the type in the receiver
-    // It could be a simple type or pointer type
-    const paramDecl = this.findFirstChild(receiverNode, ["parameter_declaration"]);
-    if (paramDecl) {
-      // Look for type (skip identifier which is the receiver variable name)
-      for (let i = 0; i < paramDecl.childCount; i++) {
-        const child = paramDecl.child(i);
-        if (
-          child &&
-          child.type !== "identifier" &&
-          child.type !== "," &&
-          child.type !== "(" &&
-          child.type !== ")"
-        ) {
-          return child.text;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Extract Go doc comments (comments preceding declarations).
-   */
-  private extractGoDocumentation(node: Node): string | null {
-    // In Go, documentation comments are line comments starting with //
-    // directly preceding the declaration
-    const comments: string[] = [];
-    let prevSibling = node.previousSibling;
-
-    while (prevSibling) {
-      if (prevSibling.type === "comment") {
-        const text = prevSibling.text;
-        // Only include // comments (not /* */)
-        if (text.startsWith("//")) {
-          comments.unshift(text);
-        } else {
-          break;
-        }
-      } else if (prevSibling.type === "\n" || prevSibling.type === "newline") {
-        // Allow newlines between comments and declaration
-      } else {
-        // Stop at any other node type
-        break;
-      }
-      prevSibling = prevSibling.previousSibling;
-    }
-
-    if (comments.length > 0) {
-      return comments.join("\n");
-    }
-
-    return null;
-  }
-
-  /**
-   * Extract imports from Go import declarations.
-   */
-  private extractGoImports(root: Node): ImportInfo[] {
-    const imports: ImportInfo[] = [];
-
-    const processNode = (node: Node): void => {
-      if (node.type === "import_declaration") {
-        try {
-          const infos = this.extractGoImportInfo(node);
-          imports.push(...infos);
-        } catch (error) {
-          this.logger.warn(
-            {
-              err: error,
-              line: node.startPosition.row + 1,
-            },
-            "Failed to extract Go import"
-          );
-        }
-      }
-
-      for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i);
-        if (child) {
-          processNode(child);
-        }
-      }
-    };
-
-    processNode(root);
-    return imports;
-  }
-
-  /**
-   * Extract information from Go import declarations.
-   *
-   * Handles both single and grouped imports:
-   * - import "fmt"
-   * - import alias "path/to/package"
-   * - import (
-   *     "fmt"
-   *     alias "path/to/package"
-   *   )
-   */
-  private extractGoImportInfo(node: Node): ImportInfo[] {
-    const infos: ImportInfo[] = [];
-
-    // Look for import_spec (single import) or import_spec_list (grouped imports)
-    const processImportSpec = (spec: Node): void => {
-      let source = "";
-      let alias: string | undefined;
-
-      // Check for alias (name field)
-      const nameNode = spec.childForFieldName("name");
-      if (nameNode) {
-        alias = nameNode.text;
-      }
-
-      // Get the path (interpreted_string_literal)
-      const pathNode = spec.childForFieldName("path");
-      if (pathNode) {
-        // Remove quotes from the path
-        source = pathNode.text.replace(/^"|"$/g, "");
-      }
-
-      if (source) {
-        const info: ImportInfo = {
-          source,
-          isRelative: source.startsWith("."),
-          importedNames: [source.split("/").pop() ?? source],
-          isTypeOnly: false,
-          isSideEffect: alias === "_", // Blank import for side effects
-          line: spec.startPosition.row + 1,
-        };
-
-        if (alias && alias !== "_" && alias !== ".") {
-          info.aliases = { [source.split("/").pop() ?? source]: alias };
-        }
-
-        infos.push(info);
-      }
-    };
-
-    // Process children to find import_spec nodes
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (!child) continue;
-
-      if (child.type === "import_spec") {
-        processImportSpec(child);
-      } else if (child.type === "import_spec_list") {
-        // Grouped imports
-        for (let j = 0; j < child.childCount; j++) {
-          const spec = child.child(j);
-          if (spec?.type === "import_spec") {
-            processImportSpec(spec);
-          }
-        }
-      }
-    }
-
-    return infos;
-  }
-
-  /**
-   * Extract function calls from Go AST.
-   */
-  private extractGoCalls(root: Node): CallInfo[] {
-    const calls: CallInfo[] = [];
-
-    const processNode = (node: Node, callerName?: string): void => {
-      let currentCaller = callerName;
-
-      // Update caller context when entering a function or method
-      if (node.type === "function_declaration" || node.type === "method_declaration") {
-        const nameNode = node.childForFieldName("name");
-        if (nameNode) {
-          currentCaller = nameNode.text;
-        }
-      }
-
-      // Check for call expression in Go
-      if (node.type === "call_expression") {
-        try {
-          const callInfo = this.extractGoCallInfo(node, currentCaller);
-          if (callInfo) {
-            calls.push(callInfo);
-          }
-        } catch (error) {
-          this.logger.warn(
-            {
-              err: error,
-              line: node.startPosition.row + 1,
-            },
-            "Failed to extract Go call"
-          );
-        }
-      }
-
-      // Recurse into children
-      for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i);
-        if (child) {
-          processNode(child, currentCaller);
-        }
-      }
-    };
-
-    processNode(root);
-    return calls;
-  }
-
-  /**
-   * Extract information from a Go call expression.
-   */
-  private extractGoCallInfo(node: Node, callerName?: string): CallInfo | null {
-    const functionNode = node.childForFieldName("function");
-    if (!functionNode) {
-      return null;
-    }
-
-    const callTarget = this.extractGoCallTarget(functionNode);
-    if (!callTarget) {
-      return null;
-    }
-
-    return {
-      calledName: callTarget.name,
-      calledExpression: callTarget.expression,
-      isAsync: false, // Go doesn't have async/await syntax
-      line: node.startPosition.row + 1,
-      column: node.startPosition.column,
-      callerName,
-    };
-  }
-
-  /**
-   * Extract call target from Go call expression.
-   */
-  private extractGoCallTarget(node: Node): { name: string; expression: string } | null {
-    // Simple identifier: foo()
-    if (node.type === "identifier") {
-      return {
-        name: node.text,
-        expression: node.text,
-      };
-    }
-
-    // Selector expression: pkg.Function() or obj.Method()
-    if (node.type === "selector_expression") {
-      const fieldNode = node.childForFieldName("field");
-      if (fieldNode) {
-        return {
-          name: fieldNode.text,
-          expression: node.text,
-        };
-      }
-    }
-
-    // Parenthesized expression
-    if (node.type === "parenthesized_expression") {
-      for (let i = 0; i < node.childCount; i++) {
-        const child = node.child(i);
-        if (child && child.type !== "(" && child.type !== ")") {
-          return this.extractGoCallTarget(child);
-        }
-      }
-    }
-
-    // Call expression (chained): foo().bar()
-    if (node.type === "call_expression") {
-      return {
-        name: "[chained]",
-        expression: node.text,
-      };
-    }
-
-    // Type assertion: x.(Type)
-    if (node.type === "type_assertion_expression") {
-      return {
-        name: "[type_assertion]",
-        expression: node.text,
-      };
-    }
-
-    // Index expression: arr[i]()
-    if (node.type === "index_expression") {
-      return {
-        name: "[index]",
-        expression: node.text,
-      };
-    }
-
-    // Fallback
-    if (node.text) {
-      return {
-        name: node.text,
-        expression: node.text,
-      };
-    }
-
-    return null;
-  }
-
   /**
    * Extract imports from the parse tree.
    */
@@ -2326,9 +1797,6 @@ export class TreeSitterParser {
     }
     if (language === "java") {
       return this.extractJavaImports(root);
-    }
-    if (language === "go") {
-      return this.extractGoImports(root);
     }
 
     const imports: ImportInfo[] = [];
@@ -2471,12 +1939,6 @@ export class TreeSitterParser {
     // Python doesn't have explicit export statements like JavaScript/TypeScript
     // All module-level definitions are implicitly exported
     if (language === "python") {
-      return [];
-    }
-
-    // Go doesn't have explicit export statements
-    // Exports are determined by capitalization (handled in extractEntity)
-    if (language === "go") {
       return [];
     }
 
@@ -2695,9 +2157,6 @@ export class TreeSitterParser {
     }
     if (language === "java") {
       return this.extractJavaCalls(root);
-    }
-    if (language === "go") {
-      return this.extractGoCalls(root);
     }
 
     const calls: CallInfo[] = [];

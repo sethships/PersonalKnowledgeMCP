@@ -10,18 +10,11 @@
 /**
  * Supported languages for AST parsing.
  *
- * Supports TypeScript ecosystem languages, Python, Java, and Go.
+ * Supports TypeScript ecosystem languages, Python, and Java.
  * JavaScript is handled by both TypeScript and JavaScript grammars
  * depending on the file extension.
  */
-export type SupportedLanguage =
-  | "typescript"
-  | "tsx"
-  | "javascript"
-  | "jsx"
-  | "python"
-  | "java"
-  | "go";
+export type SupportedLanguage = "typescript" | "tsx" | "javascript" | "jsx" | "python" | "java";
 
 /**
  * Types of code entities that can be extracted from source files.
@@ -344,7 +337,6 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".pyw": "python",
   ".pyi": "python",
   ".java": "java",
-  ".go": "go",
 };
 
 /**
