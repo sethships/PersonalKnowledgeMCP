@@ -230,6 +230,7 @@ describe("LanguageLoader", () => {
           python: "/nonexistent/path.wasm",
           java: "/nonexistent/path.wasm",
           go: "/nonexistent/path.wasm",
+          rust: "/nonexistent/path.wasm",
         },
       });
 
@@ -259,6 +260,7 @@ describe("LanguageLoader", () => {
           python: "/custom/python.wasm",
           java: "/custom/java.wasm",
           go: "/custom/go.wasm",
+          rust: "/custom/rust.wasm",
         },
       };
 
@@ -277,6 +279,16 @@ describe("LanguageLoader", () => {
 
       expect(lang).toBeDefined();
       expect(loader.isLanguageLoaded("go")).toBe(true);
+    });
+  });
+
+  describe("Rust language support", () => {
+    it("should load Rust language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("rust");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("rust")).toBe(true);
     });
   });
 });

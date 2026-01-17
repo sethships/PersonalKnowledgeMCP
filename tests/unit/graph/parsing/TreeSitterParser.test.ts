@@ -1426,4 +1426,312 @@ export function documented(): void {}
       expect(TreeSitterParser.getLanguageFromExtension(".go")).toBe("go");
     });
   });
+
+  // =====================================================
+  // Rust Language Support Tests
+  // =====================================================
+
+  describe("parseFile - Rust Functions", () => {
+    it("should parse simple Rust functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("rust");
+      expect(result.errors).toHaveLength(0);
+
+      // Check entities were extracted
+      expect(result.entities.length).toBeGreaterThan(0);
+
+      // Find simple_function (exported - has pub)
+      const simpleFunc = result.entities.find((e) => e.name === "simple_function");
+      expect(simpleFunc).toBeDefined();
+      expect(simpleFunc?.type).toBe("function");
+      expect(simpleFunc?.isExported).toBe(true);
+
+      // Find private_helper (not exported - no pub)
+      const privateFunc = result.entities.find((e) => e.name === "private_helper");
+      expect(privateFunc).toBeDefined();
+      expect(privateFunc?.type).toBe("function");
+      expect(privateFunc?.isExported).toBe(false);
+    });
+
+    it("should parse Rust functions with parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find function_with_params
+      const paramFunc = result.entities.find((e) => e.name === "function_with_params");
+      expect(paramFunc).toBeDefined();
+      expect(paramFunc?.metadata?.parameters).toBeDefined();
+      expect(paramFunc?.metadata?.parameters?.length).toBe(2);
+      // Check parameters
+      expect(paramFunc?.metadata?.parameters?.[0]?.name).toBe("name");
+      expect(paramFunc?.metadata?.parameters?.[0]?.type).toBe("&str");
+      expect(paramFunc?.metadata?.parameters?.[1]?.name).toBe("count");
+      expect(paramFunc?.metadata?.parameters?.[1]?.type).toBe("i32");
+    });
+
+    it("should parse async functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find async_function
+      const asyncFunc = result.entities.find((e) => e.name === "async_function");
+      expect(asyncFunc).toBeDefined();
+      expect(asyncFunc?.metadata?.isAsync).toBe(true);
+    });
+
+    it("should parse const functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find const_function
+      const constFunc = result.entities.find((e) => e.name === "const_function");
+      expect(constFunc).toBeDefined();
+      expect(constFunc?.type).toBe("function");
+    });
+
+    it("should extract Rust doc comments", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find simple_function and check documentation
+      const simpleFunc = result.entities.find((e) => e.name === "simple_function");
+      expect(simpleFunc?.metadata?.documentation).toBeDefined();
+      expect(simpleFunc?.metadata?.documentation).toContain("simple public function");
+    });
+  });
+
+  describe("parseFile - Rust Types (Structs, Traits, Enums)", () => {
+    it("should parse Rust structs as class type", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find Point struct
+      const point = result.entities.find((e) => e.name === "Point" && e.type === "class");
+      expect(point).toBeDefined();
+      expect(point?.isExported).toBe(true);
+
+      // Find Dog struct
+      const dog = result.entities.find((e) => e.name === "Dog" && e.type === "class");
+      expect(dog).toBeDefined();
+    });
+
+    it("should parse Rust traits as interface type", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find Animal trait
+      const animal = result.entities.find((e) => e.name === "Animal");
+      expect(animal).toBeDefined();
+      expect(animal?.type).toBe("interface");
+      expect(animal?.isExported).toBe(true);
+    });
+
+    it("should parse Rust enums", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find Color enum
+      const color = result.entities.find((e) => e.name === "Color");
+      expect(color).toBeDefined();
+      expect(color?.type).toBe("enum");
+      expect(color?.isExported).toBe(true);
+    });
+
+    it("should parse Rust type aliases", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find Result type alias
+      const resultType = result.entities.find(
+        (e) => e.name === "Result" && e.type === "type_alias"
+      );
+      expect(resultType).toBeDefined();
+      expect(resultType?.isExported).toBe(true);
+    });
+
+    it("should parse generic structs with type parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find Pair generic struct
+      const pair = result.entities.find((e) => e.name === "Pair" && e.type === "class");
+      expect(pair).toBeDefined();
+      expect(pair?.metadata?.typeParameters).toBeDefined();
+      expect(pair?.metadata?.typeParameters?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("parseFile - Rust Variables (const/static)", () => {
+    it("should parse const items as variables", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find MAX_SIZE const
+      const maxSize = result.entities.find((e) => e.name === "MAX_SIZE");
+      expect(maxSize).toBeDefined();
+      expect(maxSize?.type).toBe("variable");
+      expect(maxSize?.isExported).toBe(true);
+
+      // Find INTERNAL_BUFFER_SIZE (private const)
+      const internalBuffer = result.entities.find((e) => e.name === "INTERNAL_BUFFER_SIZE");
+      expect(internalBuffer).toBeDefined();
+      expect(internalBuffer?.type).toBe("variable");
+      expect(internalBuffer?.isExported).toBe(false);
+    });
+
+    it("should parse static items as variables", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find GLOBAL_COUNTER static
+      const globalCounter = result.entities.find((e) => e.name === "GLOBAL_COUNTER");
+      expect(globalCounter).toBeDefined();
+      expect(globalCounter?.type).toBe("variable");
+      expect(globalCounter?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - Rust Imports", () => {
+    it("should extract various Rust use declarations", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Standard library import: std::collections::HashMap
+      const hashMapImport = result.imports.find((i) => i.source.includes("HashMap"));
+      expect(hashMapImport).toBeDefined();
+
+      // Find aliased import: std::path::PathBuf as Path
+      const aliasedImport = result.imports.find((i) => i.source.includes("PathBuf"));
+      expect(aliasedImport).toBeDefined();
+    });
+
+    it("should identify relative imports (crate, self, super)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find crate:: import
+      const crateImport = result.imports.find((i) => i.source.startsWith("crate"));
+      expect(crateImport).toBeDefined();
+      expect(crateImport?.isRelative).toBe(true);
+
+      // Find self:: import
+      const selfImport = result.imports.find((i) => i.source.startsWith("self"));
+      expect(selfImport).toBeDefined();
+      expect(selfImport?.isRelative).toBe(true);
+
+      // Find super:: import
+      const superImport = result.imports.find((i) => i.source.startsWith("super"));
+      expect(superImport).toBeDefined();
+      expect(superImport?.isRelative).toBe(true);
+    });
+  });
+
+  describe("parseFile - Rust Function Calls", () => {
+    it("should extract Rust function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find call to simple_function within function_with_calls
+      const simpleCall = result.calls.find(
+        (c) => c.calledName === "simple_function" && c.callerName === "function_with_calls"
+      );
+      expect(simpleCall).toBeDefined();
+
+      // Find call to function_with_params
+      const paramCall = result.calls.find(
+        (c) => c.calledName === "function_with_params" && c.callerName === "function_with_calls"
+      );
+      expect(paramCall).toBeDefined();
+    });
+
+    it("should extract method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Find point.distance() call
+      const distanceCall = result.calls.find(
+        (c) => c.calledName === "distance" && c.callerName === "function_with_calls"
+      );
+      expect(distanceCall).toBeDefined();
+      expect(distanceCall?.calledExpression).toContain("distance");
+    });
+
+    it("should track caller context correctly", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Calls within function_with_calls
+      const callsInFunc = result.calls.filter((c) => c.callerName === "function_with_calls");
+      expect(callsInFunc.length).toBeGreaterThan(0);
+    });
+
+    it("should not mark Rust calls as async (Rust uses .await suffix)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // All Rust calls should have isAsync = false since Rust doesn't mark call sites as async
+      for (const call of result.calls) {
+        expect(call.isAsync).toBe(false);
+      }
+    });
+  });
+
+  describe("parseFile - Rust Exports", () => {
+    it("should return empty exports for Rust (visibility by pub modifier)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      // Rust doesn't have explicit export statements like JS/TS
+      // Visibility is determined by pub modifier
+      expect(result.exports).toHaveLength(0);
+    });
+  });
+
+  describe("parseFile - Rust Visibility Modifiers", () => {
+    it("should detect pub as exported", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      const pubFunc = result.entities.find((e) => e.name === "simple_function");
+      expect(pubFunc?.isExported).toBe(true);
+    });
+
+    it("should detect pub(crate) as exported", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      const crateFunc = result.entities.find((e) => e.name === "crate_visible_function");
+      expect(crateFunc).toBeDefined();
+      expect(crateFunc?.isExported).toBe(true);
+    });
+
+    it("should detect pub(super) as exported", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-rust.rs")).text();
+      const result = await parser.parseFile(content, "simple-rust.rs");
+
+      const superFunc = result.entities.find((e) => e.name === "super_visible_function");
+      expect(superFunc).toBeDefined();
+      expect(superFunc?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - Rust Extension Support", () => {
+    it("should correctly identify .rs extension as supported", () => {
+      expect(TreeSitterParser.isSupported(".rs")).toBe(true);
+      expect(TreeSitterParser.isSupported(".RS")).toBe(true);
+    });
+
+    it("should get language from .rs extension", () => {
+      expect(TreeSitterParser.getLanguageFromExtension(".rs")).toBe("rust");
+    });
+  });
 });

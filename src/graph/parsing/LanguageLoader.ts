@@ -97,6 +97,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       python: resolveWasmPath("tree-sitter-python/tree-sitter-python.wasm"),
       java: resolveWasmPath("tree-sitter-java/tree-sitter-java.wasm"),
       go: resolveWasmPath("tree-sitter-go/tree-sitter-go.wasm"),
+      rust: resolveWasmPath("tree-sitter-rust/tree-sitter-rust.wasm"),
     },
   };
 }
@@ -372,6 +373,7 @@ export class LanguageLoader {
       "python",
       "java",
       "go",
+      "rust",
     ];
 
     await Promise.all(
