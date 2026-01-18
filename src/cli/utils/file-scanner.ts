@@ -40,6 +40,9 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".cxx",
   ".hpp",
   ".hxx",
+  ".rb",
+  ".rake",
+  ".gemspec",
 ]);
 
 /**

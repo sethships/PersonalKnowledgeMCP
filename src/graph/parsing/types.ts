@@ -24,7 +24,8 @@ export type TreeSitterLanguage =
   | "go"
   | "rust"
   | "c"
-  | "cpp";
+  | "cpp"
+  | "ruby";
 
 /**
  * All supported languages for AST parsing.
@@ -367,6 +368,9 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".cxx": "cpp",
   ".hpp": "cpp",
   ".hxx": "cpp",
+  ".rb": "ruby",
+  ".rake": "ruby",
+  ".gemspec": "ruby",
 };
 
 /**

@@ -33,6 +33,7 @@ export type ProgrammingLanguage =
   | "csharp"
   | "c"
   | "cpp"
+  | "ruby"
   | "unknown";
 
 /**
@@ -60,6 +61,7 @@ export const SUPPORTED_LANGUAGES: readonly Exclude<ProgrammingLanguage, "unknown
   "csharp",
   "c",
   "cpp",
+  "ruby",
 ] as const;
 
 /**
@@ -117,6 +119,10 @@ export function detectLanguage(filePath: string): ProgrammingLanguage {
     case ".hpp":
     case ".hxx":
       return "cpp";
+    case ".rb":
+    case ".rake":
+    case ".gemspec":
+      return "ruby";
     default:
       return "unknown";
   }

@@ -476,7 +476,7 @@ describe("semantic_search Tool", () => {
 
         const result = await handler({
           query: "test",
-          language: "python",
+          language: "invalid-language",
         });
 
         // Invalid language values should return an error
