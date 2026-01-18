@@ -183,56 +183,8 @@ describe("Graph Populate Command", () => {
     });
   });
 
-  describe("getNeo4jConfig shared utility", () => {
-    it("should export getNeo4jConfig from shared utility", async () => {
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-      expect(getNeo4jConfig).toBeDefined();
-      expect(typeof getNeo4jConfig).toBe("function");
-    });
-
-    it("should return valid config with all env vars set", async () => {
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-      const config = getNeo4jConfig();
-      expect(config.host).toBe("localhost");
-      expect(config.port).toBe(7687);
-      expect(config.username).toBe("neo4j");
-      expect(config.password).toBe("testpassword");
-    });
-
-    it("should throw when NEO4J_PASSWORD is missing", async () => {
-      delete process.env["NEO4J_PASSWORD"];
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-      expect(() => getNeo4jConfig()).toThrow("NEO4J_PASSWORD");
-    });
-
-    it("should throw for invalid port", async () => {
-      process.env["NEO4J_BOLT_PORT"] = "not-a-number";
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-      expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
-    });
-
-    it("should throw for port out of range", async () => {
-      process.env["NEO4J_BOLT_PORT"] = "99999";
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-      expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
-    });
-
-    it("should use default values when optional env vars are missing", async () => {
-      delete process.env["NEO4J_HOST"];
-      delete process.env["NEO4J_BOLT_PORT"];
-      delete process.env["NEO4J_USER"];
-      const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-      const config = getNeo4jConfig();
-      expect(config.host).toBe("localhost");
-      expect(config.port).toBe(7687);
-      expect(config.username).toBe("neo4j");
-    });
-  });
+  // Note: getNeo4jConfig unit tests are in tests/unit/cli/neo4j-config.test.ts
+  // They were moved to avoid vi.mock() pollution from graph-populate-all-command.test.ts
 
   describe("Environment variable validation", () => {
     it("should fail without NEO4J_PASSWORD", async () => {
@@ -871,64 +823,5 @@ describe("Graph Populate Command", () => {
   });
 });
 
-describe("Neo4j Config Utility Tests", () => {
-  let originalEnv: Record<string, string | undefined>;
-
-  beforeEach(() => {
-    originalEnv = { ...process.env };
-    process.env["NEO4J_PASSWORD"] = "testpassword";
-    process.env["NEO4J_HOST"] = "localhost";
-    process.env["NEO4J_BOLT_PORT"] = "7687";
-    process.env["NEO4J_USER"] = "neo4j";
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-    vi.clearAllMocks();
-  });
-
-  it("should handle custom host", async () => {
-    process.env["NEO4J_HOST"] = "custom-host.example.com";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    const config = getNeo4jConfig();
-    expect(config.host).toBe("custom-host.example.com");
-  });
-
-  it("should handle custom port", async () => {
-    process.env["NEO4J_BOLT_PORT"] = "17687";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    const config = getNeo4jConfig();
-    expect(config.port).toBe(17687);
-  });
-
-  it("should handle custom username", async () => {
-    process.env["NEO4J_USER"] = "custom-user";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    const config = getNeo4jConfig();
-    expect(config.username).toBe("custom-user");
-  });
-
-  it("should reject port with non-numeric characters", async () => {
-    process.env["NEO4J_BOLT_PORT"] = "7687abc";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
-  });
-
-  it("should reject negative port", async () => {
-    process.env["NEO4J_BOLT_PORT"] = "-1";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
-  });
-
-  it("should reject port 0", async () => {
-    process.env["NEO4J_BOLT_PORT"] = "0";
-    const { getNeo4jConfig } = await import("../../src/cli/utils/neo4j-config.js");
-
-    expect(() => getNeo4jConfig()).toThrow("Invalid NEO4J_BOLT_PORT");
-  });
-});
+// Note: Neo4j Config Utility Tests have been moved to tests/unit/cli/neo4j-config.test.ts
+// to avoid vi.mock() pollution from graph-populate-all-command.test.ts
