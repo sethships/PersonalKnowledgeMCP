@@ -92,13 +92,65 @@ describe("language-detector", () => {
       });
     });
 
+    describe("C detection", () => {
+      test("detects .c files as c", () => {
+        expect(detectLanguage("main.c")).toBe("c");
+        expect(detectLanguage("src/utils.c")).toBe("c");
+        expect(detectLanguage("lib/helpers.c")).toBe("c");
+      });
+
+      test("detects .h files as c", () => {
+        expect(detectLanguage("include/header.h")).toBe("c");
+        expect(detectLanguage("utils.h")).toBe("c");
+      });
+
+      test("handles uppercase C extensions", () => {
+        expect(detectLanguage("file.C")).toBe("c");
+        expect(detectLanguage("file.H")).toBe("c");
+      });
+    });
+
+    describe("C++ detection", () => {
+      test("detects .cpp files as cpp", () => {
+        expect(detectLanguage("main.cpp")).toBe("cpp");
+        expect(detectLanguage("src/utils.cpp")).toBe("cpp");
+        expect(detectLanguage("lib/helpers.cpp")).toBe("cpp");
+      });
+
+      test("detects .cc files as cpp", () => {
+        expect(detectLanguage("main.cc")).toBe("cpp");
+        expect(detectLanguage("src/utils.cc")).toBe("cpp");
+      });
+
+      test("detects .cxx files as cpp", () => {
+        expect(detectLanguage("main.cxx")).toBe("cpp");
+        expect(detectLanguage("src/utils.cxx")).toBe("cpp");
+      });
+
+      test("detects .hpp files as cpp", () => {
+        expect(detectLanguage("include/header.hpp")).toBe("cpp");
+        expect(detectLanguage("utils.hpp")).toBe("cpp");
+      });
+
+      test("detects .hxx files as cpp", () => {
+        expect(detectLanguage("include/header.hxx")).toBe("cpp");
+        expect(detectLanguage("utils.hxx")).toBe("cpp");
+      });
+
+      test("handles uppercase C++ extensions", () => {
+        expect(detectLanguage("file.CPP")).toBe("cpp");
+        expect(detectLanguage("file.CC")).toBe("cpp");
+        expect(detectLanguage("file.CXX")).toBe("cpp");
+        expect(detectLanguage("file.HPP")).toBe("cpp");
+        expect(detectLanguage("file.HXX")).toBe("cpp");
+      });
+    });
+
     describe("unknown language detection", () => {
       test("returns unknown for non-supported extensions", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
         expect(detectLanguage("README.md")).toBe("unknown");
         expect(detectLanguage("style.css")).toBe("unknown");
-        expect(detectLanguage("main.cpp")).toBe("unknown");
-        expect(detectLanguage("header.h")).toBe("unknown");
       });
 
       test("returns unknown for files without extension", () => {
@@ -147,14 +199,16 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("python");
       expect(SUPPORTED_LANGUAGES).toContain("rust");
       expect(SUPPORTED_LANGUAGES).toContain("csharp");
+      expect(SUPPORTED_LANGUAGES).toContain("c");
+      expect(SUPPORTED_LANGUAGES).toContain("cpp");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 9 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(9);
+    test("has exactly 11 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(11);
     });
 
     test("is readonly", () => {
@@ -173,6 +227,13 @@ describe("language-detector", () => {
         { path: "file.jsx", expected: "jsx" },
         { path: "file.java", expected: "java" },
         { path: "file.go", expected: "go" },
+        { path: "file.py", expected: "python" },
+        { path: "file.rs", expected: "rust" },
+        { path: "file.cs", expected: "csharp" },
+        { path: "file.c", expected: "c" },
+        { path: "file.h", expected: "c" },
+        { path: "file.cpp", expected: "cpp" },
+        { path: "file.hpp", expected: "cpp" },
         { path: "file.json", expected: "unknown" },
       ];
 

@@ -231,6 +231,8 @@ describe("LanguageLoader", () => {
           java: "/nonexistent/path.wasm",
           go: "/nonexistent/path.wasm",
           rust: "/nonexistent/path.wasm",
+          c: "/nonexistent/path.wasm",
+          cpp: "/nonexistent/path.wasm",
         },
       });
 
@@ -261,6 +263,8 @@ describe("LanguageLoader", () => {
           java: "/custom/java.wasm",
           go: "/custom/go.wasm",
           rust: "/custom/rust.wasm",
+          c: "/custom/c.wasm",
+          cpp: "/custom/cpp.wasm",
         },
       };
 
@@ -289,6 +293,26 @@ describe("LanguageLoader", () => {
 
       expect(lang).toBeDefined();
       expect(loader.isLanguageLoaded("rust")).toBe(true);
+    });
+  });
+
+  describe("C language support", () => {
+    it("should load C language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("c");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("c")).toBe(true);
+    });
+  });
+
+  describe("C++ language support", () => {
+    it("should load C++ language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("cpp");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("cpp")).toBe(true);
     });
   });
 });

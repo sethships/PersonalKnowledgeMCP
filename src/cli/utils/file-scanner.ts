@@ -33,6 +33,13 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".go",
   ".rs",
   ".cs",
+  ".c",
+  ".h",
+  ".cpp",
+  ".cc",
+  ".cxx",
+  ".hpp",
+  ".hxx",
 ]);
 
 /**

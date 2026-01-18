@@ -55,9 +55,22 @@ describe("file-scanner utilities", () => {
       expect(SUPPORTED_EXTENSIONS.has(".cs")).toBe(true);
     });
 
-    test("has exactly 11 extensions", () => {
-      // 4 JS/TS extensions + 3 Python extensions + 1 Java + 1 Go + 1 Rust + 1 C#
-      expect(SUPPORTED_EXTENSIONS.size).toBe(11);
+    test("contains C extensions", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".c")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".h")).toBe(true);
+    });
+
+    test("contains C++ extensions", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".cpp")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".cc")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".cxx")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".hpp")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".hxx")).toBe(true);
+    });
+
+    test("has exactly 18 extensions", () => {
+      // 4 JS/TS extensions + 3 Python extensions + 1 Java + 1 Go + 1 Rust + 1 C# + 2 C + 5 C++
+      expect(SUPPORTED_EXTENSIONS.size).toBe(18);
     });
   });
 
