@@ -43,6 +43,11 @@ export const SUPPORTED_EXTENSIONS = new Set([
   ".rb",
   ".rake",
   ".gemspec",
+  ".php",
+  ".phtml",
+  ".php5",
+  ".php7",
+  ".inc",
 ]);
 
 /**

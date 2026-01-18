@@ -105,6 +105,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       c: resolveWasmPath("tree-sitter-c/tree-sitter-c.wasm"),
       cpp: resolveWasmPath("tree-sitter-cpp/tree-sitter-cpp.wasm"),
       ruby: resolveWasmPath("tree-sitter-ruby/tree-sitter-ruby.wasm"),
+      php: resolveWasmPath("tree-sitter-php/tree-sitter-php.wasm"),
     },
   };
 }
@@ -376,6 +377,7 @@ export class LanguageLoader {
       "c",
       "cpp",
       "ruby",
+      "php",
     ];
 
     await Promise.all(

@@ -25,7 +25,8 @@ export type TreeSitterLanguage =
   | "rust"
   | "c"
   | "cpp"
-  | "ruby";
+  | "ruby"
+  | "php";
 
 /**
  * All supported languages for AST parsing.
@@ -371,6 +372,11 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".rb": "ruby",
   ".rake": "ruby",
   ".gemspec": "ruby",
+  ".php": "php",
+  ".phtml": "php",
+  ".php5": "php",
+  ".php7": "php",
+  ".inc": "php",
 };
 
 /**
