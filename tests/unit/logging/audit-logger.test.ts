@@ -145,15 +145,23 @@ describe("AuditLogger", () => {
     }
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Clean up test directory
     if (existsSync(TEST_DATA_DIR)) {
       rmSync(TEST_DATA_DIR, { recursive: true, force: true });
     }
     mkdirSync(TEST_DATA_DIR, { recursive: true });
 
+    // Verify directory was created successfully (helps catch CI timing issues)
+    if (!existsSync(TEST_DATA_DIR)) {
+      throw new Error(`Failed to create test directory: ${TEST_DATA_DIR}`);
+    }
+
     // Reset singleton
     resetAuditLogger();
+
+    // Small delay to ensure filesystem operations are complete in CI
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 
   afterEach(() => {
@@ -215,7 +223,8 @@ describe("AuditLogger", () => {
       const event = createAuthSuccessEvent();
       logger.emit(event);
 
-      await waitForWrite();
+      // Use longer timeout for CI environments where I/O can be slower
+      await waitForWrite(1, 5000);
 
       expect(existsSync(TEST_LOG_PATH)).toBe(true);
       const content = readFileSync(TEST_LOG_PATH, "utf-8");

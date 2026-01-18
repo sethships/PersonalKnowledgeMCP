@@ -31,6 +31,8 @@ export type ProgrammingLanguage =
   | "python"
   | "rust"
   | "csharp"
+  | "c"
+  | "cpp"
   | "unknown";
 
 /**
@@ -56,6 +58,8 @@ export const SUPPORTED_LANGUAGES: readonly Exclude<ProgrammingLanguage, "unknown
   "python",
   "rust",
   "csharp",
+  "c",
+  "cpp",
 ] as const;
 
 /**
@@ -104,6 +108,15 @@ export function detectLanguage(filePath: string): ProgrammingLanguage {
       return "rust";
     case ".cs":
       return "csharp";
+    case ".c":
+    case ".h":
+      return "c";
+    case ".cpp":
+    case ".cc":
+    case ".cxx":
+    case ".hpp":
+    case ".hxx":
+      return "cpp";
     default:
       return "unknown";
   }

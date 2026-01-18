@@ -10,6 +10,8 @@
  * - Java (.java)
  * - Go (.go)
  * - Rust (.rs)
+ * - C (.c, .h)
+ * - C++ (.cpp, .cc, .cxx, .hpp, .hxx)
  *
  * Parses source files and extracts code entities (functions, classes,
  * interfaces, etc.) and imports for knowledge graph population.
@@ -109,6 +111,29 @@ const RUST_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   type_item: "type_alias",
   const_item: "variable",
   static_item: "variable",
+};
+
+/**
+ * Node type to entity type mapping for C.
+ * C uses different AST node types than other languages.
+ */
+const C_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  function_definition: "function",
+  struct_specifier: "class", // structs become "class" type
+  union_specifier: "class", // unions also become "class" type
+  enum_specifier: "enum",
+  type_definition: "type_alias", // typedef declarations
+};
+
+/**
+ * Node type to entity type mapping for C++.
+ * Extends C mappings with C++ specific constructs.
+ */
+const CPP_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  ...C_NODE_TO_ENTITY_TYPE,
+  class_specifier: "class", // C++ classes
+  // namespace_definition is handled by traversing children, not as entity
+  // template_declaration is handled specially to extract nested definitions
 };
 
 /**
@@ -387,6 +412,8 @@ export class TreeSitterParser {
     const isJava = language === "java";
     const isGo = language === "go";
     const isRust = language === "rust";
+    const isC = language === "c";
+    const isCpp = language === "cpp";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
@@ -399,6 +426,10 @@ export class TreeSitterParser {
         nodeTypeMapping = GO_NODE_TO_ENTITY_TYPE;
       } else if (isRust) {
         nodeTypeMapping = RUST_NODE_TO_ENTITY_TYPE;
+      } else if (isCpp) {
+        nodeTypeMapping = CPP_NODE_TO_ENTITY_TYPE;
+      } else if (isC) {
+        nodeTypeMapping = C_NODE_TO_ENTITY_TYPE;
       } else {
         nodeTypeMapping = NODE_TO_ENTITY_TYPE;
       }
@@ -470,6 +501,8 @@ export class TreeSitterParser {
     const isJava = language === "java";
     const isGo = language === "go";
     const isRust = language === "rust";
+    const isC = language === "c";
+    const isCpp = language === "cpp";
 
     // Get entity name (language-aware)
     let name: string | null;
@@ -481,6 +514,8 @@ export class TreeSitterParser {
       name = this.extractGoEntityName(node, entityType);
     } else if (isRust) {
       name = this.extractRustEntityName(node, entityType);
+    } else if (isC || isCpp) {
+      name = this.extractCEntityName(node, entityType, isCpp);
     } else {
       name = this.extractEntityName(node, entityType);
     }
@@ -498,6 +533,8 @@ export class TreeSitterParser {
       metadata = this.extractGoMetadata(node, entityType);
     } else if (isRust) {
       metadata = this.extractRustMetadata(node, entityType);
+    } else if (isC || isCpp) {
+      metadata = this.extractCMetadata(node, entityType, isCpp);
     } else {
       metadata = this.extractMetadata(node, entityType);
     }
@@ -512,6 +549,12 @@ export class TreeSitterParser {
     // For Rust, determine export status by pub visibility modifier
     if (isRust) {
       finalIsExported = this.isRustPublic(node);
+    }
+
+    // C/C++ don't have a simple export mechanism - everything not static is "exported"
+    // For simplicity, mark all C/C++ entities as exported (they can be linked externally)
+    if (isC || isCpp) {
+      finalIsExported = true;
     }
 
     return {
@@ -2343,6 +2386,9 @@ export class TreeSitterParser {
     if (language === "rust") {
       return this.extractRustImports(root);
     }
+    if (language === "c" || language === "cpp") {
+      return this.extractCImports(root);
+    }
 
     const imports: ImportInfo[] = [];
 
@@ -2502,6 +2548,12 @@ export class TreeSitterParser {
     // Rust uses pub visibility modifier for exports
     // Export info is captured in entity extraction via isExported flag
     if (language === "rust") {
+      return [];
+    }
+
+    // C/C++ don't have explicit export statements
+    // All non-static functions are implicitly linkable externally
+    if (language === "c" || language === "cpp") {
       return [];
     }
 
@@ -2726,6 +2778,9 @@ export class TreeSitterParser {
     }
     if (language === "rust") {
       return this.extractRustCalls(root);
+    }
+    if (language === "c" || language === "cpp") {
+      return this.extractCCalls(root);
     }
 
     const calls: CallInfo[] = [];
@@ -3524,6 +3579,550 @@ export class TreeSitterParser {
     if (node.type === "index_expression") {
       return {
         name: "[indexed]",
+        expression: node.text,
+      };
+    }
+
+    // Fallback
+    if (node.text) {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    return null;
+  }
+
+  // =====================================================
+  // C/C++-specific extraction methods
+  // =====================================================
+
+  /**
+   * Extract entity name for C/C++ AST nodes.
+   *
+   * Handles:
+   * - function_definition: int name() {}
+   * - struct_specifier: struct Name {}
+   * - union_specifier: union Name {}
+   * - enum_specifier: enum Name {}
+   * - type_definition: typedef ... name
+   * - class_specifier: class Name {} (C++ only)
+   *
+   * @param node - The AST node to extract name from
+   * @param entityType - The type of entity
+   * @param _isCpp - Whether this is C++ (for future use)
+   */
+  private extractCEntityName(node: Node, entityType: EntityType, _isCpp: boolean): string | null {
+    // For functions, the name is in the "declarator" field
+    if (entityType === "function") {
+      const declaratorNode = node.childForFieldName("declarator");
+      if (declaratorNode) {
+        // The declarator can be a function_declarator which contains the name
+        return this.extractCDeclaratorName(declaratorNode);
+      }
+    }
+
+    // For structs, unions, enums, and classes - the name is in the "name" field
+    if (entityType === "class" || entityType === "enum") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+      // Anonymous struct/union/class - skip if no name
+      return null;
+    }
+
+    // For typedef declarations
+    if (entityType === "type_alias") {
+      const declaratorNode = node.childForFieldName("declarator");
+      if (declaratorNode) {
+        return this.extractCDeclaratorName(declaratorNode);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract the name from a C/C++ declarator node.
+   *
+   * C/C++ declarators can be nested (e.g., *name, (*name)(), etc.)
+   * This recursively finds the identifier.
+   */
+  private extractCDeclaratorName(declarator: Node): string | null {
+    // Direct identifier (for simple names)
+    if (declarator.type === "identifier") {
+      return declarator.text;
+    }
+
+    // Type identifier (for typedef names)
+    if (declarator.type === "type_identifier") {
+      return declarator.text;
+    }
+
+    // Function declarator: name(params)
+    if (declarator.type === "function_declarator") {
+      const innerDeclarator = declarator.childForFieldName("declarator");
+      if (innerDeclarator) {
+        return this.extractCDeclaratorName(innerDeclarator);
+      }
+    }
+
+    // Pointer declarator: *name
+    if (declarator.type === "pointer_declarator") {
+      const innerDeclarator = declarator.childForFieldName("declarator");
+      if (innerDeclarator) {
+        return this.extractCDeclaratorName(innerDeclarator);
+      }
+    }
+
+    // Array declarator: name[]
+    if (declarator.type === "array_declarator") {
+      const innerDeclarator = declarator.childForFieldName("declarator");
+      if (innerDeclarator) {
+        return this.extractCDeclaratorName(innerDeclarator);
+      }
+    }
+
+    // Parenthesized declarator: (name)
+    if (declarator.type === "parenthesized_declarator") {
+      for (let i = 0; i < declarator.childCount; i++) {
+        const child = declarator.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          const name = this.extractCDeclaratorName(child);
+          if (name) return name;
+        }
+      }
+    }
+
+    // Try to find identifier child directly
+    const identifier = this.findFirstChild(declarator, ["identifier", "type_identifier"]);
+    if (identifier) {
+      return identifier.text;
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a C/C++ entity node.
+   */
+  private extractCMetadata(node: Node, entityType: EntityType, _isCpp: boolean): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract parameters for functions
+    if (entityType === "function") {
+      const params = this.extractCParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type
+      const returnType = this.extractCReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+    }
+
+    // Extract documentation (C-style comments)
+    if (this.config.extractDocumentation) {
+      const doc = this.extractCDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract function parameters from C/C++ function definition.
+   */
+  private extractCParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    // Find the function declarator
+    const declaratorNode = node.childForFieldName("declarator");
+    if (!declaratorNode) {
+      return params;
+    }
+
+    // Find the parameter list
+    let funcDeclarator: Node | null = declaratorNode;
+    while (funcDeclarator && funcDeclarator.type !== "function_declarator") {
+      funcDeclarator =
+        funcDeclarator.childForFieldName("declarator") ||
+        this.findFirstChild(funcDeclarator, ["function_declarator"]);
+    }
+
+    if (!funcDeclarator) {
+      return params;
+    }
+
+    const paramsNode = funcDeclarator.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    // Iterate through parameter declarations
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      if (child.type === "parameter_declaration") {
+        const param = this.extractCParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+      // Handle variadic parameters (...)
+      if (child.type === "variadic_parameter" || child.text === "...") {
+        params.push({
+          name: "...",
+          type: "...",
+          hasDefault: false,
+          isOptional: false,
+          isRest: true,
+        });
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single C/C++ parameter.
+   */
+  private extractCParameter(node: Node): ParameterInfo | null {
+    // Get type from the type specifier
+    const typeNode = node.childForFieldName("type");
+    const type = typeNode?.text;
+
+    // Get name from declarator
+    const declaratorNode = node.childForFieldName("declarator");
+    let name: string | null = null;
+
+    if (declaratorNode) {
+      name = this.extractCDeclaratorName(declaratorNode);
+    }
+
+    // In C, parameters can be unnamed (void foo(int, char))
+    if (!name) {
+      name = "<unnamed>";
+    }
+
+    return {
+      name,
+      type,
+      hasDefault: false, // C doesn't have default parameters
+      isOptional: false,
+      isRest: false,
+    };
+  }
+
+  /**
+   * Extract return type from C/C++ function definition.
+   */
+  private extractCReturnType(node: Node): string | null {
+    const typeNode = node.childForFieldName("type");
+    if (typeNode) {
+      return typeNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract C/C++ documentation from preceding comments.
+   *
+   * Looks for C-style block comments and Doxygen-style doc comments
+   * that precede function/class definitions.
+   */
+  private extractCDocumentation(node: Node): string | null {
+    const docLines: string[] = [];
+    let prevSibling = node.previousSibling;
+
+    // Collect consecutive comment lines
+    while (prevSibling) {
+      if (prevSibling.type === "comment") {
+        const text = prevSibling.text;
+        // Check for C-style doc comments (/** or /*!)
+        if (text.startsWith("/**") || text.startsWith("/*!") || text.startsWith("/*")) {
+          docLines.unshift(text);
+          break; // Block comments don't chain
+        }
+        // C++ style line comments
+        if (text.startsWith("///") || text.startsWith("//!")) {
+          docLines.unshift(text);
+        } else if (text.startsWith("//")) {
+          // Regular line comment - only include if we haven't seen doc comments
+          if (docLines.length === 0) {
+            docLines.unshift(text);
+          } else {
+            break;
+          }
+        }
+      } else if (prevSibling.type !== "\n") {
+        break;
+      }
+      prevSibling = prevSibling.previousSibling;
+    }
+
+    if (docLines.length > 0) {
+      return docLines.join("\n");
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract #include directives from C/C++ source files.
+   *
+   * Handles:
+   * - #include <header.h> (system includes)
+   * - #include "header.h" (local includes)
+   */
+  private extractCImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      if (node.type === "preproc_include") {
+        try {
+          const info = this.extractCIncludeInfo(node);
+          if (info) {
+            imports.push(info);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract C/C++ include"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from a C/C++ #include directive.
+   */
+  private extractCIncludeInfo(node: Node): ImportInfo | null {
+    // Get the path from the include directive
+    const pathNode = node.childForFieldName("path");
+    if (!pathNode) {
+      // Try to find system_lib_string or string_literal
+      const systemLib = this.findFirstChild(node, ["system_lib_string"]);
+      const stringLit = this.findFirstChild(node, ["string_literal", "string_content"]);
+
+      const includeNode = systemLib || stringLit;
+      if (!includeNode) {
+        return null;
+      }
+
+      // Extract the path text
+      let source = includeNode.text;
+      // Remove <> or "" wrappers
+      source = source.replace(/^[<"]|[">]$/g, "");
+
+      // System includes use <>, local includes use ""
+      const isSystem = includeNode.type === "system_lib_string" || node.text.includes("<");
+      const isRelative = !isSystem;
+
+      // Extract just the filename as the imported name
+      const fileName = source.split("/").pop() ?? source;
+
+      return {
+        source,
+        isRelative,
+        importedNames: [fileName],
+        isTypeOnly: false,
+        isSideEffect: true, // All includes have side effects
+        line: node.startPosition.row + 1,
+      };
+    }
+
+    // Handle when path is available as a field
+    let source = pathNode.text;
+    source = source.replace(/^[<"]|[">]$/g, "");
+    const isRelative =
+      source.startsWith("./") || source.startsWith("../") || !node.text.includes("<");
+    const fileName = source.split("/").pop() ?? source;
+
+    return {
+      source,
+      isRelative,
+      importedNames: [fileName],
+      isTypeOnly: false,
+      isSideEffect: true,
+      line: node.startPosition.row + 1,
+    };
+  }
+
+  /**
+   * Extract function calls from C/C++ AST.
+   */
+  private extractCCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a function
+      if (node.type === "function_definition") {
+        const declaratorNode = node.childForFieldName("declarator");
+        if (declaratorNode) {
+          const name = this.extractCDeclaratorName(declaratorNode);
+          if (name) {
+            currentCaller = name;
+          }
+        }
+      }
+
+      // Check for call expression in C/C++
+      if (node.type === "call_expression") {
+        try {
+          const callInfo = this.extractCCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract C/C++ call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a C/C++ call expression.
+   */
+  private extractCCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const functionNode = node.childForFieldName("function");
+    if (!functionNode) {
+      return null;
+    }
+
+    const callTarget = this.extractCCallTarget(functionNode);
+    if (!callTarget) {
+      return null;
+    }
+
+    return {
+      calledName: callTarget.name,
+      calledExpression: callTarget.expression,
+      isAsync: false, // C/C++ doesn't have async/await
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract call target from C/C++ call expression.
+   */
+  private extractCCallTarget(node: Node): { name: string; expression: string } | null {
+    // Simple identifier: foo()
+    if (node.type === "identifier") {
+      return {
+        name: node.text,
+        expression: node.text,
+      };
+    }
+
+    // Field expression (C++ method call or C struct->func): obj.method() or ptr->method()
+    if (node.type === "field_expression") {
+      const fieldNode = node.childForFieldName("field");
+      if (fieldNode) {
+        return {
+          name: fieldNode.text,
+          expression: node.text,
+        };
+      }
+    }
+
+    // Scoped identifier (C++ namespace): std::cout
+    if (node.type === "qualified_identifier" || node.type === "scoped_identifier") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return {
+          name: nameNode.text,
+          expression: node.text,
+        };
+      }
+      // Fallback to last part of the qualified name
+      const parts = node.text.split("::");
+      return {
+        name: parts[parts.length - 1] ?? node.text,
+        expression: node.text,
+      };
+    }
+
+    // Template function: foo<T>()
+    if (node.type === "template_function") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return this.extractCCallTarget(nameNode);
+      }
+    }
+
+    // Parenthesized expression: (func)()
+    if (node.type === "parenthesized_expression") {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type !== "(" && child.type !== ")") {
+          return this.extractCCallTarget(child);
+        }
+      }
+    }
+
+    // Subscript expression: arr[0]()
+    if (node.type === "subscript_expression") {
+      return {
+        name: "[indexed]",
+        expression: node.text,
+      };
+    }
+
+    // Pointer dereference: (*func_ptr)()
+    if (node.type === "pointer_expression") {
+      return {
+        name: "[pointer]",
+        expression: node.text,
+      };
+    }
+
+    // Call expression (chained): foo()()
+    if (node.type === "call_expression") {
+      return {
+        name: "[chained]",
         expression: node.text,
       };
     }

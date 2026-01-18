@@ -71,6 +71,8 @@
     "pino": "^8.19.0",
     "pino-pretty": "^10.3.1",
     "simple-git": "^3.25.0",
+    "tree-sitter-c": "0.24.1",
+    "tree-sitter-cpp": "0.23.4",
     "tree-sitter-go": "0.25.0",
     "tree-sitter-java": "0.23.5",
     "tree-sitter-rust": "0.23.2",

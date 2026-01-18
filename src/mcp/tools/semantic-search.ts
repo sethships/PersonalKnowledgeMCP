@@ -78,9 +78,21 @@ export const semanticSearchToolDefinition: Tool = {
         type: "string",
         description:
           "Optional programming language filter. If provided, only returns results from files " +
-          "of the specified language. Supported values: typescript, tsx, javascript, jsx, python, java, go, rust, csharp. " +
+          "of the specified language. Supported values: typescript, tsx, javascript, jsx, python, java, go, rust, csharp, c, cpp. " +
           "Use this to narrow search results to a specific language.",
-        enum: ["typescript", "tsx", "javascript", "jsx", "python", "java", "go", "rust", "csharp"],
+        enum: [
+          "typescript",
+          "tsx",
+          "javascript",
+          "jsx",
+          "python",
+          "java",
+          "go",
+          "rust",
+          "csharp",
+          "c",
+          "cpp",
+        ],
       },
     },
     required: ["query"],

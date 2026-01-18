@@ -37,14 +37,10 @@ vi.mock("../../src/graph/extraction/RelationshipExtractor.js", () => ({
   RelationshipExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
-vi.mock("../../src/cli/utils/neo4j-config.js", () => ({
-  getNeo4jConfig: vi.fn().mockReturnValue({
-    host: "localhost",
-    port: 7687,
-    username: "neo4j",
-    password: "testpassword",
-  }),
-}));
+// NOTE: We intentionally do NOT mock neo4j-config.js here.
+// Mocking it causes vi.mock() pollution that breaks unit tests for getNeo4jConfig
+// in other test files (even with vi.resetModules()). Instead, we set up the
+// required environment variables in beforeEach to let the real function work.
 
 // Mock fs/promises for file system operations
 vi.mock("fs/promises", () => ({
@@ -138,7 +134,17 @@ describe("Graph Populate All Command", () => {
     });
   };
 
+  let originalEnv: Record<string, string | undefined>;
+
   beforeEach(async () => {
+    // Save original environment and set up Neo4j config env vars
+    // (required since we don't mock neo4j-config.js to avoid vi.mock pollution)
+    originalEnv = { ...process.env };
+    process.env["NEO4J_PASSWORD"] = "testpassword";
+    process.env["NEO4J_HOST"] = "localhost";
+    process.env["NEO4J_BOLT_PORT"] = "7687";
+    process.env["NEO4J_USER"] = "neo4j";
+
     // Initialize logger for tests
     initializeLogger({ level: "silent", format: "json" });
 
@@ -168,6 +174,9 @@ describe("Graph Populate All Command", () => {
   });
 
   afterEach(() => {
+    // Restore original environment
+    process.env = originalEnv;
+
     resetLogger();
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();

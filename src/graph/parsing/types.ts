@@ -10,7 +10,7 @@
 /**
  * Languages supported by tree-sitter for AST parsing.
  *
- * Supports TypeScript ecosystem languages, Python, Java, Go, and Rust.
+ * Supports TypeScript ecosystem languages, Python, Java, Go, Rust, C, and C++.
  * JavaScript is handled by both TypeScript and JavaScript grammars
  * depending on the file extension.
  */
@@ -22,7 +22,9 @@ export type TreeSitterLanguage =
   | "python"
   | "java"
   | "go"
-  | "rust";
+  | "rust"
+  | "c"
+  | "cpp";
 
 /**
  * All supported languages for AST parsing.
@@ -358,6 +360,13 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".go": "go",
   ".rs": "rust",
   ".cs": "csharp",
+  ".c": "c",
+  ".h": "c",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".hpp": "cpp",
+  ".hxx": "cpp",
 };
 
 /**

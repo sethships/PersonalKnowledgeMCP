@@ -1746,4 +1746,352 @@ export function documented(): void {}
       expect(TreeSitterParser.getLanguageFromExtension(".rs")).toBe("rust");
     });
   });
+
+  // ==================== C Parsing Tests ====================
+
+  describe("parseFile - C Functions", () => {
+    it("should parse simple C functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("c");
+      expect(result.errors).toHaveLength(0);
+
+      // Check entities were extracted
+      expect(result.entities.length).toBeGreaterThan(0);
+
+      // Find the add function
+      const addFunc = result.entities.find((e) => e.name === "add");
+      expect(addFunc).toBeDefined();
+      expect(addFunc?.type).toBe("function");
+      expect(addFunc?.metadata?.parameters).toBeDefined();
+      expect(addFunc?.metadata?.parameters?.length).toBe(2);
+      expect(addFunc?.metadata?.parameters?.[0]?.name).toBe("a");
+      expect(addFunc?.metadata?.parameters?.[0]?.type).toBe("int");
+      expect(addFunc?.metadata?.returnType).toBe("int");
+
+      // Find main function
+      const mainFunc = result.entities.find((e) => e.name === "main");
+      expect(mainFunc).toBeDefined();
+      expect(mainFunc?.type).toBe("function");
+    });
+
+    it("should extract C documentation comments", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      const addFunc = result.entities.find((e) => e.name === "add");
+      expect(addFunc?.metadata?.documentation).toBeDefined();
+      expect(addFunc?.metadata?.documentation).toContain("simple function");
+    });
+  });
+
+  describe("parseFile - C Structs, Unions, Enums", () => {
+    it("should parse C structs", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // Find struct Point
+      const point = result.entities.find((e) => e.name === "Point");
+      expect(point).toBeDefined();
+      expect(point?.type).toBe("class");
+    });
+
+    it("should parse C unions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // Find union Data
+      const data = result.entities.find((e) => e.name === "Data");
+      expect(data).toBeDefined();
+      expect(data?.type).toBe("class");
+    });
+
+    it("should parse C enums", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // Find enum Status
+      const status = result.entities.find((e) => e.name === "Status");
+      expect(status).toBeDefined();
+      expect(status?.type).toBe("enum");
+    });
+
+    it("should parse C typedefs", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // Find typedef Point2D
+      const point2d = result.entities.find((e) => e.name === "Point2D");
+      expect(point2d).toBeDefined();
+      expect(point2d?.type).toBe("type_alias");
+    });
+  });
+
+  describe("parseFile - C Includes", () => {
+    it("should extract C include directives", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Find system include: <stdio.h>
+      const stdioInclude = result.imports.find((i) => i.source.includes("stdio.h"));
+      expect(stdioInclude).toBeDefined();
+      expect(stdioInclude?.isRelative).toBe(false);
+
+      // Find local include: "local_header.h"
+      const localInclude = result.imports.find((i) => i.source.includes("local_header.h"));
+      expect(localInclude).toBeDefined();
+      expect(localInclude?.isRelative).toBe(true);
+    });
+  });
+
+  describe("parseFile - C Function Calls", () => {
+    it("should extract C function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find call to add from main
+      const addCall = result.calls.find((c) => c.calledName === "add" && c.callerName === "main");
+      expect(addCall).toBeDefined();
+
+      // Find call to printf from main
+      const printfCall = result.calls.find(
+        (c) => c.calledName === "printf" && c.callerName === "main"
+      );
+      expect(printfCall).toBeDefined();
+    });
+
+    it("should not mark C calls as async", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // All C calls should have isAsync = false
+      for (const call of result.calls) {
+        expect(call.isAsync).toBe(false);
+      }
+    });
+  });
+
+  describe("parseFile - C Extension Support", () => {
+    it("should correctly identify C extensions as supported", () => {
+      expect(TreeSitterParser.isSupported(".c")).toBe(true);
+      expect(TreeSitterParser.isSupported(".h")).toBe(true);
+      expect(TreeSitterParser.isSupported(".C")).toBe(true);
+      expect(TreeSitterParser.isSupported(".H")).toBe(true);
+    });
+
+    it("should get language from C extensions", () => {
+      expect(TreeSitterParser.getLanguageFromExtension(".c")).toBe("c");
+      expect(TreeSitterParser.getLanguageFromExtension(".h")).toBe("c");
+    });
+  });
+
+  // ==================== C++ Parsing Tests ====================
+
+  describe("parseFile - C++ Functions", () => {
+    it("should parse simple C++ functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("cpp");
+      expect(result.errors).toHaveLength(0);
+
+      // Check entities were extracted
+      expect(result.entities.length).toBeGreaterThan(0);
+
+      // Find the multiply function
+      const multiplyFunc = result.entities.find((e) => e.name === "multiply");
+      expect(multiplyFunc).toBeDefined();
+      expect(multiplyFunc?.type).toBe("function");
+      expect(multiplyFunc?.metadata?.parameters?.length).toBe(2);
+      expect(multiplyFunc?.metadata?.returnType).toBe("int");
+
+      // Find main function
+      const mainFunc = result.entities.find((e) => e.name === "main");
+      expect(mainFunc).toBeDefined();
+    });
+  });
+
+  describe("parseFile - C++ Classes", () => {
+    it("should parse C++ classes", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find class Point
+      const point = result.entities.find((e) => e.name === "Point");
+      expect(point).toBeDefined();
+      expect(point?.type).toBe("class");
+    });
+
+    it("should parse C++ structs", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find struct Rectangle
+      const rect = result.entities.find((e) => e.name === "Rectangle");
+      expect(rect).toBeDefined();
+      expect(rect?.type).toBe("class");
+    });
+
+    it("should parse C++ enums", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find enum class Color
+      const color = result.entities.find((e) => e.name === "Color");
+      expect(color).toBeDefined();
+      expect(color?.type).toBe("enum");
+    });
+
+    it("should parse C++ class with inheritance", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find Shape base class
+      const shape = result.entities.find((e) => e.name === "Shape");
+      expect(shape).toBeDefined();
+      expect(shape?.type).toBe("class");
+
+      // Find Circle class
+      const circle = result.entities.find((e) => e.name === "Circle");
+      expect(circle).toBeDefined();
+      expect(circle?.type).toBe("class");
+    });
+  });
+
+  describe("parseFile - C++ Templates", () => {
+    it("should parse C++ template classes", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find template class Container
+      const container = result.entities.find((e) => e.name === "Container");
+      expect(container).toBeDefined();
+      expect(container?.type).toBe("class");
+    });
+
+    it("should parse C++ template functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find template function add
+      const addFunc = result.entities.find((e) => e.name === "add");
+      expect(addFunc).toBeDefined();
+      expect(addFunc?.type).toBe("function");
+    });
+  });
+
+  describe("parseFile - C++ Includes", () => {
+    it("should extract C++ include directives", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      expect(result.success).toBe(true);
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Find system include: <iostream>
+      const iostreamInclude = result.imports.find((i) => i.source.includes("iostream"));
+      expect(iostreamInclude).toBeDefined();
+      expect(iostreamInclude?.isRelative).toBe(false);
+
+      // Find local include: "local_header.hpp"
+      const localInclude = result.imports.find((i) => i.source.includes("local_header.hpp"));
+      expect(localInclude).toBeDefined();
+      expect(localInclude?.isRelative).toBe(true);
+    });
+  });
+
+  describe("parseFile - C++ Function Calls", () => {
+    it("should extract C++ function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      expect(result.success).toBe(true);
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find call to multiply from main
+      const multiplyCall = result.calls.find(
+        (c) => c.calledName === "multiply" && c.callerName === "main"
+      );
+      expect(multiplyCall).toBeDefined();
+    });
+
+    it("should extract C++ method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // Find method call p.distanceFromOrigin()
+      const distanceCall = result.calls.find(
+        (c) => c.calledName === "distanceFromOrigin" && c.callerName === "main"
+      );
+      expect(distanceCall).toBeDefined();
+
+      // Find method call container.getValue()
+      const getValueCall = result.calls.find(
+        (c) => c.calledName === "getValue" && c.callerName === "main"
+      );
+      expect(getValueCall).toBeDefined();
+    });
+  });
+
+  describe("parseFile - C++ Extension Support", () => {
+    it("should correctly identify C++ extensions as supported", () => {
+      expect(TreeSitterParser.isSupported(".cpp")).toBe(true);
+      expect(TreeSitterParser.isSupported(".cc")).toBe(true);
+      expect(TreeSitterParser.isSupported(".cxx")).toBe(true);
+      expect(TreeSitterParser.isSupported(".hpp")).toBe(true);
+      expect(TreeSitterParser.isSupported(".hxx")).toBe(true);
+      expect(TreeSitterParser.isSupported(".CPP")).toBe(true);
+    });
+
+    it("should get language from C++ extensions", () => {
+      expect(TreeSitterParser.getLanguageFromExtension(".cpp")).toBe("cpp");
+      expect(TreeSitterParser.getLanguageFromExtension(".cc")).toBe("cpp");
+      expect(TreeSitterParser.getLanguageFromExtension(".cxx")).toBe("cpp");
+      expect(TreeSitterParser.getLanguageFromExtension(".hpp")).toBe("cpp");
+      expect(TreeSitterParser.getLanguageFromExtension(".hxx")).toBe("cpp");
+    });
+  });
+
+  describe("parseFile - C/C++ Exports", () => {
+    it("should return empty exports for C (no export statements)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const result = await parser.parseFile(content, "simple-c.c");
+
+      // C doesn't have explicit export statements
+      expect(result.exports).toHaveLength(0);
+    });
+
+    it("should return empty exports for C++ (no export statements)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const result = await parser.parseFile(content, "simple-cpp.cpp");
+
+      // C++ doesn't have explicit export statements (until C++20 modules)
+      expect(result.exports).toHaveLength(0);
+    });
+
+    it("should mark C/C++ entities as exported by default", async () => {
+      const cContent = await Bun.file(path.join(FIXTURES_DIR, "simple-c.c")).text();
+      const cResult = await parser.parseFile(cContent, "simple-c.c");
+
+      // C functions are exported by default (unless static)
+      const addFunc = cResult.entities.find((e) => e.name === "add");
+      expect(addFunc?.isExported).toBe(true);
+
+      const cppContent = await Bun.file(path.join(FIXTURES_DIR, "simple-cpp.cpp")).text();
+      const cppResult = await parser.parseFile(cppContent, "simple-cpp.cpp");
+
+      // C++ functions are exported by default
+      const multiplyFunc = cppResult.entities.find((e) => e.name === "multiply");
+      expect(multiplyFunc?.isExported).toBe(true);
+    });
+  });
 });
