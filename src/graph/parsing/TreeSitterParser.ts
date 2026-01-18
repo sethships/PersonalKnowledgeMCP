@@ -137,6 +137,18 @@ const CPP_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
 };
 
 /**
+ * Node type to entity type mapping for Ruby.
+ * Ruby uses different AST node types than other languages.
+ * Note: Ruby doesn't have standalone functions at module level in the same way;
+ * all are methods, but we extract top-level defs as "method" type.
+ */
+const RUBY_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  class: "class",
+  method: "method",
+  singleton_method: "method", // class methods (def self.foo)
+};
+
+/**
  * Node types that represent entities we want to extract.
  * Currently used implicitly via NODE_TO_ENTITY_TYPE lookup.
  */
@@ -414,6 +426,7 @@ export class TreeSitterParser {
     const isRust = language === "rust";
     const isC = language === "c";
     const isCpp = language === "cpp";
+    const isRuby = language === "ruby";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
@@ -430,6 +443,8 @@ export class TreeSitterParser {
         nodeTypeMapping = CPP_NODE_TO_ENTITY_TYPE;
       } else if (isC) {
         nodeTypeMapping = C_NODE_TO_ENTITY_TYPE;
+      } else if (isRuby) {
+        nodeTypeMapping = RUBY_NODE_TO_ENTITY_TYPE;
       } else {
         nodeTypeMapping = NODE_TO_ENTITY_TYPE;
       }
@@ -503,6 +518,7 @@ export class TreeSitterParser {
     const isRust = language === "rust";
     const isC = language === "c";
     const isCpp = language === "cpp";
+    const isRuby = language === "ruby";
 
     // Get entity name (language-aware)
     let name: string | null;
@@ -516,6 +532,8 @@ export class TreeSitterParser {
       name = this.extractRustEntityName(node, entityType);
     } else if (isC || isCpp) {
       name = this.extractCEntityName(node, entityType, isCpp);
+    } else if (isRuby) {
+      name = this.extractRubyEntityName(node, entityType);
     } else {
       name = this.extractEntityName(node, entityType);
     }
@@ -535,6 +553,8 @@ export class TreeSitterParser {
       metadata = this.extractRustMetadata(node, entityType);
     } else if (isC || isCpp) {
       metadata = this.extractCMetadata(node, entityType, isCpp);
+    } else if (isRuby) {
+      metadata = this.extractRubyMetadata(node, entityType);
     } else {
       metadata = this.extractMetadata(node, entityType);
     }
@@ -554,6 +574,11 @@ export class TreeSitterParser {
     // C/C++ don't have a simple export mechanism - everything not static is "exported"
     // For simplicity, mark all C/C++ entities as exported (they can be linked externally)
     if (isC || isCpp) {
+      finalIsExported = true;
+    }
+
+    // Ruby has public visibility by default - mark all entities as exported
+    if (isRuby) {
       finalIsExported = true;
     }
 
@@ -2389,6 +2414,9 @@ export class TreeSitterParser {
     if (language === "c" || language === "cpp") {
       return this.extractCImports(root);
     }
+    if (language === "ruby") {
+      return this.extractRubyImports(root);
+    }
 
     const imports: ImportInfo[] = [];
 
@@ -2554,6 +2582,12 @@ export class TreeSitterParser {
     // C/C++ don't have explicit export statements
     // All non-static functions are implicitly linkable externally
     if (language === "c" || language === "cpp") {
+      return [];
+    }
+
+    // Ruby doesn't have explicit export statements like JavaScript/TypeScript
+    // All module-level definitions are implicitly public
+    if (language === "ruby") {
       return [];
     }
 
@@ -2781,6 +2815,9 @@ export class TreeSitterParser {
     }
     if (language === "c" || language === "cpp") {
       return this.extractCCalls(root);
+    }
+    if (language === "ruby") {
+      return this.extractRubyCalls(root);
     }
 
     const calls: CallInfo[] = [];
@@ -4136,5 +4173,391 @@ export class TreeSitterParser {
     }
 
     return null;
+  }
+
+  // ==================== Ruby-Specific Methods ====================
+
+  /**
+   * Extract entity name for Ruby AST nodes.
+   */
+  private extractRubyEntityName(node: Node, entityType: EntityType): string | null {
+    if (entityType === "class") {
+      // For Ruby classes, look for the name node
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+      // Fallback: find constant identifier
+      const constant = this.findFirstChild(node, ["constant"]);
+      if (constant) {
+        return constant.text;
+      }
+    }
+
+    if (entityType === "method") {
+      // For methods, look for name field
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+      // Try identifier child
+      const identifier = this.findFirstChild(node, ["identifier"]);
+      if (identifier) {
+        return identifier.text;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a Ruby entity node.
+   */
+  private extractRubyMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract parameters for methods
+    if (entityType === "method") {
+      const params = this.extractRubyParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Check if singleton method (class method)
+      if (node.type === "singleton_method") {
+        metadata.isStatic = true;
+      }
+    }
+
+    // Extract superclass for classes
+    if (entityType === "class") {
+      const superclass = this.extractRubySuperclass(node);
+      if (superclass) {
+        metadata.extends = superclass;
+      }
+    }
+
+    // Extract documentation (Ruby uses # comments above definitions)
+    if (this.config.extractDocumentation) {
+      const doc = this.extractRubyDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract function parameters from Ruby AST.
+   */
+  private extractRubyParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      // Ruby parameter types in tree-sitter-ruby
+      if (
+        child.type === "identifier" ||
+        child.type === "optional_parameter" ||
+        child.type === "splat_parameter" ||
+        child.type === "hash_splat_parameter" ||
+        child.type === "block_parameter" ||
+        child.type === "keyword_parameter"
+      ) {
+        const param = this.extractRubyParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single Ruby parameter.
+   */
+  private extractRubyParameter(node: Node): ParameterInfo | null {
+    let name: string | null = null;
+    let hasDefault = false;
+    let isOptional = false;
+    let isRest = false;
+
+    switch (node.type) {
+      case "identifier":
+        name = node.text;
+        break;
+
+      case "optional_parameter": {
+        hasDefault = true;
+        isOptional = true;
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? null;
+        break;
+      }
+
+      case "splat_parameter": {
+        isRest = true;
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? "*args";
+        break;
+      }
+
+      case "hash_splat_parameter": {
+        isRest = true;
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? "**kwargs";
+        break;
+      }
+
+      case "block_parameter": {
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? "&block";
+        break;
+      }
+
+      case "keyword_parameter": {
+        const nameNode = node.childForFieldName("name");
+        name = nameNode?.text ?? null;
+        // Keyword parameters are optional if they have a default value
+        const valueNode = node.childForFieldName("value");
+        if (valueNode) {
+          hasDefault = true;
+          isOptional = true;
+        }
+        break;
+      }
+    }
+
+    if (!name) {
+      return null;
+    }
+
+    return { name, hasDefault, isOptional, isRest };
+  }
+
+  /**
+   * Extract superclass for Ruby class definition.
+   */
+  private extractRubySuperclass(node: Node): string | null {
+    // Look for superclass field in tree-sitter-ruby
+    const superclassNode = node.childForFieldName("superclass");
+    if (superclassNode) {
+      // superclass is wrapped in a scope_resolution or constant
+      const constant = this.findFirstChild(superclassNode, ["constant", "scope_resolution"]);
+      if (constant) {
+        return constant.text;
+      }
+      return superclassNode.text;
+    }
+    return null;
+  }
+
+  /**
+   * Extract documentation from Ruby comments preceding a definition.
+   */
+  private extractRubyDocumentation(node: Node): string | null {
+    const comments: string[] = [];
+    let prevSibling = node.previousSibling;
+
+    // Collect preceding comment lines
+    while (prevSibling && prevSibling.type === "comment") {
+      const text = prevSibling.text;
+      // Ruby comments start with #
+      if (text.startsWith("#")) {
+        comments.unshift(text);
+      }
+      prevSibling = prevSibling.previousSibling;
+    }
+
+    if (comments.length > 0) {
+      return comments.join("\n");
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract imports from Ruby AST.
+   *
+   * Handles:
+   * - require 'file'
+   * - require_relative 'file'
+   * - load 'file'
+   */
+  private extractRubyImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      // Ruby uses method calls for imports: require, require_relative, load
+      if (node.type === "call") {
+        try {
+          const info = this.extractRubyImportInfo(node);
+          if (info) {
+            imports.push(info);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Ruby import"
+          );
+        }
+      }
+
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from a Ruby require/require_relative/load call.
+   */
+  private extractRubyImportInfo(node: Node): ImportInfo | null {
+    // Get the method name (require, require_relative, or load)
+    const methodNode = node.childForFieldName("method");
+    if (!methodNode) {
+      return null;
+    }
+
+    const methodName = methodNode.text;
+    if (methodName !== "require" && methodName !== "require_relative" && methodName !== "load") {
+      return null;
+    }
+
+    // Get the arguments
+    const argsNode = node.childForFieldName("arguments");
+    if (!argsNode) {
+      return null;
+    }
+
+    // Find the string argument
+    const stringNode = this.findFirstChild(argsNode, ["string", "string_content"]);
+    if (!stringNode) {
+      return null;
+    }
+
+    // Extract source from string content
+    let source = stringNode.text;
+    // Remove quotes if present
+    source = source.replace(/^['"]|['"]$/g, "");
+
+    // Determine if relative
+    const isRelative =
+      methodName === "require_relative" || source.startsWith("./") || source.startsWith("../");
+
+    // Extract the module name as imported name
+    const importedName = source.split("/").pop()?.replace(/\.rb$/, "") ?? source;
+
+    return {
+      source,
+      isRelative,
+      importedNames: [importedName],
+      isTypeOnly: false,
+      isSideEffect: true, // Ruby requires have side effects
+      line: node.startPosition.row + 1,
+    };
+  }
+
+  /**
+   * Extract function calls from Ruby AST.
+   */
+  private extractRubyCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a method
+      if (node.type === "method" || node.type === "singleton_method") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for call expression in Ruby
+      if (node.type === "call") {
+        try {
+          // Skip require/require_relative/load - they're handled as imports
+          const methodNode = node.childForFieldName("method");
+          const methodName = methodNode?.text;
+          if (
+            methodName !== "require" &&
+            methodName !== "require_relative" &&
+            methodName !== "load"
+          ) {
+            const callInfo = this.extractRubyCallInfo(node, currentCaller);
+            if (callInfo) {
+              calls.push(callInfo);
+            }
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract Ruby call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a Ruby call expression.
+   */
+  private extractRubyCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const methodNode = node.childForFieldName("method");
+    if (!methodNode) {
+      return null;
+    }
+
+    const calledName = methodNode.text;
+
+    // Build the full expression including receiver
+    const receiverNode = node.childForFieldName("receiver");
+    let calledExpression = calledName;
+    if (receiverNode) {
+      calledExpression = `${receiverNode.text}.${calledName}`;
+    }
+
+    return {
+      calledName,
+      calledExpression,
+      isAsync: false, // Ruby doesn't have async/await
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
   }
 }

@@ -233,6 +233,7 @@ describe("LanguageLoader", () => {
           rust: "/nonexistent/path.wasm",
           c: "/nonexistent/path.wasm",
           cpp: "/nonexistent/path.wasm",
+          ruby: "/nonexistent/path.wasm",
         },
       });
 
@@ -265,6 +266,7 @@ describe("LanguageLoader", () => {
           rust: "/custom/rust.wasm",
           c: "/custom/c.wasm",
           cpp: "/custom/cpp.wasm",
+          ruby: "/custom/ruby.wasm",
         },
       };
 
@@ -313,6 +315,16 @@ describe("LanguageLoader", () => {
 
       expect(lang).toBeDefined();
       expect(loader.isLanguageLoaded("cpp")).toBe(true);
+    });
+  });
+
+  describe("Ruby language support", () => {
+    it("should load Ruby language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("ruby");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("ruby")).toBe(true);
     });
   });
 });

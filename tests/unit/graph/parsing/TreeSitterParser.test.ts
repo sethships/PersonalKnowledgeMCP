@@ -2094,4 +2094,159 @@ export function documented(): void {}
       expect(multiplyFunc?.isExported).toBe(true);
     });
   });
+
+  // ==================== Ruby Tests ====================
+
+  describe("parseFile - Ruby Classes", () => {
+    it("should parse Ruby classes with inheritance", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("ruby");
+
+      // Find the User class
+      const userClass = result.entities.find((e) => e.name === "User" && e.type === "class");
+      expect(userClass).toBeDefined();
+      expect(userClass?.isExported).toBe(true);
+      expect(userClass?.metadata?.extends).toBe("BaseModel");
+    });
+  });
+
+  describe("parseFile - Ruby Methods", () => {
+    it("should parse Ruby instance methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      expect(result.success).toBe(true);
+
+      // Find instance methods
+      const initMethod = result.entities.find((e) => e.name === "initialize");
+      expect(initMethod).toBeDefined();
+      expect(initMethod?.type).toBe("method");
+
+      const displayMethod = result.entities.find((e) => e.name === "display_name");
+      expect(displayMethod).toBeDefined();
+      expect(displayMethod?.type).toBe("method");
+    });
+
+    it("should parse Ruby singleton methods (class methods)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Find singleton method (class method)
+      const fromHashMethod = result.entities.find((e) => e.name === "from_hash");
+      expect(fromHashMethod).toBeDefined();
+      expect(fromHashMethod?.type).toBe("method");
+      expect(fromHashMethod?.metadata?.isStatic).toBe(true);
+    });
+
+    it("should extract Ruby method parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Find initialize method with parameters
+      const initMethod = result.entities.find((e) => e.name === "initialize");
+      expect(initMethod?.metadata?.parameters).toBeDefined();
+      expect(initMethod?.metadata?.parameters?.length).toBeGreaterThan(0);
+
+      // Check for parameter with default value
+      const emailParam = initMethod?.metadata?.parameters?.find((p) => p.name === "email");
+      expect(emailParam?.hasDefault).toBe(true);
+    });
+
+    it("should extract Ruby splat and keyword parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Find method with splat/keyword params
+      const updateMethod = result.entities.find((e) => e.name === "update");
+      expect(updateMethod?.metadata?.parameters).toBeDefined();
+
+      // Check for splat parameter
+      const splatParam = updateMethod?.metadata?.parameters?.find((p) => p.isRest);
+      expect(splatParam).toBeDefined();
+    });
+  });
+
+  describe("parseFile - Ruby Imports", () => {
+    it("should extract require statements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Find require 'json'
+      const jsonImport = result.imports.find((i) => i.source === "json");
+      expect(jsonImport).toBeDefined();
+      expect(jsonImport?.isRelative).toBe(false);
+    });
+
+    it("should extract require_relative statements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Find require_relative './helper'
+      const helperImport = result.imports.find((i) => i.source.includes("helper"));
+      expect(helperImport).toBeDefined();
+      expect(helperImport?.isRelative).toBe(true);
+    });
+  });
+
+  describe("parseFile - Ruby Function Calls", () => {
+    it("should extract Ruby method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Check for method calls (excluding require/require_relative)
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find a call with receiver (e.g., name.to_s)
+      const toSCall = result.calls.find((c) => c.calledName === "to_s");
+      expect(toSCall).toBeDefined();
+
+      // Note: Ruby allows method calls without parentheses, which appear as identifiers
+      // Only calls with parentheses like `function_with_params(a, b)` are detected
+      // This is expected behavior - simple method calls may not be detected
+    });
+  });
+
+  describe("parseFile - Ruby Exports", () => {
+    it("should return empty exports for Ruby (no export statements)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Ruby doesn't have explicit export statements
+      expect(result.exports).toHaveLength(0);
+    });
+
+    it("should mark Ruby entities as exported by default", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Ruby has public visibility by default
+      const userClass = result.entities.find((e) => e.name === "User");
+      expect(userClass?.isExported).toBe(true);
+
+      const initMethod = result.entities.find((e) => e.name === "initialize");
+      expect(initMethod?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - Ruby Extension Support", () => {
+    it("should support .rb extension", () => {
+      expect(TreeSitterParser.isSupported(".rb")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".rb")).toBe("ruby");
+    });
+
+    it("should support .rake extension", () => {
+      expect(TreeSitterParser.isSupported(".rake")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".rake")).toBe("ruby");
+    });
+
+    it("should support .gemspec extension", () => {
+      expect(TreeSitterParser.isSupported(".gemspec")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".gemspec")).toBe("ruby");
+    });
+  });
 });

@@ -146,6 +146,30 @@ describe("language-detector", () => {
       });
     });
 
+    describe("Ruby detection", () => {
+      test("detects .rb files as ruby", () => {
+        expect(detectLanguage("app.rb")).toBe("ruby");
+        expect(detectLanguage("lib/utils.rb")).toBe("ruby");
+        expect(detectLanguage("app/models/user.rb")).toBe("ruby");
+      });
+
+      test("detects .rake files as ruby", () => {
+        expect(detectLanguage("Rakefile.rake")).toBe("ruby");
+        expect(detectLanguage("lib/tasks/deploy.rake")).toBe("ruby");
+      });
+
+      test("detects .gemspec files as ruby", () => {
+        expect(detectLanguage("myproject.gemspec")).toBe("ruby");
+        expect(detectLanguage("lib/my-gem.gemspec")).toBe("ruby");
+      });
+
+      test("handles uppercase Ruby extensions", () => {
+        expect(detectLanguage("file.RB")).toBe("ruby");
+        expect(detectLanguage("file.RAKE")).toBe("ruby");
+        expect(detectLanguage("file.GEMSPEC")).toBe("ruby");
+      });
+    });
+
     describe("unknown language detection", () => {
       test("returns unknown for non-supported extensions", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
@@ -201,14 +225,15 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("csharp");
       expect(SUPPORTED_LANGUAGES).toContain("c");
       expect(SUPPORTED_LANGUAGES).toContain("cpp");
+      expect(SUPPORTED_LANGUAGES).toContain("ruby");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 11 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(11);
+    test("has exactly 12 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(12);
     });
 
     test("is readonly", () => {
@@ -234,6 +259,9 @@ describe("language-detector", () => {
         { path: "file.h", expected: "c" },
         { path: "file.cpp", expected: "cpp" },
         { path: "file.hpp", expected: "cpp" },
+        { path: "file.rb", expected: "ruby" },
+        { path: "file.rake", expected: "ruby" },
+        { path: "file.gemspec", expected: "ruby" },
         { path: "file.json", expected: "unknown" },
       ];
 

@@ -104,6 +104,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       rust: resolveWasmPath("tree-sitter-rust/tree-sitter-rust.wasm"),
       c: resolveWasmPath("tree-sitter-c/tree-sitter-c.wasm"),
       cpp: resolveWasmPath("tree-sitter-cpp/tree-sitter-cpp.wasm"),
+      ruby: resolveWasmPath("tree-sitter-ruby/tree-sitter-ruby.wasm"),
     },
   };
 }
@@ -374,6 +375,7 @@ export class LanguageLoader {
       "rust",
       "c",
       "cpp",
+      "ruby",
     ];
 
     await Promise.all(
