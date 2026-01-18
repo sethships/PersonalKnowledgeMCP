@@ -68,9 +68,15 @@ describe("file-scanner utilities", () => {
       expect(SUPPORTED_EXTENSIONS.has(".hxx")).toBe(true);
     });
 
-    test("has exactly 18 extensions", () => {
-      // 4 JS/TS extensions + 3 Python extensions + 1 Java + 1 Go + 1 Rust + 1 C# + 2 C + 5 C++
-      expect(SUPPORTED_EXTENSIONS.size).toBe(18);
+    test("contains Ruby extensions", () => {
+      expect(SUPPORTED_EXTENSIONS.has(".rb")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".rake")).toBe(true);
+      expect(SUPPORTED_EXTENSIONS.has(".gemspec")).toBe(true);
+    });
+
+    test("has exactly 21 extensions", () => {
+      // 4 JS/TS extensions + 3 Python extensions + 1 Java + 1 Go + 1 Rust + 1 C# + 2 C + 5 C++ + 3 Ruby
+      expect(SUPPORTED_EXTENSIONS.size).toBe(21);
     });
   });
 
