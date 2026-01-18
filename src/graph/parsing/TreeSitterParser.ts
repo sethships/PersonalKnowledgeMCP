@@ -139,11 +139,13 @@ const CPP_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
 /**
  * Node type to entity type mapping for Ruby.
  * Ruby uses different AST node types than other languages.
- * Note: Ruby doesn't have standalone functions at module level in the same way;
- * all are methods, but we extract top-level defs as "method" type.
+ * Note: Ruby doesn't have standalone functions; all are methods.
+ * Top-level defs are extracted as "method" type.
+ * Modules are extracted as "class" type (namespace containers).
  */
 const RUBY_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   class: "class",
+  module: "class", // Ruby modules map to "class" type (similar to Go interfaces)
   method: "method",
   singleton_method: "method", // class methods (def self.foo)
 };

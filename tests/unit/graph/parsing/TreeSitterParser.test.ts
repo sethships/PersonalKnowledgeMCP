@@ -2097,6 +2097,32 @@ export function documented(): void {}
 
   // ==================== Ruby Tests ====================
 
+  describe("parseFile - Ruby Modules", () => {
+    it("should parse Ruby modules", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("ruby");
+
+      // Find the Utils module (extracted as class type)
+      const utilsModule = result.entities.find((e) => e.name === "Utils" && e.type === "class");
+      expect(utilsModule).toBeDefined();
+      expect(utilsModule?.isExported).toBe(true);
+    });
+
+    it("should parse module singleton methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
+      const result = await parser.parseFile(content, "simple-ruby.rb");
+
+      // Find module singleton method (Utils.format_name)
+      const formatNameMethod = result.entities.find((e) => e.name === "format_name");
+      expect(formatNameMethod).toBeDefined();
+      expect(formatNameMethod?.type).toBe("method");
+      expect(formatNameMethod?.metadata?.isStatic).toBe(true);
+    });
+  });
+
   describe("parseFile - Ruby Classes", () => {
     it("should parse Ruby classes with inheritance", async () => {
       const content = await Bun.file(path.join(FIXTURES_DIR, "simple-ruby.rb")).text();
