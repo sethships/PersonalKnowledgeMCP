@@ -90,28 +90,28 @@ Phase 1 establishes the foundation for semantic code search via the Model Contex
 
 The following are intentional limitations in Phase 1, to be addressed in future phases:
 
-### Not Included in Phase 1
+### Implementation Status (Phase 2 Progress)
 
-| Limitation | Planned Phase | Notes |
-|------------|---------------|-------|
-| AST Parsing | Phase 2 | Tree-sitter integration for code intelligence |
-| PostgreSQL Document Store | Phase 2 | Full artifact storage |
-| Local File Ingestion | Phase 2 | Watch local folders for changes |
-| PDF/Markdown Extraction | Phase 2 | Educational material support |
-| HTTP/SSE Transport | Phase 3 | Cross-client support (Cursor, VS Code) |
-| Azure DevOps Integration | Phase 3 | Enterprise repository support |
-| Graph Database | Phase 4 | Neo4j for code relationships |
-| Automated Webhooks | Phase 4 | GitHub webhook handler |
-| OIDC Full Integration | Phase 3+ | Microsoft 365 SSO (framework implemented) |
-| Kubernetes Deployment | Phase 4 | Production scaling |
+| Feature | Status | Notes |
+|---------|--------|-------|
+| AST Parsing | **Complete** | Tree-sitter integration for 13 languages |
+| PostgreSQL Document Store | Pending | Full artifact storage |
+| Local File Ingestion | Pending | Watch local folders for changes |
+| PDF/Markdown Extraction | Pending | Educational material support |
+| HTTP/SSE Transport | **Complete** | Cross-client support (Cursor, VS Code) |
+| Azure DevOps Integration | Pending | Enterprise repository support |
+| Graph Database | **Complete** | Neo4j for code relationships |
+| Automated Webhooks | Pending | GitHub webhook handler |
+| OIDC Full Integration | Framework Ready | Microsoft 365 SSO |
+| Kubernetes Deployment | Helm Chart Ready | Production scaling |
 
 ### Current Constraints
 
 1. **Local Deployment Only**: MCP service runs on localhost; no remote access without VPN/Tailscale
 2. **Single User**: No multi-user support; designed for individual developer use
 3. **GitHub Only**: Repository indexing limited to GitHub (Azure DevOps in Phase 3)
-4. **OpenAI Dependency**: Embeddings require OpenAI API access
-5. **Docker Required**: ChromaDB runs in Docker container
+4. **Embeddings**: OpenAI API or local alternatives (Transformers.js, Ollama)
+5. **Docker Required**: ChromaDB and Neo4j run in Docker containers
 
 ## Technology Stack
 
@@ -121,8 +121,30 @@ The following are intentional limitations in Phase 1, to be addressed in future 
 | Language | TypeScript | 5.3+ |
 | MCP SDK | @modelcontextprotocol/sdk | Latest |
 | Vector DB | ChromaDB | 0.4+ |
-| Embeddings | OpenAI text-embedding-3-small | - |
+| Graph DB | Neo4j Community | 5.x |
+| AST Parsing | tree-sitter (web-tree-sitter) | Latest |
+| Embeddings | OpenAI, Transformers.js, Ollama | Multiple |
 | Testing | Bun Test | Built-in |
+
+## Supported Languages
+
+The system supports 13 programming languages for AST parsing and graph population:
+
+| Language | File Extensions | Parser |
+|----------|-----------------|--------|
+| TypeScript | .ts, .mts, .cts | tree-sitter |
+| TSX | .tsx | tree-sitter |
+| JavaScript | .js, .mjs, .cjs | tree-sitter |
+| JSX | .jsx | tree-sitter |
+| Python | .py, .pyw, .pyi | tree-sitter |
+| Java | .java | tree-sitter |
+| Go | .go | tree-sitter |
+| Rust | .rs | tree-sitter |
+| C# | .cs | Roslyn |
+| C | .c, .h | tree-sitter |
+| C++ | .cpp, .cc, .cxx, .hpp, .hxx | tree-sitter |
+| Ruby | .rb, .rake, .gemspec | tree-sitter |
+| PHP | .php, .phtml, .php5, .php7, .inc | tree-sitter |
 
 ## Documentation
 

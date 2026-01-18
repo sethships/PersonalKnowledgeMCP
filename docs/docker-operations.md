@@ -1574,11 +1574,11 @@ environment:
 
 ### Secrets Management
 
-**Phase 1 (Current):**
+**Development Mode:**
 - No authentication on ChromaDB (local development only)
 - Telemetry disabled to prevent data leakage
 
-**Phase 2+:**
+**Production Mode:**
 - Enable ChromaDB authentication with token-based auth
 - Use Docker secrets for production deployments
 - Rotate credentials regularly

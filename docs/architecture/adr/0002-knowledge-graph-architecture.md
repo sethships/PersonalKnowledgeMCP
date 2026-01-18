@@ -511,20 +511,22 @@ interface EnhancedSearchInput {
 3. **Add Neo4j to MCP server initialization**
 4. **Create schema migration tool**
 
-### Phase 2: Data Population (Week 3-4)
+### Phase 2: Data Population (Complete)
 
-1. **Extend AST parsing** (tree-sitter integration):
+1. **AST parsing** (tree-sitter integration) for 13 languages:
+   - TypeScript, TSX, JavaScript, JSX (web-tree-sitter)
+   - Python, Java, Go, Rust, C, C++, Ruby, PHP (web-tree-sitter)
+   - C# (Roslyn parser)
    - Extract function definitions and calls
    - Extract class hierarchies
    - Extract import statements
-2. **Create graph population service**:
-   - `src/services/graph-population-service.ts`
+2. **Graph population service**:
+   - `src/graph/ingestion/GraphIngestionService.ts`
    - Batch processing for initial indexing
-   - Incremental updates for changed files
-3. **Sync service** for maintaining consistency:
-   - Listen for ChromaDB indexing events
-   - Populate graph nodes and relationships
-   - Handle file deletions and updates
+   - Entity and relationship extraction per language
+3. **CLI commands**:
+   - `pk-mcp graph populate <repo>` - Populate graph for single repository
+   - `pk-mcp graph populate-all` - Populate graph for all repositories
 
 ### Phase 3: MCP Tools (Week 5-6)
 
