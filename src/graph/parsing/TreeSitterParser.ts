@@ -12,6 +12,8 @@
  * - Rust (.rs)
  * - C (.c, .h)
  * - C++ (.cpp, .cc, .cxx, .hpp, .hxx)
+ * - Ruby (.rb, .rake, .gemspec)
+ * - PHP (.php, .phtml, .php5, .php7, .inc)
  *
  * Parses source files and extracts code entities (functions, classes,
  * interfaces, etc.) and imports for knowledge graph population.
@@ -148,6 +150,22 @@ const RUBY_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
   module: "class", // Ruby modules map to "class" type (similar to Go interfaces)
   method: "method",
   singleton_method: "method", // class methods (def self.foo)
+};
+
+/**
+ * Node type to entity type mapping for PHP.
+ * PHP uses different AST node types than other languages.
+ * Note: PHP has both functions and methods (methods are within classes).
+ * Traits are PHP's mixin mechanism - mapped to "class" type.
+ */
+const PHP_NODE_TO_ENTITY_TYPE: Record<string, EntityType> = {
+  class_declaration: "class",
+  interface_declaration: "interface",
+  trait_declaration: "class", // PHP traits map to "class" type (similar to Ruby modules)
+  enum_declaration: "enum",
+  function_definition: "function",
+  method_declaration: "method",
+  property_declaration: "property",
 };
 
 /**
@@ -429,6 +447,7 @@ export class TreeSitterParser {
     const isC = language === "c";
     const isCpp = language === "cpp";
     const isRuby = language === "ruby";
+    const isPhp = language === "php";
 
     const processNode = (node: Node, isExported: boolean = false): void => {
       // Use language-specific node type mapping
@@ -447,6 +466,8 @@ export class TreeSitterParser {
         nodeTypeMapping = C_NODE_TO_ENTITY_TYPE;
       } else if (isRuby) {
         nodeTypeMapping = RUBY_NODE_TO_ENTITY_TYPE;
+      } else if (isPhp) {
+        nodeTypeMapping = PHP_NODE_TO_ENTITY_TYPE;
       } else {
         nodeTypeMapping = NODE_TO_ENTITY_TYPE;
       }
@@ -521,6 +542,7 @@ export class TreeSitterParser {
     const isC = language === "c";
     const isCpp = language === "cpp";
     const isRuby = language === "ruby";
+    const isPhp = language === "php";
 
     // Get entity name (language-aware)
     let name: string | null;
@@ -536,6 +558,8 @@ export class TreeSitterParser {
       name = this.extractCEntityName(node, entityType, isCpp);
     } else if (isRuby) {
       name = this.extractRubyEntityName(node, entityType);
+    } else if (isPhp) {
+      name = this.extractPhpEntityName(node, entityType);
     } else {
       name = this.extractEntityName(node, entityType);
     }
@@ -557,6 +581,8 @@ export class TreeSitterParser {
       metadata = this.extractCMetadata(node, entityType, isCpp);
     } else if (isRuby) {
       metadata = this.extractRubyMetadata(node, entityType);
+    } else if (isPhp) {
+      metadata = this.extractPhpMetadata(node, entityType);
     } else {
       metadata = this.extractMetadata(node, entityType);
     }
@@ -581,6 +607,11 @@ export class TreeSitterParser {
 
     // Ruby has public visibility by default - mark all entities as exported
     if (isRuby) {
+      finalIsExported = true;
+    }
+
+    // PHP has public visibility by default - mark all entities as exported
+    if (isPhp) {
       finalIsExported = true;
     }
 
@@ -2419,6 +2450,9 @@ export class TreeSitterParser {
     if (language === "ruby") {
       return this.extractRubyImports(root);
     }
+    if (language === "php") {
+      return this.extractPhpImports(root);
+    }
 
     const imports: ImportInfo[] = [];
 
@@ -2590,6 +2624,12 @@ export class TreeSitterParser {
     // Ruby doesn't have explicit export statements like JavaScript/TypeScript
     // All module-level definitions are implicitly public
     if (language === "ruby") {
+      return [];
+    }
+
+    // PHP doesn't have explicit export statements like JavaScript/TypeScript
+    // Visibility is controlled by access modifiers, not exports
+    if (language === "php") {
       return [];
     }
 
@@ -2820,6 +2860,9 @@ export class TreeSitterParser {
     }
     if (language === "ruby") {
       return this.extractRubyCalls(root);
+    }
+    if (language === "php") {
+      return this.extractPhpCalls(root);
     }
 
     const calls: CallInfo[] = [];
@@ -4557,6 +4600,619 @@ export class TreeSitterParser {
       calledName,
       calledExpression,
       isAsync: false, // Ruby doesn't have async/await
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  // ==================== PHP Methods ====================
+
+  /**
+   * Extract entity name from a PHP AST node.
+   */
+  private extractPhpEntityName(node: Node, entityType: EntityType): string | null {
+    // For classes, interfaces, traits, and enums, look for the name node
+    if (entityType === "class" || entityType === "interface" || entityType === "enum") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For functions and methods, look for the name field
+    if (entityType === "function" || entityType === "method") {
+      const nameNode = node.childForFieldName("name");
+      if (nameNode) {
+        return nameNode.text;
+      }
+    }
+
+    // For properties, look for the name in property elements
+    if (entityType === "property") {
+      // PHP property_declaration contains property_element children
+      const propertyElement = this.findFirstChild(node, ["property_element"]);
+      if (propertyElement) {
+        const variableName = this.findFirstChild(propertyElement, ["variable_name"]);
+        if (variableName) {
+          // Remove leading $ from property name
+          return variableName.text.replace(/^\$/, "");
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract metadata from a PHP entity node.
+   */
+  private extractPhpMetadata(node: Node, entityType: EntityType): EntityMetadata {
+    const metadata: EntityMetadata = {};
+
+    // Extract parameters for functions and methods
+    if (entityType === "function" || entityType === "method") {
+      const params = this.extractPhpParameters(node);
+      if (params.length > 0) {
+        metadata.parameters = params;
+      }
+
+      // Extract return type
+      const returnType = this.extractPhpReturnType(node);
+      if (returnType) {
+        metadata.returnType = returnType;
+      }
+
+      // Check for static modifier on methods
+      if (entityType === "method") {
+        metadata.isStatic = this.hasPhpModifier(node, "static");
+      }
+
+      // Check for abstract modifier
+      metadata.isAbstract = this.hasPhpModifier(node, "abstract");
+    }
+
+    // Extract extends/implements for classes and interfaces
+    if (entityType === "class") {
+      // PHP uses base_clause for extends (not exposed as a field, use child search)
+      const baseClause = this.findFirstChild(node, ["base_clause"]);
+      if (baseClause) {
+        // Find the name in base_clause
+        const nameNode = this.findFirstChild(baseClause, ["name", "qualified_name"]);
+        if (nameNode) {
+          metadata.extends = nameNode.text;
+        }
+      }
+
+      // Extract implements
+      const implementsClause = this.findFirstChild(node, ["class_interface_clause"]);
+      if (implementsClause) {
+        const interfaces = this.extractPhpImplements(implementsClause);
+        if (interfaces.length > 0) {
+          metadata.implements = interfaces;
+        }
+      }
+
+      // Check for abstract class
+      metadata.isAbstract = this.hasPhpModifier(node, "abstract");
+    }
+
+    // Extract documentation (PHPDoc comments)
+    if (this.config.extractDocumentation) {
+      const doc = this.extractPhpDocumentation(node);
+      if (doc) {
+        metadata.documentation = doc;
+      }
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extract function parameters from PHP AST.
+   */
+  private extractPhpParameters(node: Node): ParameterInfo[] {
+    const params: ParameterInfo[] = [];
+
+    const paramsNode = node.childForFieldName("parameters");
+    if (!paramsNode) {
+      return params;
+    }
+
+    for (let i = 0; i < paramsNode.childCount; i++) {
+      const child = paramsNode.child(i);
+      if (!child) continue;
+
+      if (
+        child.type === "simple_parameter" ||
+        child.type === "variadic_parameter" ||
+        child.type === "property_promotion_parameter"
+      ) {
+        const param = this.extractPhpParameter(child);
+        if (param) {
+          params.push(param);
+        }
+      }
+    }
+
+    return params;
+  }
+
+  /**
+   * Extract a single PHP parameter.
+   */
+  private extractPhpParameter(node: Node): ParameterInfo | null {
+    let name: string | null = null;
+    let type: string | undefined;
+    let hasDefault = false;
+    let isOptional = false;
+    let isRest = false;
+
+    // Get parameter name
+    const nameNode = node.childForFieldName("name");
+    if (nameNode) {
+      // Remove leading $ from variable name
+      name = nameNode.text.replace(/^\$/, "");
+    }
+
+    if (!name) {
+      return null;
+    }
+
+    // Get type
+    const typeNode = node.childForFieldName("type");
+    if (typeNode) {
+      type = typeNode.text;
+    }
+
+    // Check for default value
+    const defaultNode = node.childForFieldName("default_value");
+    if (defaultNode) {
+      hasDefault = true;
+      isOptional = true;
+    }
+
+    // Check for variadic parameter (...$args)
+    if (node.type === "variadic_parameter") {
+      isRest = true;
+    }
+
+    return { name, type, hasDefault, isOptional, isRest };
+  }
+
+  /**
+   * Extract return type from PHP function/method.
+   */
+  private extractPhpReturnType(node: Node): string | null {
+    const returnType = node.childForFieldName("return_type");
+    if (returnType) {
+      return returnType.text;
+    }
+    return null;
+  }
+
+  /**
+   * Check if a PHP node has a specific modifier (static, abstract, etc.).
+   */
+  private hasPhpModifier(node: Node, modifier: string): boolean {
+    // Look for modifier in visibility_modifier or static_modifier
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (!child) continue;
+
+      if (
+        child.type === "visibility_modifier" ||
+        child.type === "static_modifier" ||
+        child.type === "abstract_modifier" ||
+        child.type === "final_modifier"
+      ) {
+        if (child.text === modifier) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Extract implemented interfaces from PHP class_interface_clause.
+   */
+  private extractPhpImplements(node: Node): string[] {
+    const interfaces: string[] = [];
+
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (!child) continue;
+
+      if (child.type === "name" || child.type === "qualified_name") {
+        interfaces.push(child.text);
+      }
+    }
+
+    return interfaces;
+  }
+
+  /**
+   * Extract documentation from PHPDoc comments preceding a definition.
+   */
+  private extractPhpDocumentation(node: Node): string | null {
+    // Look for preceding comment node
+    let prevSibling = node.previousSibling;
+
+    // Skip any whitespace/newline nodes
+    while (prevSibling && (prevSibling.type === "text" || prevSibling.text.trim() === "")) {
+      prevSibling = prevSibling.previousSibling;
+    }
+
+    // Check for PHPDoc comment (starts with /**)
+    if (prevSibling && prevSibling.type === "comment") {
+      const text = prevSibling.text;
+      if (text.startsWith("/**")) {
+        return text;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract imports from PHP AST.
+   *
+   * Handles:
+   * - use Namespace\Class;
+   * - use Namespace\Class as Alias;
+   * - require 'file.php';
+   * - require_once 'file.php';
+   * - include 'file.php';
+   * - include_once 'file.php';
+   */
+  private extractPhpImports(root: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    const processNode = (node: Node): void => {
+      // Handle use statements (namespace imports)
+      if (node.type === "namespace_use_declaration") {
+        try {
+          const info = this.extractPhpUseStatement(node);
+          if (info) {
+            imports.push(...info);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract PHP use statement"
+          );
+        }
+      }
+
+      // Handle require/include statements
+      if (node.type === "expression_statement") {
+        const child = node.child(0);
+        if (
+          child &&
+          (child.type === "require_expression" ||
+            child.type === "require_once_expression" ||
+            child.type === "include_expression" ||
+            child.type === "include_once_expression")
+        ) {
+          try {
+            const info = this.extractPhpRequireInclude(child);
+            if (info) {
+              imports.push(info);
+            }
+          } catch (error) {
+            this.logger.warn(
+              {
+                err: error,
+                line: node.startPosition.row + 1,
+              },
+              "Failed to extract PHP require/include"
+            );
+          }
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child);
+        }
+      }
+    };
+
+    processNode(root);
+    return imports;
+  }
+
+  /**
+   * Extract information from a PHP use statement.
+   *
+   * Handles:
+   * - use Namespace\Class;
+   * - use Namespace\Class as Alias;
+   * - use Namespace\{Class1, Class2};
+   */
+  private extractPhpUseStatement(node: Node): ImportInfo[] {
+    const imports: ImportInfo[] = [];
+
+    // Find namespace_use_clause nodes
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (!child) continue;
+
+      if (child.type === "namespace_use_clause") {
+        const nameNode = this.findFirstChild(child, ["qualified_name", "name"]);
+        if (!nameNode) continue;
+
+        const source = nameNode.text;
+
+        // Check for alias
+        const aliasNode = child.childForFieldName("alias");
+        const alias = aliasNode?.text;
+
+        // Extract the class name (last part of namespace)
+        const importedName = source.split("\\").pop() ?? source;
+
+        const info: ImportInfo = {
+          source,
+          isRelative: false, // PHP use statements are always absolute from namespace root
+          importedNames: [importedName],
+          isTypeOnly: false,
+          isSideEffect: false,
+          line: node.startPosition.row + 1,
+        };
+
+        if (alias) {
+          info.aliases = { [importedName]: alias };
+        }
+
+        imports.push(info);
+      }
+
+      // Handle grouped use: use Namespace\{Class1, Class2}
+      if (child.type === "namespace_use_group") {
+        const prefixNode = this.findFirstChild(child, [
+          "namespace_name_as_prefix",
+          "qualified_name",
+        ]);
+        const prefix = prefixNode?.text?.replace(/\\$/, "") ?? "";
+
+        // Find all clause nodes in the group
+        for (let j = 0; j < child.childCount; j++) {
+          const clause = child.child(j);
+          if (clause?.type === "namespace_use_group_clause") {
+            const nameNode = this.findFirstChild(clause, ["name", "qualified_name"]);
+            if (!nameNode) continue;
+
+            const shortName = nameNode.text;
+            const source = prefix ? `${prefix}\\${shortName}` : shortName;
+
+            // Check for alias
+            const aliasNode = clause.childForFieldName("alias");
+            const alias = aliasNode?.text;
+
+            const info: ImportInfo = {
+              source,
+              isRelative: false,
+              importedNames: [shortName],
+              isTypeOnly: false,
+              isSideEffect: false,
+              line: node.startPosition.row + 1,
+            };
+
+            if (alias) {
+              info.aliases = { [shortName]: alias };
+            }
+
+            imports.push(info);
+          }
+        }
+      }
+    }
+
+    return imports;
+  }
+
+  /**
+   * Extract information from a PHP require/include expression.
+   */
+  private extractPhpRequireInclude(node: Node): ImportInfo | null {
+    // Get the string argument
+    const argNode = this.findFirstChild(node, ["string", "encapsed_string"]);
+    if (!argNode) {
+      return null;
+    }
+
+    // Extract source from string content
+    let source = argNode.text;
+    // Remove quotes
+    source = source.replace(/^['"]|['"]$/g, "");
+
+    // Determine if relative
+    const isRelative =
+      source.startsWith("./") || source.startsWith("../") || !source.startsWith("/");
+
+    // Extract filename as imported name
+    const importedName =
+      source
+        .split("/")
+        .pop()
+        ?.replace(/\.php$/, "") ?? source;
+
+    return {
+      source,
+      isRelative,
+      importedNames: [importedName],
+      isTypeOnly: false,
+      isSideEffect: true, // require/include have side effects
+      line: node.startPosition.row + 1,
+    };
+  }
+
+  /**
+   * Extract function calls from PHP AST.
+   */
+  private extractPhpCalls(root: Node): CallInfo[] {
+    const calls: CallInfo[] = [];
+
+    const processNode = (node: Node, callerName?: string): void => {
+      let currentCaller = callerName;
+
+      // Update caller context when entering a function/method
+      if (node.type === "function_definition" || node.type === "method_declaration") {
+        const nameNode = node.childForFieldName("name");
+        if (nameNode) {
+          currentCaller = nameNode.text;
+        }
+      }
+
+      // Check for function calls
+      if (node.type === "function_call_expression") {
+        try {
+          const callInfo = this.extractPhpCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract PHP function call"
+          );
+        }
+      }
+
+      // Check for method calls
+      if (node.type === "member_call_expression") {
+        try {
+          const callInfo = this.extractPhpMethodCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract PHP method call"
+          );
+        }
+      }
+
+      // Check for static method calls
+      if (node.type === "scoped_call_expression") {
+        try {
+          const callInfo = this.extractPhpStaticCallInfo(node, currentCaller);
+          if (callInfo) {
+            calls.push(callInfo);
+          }
+        } catch (error) {
+          this.logger.warn(
+            {
+              err: error,
+              line: node.startPosition.row + 1,
+            },
+            "Failed to extract PHP static call"
+          );
+        }
+      }
+
+      // Recurse into children
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          processNode(child, currentCaller);
+        }
+      }
+    };
+
+    processNode(root);
+    return calls;
+  }
+
+  /**
+   * Extract information from a PHP function call expression.
+   */
+  private extractPhpCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const functionNode = node.childForFieldName("function");
+    if (!functionNode) {
+      return null;
+    }
+
+    const calledName = functionNode.text;
+
+    // Skip require/include calls - they're handled as imports
+    if (["require", "require_once", "include", "include_once"].includes(calledName)) {
+      return null;
+    }
+
+    return {
+      calledName,
+      calledExpression: calledName,
+      isAsync: false, // PHP doesn't have async/await
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract information from a PHP method call expression ($obj->method()).
+   */
+  private extractPhpMethodCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      return null;
+    }
+
+    const calledName = nameNode.text;
+
+    // Build the full expression including object
+    const objectNode = node.childForFieldName("object");
+    let calledExpression = calledName;
+    if (objectNode) {
+      calledExpression = `${objectNode.text}->${calledName}`;
+    }
+
+    return {
+      calledName,
+      calledExpression,
+      isAsync: false,
+      line: node.startPosition.row + 1,
+      column: node.startPosition.column,
+      callerName,
+    };
+  }
+
+  /**
+   * Extract information from a PHP static method call expression (Class::method()).
+   */
+  private extractPhpStaticCallInfo(node: Node, callerName?: string): CallInfo | null {
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      return null;
+    }
+
+    const calledName = nameNode.text;
+
+    // Build the full expression including class
+    const scopeNode = node.childForFieldName("scope");
+    let calledExpression = calledName;
+    if (scopeNode) {
+      calledExpression = `${scopeNode.text}::${calledName}`;
+    }
+
+    return {
+      calledName,
+      calledExpression,
+      isAsync: false,
       line: node.startPosition.row + 1,
       column: node.startPosition.column,
       callerName,

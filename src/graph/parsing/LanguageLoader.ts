@@ -105,6 +105,7 @@ function getDefaultWasmPaths(): WasmPathConfig {
       c: resolveWasmPath("tree-sitter-c/tree-sitter-c.wasm"),
       cpp: resolveWasmPath("tree-sitter-cpp/tree-sitter-cpp.wasm"),
       ruby: resolveWasmPath("tree-sitter-ruby/tree-sitter-ruby.wasm"),
+      php: resolveWasmPath("tree-sitter-php/tree-sitter-php.wasm"),
     },
   };
 }
@@ -137,7 +138,7 @@ export class LanguageLoader {
    *
    * Design Decision: Languages are cached indefinitely without an eviction policy.
    * This is acceptable because:
-   * 1. The current supported language set is small (8 languages)
+   * 1. The current supported language set is small (12 languages)
    * 2. Each WASM language grammar is relatively small (~100-200KB)
    * 3. Languages are typically loaded once and reused throughout the application lifecycle
    *
@@ -376,6 +377,7 @@ export class LanguageLoader {
       "c",
       "cpp",
       "ruby",
+      "php",
     ];
 
     await Promise.all(

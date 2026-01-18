@@ -10,7 +10,7 @@
 /**
  * Languages supported by tree-sitter for AST parsing.
  *
- * Supports TypeScript ecosystem languages, Python, Java, Go, Rust, C, and C++.
+ * Supports TypeScript ecosystem languages, Python, Java, Go, Rust, C, C++, Ruby, and PHP.
  * JavaScript is handled by both TypeScript and JavaScript grammars
  * depending on the file extension.
  */
@@ -25,7 +25,8 @@ export type TreeSitterLanguage =
   | "rust"
   | "c"
   | "cpp"
-  | "ruby";
+  | "ruby"
+  | "php";
 
 /**
  * All supported languages for AST parsing.
@@ -371,6 +372,11 @@ export const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
   ".rb": "ruby",
   ".rake": "ruby",
   ".gemspec": "ruby",
+  ".php": "php",
+  ".phtml": "php",
+  ".php5": "php",
+  ".php7": "php",
+  ".inc": "php",
 };
 
 /**

@@ -234,6 +234,7 @@ describe("LanguageLoader", () => {
           c: "/nonexistent/path.wasm",
           cpp: "/nonexistent/path.wasm",
           ruby: "/nonexistent/path.wasm",
+          php: "/nonexistent/path.wasm",
         },
       });
 
@@ -267,6 +268,7 @@ describe("LanguageLoader", () => {
           c: "/custom/c.wasm",
           cpp: "/custom/cpp.wasm",
           ruby: "/custom/ruby.wasm",
+          php: "/custom/php.wasm",
         },
       };
 
@@ -325,6 +327,16 @@ describe("LanguageLoader", () => {
 
       expect(lang).toBeDefined();
       expect(loader.isLanguageLoaded("ruby")).toBe(true);
+    });
+  });
+
+  describe("PHP language support", () => {
+    it("should load PHP language grammar", async () => {
+      const loader = new LanguageLoader();
+      const lang = await loader.getLanguage("php");
+
+      expect(lang).toBeDefined();
+      expect(loader.isLanguageLoaded("php")).toBe(true);
     });
   });
 });

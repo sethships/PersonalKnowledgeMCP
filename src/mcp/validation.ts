@@ -65,6 +65,7 @@ export const SemanticSearchArgsSchema = z
         "c",
         "cpp",
         "ruby",
+        "php",
       ])
       .optional(),
   })

@@ -170,6 +170,42 @@ describe("language-detector", () => {
       });
     });
 
+    describe("PHP detection", () => {
+      test("detects .php files as php", () => {
+        expect(detectLanguage("index.php")).toBe("php");
+        expect(detectLanguage("app/Controllers/UserController.php")).toBe("php");
+        expect(detectLanguage("src/Models/User.php")).toBe("php");
+      });
+
+      test("detects .phtml files as php", () => {
+        expect(detectLanguage("views/home.phtml")).toBe("php");
+        expect(detectLanguage("templates/layout.phtml")).toBe("php");
+      });
+
+      test("detects .php5 files as php", () => {
+        expect(detectLanguage("legacy.php5")).toBe("php");
+        expect(detectLanguage("old/script.php5")).toBe("php");
+      });
+
+      test("detects .php7 files as php", () => {
+        expect(detectLanguage("modern.php7")).toBe("php");
+        expect(detectLanguage("lib/utils.php7")).toBe("php");
+      });
+
+      test("detects .inc files as php", () => {
+        expect(detectLanguage("config.inc")).toBe("php");
+        expect(detectLanguage("includes/header.inc")).toBe("php");
+      });
+
+      test("handles uppercase PHP extensions", () => {
+        expect(detectLanguage("file.PHP")).toBe("php");
+        expect(detectLanguage("file.PHTML")).toBe("php");
+        expect(detectLanguage("file.PHP5")).toBe("php");
+        expect(detectLanguage("file.PHP7")).toBe("php");
+        expect(detectLanguage("file.INC")).toBe("php");
+      });
+    });
+
     describe("unknown language detection", () => {
       test("returns unknown for non-supported extensions", () => {
         expect(detectLanguage("config.json")).toBe("unknown");
@@ -226,14 +262,15 @@ describe("language-detector", () => {
       expect(SUPPORTED_LANGUAGES).toContain("c");
       expect(SUPPORTED_LANGUAGES).toContain("cpp");
       expect(SUPPORTED_LANGUAGES).toContain("ruby");
+      expect(SUPPORTED_LANGUAGES).toContain("php");
     });
 
     test("does not contain unknown", () => {
       expect(SUPPORTED_LANGUAGES).not.toContain("unknown");
     });
 
-    test("has exactly 12 languages", () => {
-      expect(SUPPORTED_LANGUAGES).toHaveLength(12);
+    test("has exactly 13 languages", () => {
+      expect(SUPPORTED_LANGUAGES).toHaveLength(13);
     });
 
     test("is readonly", () => {
@@ -262,6 +299,11 @@ describe("language-detector", () => {
         { path: "file.rb", expected: "ruby" },
         { path: "file.rake", expected: "ruby" },
         { path: "file.gemspec", expected: "ruby" },
+        { path: "file.php", expected: "php" },
+        { path: "file.phtml", expected: "php" },
+        { path: "file.php5", expected: "php" },
+        { path: "file.php7", expected: "php" },
+        { path: "file.inc", expected: "php" },
         { path: "file.json", expected: "unknown" },
       ];
 

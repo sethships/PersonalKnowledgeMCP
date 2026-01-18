@@ -2275,4 +2275,303 @@ export function documented(): void {}
       expect(TreeSitterParser.getLanguageFromExtension(".gemspec")).toBe("ruby");
     });
   });
+
+  // ==================== PHP Tests ====================
+
+  describe("parseFile - PHP Classes", () => {
+    it("should parse PHP classes with inheritance", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      expect(result.success).toBe(true);
+      expect(result.language).toBe("php");
+
+      // Find the BaseUser class
+      const baseUserClass = result.entities.find(
+        (e) => e.name === "BaseUser" && e.type === "class"
+      );
+      expect(baseUserClass).toBeDefined();
+      expect(baseUserClass?.isExported).toBe(true);
+      expect(baseUserClass?.metadata?.extends).toBe("Model");
+      expect(baseUserClass?.metadata?.isAbstract).toBe(true);
+    });
+
+    it("should parse PHP class implements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find BaseUser class with implements
+      const baseUserClass = result.entities.find((e) => e.name === "BaseUser");
+      expect(baseUserClass?.metadata?.implements).toBeDefined();
+      expect(baseUserClass?.metadata?.implements).toContain("UserInterface");
+    });
+  });
+
+  describe("parseFile - PHP Interfaces", () => {
+    it("should parse PHP interfaces", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      const userInterface = result.entities.find(
+        (e) => e.name === "UserInterface" && e.type === "interface"
+      );
+      expect(userInterface).toBeDefined();
+      expect(userInterface?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Traits", () => {
+    it("should parse PHP traits as class type", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Traits are extracted as "class" type (similar to Ruby modules)
+      const timestampsTrait = result.entities.find(
+        (e) => e.name === "Timestamps" && e.type === "class"
+      );
+      expect(timestampsTrait).toBeDefined();
+      expect(timestampsTrait?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Enums", () => {
+    it("should parse PHP enums", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      const statusEnum = result.entities.find((e) => e.name === "UserStatus" && e.type === "enum");
+      expect(statusEnum).toBeDefined();
+      expect(statusEnum?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Methods", () => {
+    it("should parse PHP instance methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      expect(result.success).toBe(true);
+
+      // Find instance methods
+      const getNameMethod = result.entities.find(
+        (e) => e.name === "getName" && e.type === "method"
+      );
+      expect(getNameMethod).toBeDefined();
+
+      const setNameMethod = result.entities.find(
+        (e) => e.name === "setName" && e.type === "method"
+      );
+      expect(setNameMethod).toBeDefined();
+    });
+
+    it("should parse PHP static methods", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find static method
+      const createMethod = result.entities.find((e) => e.name === "create");
+      expect(createMethod).toBeDefined();
+      expect(createMethod?.type).toBe("method");
+      expect(createMethod?.metadata?.isStatic).toBe(true);
+    });
+
+    it("should extract PHP method parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find __construct method with parameters
+      const constructMethod = result.entities.find((e) => e.name === "__construct");
+      expect(constructMethod?.metadata?.parameters).toBeDefined();
+      expect(constructMethod?.metadata?.parameters?.length).toBeGreaterThan(0);
+
+      // Check for parameter with type
+      const nameParam = constructMethod?.metadata?.parameters?.find((p) => p.name === "name");
+      expect(nameParam?.type).toBe("string");
+
+      // Check for optional parameter with default
+      const emailParam = constructMethod?.metadata?.parameters?.find((p) => p.name === "email");
+      expect(emailParam?.hasDefault).toBe(true);
+    });
+
+    it("should extract PHP variadic parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find method with variadic params
+      const updateMethod = result.entities.find((e) => e.name === "update" && e.type === "method");
+      expect(updateMethod?.metadata?.parameters).toBeDefined();
+
+      // Check for variadic parameter
+      const variadicParam = updateMethod?.metadata?.parameters?.find((p) => p.isRest);
+      expect(variadicParam).toBeDefined();
+    });
+
+    it("should extract PHP return types", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find method with return type
+      const getNameMethod = result.entities.find(
+        (e) => e.name === "getName" && e.type === "method"
+      );
+      expect(getNameMethod?.metadata?.returnType).toBe("string");
+    });
+  });
+
+  describe("parseFile - PHP Functions", () => {
+    it("should parse PHP standalone functions", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find standalone function
+      const formatNameFunc = result.entities.find(
+        (e) => e.name === "formatName" && e.type === "function"
+      );
+      expect(formatNameFunc).toBeDefined();
+      expect(formatNameFunc?.isExported).toBe(true);
+      expect(formatNameFunc?.metadata?.returnType).toBe("string");
+    });
+
+    it("should parse PHP function with default parameters", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find function with default params
+      const createUserFunc = result.entities.find(
+        (e) => e.name === "createUser" && e.type === "function"
+      );
+      expect(createUserFunc?.metadata?.parameters).toBeDefined();
+
+      // Check for parameter with default value
+      const emailParam = createUserFunc?.metadata?.parameters?.find((p) => p.name === "email");
+      expect(emailParam?.hasDefault).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Properties", () => {
+    it("should parse PHP class properties", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find properties
+      const properties = result.entities.filter((e) => e.type === "property");
+      expect(properties.length).toBeGreaterThan(0);
+
+      // Find specific property
+      const nameProperty = properties.find((p) => p.name === "name");
+      expect(nameProperty).toBeDefined();
+    });
+  });
+
+  describe("parseFile - PHP Imports", () => {
+    it("should extract use statements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      expect(result.imports.length).toBeGreaterThan(0);
+
+      // Find use statement for Model
+      const modelImport = result.imports.find((i) => i.source.includes("Model"));
+      expect(modelImport).toBeDefined();
+      expect(modelImport?.isRelative).toBe(false);
+    });
+
+    it("should extract require/include statements", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find require_once statement
+      const configImport = result.imports.find((i) => i.source.includes("config"));
+      expect(configImport).toBeDefined();
+      expect(configImport?.isSideEffect).toBe(true);
+
+      // Find include statement
+      const helpersImport = result.imports.find((i) => i.source.includes("helpers"));
+      expect(helpersImport).toBeDefined();
+      expect(helpersImport?.isRelative).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Function Calls", () => {
+    it("should extract PHP function calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Check for function calls
+      expect(result.calls.length).toBeGreaterThan(0);
+
+      // Find a function call (e.g., trim in formatName)
+      const trimCall = result.calls.find((c) => c.calledName === "trim");
+      expect(trimCall).toBeDefined();
+    });
+
+    it("should extract PHP method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find method calls with receivers (e.g., $this->validateData)
+      const methodCalls = result.calls.filter((c) => c.calledExpression.includes("->"));
+      expect(methodCalls.length).toBeGreaterThan(0);
+    });
+
+    it("should extract PHP static method calls", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // Find static calls (e.g., Notification::send)
+      const staticCalls = result.calls.filter((c) => c.calledExpression.includes("::"));
+      expect(staticCalls.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("parseFile - PHP Exports", () => {
+    it("should return empty exports for PHP (no export statements)", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // PHP doesn't have explicit export statements
+      expect(result.exports).toHaveLength(0);
+    });
+
+    it("should mark PHP entities as exported by default", async () => {
+      const content = await Bun.file(path.join(FIXTURES_DIR, "simple-php.php")).text();
+      const result = await parser.parseFile(content, "simple-php.php");
+
+      // PHP has public visibility by default
+      const userClass = result.entities.find((e) => e.name === "User");
+      expect(userClass?.isExported).toBe(true);
+
+      const getNameMethod = result.entities.find(
+        (e) => e.name === "getName" && e.type === "method"
+      );
+      expect(getNameMethod?.isExported).toBe(true);
+    });
+  });
+
+  describe("parseFile - PHP Extension Support", () => {
+    it("should support .php extension", () => {
+      expect(TreeSitterParser.isSupported(".php")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".php")).toBe("php");
+    });
+
+    it("should support .phtml extension", () => {
+      expect(TreeSitterParser.isSupported(".phtml")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".phtml")).toBe("php");
+    });
+
+    it("should support .php5 extension", () => {
+      expect(TreeSitterParser.isSupported(".php5")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".php5")).toBe("php");
+    });
+
+    it("should support .php7 extension", () => {
+      expect(TreeSitterParser.isSupported(".php7")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".php7")).toBe("php");
+    });
+
+    it("should support .inc extension", () => {
+      expect(TreeSitterParser.isSupported(".inc")).toBe(true);
+      expect(TreeSitterParser.getLanguageFromExtension(".inc")).toBe("php");
+    });
+  });
 });
