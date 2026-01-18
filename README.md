@@ -95,11 +95,6 @@ The following languages are supported for AST parsing and graph population:
 | .NET | C# | Roslyn |
 | Go | Go | tree-sitter |
 
-### Future Phases
-
-- **Phase 3**: PostgreSQL (document store), local file ingestion, Azure DevOps integration
-- **Phase 4**: Automated update pipelines, GitHub webhooks, Kubernetes deployment
-
 ## Architecture
 
 ```mermaid

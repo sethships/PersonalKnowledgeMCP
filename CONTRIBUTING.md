@@ -404,7 +404,6 @@ Understanding project phases helps align contributions:
 - **Phase 1** (Complete): Core MCP + Vector Search
 - **Phase 2** (Current): Code Intelligence + Multi-Provider Embeddings (13 languages, Neo4j graph)
 - **Phase 3** (Complete): Multi-Instance + HTTP Transport
-- **Phase 4**: Enterprise Features + Automation
 
 See [docs/High-level-Personal-Knowledge-MCP-PRD.md](docs/High-level-Personal-Knowledge-MCP-PRD.md) for details.
 

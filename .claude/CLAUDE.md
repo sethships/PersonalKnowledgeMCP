@@ -118,14 +118,14 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - OpenAI embeddings API integration
 - CLI commands for repository management
 
-### Phase 2: Code Intelligence + Multi-Provider Embeddings (Current Phase)
+### Phase 2: Code Intelligence + Multi-Provider Embeddings
 **Goal**: Add code-aware indexing and local embedding options
 - AST parsing with tree-sitter for 13 languages (TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP)
 - Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path tools
 - Multi-provider embeddings: OpenAI, Transformers.js (zero-config local), Ollama (GPU)
 - Graph schema migrations CLI commands
 
-### Phase 3: Multi-Instance + Containerization (Complete)
+### Phase 3: Multi-Instance + Containerization
 **Goal**: Security model and production deployment
 - Multi-instance configuration and deployment templates
 - HTTP/SSE transport alongside stdio for cross-client support
@@ -211,7 +211,7 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Phase**: Phase 2 - Code Intelligence + Multi-Provider Embeddings (Phase 1 complete)
+- **Current Phase**: Phase 2 - Code Intelligence + Multi-Provider Embeddings
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
 - Knowledge graph with Neo4j implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
