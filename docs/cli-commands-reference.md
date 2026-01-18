@@ -562,7 +562,7 @@ pk-mcp graph migrate --force
 
 ### graph populate - Populate Graph from Repository
 
-Populate the knowledge graph from an indexed repository.
+Populate the knowledge graph from an indexed repository. Uses AST parsing to extract code entities (functions, classes, interfaces, imports, etc.) and their relationships.
 
 **Syntax**:
 ```bash
@@ -590,6 +590,8 @@ pk-mcp graph populate my-api --force
 ```
 
 **Output**: Statistics showing nodes created, relationships created, and processing time.
+
+**Supported Languages**: TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP. See [Graph Tools Guide](graph-tools.md#supported-languages-for-graph-population) for file extensions and parser details.
 
 ---
 

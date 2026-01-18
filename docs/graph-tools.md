@@ -36,6 +36,7 @@ Before using graph tools, ensure:
 2. **Repository is indexed with AST parsing**: Graph data requires code analysis beyond simple text indexing
    ```bash
    pk-mcp index <repository-url>
+   pk-mcp graph populate <repository-name>
    ```
 
 3. **GraphService is enabled**: The MCP server must be configured with Neo4j connection
@@ -45,6 +46,26 @@ Before using graph tools, ensure:
    NEO4J_USER=neo4j
    NEO4J_PASSWORD=your-password
    ```
+
+### Supported Languages for Graph Population
+
+The graph tools extract code entities (functions, classes, imports, etc.) from files written in these languages:
+
+| Language | Extensions | Parser |
+|----------|------------|--------|
+| TypeScript | `.ts`, `.mts`, `.cts` | tree-sitter |
+| TSX | `.tsx` | tree-sitter |
+| JavaScript | `.js`, `.mjs`, `.cjs` | tree-sitter |
+| JSX | `.jsx` | tree-sitter |
+| Python | `.py`, `.pyw`, `.pyi` | tree-sitter |
+| Java | `.java` | tree-sitter |
+| Go | `.go` | tree-sitter |
+| Rust | `.rs` | tree-sitter |
+| C# | `.cs` | Roslyn |
+| C | `.c`, `.h` | tree-sitter |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` | tree-sitter |
+| Ruby | `.rb`, `.rake`, `.gemspec` | tree-sitter |
+| PHP | `.php`, `.phtml`, `.php5`, `.php7`, `.inc` | tree-sitter |
 
 ## MCP Tools Reference
 

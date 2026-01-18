@@ -78,14 +78,27 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Graph DB | Neo4j Community | Code dependency graph and relationships |
+| AST Parsing | tree-sitter (web-tree-sitter) | Code entity extraction for 13 languages |
 | Graph Protocol | Bolt | Neo4j connection protocol |
-| Graph Tools | get_dependencies, get_dependents | Dependency analysis MCP tools |
+| Graph Tools | get_dependencies, get_dependents, get_architecture, find_path | Dependency analysis MCP tools |
+
+### Supported Languages
+
+The following languages are supported for AST parsing and graph population:
+
+| Category | Languages | Parser |
+|----------|-----------|--------|
+| TypeScript/JavaScript | TypeScript, TSX, JavaScript, JSX | tree-sitter |
+| Systems | Rust, C, C++ | tree-sitter |
+| JVM | Java | tree-sitter |
+| Scripting | Python, Ruby, PHP | tree-sitter |
+| .NET | C# | Roslyn |
+| Go | Go | tree-sitter |
 
 ### Future Phases
 
-- **Phase 2** (in progress): Tree-sitter (AST parsing), PostgreSQL (document store), local file ingestion
-- **Phase 3**: Multi-instance architecture, Azure DevOps integration, authentication layer
-- **Phase 4**: Automated update pipelines, GitHub webhooks
+- **Phase 3**: PostgreSQL (document store), local file ingestion, Azure DevOps integration
+- **Phase 4**: Automated update pipelines, GitHub webhooks, Kubernetes deployment
 
 ## Architecture
 
@@ -407,13 +420,18 @@ Search indexed repositories using natural language queries.
 - `limit` (number, optional): Maximum results to return (default: 10, max: 50)
 - `threshold` (number, optional): Minimum similarity score 0.0-1.0 (default: 0.7)
 - `repository` (string, optional): Filter to specific repository
+- `language` (string, optional): Filter by programming language
+
+**Supported Languages for `language` filter**:
+`typescript`, `tsx`, `javascript`, `jsx`, `python`, `java`, `go`, `rust`, `csharp`, `c`, `cpp`, `ruby`, `php`
 
 **Example**:
 ```json
 {
   "query": "error handling middleware",
   "limit": 5,
-  "threshold": 0.75
+  "threshold": 0.75,
+  "language": "typescript"
 }
 ```
 
@@ -1103,19 +1121,29 @@ Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules,
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 290 | 13,424 | 24,470 | 59,245 |
-| Markdown | 45 | 6,076 | 9 | 19,966 |
-| YAML | 68 | 330 | 578 | 3,179 |
-| Bourne Shell | 3 | 224 | 241 | 900 |
-| JSON | 8 | 5 | 0 | 705 |
-| PowerShell | 2 | 185 | 133 | 576 |
-| Text | 1 | 31 | 0 | 40 |
+| TypeScript | 350 | 18,212 | 30,712 | 82,144 |
+| Markdown | 53 | 7,271 | 9 | 23,418 |
+| YAML | 68 | 332 | 580 | 3,188 |
+| JSON | 14 | 5 | 0 | 2,529 |
+| Bourne Shell | 9 | 479 | 527 | 1,956 |
+| PowerShell | 4 | 399 | 281 | 1,232 |
+| C# | 9 | 219 | 315 | 1,022 |
+| Go | 1 | 38 | 40 | 154 |
+| Rust | 1 | 42 | 47 | 150 |
+| Java | 3 | 28 | 58 | 104 |
+| Text | 3 | 31 | 0 | 91 |
+| PHP | 1 | 22 | 70 | 87 |
+| C++ | 1 | 22 | 15 | 65 |
+| Python | 5 | 44 | 59 | 59 |
+| INI | 2 | 0 | 0 | 50 |
+| C | 1 | 12 | 20 | 38 |
 | Dockerfile | 1 | 22 | 38 | 36 |
+| Ruby | 1 | 10 | 20 | 35 |
 | JavaScript | 2 | 7 | 9 | 33 |
+| XML | 2 | 0 | 0 | 27 |
 | TOML | 1 | 11 | 17 | 14 |
 | SQL | 1 | 3 | 16 | 9 |
-| Python | 4 | 5 | 24 | 2 |
-| **SUM** | **426** | **20,323** | **25,535** | **84,705** |
+| **SUM** | **536** | **27,220** | **32,851** | **116,473** |
 
 ## License
 

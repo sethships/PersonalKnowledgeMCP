@@ -170,7 +170,7 @@ AI-assisted development represents a paradigm shift in how software is built. Th
 - **User Value**: AI assistants understand code structure, dependencies, documentation, and patterns without full file reads
 - **Success Metrics**: Repository ingestion time, code semantic accuracy, supported languages
 - **MVP Scope**:
-  - Support for major languages (Python, JavaScript/TypeScript, C#, Java, Go)
+  - Support for 13 languages: TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP
   - Extract: functions/methods, classes, imports, docstrings, README/docs
   - Index code semantics, not just text matching
 

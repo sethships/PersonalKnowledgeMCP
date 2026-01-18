@@ -73,6 +73,20 @@ Search indexed repositories using natural language queries. Returns relevant cod
 | `limit` | number | No | `10` | Maximum results to return (1-50) |
 | `threshold` | number | No | `0.7` | Minimum similarity score (0.0-1.0) |
 | `repository` | string | No | - | Filter to specific repository name |
+| `language` | string | No | - | Filter by programming language (see below) |
+
+**Supported Languages**:
+
+The `language` parameter accepts the following values:
+- `typescript`, `tsx`, `javascript`, `jsx` - TypeScript/JavaScript ecosystem
+- `python` - Python
+- `java` - Java
+- `go` - Go
+- `rust` - Rust
+- `csharp` - C#
+- `c`, `cpp` - C/C++
+- `ruby` - Ruby
+- `php` - PHP
 
 #### Example Requests
 
@@ -90,6 +104,15 @@ Search indexed repositories using natural language queries. Returns relevant cod
   "limit": 5,
   "threshold": 0.8,
   "repository": "my-api"
+}
+```
+
+**Search with language filter:**
+```json
+{
+  "query": "async database connection pool",
+  "language": "rust",
+  "limit": 10
 }
 ```
 

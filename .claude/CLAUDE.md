@@ -14,11 +14,13 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - **Runtime**: Bun 1.0+ (fast all-in-one JavaScript runtime)
 - **Language**: TypeScript 5.3+ (strict type safety)
 - **MCP SDK**: Official Anthropic MCP SDK (@modelcontextprotocol/sdk)
-- **Containers**: Docker for ChromaDB containerization
-- **Storage Backends** (Phase-dependent):
-  - Vector DB (ChromaDB) for semantic search - Phase 1
-  - Graph DB (Neo4j Community) for relationships - Phase 4
-  - Document Store (PostgreSQL with JSON) for artifacts - Phase 2
+- **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C#
+- **Containers**: Docker for ChromaDB and Neo4j containerization
+- **Storage Backends**:
+  - Vector DB (ChromaDB) for semantic search
+  - Graph DB (Neo4j Community) for code relationships and dependencies
+  - Document Store (PostgreSQL with JSON) for artifacts (Phase 2+)
+- **Embedding Providers**: OpenAI API, Transformers.js (local), Ollama (GPU)
 - **Platform**: Cross-platform with Windows development environment (PowerShell 7, Bun)
 
 ## Development Guidelines
@@ -107,7 +109,7 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Phased Implementation Plan
 
-### Phase 1: Core MCP + Vector Search (Current Phase)
+### Phase 1: Core MCP + Vector Search (Complete)
 **Goal**: Get Claude Code querying indexed code semantically
 - Basic MCP service implementation (stdio transport)
 - Single vector database (ChromaDB)
@@ -116,26 +118,28 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - OpenAI embeddings API integration
 - CLI commands for repository management
 
-### Phase 2: Code Intelligence + Local Files
-**Goal**: Add code-aware indexing and educational material support
-- AST parsing with tree-sitter (functions, classes, imports)
-- Document store (PostgreSQL) for full file artifacts
-- Local folder ingestion with file watcher
-- Markdown/PDF extraction for college notes
+### Phase 2: Code Intelligence + Multi-Provider Embeddings (Current Phase)
+**Goal**: Add code-aware indexing and local embedding options
+- AST parsing with tree-sitter for 13 languages (TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP)
+- Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path tools
+- Multi-provider embeddings: OpenAI, Transformers.js (zero-config local), Ollama (GPU)
+- Graph schema migrations CLI commands
 
-### Phase 3: Multi-Instance + Azure DevOps
-**Goal**: Security model and work integration
+### Phase 3: Multi-Instance + Containerization (Complete)
+**Goal**: Security model and production deployment
 - Multi-instance configuration and deployment templates
-- Authentication layer (token-based initially)
-- Azure DevOps repository integration
-- Instance-specific routing in MCP service
+- HTTP/SSE transport alongside stdio for cross-client support
+- Bearer token authentication with CLI management
+- Rate limiting and CORS support
+- Docker Compose hardening
 
-### Phase 4: Graph Relationships + Automation
-**Goal**: Deeper insights and operational automation
-- Graph database (Neo4j) for relationships
-- Code dependency extraction and graph population
-- GitHub webhook handler (or polling alternative)
-- Automated update pipelines
+### Phase 4: Enterprise Features + Automation
+**Goal**: Enterprise integration and operational automation
+- OpenID Connect (OIDC) - Microsoft Entra ID, Auth0, Okta integration
+- User mapping with claim-based instance access control
+- Azure DevOps repository integration
+- Automated update pipelines and GitHub webhooks
+- Kubernetes deployment with Helm charts
 
 ## Key Files and Directories
 
@@ -207,12 +211,26 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Phase**: Phase 1 - Core MCP + Vector Search
+- **Current Phase**: Phase 2 - Code Intelligence + Multi-Provider Embeddings (Phase 1 complete)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
-- All Phase 1 GitHub issues created and ready for implementation
+- Knowledge graph with Neo4j implemented and operational
+- Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
 - Prioritize demonstrable value over perfection (MVP mindset)
 - Keep deployment simple initially; complexity can be added as needed
 - Test early and often with real codebases (small, medium, large repositories)
+
+### Supported Languages for AST Parsing
+
+The following languages are supported for graph population and semantic search filtering:
+- **TypeScript Ecosystem**: TypeScript (.ts, .mts, .cts), TSX (.tsx), JavaScript (.js, .mjs, .cjs), JSX (.jsx)
+- **Python**: Python (.py, .pyw, .pyi)
+- **Java**: Java (.java)
+- **Go**: Go (.go)
+- **Rust**: Rust (.rs)
+- **C#**: C# (.cs) - uses Roslyn instead of tree-sitter
+- **C/C++**: C (.c, .h), C++ (.cpp, .cc, .cxx, .hpp, .hxx)
+- **Ruby**: Ruby (.rb, .rake, .gemspec)
+- **PHP**: PHP (.php, .phtml, .php5, .php7, .inc)
 
 ## Quick Reference
 
