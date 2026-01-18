@@ -12,6 +12,8 @@
  * - Rust (.rs)
  * - C (.c, .h)
  * - C++ (.cpp, .cc, .cxx, .hpp, .hxx)
+ * - Ruby (.rb, .rake, .gemspec)
+ * - PHP (.php, .phtml, .php5, .php7, .inc)
  *
  * Parses source files and extracts code entities (functions, classes,
  * interfaces, etc.) and imports for knowledge graph population.

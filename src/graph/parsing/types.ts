@@ -10,7 +10,7 @@
 /**
  * Languages supported by tree-sitter for AST parsing.
  *
- * Supports TypeScript ecosystem languages, Python, Java, Go, Rust, C, and C++.
+ * Supports TypeScript ecosystem languages, Python, Java, Go, Rust, C, C++, Ruby, and PHP.
  * JavaScript is handled by both TypeScript and JavaScript grammars
  * depending on the file extension.
  */

@@ -138,7 +138,7 @@ export class LanguageLoader {
    *
    * Design Decision: Languages are cached indefinitely without an eviction policy.
    * This is acceptable because:
-   * 1. The current supported language set is small (8 languages)
+   * 1. The current supported language set is small (12 languages)
    * 2. Each WASM language grammar is relatively small (~100-200KB)
    * 3. Languages are typically loaded once and reused throughout the application lifecycle
    *
