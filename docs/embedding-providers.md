@@ -2,14 +2,26 @@
 
 This guide covers embedding provider selection, configuration, and trade-offs for Personal Knowledge MCP.
 
+## Local-First Philosophy
+
+**Personal Knowledge MCP is designed to work fully offline with no external API dependencies.**
+
+The system defaults to local embedding providers that:
+- Require **no API keys** or accounts
+- Work **offline** after initial setup
+- Have **zero ongoing costs**
+- Keep your code **private** (never leaves your machine)
+
+OpenAI is available as an **optional** provider for users who prefer the highest quality embeddings and are willing to use a cloud service.
+
 ## Table of Contents
 
-- [Overview](#overview)
+- [Quick Start](#quick-start)
 - [Provider Comparison](#provider-comparison)
 - [Provider Details](#provider-details)
-  - [OpenAI (Cloud)](#openai-cloud)
-  - [Transformers.js (Local - CPU)](#transformersjs-local---cpu)
-  - [Ollama (Local - GPU)](#ollama-local---gpu)
+  - [Transformers.js (Local - CPU)](#transformersjs-local---cpu) - **Recommended Default**
+  - [Ollama (Local - GPU)](#ollama-local---gpu) - **Recommended for GPU Users**
+  - [OpenAI (Cloud)](#openai-cloud) - **Optional**
 - [Configuration Guide](#configuration-guide)
 - [Model Selection](#model-selection)
 - [Offline Usage](#offline-usage)
@@ -18,9 +30,40 @@ This guide covers embedding provider selection, configuration, and trade-offs fo
 
 ---
 
+## Quick Start
+
+**No configuration needed!** The system works immediately with local embeddings:
+
+```bash
+# Install and run - uses local embeddings by default
+bun install
+bun run cli index https://github.com/user/repo
+```
+
+For GPU acceleration with Ollama:
+
+```bash
+# Install Ollama (https://ollama.ai)
+ollama pull nomic-embed-text
+
+# Configure to use Ollama
+echo "EMBEDDING_PROVIDER=ollama" >> .env
+bun run cli index https://github.com/user/repo
+```
+
+---
+
 ## Overview
 
 Embedding providers convert text into vector representations (embeddings) that enable semantic search. Personal Knowledge MCP supports multiple providers to balance quality, speed, cost, and deployment requirements.
+
+**Provider Summary:**
+
+| Provider | Configuration | Offline | Cost | Quality | Best For |
+|----------|--------------|---------|------|---------|----------|
+| **Transformers.js** | None (default) | Yes | Free | Good | Getting started, air-gapped |
+| **Ollama** | Install Ollama | Yes | Free | Good-High | GPU acceleration |
+| **OpenAI** | API key required | No | Per-token | Highest | Maximum quality |
 
 **Why Different Providers?**
 
@@ -47,76 +90,31 @@ Embedding providers convert text into vector representations (embeddings) that e
 
 ### Decision Matrix
 
-| Use Case | Recommended Provider |
-|----------|---------------------|
-| Getting started quickly | Transformers.js (default) |
-| Highest search quality | OpenAI |
-| Air-gapped/offline environment | Transformers.js |
-| GPU available, want speed | Ollama |
-| Privacy-sensitive codebase | Transformers.js or Ollama |
-| CI/CD pipeline indexing | OpenAI (fastest, no model loading) |
+| Use Case | Recommended Provider | Why |
+|----------|---------------------|-----|
+| **Getting started** | Transformers.js (default) | Zero configuration required |
+| **GPU available** | Ollama | Fastest local inference |
+| **Air-gapped/offline** | Transformers.js | Works without network |
+| **Privacy-sensitive** | Transformers.js or Ollama | Code never leaves machine |
+| **Highest quality needed** | OpenAI (optional) | Best MTEB scores |
+| **CI/CD pipeline** | OpenAI or Ollama | Fast, no cold start |
+| **Large document ingestion** | Ollama or Transformers.js | No API costs |
 
 ---
 
 ## Provider Details
 
-### OpenAI (Cloud)
+### Transformers.js (Local - CPU) - RECOMMENDED DEFAULT
 
-OpenAI provides the highest quality embeddings through their cloud API. This is the recommended choice when search quality is paramount and internet access is available.
+Transformers.js runs HuggingFace models directly in JavaScript using ONNX Runtime. **This is the default provider** - no configuration required.
 
-#### Setup
-
-1. **Get an API key** from [OpenAI Platform](https://platform.openai.com/api-keys)
-
-2. **Configure environment**:
-   ```bash
-   # Required
-   export OPENAI_API_KEY=sk-your-api-key-here
-
-   # Optional
-   export OPENAI_ORGANIZATION=org-...  # For organization accounts
-   export OPENAI_BASE_URL=...          # For Azure OpenAI or proxies
-   ```
-
-3. **Verify setup**:
-   ```bash
-   bun run cli health
-   # OpenAI API: OK (200ms)
-   ```
-
-#### Available Models
-
-| Model | Dimensions | MTEB Score | Cost | Notes |
-|-------|------------|------------|------|-------|
-| `text-embedding-3-small` | 1536 | 62.3 | $0.02/1M tokens | Default, best value |
-| `text-embedding-3-large` | 3072 | 64.6 | $0.13/1M tokens | Highest quality |
-| `text-embedding-ada-002` | 1536 | 61.0 | $0.10/1M tokens | Legacy |
-
-#### Usage
-
-```bash
-# OpenAI is used automatically when OPENAI_API_KEY is set
-bun run cli index https://github.com/user/repo
-
-# Explicitly specify OpenAI
-bun run cli index --provider openai https://github.com/user/repo
-```
-
-#### Cost Estimation
-
-| Repository Size | Approx. Tokens | Cost (3-small) |
-|-----------------|----------------|----------------|
-| Small (<500 files) | 500K-2M | $0.01-0.04 |
-| Medium (500-2K files) | 2M-10M | $0.04-0.20 |
-| Large (>2K files) | 10M-50M | $0.20-1.00 |
-
-**Note**: Search queries also consume tokens (~100 tokens per query).
-
----
-
-### Transformers.js (Local - CPU)
-
-Transformers.js runs HuggingFace models directly in JavaScript using ONNX Runtime. This is the default provider when no OpenAI API key is configured.
+**Why Transformers.js is the default:**
+- Zero configuration - works immediately after `bun install`
+- No API keys or accounts needed
+- Works fully offline after initial model download
+- Free with no per-token costs
+- Good quality (MTEB ~56-64 depending on model)
+- Keeps your code private - never leaves your machine
 
 #### Setup
 
@@ -261,6 +259,71 @@ watch -n 1 nvidia-smi
 
 ---
 
+### OpenAI (Cloud) - OPTIONAL
+
+OpenAI provides the highest quality embeddings through their cloud API. **This is an optional provider** for users who need maximum search quality and are comfortable with cloud-based processing.
+
+**When to use OpenAI:**
+- You need the highest possible search quality
+- You have an OpenAI API key and budget for token costs
+- Internet connectivity is available
+- You are comfortable with code being sent to OpenAI's servers
+
+**When NOT to use OpenAI:**
+- Getting started (use Transformers.js instead)
+- Air-gapped or offline environments
+- Privacy-sensitive codebases
+- Cost-sensitive large-scale indexing
+
+#### Setup
+
+1. **Get an API key** from [OpenAI Platform](https://platform.openai.com/api-keys)
+
+2. **Configure environment**:
+   ```bash
+   # Required for OpenAI provider
+   export OPENAI_API_KEY=sk-your-api-key-here
+
+   # Optional
+   export OPENAI_ORGANIZATION=org-...  # For organization accounts
+   export OPENAI_BASE_URL=...          # For Azure OpenAI or proxies
+   ```
+
+3. **Verify setup**:
+   ```bash
+   bun run cli health
+   # OpenAI API: OK (200ms)
+   ```
+
+#### Available Models
+
+| Model | Dimensions | MTEB Score | Cost | Notes |
+|-------|------------|------------|------|-------|
+| `text-embedding-3-small` | 1536 | 62.3 | $0.02/1M tokens | Default, best value |
+| `text-embedding-3-large` | 3072 | 64.6 | $0.13/1M tokens | Highest quality |
+| `text-embedding-ada-002` | 1536 | 61.0 | $0.10/1M tokens | Legacy |
+
+#### Usage
+
+```bash
+# Explicitly use OpenAI
+bun run cli index --provider openai https://github.com/user/repo
+
+# OpenAI is auto-selected if OPENAI_API_KEY is set and no EMBEDDING_PROVIDER is specified
+```
+
+#### Cost Estimation
+
+| Repository Size | Approx. Tokens | Cost (3-small) |
+|-----------------|----------------|----------------|
+| Small (<500 files) | 500K-2M | $0.01-0.04 |
+| Medium (500-2K files) | 2M-10M | $0.04-0.20 |
+| Large (>2K files) | 10M-50M | $0.20-1.00 |
+
+**Note**: Search queries also consume tokens (~100 tokens per query).
+
+---
+
 ## Configuration Guide
 
 ### Environment Variables
@@ -278,10 +341,20 @@ watch -n 1 nvidia-smi
 
 ### Provider Auto-Detection
 
-When `EMBEDDING_PROVIDER` is not set:
+The system auto-detects the best provider based on available configuration:
 
-1. If `OPENAI_API_KEY` is set → Use OpenAI
-2. Otherwise → Use Transformers.js
+1. If `EMBEDDING_PROVIDER` is explicitly set → Use that provider
+2. If `OPENAI_API_KEY` is set → Use OpenAI (backwards compatibility)
+3. **Otherwise → Use Transformers.js** (local, zero-config default)
+
+**Recommendation**: For local-first operation, explicitly set:
+```bash
+EMBEDDING_PROVIDER=transformers  # Local CPU embeddings (default behavior)
+# or
+EMBEDDING_PROVIDER=ollama        # Local GPU embeddings (faster)
+```
+
+This prevents accidental use of OpenAI if an API key is later added to the environment.
 
 ### CLI Provider Selection
 
@@ -338,7 +411,8 @@ The [MTEB (Massive Text Embedding Benchmark)](https://huggingface.co/spaces/mteb
 
 | Use Case | Model | Provider | Why |
 |----------|-------|----------|-----|
-| **General code search** | text-embedding-3-small | OpenAI | Best quality-cost balance |
+| **Getting started** | all-MiniLM-L6-v2 | Transformers.js | Zero-config, works immediately |
+| **General code search** | bge-base-en-v1.5 | Transformers.js | Good quality, local |
 | **Quick local testing** | all-MiniLM-L6-v2 | Transformers.js | Fast, zero-config |
 | **Code understanding** | bge-base-en-v1.5 | Transformers.js | Optimized for code |
 | **GPU acceleration** | nomic-embed-text | Ollama | Good quality, GPU support |
@@ -639,4 +713,4 @@ bun run cli index --provider transformersjs https://github.com/user/repo
 
 ---
 
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-01-18

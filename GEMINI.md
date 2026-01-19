@@ -6,11 +6,16 @@ This document provides a comprehensive overview of the Personal Knowledge MCP pr
 
 Personal Knowledge MCP is a sophisticated, AI-first knowledge management service designed to integrate with AI assistants like Claude Code. It acts as a semantic bridge, allowing AI to efficiently access and retrieve information from software development projects and other knowledge sources.
 
-The service is built on the Model Context Protocol (MCP), enabling a native, purpose-built architecture for AI interaction. It leverages a modern technology stack including **Bun** for the runtime, **TypeScript** for type-safe code, **ChromaDB** for vector-based semantic search, and **OpenAI's text-embedding-3-small** model for generating high-quality embeddings. The entire service is designed to run locally using Docker Compose for the database.
+The service is built on the Model Context Protocol (MCP), enabling a native, purpose-built architecture for AI interaction. It leverages a modern technology stack including **Bun** for the runtime, **TypeScript** for type-safe code, **ChromaDB** for vector-based semantic search, **Neo4j** for knowledge graph relationships, and configurable embedding providers (OpenAI, Transformers.js, Ollama). The entire service is designed to run locally using Docker Compose for the databases.
 
-Key functionalities include indexing public and private GitHub repositories, performing semantic searches on the indexed content, and providing AI assistants with relevant context to reduce token usage and improve response accuracy.
+Key functionalities include:
+- Indexing public and private GitHub repositories
+- Performing semantic searches on the indexed content
+- Analyzing code dependencies and impact via knowledge graph
+- Supporting 13 programming languages via AST parsing (tree-sitter + Roslyn)
+- Providing AI assistants with relevant context to reduce token usage and improve response accuracy
 
-The project is currently in **Phase 1**, focusing on establishing the core MCP service and vector search capabilities.
+The project has reached **V1.0** with Phases 1-5 complete (Phase 4 enterprise features framework only). Phase 6 (Unstructured Document Ingestion) is planned. It provides comprehensive semantic code search, knowledge graph analysis, multi-provider embeddings, and enterprise-ready authentication.
 
 ## Building and Running
 
@@ -65,7 +70,7 @@ The project uses `bun` as its primary package manager and script runner.
 | `bun run start`          | Starts the production-ready MCP server.                |
 | `bun run cli`            | Executes CLI commands for indexing and searching.      |
 | `bun test`               | Runs the entire test suite.                            |
-| `bun test:coverage`      | Runs tests and generates a coverage report.            |
+| `bun test --coverage`    | Runs tests and generates a coverage report.            |
 | `bun run lint`           | Statically analyzes the code for issues.               |
 | `bun run format`         | Formats the code using Prettier.                       |
 | `bun run typecheck`      | Runs the TypeScript compiler to check types.           |

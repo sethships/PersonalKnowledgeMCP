@@ -14,12 +14,12 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - **Runtime**: Bun 1.0+ (fast all-in-one JavaScript runtime)
 - **Language**: TypeScript 5.3+ (strict type safety)
 - **MCP SDK**: Official Anthropic MCP SDK (@modelcontextprotocol/sdk)
-- **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C#
+- **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C# (13 total)
 - **Containers**: Docker for ChromaDB and Neo4j containerization
 - **Storage Backends**:
   - Vector DB (ChromaDB) for semantic search
   - Graph DB (Neo4j Community) for code relationships and dependencies
-  - Document Store (PostgreSQL with JSON) for artifacts (Phase 2+)
+  - Document Store (PostgreSQL with JSON) for artifacts (Framework Ready)
 - **Embedding Providers**: OpenAI API, Transformers.js (local), Ollama (GPU)
 - **Platform**: Cross-platform with Windows development environment (PowerShell 7, Bun)
 
@@ -118,28 +118,52 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - OpenAI embeddings API integration
 - CLI commands for repository management
 
-### Phase 2: Code Intelligence + Multi-Provider Embeddings
+### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
 **Goal**: Add code-aware indexing and local embedding options
-- AST parsing with tree-sitter for 13 languages (TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP)
-- Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path tools
 - Multi-provider embeddings: OpenAI, Transformers.js (zero-config local), Ollama (GPU)
-- Graph schema migrations CLI commands
+- Pluggable embedding provider architecture with per-repository configuration
+- Provider CLI commands for status and setup
 
-### Phase 3: Multi-Instance + Containerization
+### Phase 3: Multi-Instance + Containerization (Complete)
 **Goal**: Security model and production deployment
 - Multi-instance configuration and deployment templates
 - HTTP/SSE transport alongside stdio for cross-client support
 - Bearer token authentication with CLI management
 - Rate limiting and CORS support
-- Docker Compose hardening
+- Docker Compose hardening with profiles (default, private, work, public, all)
 
-### Phase 4: Enterprise Features + Automation
+### Phase 4: Enterprise Features + Automation (Framework Ready)
 **Goal**: Enterprise integration and operational automation
-- OpenID Connect (OIDC) - Microsoft Entra ID, Auth0, Okta integration
-- User mapping with claim-based instance access control
+- OpenID Connect (OIDC) framework - Microsoft Entra ID, Auth0, Okta integration ready
+- User mapping with claim-based instance access control framework
+- PostgreSQL configured in Docker Compose for document store
+- Kubernetes deployment preparation
+
+### Phase 5: Knowledge Graph Search (Complete)
+**Goal**: Add relationship-aware code intelligence via Neo4j
+- Neo4j integration with connection pooling and schema migrations
+- AST parsing with tree-sitter for 12 languages + Roslyn for C# (13 total)
+- Entity extraction: functions, classes, interfaces, imports, and relationships
+- Graph MCP tools: get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
+- Graph ingestion service for populating Neo4j from parsed code
+- Incremental graph updates integrated with update pipeline
+- Graph query metrics and performance monitoring
+- CLI commands: graph migrate, graph populate, graph populate-all
+
+### Phase 6: Unstructured Document Ingestion (Planned)
+**Goal**: Enable educational material and documentation search
+- PDF document ingestion and text extraction
+- Microsoft Word (.docx) document support
+- Local folder watching with automatic re-indexing
+- Image metadata extraction
+- Markdown file processing with frontmatter support
+
+See [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for detailed requirements.
+
+### Future Roadmap
 - Azure DevOps repository integration
 - Automated update pipelines and GitHub webhooks
-- Kubernetes deployment with Helm charts
+- Cloud storage integration (OneDrive, Google Drive)
 
 ## Key Files and Directories
 
@@ -211,10 +235,14 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Phase**: Phase 2 - Code Intelligence + Multi-Provider Embeddings
+- **Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
+- **Next Phase**: Phase 6 - Unstructured Document Ingestion (PRD completed January 2026)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
-- Knowledge graph with Neo4j implemented and operational
+- Knowledge graph with Neo4j fully implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
+- HTTP/SSE transport with bearer token authentication complete
+- Multi-instance architecture (Private/Work/Public) complete
+- OIDC framework ready for enterprise authentication
 - Prioritize demonstrable value over perfection (MVP mindset)
 - Keep deployment simple initially; complexity can be added as needed
 - Test early and often with real codebases (small, medium, large repositories)

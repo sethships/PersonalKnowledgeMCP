@@ -23,7 +23,7 @@ architecture/
 │   ├── data-flow.md
 │   └── deployment-architecture.md
 └── integration/                  # Integration documentation
-    ├── qdrant-integration.md
+    ├── chromadb-integration.md
     ├── neo4j-integration.md
     └── github-integration.md
 ```
@@ -53,12 +53,12 @@ See `adr/0000-template.md` for the standard ADR format.
 ## Component Overview
 
 ### MCP Service Layer
-FastAPI-based service implementing the MCP protocol specification.
+Bun/TypeScript-based service implementing the MCP protocol specification with stdio and HTTP/SSE transports.
 
 ### Storage Layer
-- **Vector DB (Qdrant)**: Semantic search and similarity
-- **Graph DB (Neo4j)**: Relationships and dependencies
-- **Document Store (PostgreSQL)**: Artifacts and full documents
+- **Vector DB (ChromaDB)**: Semantic search and similarity
+- **Graph DB (Neo4j)**: Code relationships and dependencies (Phase 5 Complete)
+- **Document Store (PostgreSQL)**: Artifacts and full documents (Framework Ready)
 
 ### Ingestion Layer
 - Repository cloners (GitHub, Azure DevOps)
@@ -75,15 +75,14 @@ FastAPI-based service implementing the MCP protocol specification.
 - [x] System Design Document (Phase 1) - [Phase1-System-Design-Document.md](Phase1-System-Design-Document.md)
 - [x] Incremental Updates Plan - [incremental-updates-plan.md](incremental-updates-plan.md)
 - [x] Docker Containerization PRD - [Docker-Containerization-PRD.md](../pm/Docker-Containerization-PRD.md)
-- [ ] ADR 0001: MCP Protocol Design
-- [ ] ADR 0002: Storage Backend Selection
-- [ ] ADR 0003: Multi-Instance Architecture
-- [ ] ADR 0004: Docker MCP Toolkit Decision (see Containerization PRD Appendix A)
+- [x] ADR 0001: Incremental Update Trigger Strategy - [adr/0001-incremental-update-trigger-strategy.md](adr/0001-incremental-update-trigger-strategy.md)
+- [x] ADR 0002: Knowledge Graph Architecture - [adr/0002-knowledge-graph-architecture.md](adr/0002-knowledge-graph-architecture.md)
+- [x] ADR 0003: Local Embeddings Architecture - [adr/0003-local-embeddings-architecture.md](adr/0003-local-embeddings-architecture.md)
 - [ ] Data flow diagrams
 - [ ] Deployment architecture diagrams
-
-Documentation will be added as architectural decisions are made during implementation.
 
 ## Related Product Documentation
 
 - **[Docker Containerization PRD](../pm/Docker-Containerization-PRD.md)** - Containerization strategy, multi-transport MCP, and security architecture for Phases 3-4
+- **[Knowledge Graph PRD](../pm/knowledge-graph-PRD.md)** - Neo4j integration and graph tools for Phase 5
+- **[Phase 6 Document Ingestion PRD](../pm/Phase6-Document-Ingestion-PRD.md)** - Unstructured document support (planned)

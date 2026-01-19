@@ -1,8 +1,8 @@
 # Personal Knowledge MCP - Product Requirements Document
 
-**Version:** 1.1
-**Date:** October 28, 2025
-**Status:** Draft - Requirements Refined
+**Version:** 1.2
+**Date:** January 18, 2026
+**Status:** V1.0 Implementation Complete - Phases 1-5 Complete
 **Author:** Product Team
 
 ---
@@ -768,3 +768,44 @@ _To be detailed in separate System Design Document_
 **Document History:**
 - v1.0 - Initial draft with Q&A framework (October 28, 2025)
 - v1.1 - Updated based on Q&A responses; refined scope, personas, and goals; added Follow-Up Questions and MVP Recommendations sections (October 28, 2025)
+- v1.2 - Updated status to reflect V1.0 completion (January 18, 2026)
+
+---
+
+## Implementation Status Update (January 2026)
+
+The MVP recommendations in this document were planning guidance. The actual implementation made the following technology choices that differed from recommendations:
+
+### Actual Technology Stack (V1.0)
+
+| Component | Recommendation | Actual Choice | Rationale |
+|-----------|----------------|---------------|-----------|
+| Language | Python | TypeScript/Bun | Better MCP SDK support, faster development, excellent test runner |
+| Vector DB | Qdrant | ChromaDB | Simpler setup, good TypeScript client, adequate for personal scale |
+| Framework | FastAPI | Native Bun/Express | Aligned with TypeScript choice |
+
+### Implementation vs. Original Phases
+
+| Original Phase | Actual Outcome | Notes |
+|----------------|----------------|-------|
+| Phase 1 | **Complete** | Core MCP + ChromaDB vector search |
+| Phase 2 | **Complete** | Multi-provider embeddings (no local files yet) |
+| Phase 3 | **Complete** | Multi-instance + HTTP transport (no Azure DevOps) |
+| Phase 4 | **Framework Ready** | OIDC framework ready, enterprise features |
+| Phase 5 | **Complete** | Knowledge graph with Neo4j (new phase) |
+| Phase 6 | **Planned** | Unstructured document ingestion |
+
+### Key Additions Not in Original Plan
+
+1. **Phase 5: Knowledge Graph Search** - Added Neo4j integration with AST parsing for 13 languages
+2. **Multi-transport MCP** - HTTP/SSE transport alongside stdio for broader client support
+3. **Roslyn Integration** - C# support via Roslyn in addition to tree-sitter languages
+
+### Deferred to Future
+
+- Azure DevOps integration
+- Local folder ingestion with file watcher (moved to Phase 6)
+- PDF/Markdown extraction (moved to Phase 6)
+- GitHub webhooks for automated updates
+
+See [Feature Summary](feature-summary.md) and [Phase 6 PRD](pm/Phase6-Document-Ingestion-PRD.md) for current state and next steps.

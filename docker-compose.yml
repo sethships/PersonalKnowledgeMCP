@@ -131,7 +131,7 @@ services:
       - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
 
   # ============================================================================
-  # Graph Database (Neo4j Community) - Phase 4
+  # Graph Database (Neo4j Community) - Phase 2
   # For code dependency and knowledge relationship storage
   # ============================================================================
   neo4j:
@@ -180,7 +180,7 @@ services:
         max-file: "3"
 
   # ============================================================================
-  # Document Store (PostgreSQL) - Phase 2
+  # Document Store (PostgreSQL) - Phase 4
   # ============================================================================
   postgres:
     image: postgres:17.2-alpine

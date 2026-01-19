@@ -1133,8 +1133,8 @@ mcpService:
 |-----------|-------------|-----------|----------------|--------------|---------|
 | MCP Service | 250m | 1 | 256Mi | 1Gi | - |
 | ChromaDB | 500m | 2 | 512Mi | 2Gi | 10-50Gi |
+| Neo4j | 500m | 2 | 512Mi | 2Gi | 10Gi |
 | PostgreSQL | 250m | 2 | 256Mi | 1Gi | 5-20Gi |
-| Neo4j (Phase 4) | 500m | 2 | 512Mi | 2Gi | 10Gi |
 
 **Scaling Recommendations:**
 

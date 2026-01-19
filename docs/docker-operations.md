@@ -1,14 +1,14 @@
 # Docker Operations Guide
 
-Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring for Phase 2 containerized services.
+Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring.
 
 ## Overview
 
-The Personal Knowledge MCP uses Docker Compose to manage containerized storage backends. This phased approach keeps the architecture clean while supporting future expansion.
+The Personal Knowledge MCP uses Docker Compose to manage containerized storage backends. All core storage services are production-ready.
 
 ### Containerized Services
 
-**Phase 2 (Current - Hardened):**
+**Production (V1.0):**
 - **ChromaDB** - Vector database for semantic search
   - Image: `chromadb/chroma:0.6.3` (pinned version)
   - Port: `127.0.0.1:8000` (localhost only)
@@ -17,7 +17,14 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
   - Health checks enabled
   - Log rotation configured
 
-**Phase 2 (Ready):**
+- **Neo4j** - Graph database for code relationships and dependencies
+  - Image: `neo4j:5.x-community` (pinned version)
+  - Port: `127.0.0.1:7687` (Bolt), `127.0.0.1:7474` (HTTP)
+  - Volume: `neo4j-data`
+  - Resource limits: 2 CPU / 2GB RAM max
+  - Health checks enabled
+
+**Configured (Phase 4):**
 - **PostgreSQL** - Document store for full artifacts
   - Image: `postgres:17.2-alpine` (pinned version)
   - Port: `127.0.0.1:5432` (localhost only)
@@ -25,9 +32,6 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
   - Resource limits: 2 CPU / 1GB RAM max
   - Health checks enabled (pg_isready)
   - Init scripts: `./init-scripts:/docker-entrypoint-initdb.d`
-
-**Phase 4 (Future):**
-- **Neo4j** - Graph database for relationships (commented in docker-compose.yml)
 
 ### Why MCP Service Runs on Host
 

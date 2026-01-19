@@ -386,7 +386,7 @@ Use the **Bug Report** template and include:
 Use the **Feature Request** template and include:
 - Problem statement (user need)
 - Proposed solution
-- Relevant project phase (Phase 1-4)
+- Relevant project phase (Phase 1-6)
 - Alternatives considered
 
 ### Infrastructure Changes
@@ -402,10 +402,18 @@ Use the **Infrastructure/Tooling** template for:
 Understanding project phases helps align contributions:
 
 - **Phase 1** (Complete): Core MCP + Vector Search
-- **Phase 2** (Current): Code Intelligence + Multi-Provider Embeddings (13 languages, Neo4j graph)
+- **Phase 2** (Complete): Code Intelligence + Multi-Provider Embeddings
 - **Phase 3** (Complete): Multi-Instance + HTTP Transport
+- **Phase 4** (Framework Ready): Enterprise Features (OIDC, User Mapping)
+- **Phase 5** (Complete): Knowledge Graph Search (Neo4j, AST parsing for 13 languages, graph MCP tools)
+- **Phase 6** (Planned): Unstructured Document Ingestion (PDF, DOCX, local folder watching)
 
-See [docs/High-level-Personal-Knowledge-MCP-PRD.md](docs/High-level-Personal-Knowledge-MCP-PRD.md) for details.
+**Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
+
+See:
+- [Feature Summary](docs/feature-summary.md) for complete feature list
+- [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for upcoming document ingestion work
+- [High-level PRD](docs/High-level-Personal-Knowledge-MCP-PRD.md) for product vision
 
 ## Getting Help
 
