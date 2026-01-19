@@ -824,7 +824,7 @@ bun test --watch
 - **[Performance Tuning Guide](docs/performance-tuning-guide.md)** - Optimization strategies
 
 ### Architecture & Design
-- **[Phase 1 Feature Summary](docs/phase1-feature-summary.md)** - Complete feature list, status, and known limitations
+- **[Feature Summary](docs/feature-summary.md)** - Complete feature list, status, and known limitations (all phases)
 - **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
 - **[Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md)** - Multi-transport MCP, security architecture, and deployment strategy
 - **[Knowledge Graph PRD](docs/pm/knowledge-graph-PRD.md)** - Graph database design and tools
@@ -933,11 +933,19 @@ ChromaDB supports optional token-based authentication to secure the vector datab
 - **Incremental Graph Updates** - Graph extraction integrated with update pipeline
 - **Graph Query Metrics** - Performance monitoring and statistics
 
+### Phase 6: Unstructured Document Ingestion (Planned)
+- PDF document ingestion and text extraction
+- Microsoft Word (.docx) document support
+- Local folder watching with automatic re-indexing
+- Image metadata extraction
+- Markdown file processing with frontmatter support
+
+See [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for detailed requirements.
+
 ### Future Roadmap
 - Automated update pipelines with GitHub webhooks
 - Azure DevOps repository integration
-- Local folder ingestion with file watcher
-- PDF/Markdown extraction for educational materials
+- Cloud storage integration (OneDrive, Google Drive)
 
 ## Contributing
 

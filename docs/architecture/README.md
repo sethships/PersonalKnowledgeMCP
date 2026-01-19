@@ -57,8 +57,8 @@ Bun/TypeScript-based service implementing the MCP protocol specification with st
 
 ### Storage Layer
 - **Vector DB (ChromaDB)**: Semantic search and similarity
-- **Graph DB (Neo4j)**: Code relationships and dependencies
-- **Document Store (PostgreSQL)**: Artifacts and full documents (Phase 4)
+- **Graph DB (Neo4j)**: Code relationships and dependencies (Phase 5 Complete)
+- **Document Store (PostgreSQL)**: Artifacts and full documents (Framework Ready)
 
 ### Ingestion Layer
 - Repository cloners (GitHub, Azure DevOps)
@@ -84,3 +84,5 @@ Bun/TypeScript-based service implementing the MCP protocol specification with st
 ## Related Product Documentation
 
 - **[Docker Containerization PRD](../pm/Docker-Containerization-PRD.md)** - Containerization strategy, multi-transport MCP, and security architecture for Phases 3-4
+- **[Knowledge Graph PRD](../pm/knowledge-graph-PRD.md)** - Neo4j integration and graph tools for Phase 5
+- **[Phase 6 Document Ingestion PRD](../pm/Phase6-Document-Ingestion-PRD.md)** - Unstructured document support (planned)

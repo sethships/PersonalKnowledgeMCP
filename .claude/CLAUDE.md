@@ -14,12 +14,12 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - **Runtime**: Bun 1.0+ (fast all-in-one JavaScript runtime)
 - **Language**: TypeScript 5.3+ (strict type safety)
 - **MCP SDK**: Official Anthropic MCP SDK (@modelcontextprotocol/sdk)
-- **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C#
+- **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C# (13 total)
 - **Containers**: Docker for ChromaDB and Neo4j containerization
 - **Storage Backends**:
   - Vector DB (ChromaDB) for semantic search
   - Graph DB (Neo4j Community) for code relationships and dependencies
-  - Document Store (PostgreSQL with JSON) for artifacts (Phase 2+)
+  - Document Store (PostgreSQL with JSON) for artifacts (Framework Ready)
 - **Embedding Providers**: OpenAI API, Transformers.js (local), Ollama (GPU)
 - **Platform**: Cross-platform with Windows development environment (PowerShell 7, Bun)
 
@@ -150,11 +150,20 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - Graph query metrics and performance monitoring
 - CLI commands: graph migrate, graph populate, graph populate-all
 
+### Phase 6: Unstructured Document Ingestion (Planned)
+**Goal**: Enable educational material and documentation search
+- PDF document ingestion and text extraction
+- Microsoft Word (.docx) document support
+- Local folder watching with automatic re-indexing
+- Image metadata extraction
+- Markdown file processing with frontmatter support
+
+See [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for detailed requirements.
+
 ### Future Roadmap
 - Azure DevOps repository integration
 - Automated update pipelines and GitHub webhooks
-- Local folder ingestion with file watcher
-- PDF/Markdown extraction for educational materials
+- Cloud storage integration (OneDrive, Google Drive)
 
 ## Key Files and Directories
 
@@ -227,6 +236,7 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 ## Project Status and Notes
 
 - **Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
+- **Next Phase**: Phase 6 - Unstructured Document Ingestion (PRD completed January 2026)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
 - Knowledge graph with Neo4j fully implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
