@@ -1,6 +1,6 @@
 # Phase 6: Unstructured Document Ingestion PRD - Personal Knowledge MCP
 
-**Version:** 1.3
+**Version:** 1.4
 **Date:** January 18, 2026
 **Status:** Draft
 **Author:** Product Team
@@ -23,6 +23,71 @@
 11. [Implementation Milestones](#11-implementation-milestones)
 12. [Risks and Mitigations](#12-risks-and-mitigations)
 13. [Future Considerations](#13-future-considerations)
+
+---
+
+## Important: Embedding Provider Configuration
+
+**Phase 6 is designed to work fully offline with local embedding providers.**
+
+Personal Knowledge MCP supports multiple embedding providers. For document ingestion, we recommend a **local-first approach** to avoid external API dependencies and costs.
+
+### Recommended Configuration
+
+| Deployment | Provider | Configuration | Notes |
+|------------|----------|---------------|-------|
+| **Default (new users)** | Transformers.js | Zero-config, works immediately | No setup required |
+| **GPU available** | Ollama | `EMBEDDING_PROVIDER=ollama` | Best performance, requires Ollama |
+| **Highest quality needed** | OpenAI | `OPENAI_API_KEY=...` | Optional, requires API key |
+
+### Local-First Philosophy
+
+Document ingestion can involve large volumes of content (PDFs, DOCX files, images). Using local embedding providers:
+
+1. **Eliminates API costs** - No per-token charges for indexing documents
+2. **Enables offline operation** - Index documents without internet access
+3. **Improves privacy** - Document content never leaves your machine
+4. **Reduces latency** - No network round-trips for embedding generation
+
+### Default Provider Selection
+
+The system auto-detects providers in this priority order:
+
+1. If `EMBEDDING_PROVIDER` is explicitly set, use that provider
+2. If `OPENAI_API_KEY` is set, use OpenAI (for backwards compatibility)
+3. **Otherwise, use Transformers.js** (zero-config local provider)
+
+For Phase 6 document ingestion, we strongly recommend:
+
+```bash
+# Explicit local provider (recommended for document ingestion)
+EMBEDDING_PROVIDER=transformersjs
+
+# Or for GPU acceleration (requires Ollama installation)
+EMBEDDING_PROVIDER=ollama
+```
+
+### Ollama Model Recommendations for Embeddings
+
+If using Ollama for embedding generation:
+
+| Model | Dimensions | Quality | Best For |
+|-------|------------|---------|----------|
+| `nomic-embed-text` | 768 | Good | General document indexing (default) |
+| `mxbai-embed-large` | 1024 | Highest | Maximum quality, more memory |
+| `all-minilm` | 384 | Moderate | Resource-constrained environments |
+
+Setup:
+```bash
+# Install model (one-time)
+ollama pull nomic-embed-text
+
+# Configure provider
+EMBEDDING_PROVIDER=ollama
+OLLAMA_MODEL=nomic-embed-text
+```
+
+See [Embedding Provider Guide](../embedding-providers.md) for detailed configuration options.
 
 ---
 
@@ -472,9 +537,11 @@ Action:
 
 | Option | Pros | Cons | Recommendation |
 |--------|------|------|----------------|
-| **Local (Transformers.js)** | Privacy, no API costs, offline capable | Slower, requires model download (~500MB-1GB), lower accuracy | Default for privacy-sensitive deployments |
-| **Cloud (OpenAI Vision)** | High accuracy, fast, no local resources | API costs, requires internet, data leaves local system | Recommended for quality when acceptable |
+| **Local (Transformers.js)** | Privacy, no API costs, offline capable | Slower, requires model download (~500MB-1GB), lower accuracy | **Default** - Recommended for most deployments |
+| **Cloud (OpenAI Vision)** | High accuracy, fast, no local resources | API costs, requires internet, data leaves local system | Optional for highest quality when acceptable |
 | **Cloud (Azure AI Vision)** | Enterprise features, good accuracy | API costs, Azure subscription required | Alternative for Azure-heavy environments |
+
+**Important**: Local processing is the default to maintain the system's local-first philosophy. Cloud providers are opt-in features that require explicit configuration.
 
 **Performance Considerations:**
 - Local processing: 2-10 seconds per image depending on model and hardware
@@ -1786,6 +1853,7 @@ interface ImageAnalysisConfig {
 | 1.1 | 2026-01-18 | Product Team | Added embedding provider observability (GitHub Issue #28) as optional P2 scope in M5 |
 | 1.2 | 2026-01-18 | Product Team | Moved OCR, table extraction, and image content analysis from Non-Goals to in-scope; added user stories US-9, US-10, US-11; added functional requirements FR-9, FR-10, FR-11; added milestones M6, M7, M8; updated dependencies |
 | 1.3 | 2026-01-18 | Product Team | **CRITICAL**: Clarified PostgreSQL storage purpose - stores metadata/references/structure, NOT full document content. Added Storage Architecture Overview section. Updated schema with structural tables (extracted_tables, document_chunks). Clarified data flow in architecture diagram. |
+| 1.4 | 2026-01-18 | Product Team | Added local-first embedding provider configuration section. Emphasized Transformers.js as default (zero-config), Ollama for GPU acceleration, OpenAI as optional. Added Ollama model recommendations for document embedding. |
 
 ---
 

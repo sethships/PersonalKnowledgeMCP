@@ -156,18 +156,26 @@ graph TB
         MCP_SVC -->|clone/read| FS
     end
 
-    OAI[OpenAI API Cloud<br/>text-embedding-3-small]
+    subgraph EMBED["Embedding Providers (Choose One)"]
+        LOCAL[Transformers.js<br/>Local CPU - Default]
+        OLLAMA[Ollama Server<br/>Local GPU]
+        OAI[OpenAI API<br/>Cloud - Optional]
+    end
 
-    MCP_SVC -->|HTTPS| OAI
+    MCP_SVC -.->|default| LOCAL
+    MCP_SVC -.->|optional| OLLAMA
+    MCP_SVC -.->|optional| OAI
 
     classDef client fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#000
     classDef service fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
     classDef storage fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px,color:#000
     classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
+    classDef embed fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
 
     class CC,CURSOR client
     class MCP_SVC,STDIO,HTTP,AUTH,TH,SS,LR,GD,GT,GA,FP,SL,SRCH,REPO,GRAPH service
     class CDB,NEO,VOL,NEOVOL,FS storage
+    class LOCAL,OLLAMA embed
     class OAI external
 ```
 
@@ -178,8 +186,9 @@ graph TB
 - **Bun**: 1.0 or later ([install](https://bun.sh/))
 - **Docker Desktop**: For running ChromaDB and Neo4j
 - **Git**: For repository cloning
-- **OpenAI API Key**: For embedding generation (or use local alternatives)
 - **GitHub PAT** (optional): For private repository access
+
+**Note**: No OpenAI API key is required. The system works fully offline with local embedding providers (Transformers.js or Ollama). OpenAI is available as an optional provider for highest quality embeddings.
 
 ### Quick Start
 
@@ -197,7 +206,8 @@ graph TB
 3. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY and NEO4J_PASSWORD
+   # Edit .env and set NEO4J_PASSWORD (required for graph database)
+   # OpenAI API key is OPTIONAL - local embeddings work without it
    ```
 
 4. **Start ChromaDB and Neo4j**:
@@ -433,8 +443,9 @@ The MCP integration is optimized for fast response times:
 
 - **Bun 1.0+** or **Node.js 18+** (for running the MCP server)
 - **Docker Desktop** (for ChromaDB and Neo4j)
-- **OpenAI API Key** (for embedding generation, or use local alternatives)
 - **At least one indexed repository** (use `bun run cli index <url>`)
+
+**Note**: No API keys required for basic operation. Local embedding providers (Transformers.js, Ollama) work offline without external dependencies.
 
 
 ## MCP Tools
@@ -550,20 +561,32 @@ Find the shortest path between two code entities in the dependency graph.
 
 ## Embedding Providers
 
-Personal Knowledge MCP supports multiple embedding providers for generating vector representations of your code.
+Personal Knowledge MCP is designed to work **fully offline** with local embedding providers. No external API keys are required.
 
-### Quick Comparison
+### Local-First Design
 
-| Provider | Best For | Requires | Quality | Offline |
-|----------|----------|----------|---------|---------|
-| **OpenAI** | Highest quality | API key + internet | Highest | No |
-| **Transformers.js** | Zero-config, offline | Nothing (default) | Good | Yes |
-| **Ollama** | GPU acceleration | Ollama server | Good-High | Yes |
+The system defaults to local embedding providers that require no configuration, API keys, or internet access:
+
+| Provider | Setup Required | Offline | GPU | Quality | Cost |
+|----------|---------------|---------|-----|---------|------|
+| **Transformers.js** | None (default) | Yes | No | Good | Free |
+| **Ollama** | Install Ollama | Yes | Yes | Good-High | Free |
+| **OpenAI** | API key | No | N/A | Highest | Per-token |
+
+### Recommended Configuration
+
+| Scenario | Recommendation |
+|----------|---------------|
+| **Getting started** | Use defaults (Transformers.js) |
+| **Have a GPU** | Configure Ollama for faster indexing |
+| **Need highest quality** | Optional: Add OpenAI API key |
+| **Air-gapped/offline** | Transformers.js or Ollama (pre-download models) |
 
 ### Default Behavior
 
-- **With `OPENAI_API_KEY` set**: Uses OpenAI (highest quality)
-- **Without API key**: Uses Transformers.js (zero-config local)
+- **Default (no configuration)**: Uses Transformers.js - works immediately
+- **With `EMBEDDING_PROVIDER=ollama`**: Uses Ollama for GPU acceleration
+- **With `OPENAI_API_KEY` set**: Uses OpenAI (backwards compatible)
 
 ### Usage
 
@@ -723,10 +746,14 @@ pk-mcp health
 The CLI uses the same environment variables as the MCP server:
 
 ```bash
-# Required for OpenAI embeddings
-OPENAI_API_KEY=sk-...
+# Embedding provider (defaults to local Transformers.js)
+# Options: transformers (default), ollama, openai
+EMBEDDING_PROVIDER=transformers
 
-# Required for Neo4j
+# Optional: OpenAI API key (only needed if using OpenAI provider)
+# OPENAI_API_KEY=sk-...
+
+# Required for Neo4j graph database
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your-password
