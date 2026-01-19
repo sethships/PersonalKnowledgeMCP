@@ -100,6 +100,20 @@ function createTokenCreatedEvent(): TokenCreatedEvent {
 }
 
 /**
+ * Wait for setImmediate callbacks to complete
+ *
+ * The AuditLogger uses setImmediate() for fire-and-forget writes. This helper
+ * ensures all pending setImmediate callbacks have executed before continuing.
+ * This is more reliable than polling for file content because it waits for
+ * the actual JavaScript callback to complete, not just the OS file write.
+ */
+async function flushImmediates(): Promise<void> {
+  // setImmediate callbacks are processed after the current event loop iteration
+  // Using multiple setImmediate calls ensures we're after all pending ones
+  await new Promise<void>((resolve) => setImmediate(() => setImmediate(resolve)));
+}
+
+/**
  * Wait for async write operations to complete with polling
  *
  * Polls for file existence and content. This is more robust than fixed
@@ -113,6 +127,9 @@ async function waitForWrite(expectedLines = 1, timeout = 3000): Promise<void> {
   const pollInterval = 30; // Check every 30ms
 
   while (Date.now() - start < timeout) {
+    // First flush any pending setImmediate callbacks
+    await flushImmediates();
+
     // Poll for file content
     if (existsSync(TEST_LOG_PATH)) {
       try {
@@ -122,6 +139,10 @@ async function waitForWrite(expectedLines = 1, timeout = 3000): Promise<void> {
           .split("\n")
           .filter((l) => l.length > 0).length;
         if (lines >= expectedLines) {
+          // Extra flush to ensure write callbacks have completed
+          await flushImmediates();
+          // Small delay for Pino's async destination to flush to disk
+          await new Promise((resolve) => setTimeout(resolve, 50));
           return;
         }
       } catch {
@@ -528,25 +549,28 @@ describe("AuditLogger circuit breaker", () => {
     // Wait for the async write to complete with polling for expected line count
     await waitForWrite(1, 5000);
 
+    // Flush all pending setImmediate callbacks to ensure the write is complete
+    await flushImmediates();
+
     // Verify the initial event was written
     const initialContent = readFileSync(TEST_LOG_PATH, "utf-8");
     const initialLines = initialContent.trim().split("\n").length;
     expect(initialLines).toBe(1); // Ensure first event is written
-
-    // Wait additional time to ensure queue is fully flushed before opening circuit
-    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Access internals to manually open circuit for testing
     // @ts-expect-error - accessing private property for testing
     logger.circuitOpen = true;
 
     // Emit more events - should be dropped because circuit is open
+    // These should return immediately without scheduling any writes
     logger.emit(createAuthSuccessEvent());
     logger.emit(createAuthSuccessEvent());
 
-    // Wait longer to ensure any queued writes would have time to complete
-    // CI environments may have slower I/O than local development
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Flush any pending callbacks (there shouldn't be any from the dropped events)
+    await flushImmediates();
+
+    // Small delay to allow any potential file writes to occur
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify no new events were written
     const finalContent = readFileSync(TEST_LOG_PATH, "utf-8");
@@ -607,9 +631,16 @@ describe("AuditLogger circuit breaker", () => {
 
     // Emit a successful event
     logger.emit(createAuthSuccessEvent());
+
+    // Wait for the file to have content
     await waitForWrite(1, 5000);
 
-    // Failure count should be reset
+    // Flush setImmediate callbacks to ensure writeEvent() has completed
+    // This is crucial because failureCount is reset inside writeEvent()
+    // which runs via setImmediate()
+    await flushImmediates();
+
+    // Failure count should be reset after the write callback completes
     // @ts-expect-error - accessing private property for testing
     expect(logger.failureCount).toBe(0);
   });
