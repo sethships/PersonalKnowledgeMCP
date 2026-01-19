@@ -60,7 +60,7 @@ Phase 6 extends Personal Knowledge MCP with unstructured document ingestion capa
 | [#257](https://github.com/sethb75/PersonalKnowledgeMCP/issues/257) | Implement Image Metadata Extractor | M | P0 | #253 |
 | [#258](https://github.com/sethb75/PersonalKnowledgeMCP/issues/258) | Create Document Type Detector | S | P0 | #254-#257 |
 | [#259](https://github.com/sethb75/PersonalKnowledgeMCP/issues/259) | Add error handling for corrupt files | S | P0 | #254-#257 |
-| [#260](https://github.com/sethb75/PersonalKnowledgeMCP/issues/260) | Unit tests for all extractors (90%+ coverage) | M | P0 | All above |
+| [#260](https://github.com/sethb75/PersonalKnowledgeMCP/issues/260) | Unit tests for all extractors (90%+ coverage) | M | P0 | #258, #259 |
 
 ### Key Deliverables
 
@@ -97,13 +97,13 @@ bun add -d @types/pdf-parse
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#261](https://github.com/sethb75/PersonalKnowledgeMCP/issues/261) | Create DocumentChunker extending FileChunker | M | P0 | M1 complete |
+| [#261](https://github.com/sethb75/PersonalKnowledgeMCP/issues/261) | Create DocumentChunker extending FileChunker | M | P0 | #260 |
 | [#262](https://github.com/sethb75/PersonalKnowledgeMCP/issues/262) | Implement paragraph-boundary-aware chunking | M | P0 | #261 |
 | [#263](https://github.com/sethb75/PersonalKnowledgeMCP/issues/263) | Add section heading context preservation | S | P0 | #261 |
 | [#264](https://github.com/sethb75/PersonalKnowledgeMCP/issues/264) | Create PostgreSQL migration for documents table | M | P0 | None |
 | [#265](https://github.com/sethb75/PersonalKnowledgeMCP/issues/265) | Integrate with IngestionService | M | P0 | #261, #264 |
 | [#266](https://github.com/sethb75/PersonalKnowledgeMCP/issues/266) | Add document metadata to ChromaDB storage | S | P0 | #261 |
-| [#267](https://github.com/sethb75/PersonalKnowledgeMCP/issues/267) | Integration tests for chunking pipeline | M | P0 | All above |
+| [#267](https://github.com/sethb75/PersonalKnowledgeMCP/issues/267) | Integration tests for chunking pipeline | M | P0 | #262, #263, #265, #266 |
 
 ### Key Deliverables
 
@@ -130,13 +130,13 @@ bun add -d @types/pdf-parse
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#268](https://github.com/sethb75/PersonalKnowledgeMCP/issues/268) | Implement search_documents MCP tool | M | P0 | M2 complete |
-| [#269](https://github.com/sethb75/PersonalKnowledgeMCP/issues/269) | Implement search_images MCP tool | M | P0 | M2 complete |
+| [#268](https://github.com/sethb75/PersonalKnowledgeMCP/issues/268) | Implement search_documents MCP tool | M | P0 | #267 |
+| [#269](https://github.com/sethb75/PersonalKnowledgeMCP/issues/269) | Implement search_images MCP tool | M | P0 | #267 |
 | [#270](https://github.com/sethb75/PersonalKnowledgeMCP/issues/270) | Implement list_watched_folders MCP tool | S | P0 | None |
 | [#271](https://github.com/sethb75/PersonalKnowledgeMCP/issues/271) | Update semantic_search with include_documents option | S | P0 | #268 |
 | [#272](https://github.com/sethb75/PersonalKnowledgeMCP/issues/272) | Register new tools in MCP tool registry | S | P0 | #268-#270 |
 | [#273](https://github.com/sethb75/PersonalKnowledgeMCP/issues/273) | Add comprehensive tool documentation | S | P1 | #268-#270 |
-| [#274](https://github.com/sethb75/PersonalKnowledgeMCP/issues/274) | Integration tests for MCP tools | M | P0 | All above |
+| [#274](https://github.com/sethb75/PersonalKnowledgeMCP/issues/274) | Integration tests for MCP tools | M | P0 | #271, #272, #273 |
 
 ### Key Deliverables
 
@@ -164,7 +164,7 @@ bun add -d @types/pdf-parse
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#275](https://github.com/sethb75/PersonalKnowledgeMCP/issues/275) | Implement FolderWatcherService with chokidar | L | P0 | M2 complete |
+| [#275](https://github.com/sethb75/PersonalKnowledgeMCP/issues/275) | Implement FolderWatcherService with chokidar | L | P0 | #267 |
 | [#276](https://github.com/sethb75/PersonalKnowledgeMCP/issues/276) | Add debouncing for rapid file changes | S | P0 | #275 |
 | [#277](https://github.com/sethb75/PersonalKnowledgeMCP/issues/277) | Implement change detection (add/modify/delete) | M | P0 | #275 |
 | [#278](https://github.com/sethb75/PersonalKnowledgeMCP/issues/278) | Create processing queue for batched updates | M | P0 | #277 |
@@ -172,7 +172,7 @@ bun add -d @types/pdf-parse
 | [#280](https://github.com/sethb75/PersonalKnowledgeMCP/issues/280) | Add .pkignore file support | S | P1 | #275 |
 | [#281](https://github.com/sethb75/PersonalKnowledgeMCP/issues/281) | Create PostgreSQL watched_folders table | S | P0 | None |
 | [#282](https://github.com/sethb75/PersonalKnowledgeMCP/issues/282) | Handle watcher lifecycle (start/stop/restart) | M | P0 | #275 |
-| [#283](https://github.com/sethb75/PersonalKnowledgeMCP/issues/283) | Integration tests for watcher scenarios | L | P0 | All above |
+| [#283](https://github.com/sethb75/PersonalKnowledgeMCP/issues/283) | Integration tests for watcher scenarios | L | P0 | #276, #279, #280, #281, #282 |
 
 ### Key Deliverables
 
@@ -207,15 +207,15 @@ bun add chokidar ignore
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#284](https://github.com/sethb75/PersonalKnowledgeMCP/issues/284) | Implement pk-mcp documents index command | M | P0 | M4 complete |
-| [#285](https://github.com/sethb75/PersonalKnowledgeMCP/issues/285) | Implement pk-mcp watch commands (add/list/remove/pause/resume/rescan) | L | P0 | M4 complete |
-| [#286](https://github.com/sethb75/PersonalKnowledgeMCP/issues/286) | Implement pk-mcp documents status command | S | P0 | M4 complete |
+| [#284](https://github.com/sethb75/PersonalKnowledgeMCP/issues/284) | Implement pk-mcp documents index command | M | P0 | #283 |
+| [#285](https://github.com/sethb75/PersonalKnowledgeMCP/issues/285) | Implement pk-mcp watch commands (add/list/remove/pause/resume/rescan) | L | P0 | #283 |
+| [#286](https://github.com/sethb75/PersonalKnowledgeMCP/issues/286) | Implement pk-mcp documents status command | S | P0 | #283 |
 | [#287](https://github.com/sethb75/PersonalKnowledgeMCP/issues/287) | Implement pk-mcp documents errors and retry commands | S | P0 | #286 |
 | [#288](https://github.com/sethb75/PersonalKnowledgeMCP/issues/288) | Add progress reporting for bulk operations | M | P0 | #284 |
-| [#289](https://github.com/sethb75/PersonalKnowledgeMCP/issues/289) | Performance testing against PRD targets | M | P0 | All features |
-| [#290](https://github.com/sethb75/PersonalKnowledgeMCP/issues/290) | Write user documentation for document features | M | P1 | All features |
+| [#289](https://github.com/sethb75/PersonalKnowledgeMCP/issues/289) | Performance testing against PRD targets | M | P0 | #285, #287, #288 |
+| [#290](https://github.com/sethb75/PersonalKnowledgeMCP/issues/290) | Write user documentation for document features | M | P1 | #285, #287, #288 |
 | [#291](https://github.com/sethb75/PersonalKnowledgeMCP/issues/291) | Update README with document ingestion guide | S | P1 | #290 |
-| [#292](https://github.com/sethb75/PersonalKnowledgeMCP/issues/292) | (Optional) Add embedding provider observability logging | S | P2 | All features |
+| [#292](https://github.com/sethb75/PersonalKnowledgeMCP/issues/292) | (Optional) Add embedding provider observability logging | S | P2 | #289 |
 
 ### Key Deliverables
 
@@ -259,7 +259,7 @@ pk-mcp watch rescan <name-or-path> [--full]
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#293](https://github.com/sethb75/PersonalKnowledgeMCP/issues/293) | Implement OcrService with tesseract.js v6 | L | P1 | M5 complete |
+| [#293](https://github.com/sethb75/PersonalKnowledgeMCP/issues/293) | Implement OcrService with tesseract.js v6 | L | P1 | #289 |
 | [#294](https://github.com/sethb75/PersonalKnowledgeMCP/issues/294) | Create PDF page-to-image converter using pdfjs-dist | M | P1 | #293 |
 | [#295](https://github.com/sethb75/PersonalKnowledgeMCP/issues/295) | Implement image-only PDF detection | S | P1 | #294 |
 | [#296](https://github.com/sethb75/PersonalKnowledgeMCP/issues/296) | Add OCR confidence score tracking | S | P1 | #293 |
@@ -269,8 +269,8 @@ pk-mcp watch rescan <name-or-path> [--full]
 | [#300](https://github.com/sethb75/PersonalKnowledgeMCP/issues/300) | Implement OCR timeout handling | S | P1 | #293 |
 | [#301](https://github.com/sethb75/PersonalKnowledgeMCP/issues/301) | Add CLI commands for OCR status | S | P1 | #298 |
 | [#302](https://github.com/sethb75/PersonalKnowledgeMCP/issues/302) | Update MCP tools to include OCR content | S | P1 | #293 |
-| [#303](https://github.com/sethb75/PersonalKnowledgeMCP/issues/303) | Unit tests for OCR service (85%+ coverage) | M | P1 | All above |
-| [#304](https://github.com/sethb75/PersonalKnowledgeMCP/issues/304) | Integration tests for OCR pipeline | M | P1 | All above |
+| [#303](https://github.com/sethb75/PersonalKnowledgeMCP/issues/303) | Unit tests for OCR service (85%+ coverage) | M | P1 | #295, #296, #297, #299, #300, #301, #302 |
+| [#304](https://github.com/sethb75/PersonalKnowledgeMCP/issues/304) | Integration tests for OCR pipeline | M | P1 | #303 |
 
 ### Key Deliverables
 
@@ -305,7 +305,7 @@ bun add tesseract.js pdfjs-dist
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#305](https://github.com/sethb75/PersonalKnowledgeMCP/issues/305) | Implement TableExtractor interface | S | P2 | M5 complete |
+| [#305](https://github.com/sethb75/PersonalKnowledgeMCP/issues/305) | Implement TableExtractor interface | S | P2 | #289 |
 | [#306](https://github.com/sethb75/PersonalKnowledgeMCP/issues/306) | Implement PdfTableExtractor with pdfreader | M | P2 | #305 |
 | [#307](https://github.com/sethb75/PersonalKnowledgeMCP/issues/307) | Implement DocxTableExtractor | M | P2 | #305 |
 | [#308](https://github.com/sethb75/PersonalKnowledgeMCP/issues/308) | Create table structure model | S | P2 | #305 |
@@ -316,7 +316,7 @@ bun add tesseract.js pdfjs-dist
 | [#313](https://github.com/sethb75/PersonalKnowledgeMCP/issues/313) | Implement pk-mcp tables list command | S | P2 | #311 |
 | [#314](https://github.com/sethb75/PersonalKnowledgeMCP/issues/314) | Implement pk-mcp tables export command | M | P2 | #313 |
 | [#315](https://github.com/sethb75/PersonalKnowledgeMCP/issues/315) | Add table filtering to search_documents | S | P2 | #312 |
-| [#316](https://github.com/sethb75/PersonalKnowledgeMCP/issues/316) | Unit tests for table extraction (85%+ coverage) | M | P2 | All above |
+| [#316](https://github.com/sethb75/PersonalKnowledgeMCP/issues/316) | Unit tests for table extraction (85%+ coverage) | M | P2 | #309, #310, #312, #314, #315 |
 
 ### Key Deliverables
 
@@ -352,7 +352,7 @@ bun add pdfreader
 
 | Issue # | Title | Size | Priority | Dependencies |
 |---------|-------|------|----------|--------------|
-| [#317](https://github.com/sethb75/PersonalKnowledgeMCP/issues/317) | Implement ImageAnalysisService with provider abstraction | M | P2 | M5 complete |
+| [#317](https://github.com/sethb75/PersonalKnowledgeMCP/issues/317) | Implement ImageAnalysisService with provider abstraction | M | P2 | #289 |
 | [#318](https://github.com/sethb75/PersonalKnowledgeMCP/issues/318) | Implement LocalImageAnalyzer with Transformers.js | L | P2 | #317 |
 | [#319](https://github.com/sethb75/PersonalKnowledgeMCP/issues/319) | Implement OpenAIImageAnalyzer | M | P2 | #317 |
 | [#320](https://github.com/sethb75/PersonalKnowledgeMCP/issues/320) | Create provider configuration | S | P2 | #318, #319 |
@@ -364,8 +364,8 @@ bun add pdfreader
 | [#326](https://github.com/sethb75/PersonalKnowledgeMCP/issues/326) | Implement pk-mcp images analyze command | S | P2 | #317 |
 | [#327](https://github.com/sethb75/PersonalKnowledgeMCP/issues/327) | Implement pk-mcp images reanalyze command | S | P2 | #326 |
 | [#328](https://github.com/sethb75/PersonalKnowledgeMCP/issues/328) | Add analysis progress reporting | S | P2 | #326 |
-| [#329](https://github.com/sethb75/PersonalKnowledgeMCP/issues/329) | Unit tests for image analysis (85%+ coverage) | M | P2 | All above |
-| [#330](https://github.com/sethb75/PersonalKnowledgeMCP/issues/330) | Integration tests for both providers | M | P2 | All above |
+| [#329](https://github.com/sethb75/PersonalKnowledgeMCP/issues/329) | Unit tests for image analysis (85%+ coverage) | M | P2 | #320, #321, #322, #324, #325, #327, #328 |
+| [#330](https://github.com/sethb75/PersonalKnowledgeMCP/issues/330) | Integration tests for both providers | M | P2 | #329 |
 
 ### Key Deliverables
 
