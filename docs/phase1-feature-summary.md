@@ -1,10 +1,10 @@
-# Phase 1 Feature Summary
+# Feature Summary
 
-This document summarizes the features implemented in Phase 1: Core MCP + Vector Search.
+This document summarizes all features implemented in Personal Knowledge MCP V1.0 (Phases 1-3 Complete, Phase 4 Framework Ready).
 
 ## Overview
 
-Phase 1 establishes the foundation for semantic code search via the Model Context Protocol (MCP). It enables Claude Code and other AI assistants to efficiently search and retrieve code from indexed repositories using natural language queries.
+Personal Knowledge MCP provides a comprehensive AI-first knowledge management service via the Model Context Protocol (MCP). It enables Claude Code and other AI assistants to efficiently search, analyze, and understand code from indexed repositories using natural language queries and knowledge graph analysis.
 
 ## Implemented Features
 
@@ -13,11 +13,18 @@ Phase 1 establishes the foundation for semantic code search via the Model Contex
 | Feature | Status | Description |
 |---------|--------|-------------|
 | stdio Transport | Complete | Primary transport for Claude Code integration |
+| HTTP/SSE Transport | Complete | Cross-client support (Cursor, VS Code) |
 | `semantic_search` Tool | Complete | Natural language search across indexed code |
 | `list_indexed_repositories` Tool | Complete | Discover indexed repositories |
+| `get_dependencies` Tool | Complete | Query code dependencies |
+| `get_dependents` Tool | Complete | Impact analysis for refactoring |
+| `get_architecture` Tool | Complete | Module structure analysis |
+| `find_path` Tool | Complete | Trace code connections |
+| `get_graph_metrics` Tool | Complete | Repository health statistics |
 | `trigger_incremental_update` Tool | Complete | Update repository index after changes |
 | `get_update_status` Tool | Complete | Track async update job status |
-| Rate Limiting | Complete | 5-minute cooldown per repository |
+| Rate Limiting | Complete | Configurable per-minute/per-hour limits |
+| CORS Support | Complete | Browser client compatibility |
 | Error Handling | Complete | MCP-compliant error responses |
 
 ### CLI Commands
@@ -90,20 +97,25 @@ Phase 1 establishes the foundation for semantic code search via the Model Contex
 
 The following are intentional limitations in Phase 1, to be addressed in future phases:
 
-### Implementation Status (Phase 2 Progress)
+### Implementation Status
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| AST Parsing | **Complete** | Tree-sitter integration for 13 languages |
-| PostgreSQL Document Store | Pending | Full artifact storage |
-| Local File Ingestion | Pending | Watch local folders for changes |
-| PDF/Markdown Extraction | Pending | Educational material support |
-| HTTP/SSE Transport | **Complete** | Cross-client support (Cursor, VS Code) |
-| Azure DevOps Integration | Pending | Enterprise repository support |
-| Graph Database | **Complete** | Neo4j for code relationships |
-| Automated Webhooks | Pending | GitHub webhook handler |
-| OIDC Full Integration | Framework Ready | Microsoft 365 SSO |
-| Kubernetes Deployment | Helm Chart Ready | Production scaling |
+| Feature | Status | Phase | Notes |
+|---------|--------|-------|-------|
+| AST Parsing | **Complete** | Phase 2 | Tree-sitter for 12 languages + Roslyn for C# |
+| Graph Database | **Complete** | Phase 2 | Neo4j with 5 MCP tools |
+| Multi-Provider Embeddings | **Complete** | Phase 2 | OpenAI, Transformers.js, Ollama |
+| HTTP/SSE Transport | **Complete** | Phase 3 | Cross-client support (Cursor, VS Code) |
+| Bearer Token Auth | **Complete** | Phase 3 | CLI management with scopes |
+| Multi-Instance Architecture | **Complete** | Phase 3 | Private/Work/Public isolation |
+| Rate Limiting | **Complete** | Phase 3 | Configurable limits |
+| CORS Support | **Complete** | Phase 3 | Browser client compatibility |
+| OIDC Framework | **Framework Ready** | Phase 4 | Microsoft 365, Auth0, Okta support |
+| User Mapping | **Framework Ready** | Phase 4 | Claim-based instance access |
+| PostgreSQL | **Configured** | Phase 4 | In Docker Compose |
+| Azure DevOps Integration | Pending | Future | Enterprise repository support |
+| Local File Ingestion | Pending | Future | Watch local folders for changes |
+| PDF/Markdown Extraction | Pending | Future | Educational material support |
+| GitHub Webhooks | Pending | Future | Automated update pipelines |
 
 ### Current Constraints
 
@@ -120,10 +132,13 @@ The following are intentional limitations in Phase 1, to be addressed in future 
 | Runtime | Bun | 1.0+ |
 | Language | TypeScript | 5.3+ |
 | MCP SDK | @modelcontextprotocol/sdk | Latest |
-| Vector DB | ChromaDB | 0.4+ |
+| Vector DB | ChromaDB | 0.6+ |
 | Graph DB | Neo4j Community | 5.x |
-| AST Parsing | tree-sitter (web-tree-sitter) | Latest |
+| AST Parsing | tree-sitter (web-tree-sitter), Roslyn | Latest |
 | Embeddings | OpenAI, Transformers.js, Ollama | Multiple |
+| HTTP Server | Express | 5.x |
+| Authentication | Bearer Token, OIDC | Custom |
+| Deployment | Docker Compose | v2 |
 | Testing | Bun Test | Built-in |
 
 ## Supported Languages
@@ -159,11 +174,12 @@ The system supports 13 programming languages for AST parsing and graph populatio
 
 ## What's Next
 
-See the [README Roadmap](../README.md#roadmap) for upcoming phases:
+See the [README Roadmap](../README.md#roadmap) for the future roadmap:
 
-- **Phase 2**: Code Intelligence + Local Files
-- **Phase 3**: Multi-Instance + Containerization + Azure DevOps
-- **Phase 4**: Graph Relationships + Automation + Enterprise
+- Automated update pipelines with GitHub webhooks
+- Azure DevOps repository integration
+- Local folder ingestion with file watcher
+- PDF/Markdown extraction for educational materials
 
 ## Version History
 

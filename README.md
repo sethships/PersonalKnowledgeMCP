@@ -2,13 +2,13 @@
 
 An AI-first knowledge management service built on the Model Context Protocol (MCP) that enables Claude Code and other AI assistants to efficiently access, retrieve, and utilize knowledge from software development projects and educational materials.
 
-[![CI/CD](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml) [![Project Status](https://img.shields.io/badge/status-phase1-blue)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![CI/CD](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml) [![Project Status](https://img.shields.io/badge/status-v1.0-green)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-MIT-green)]()
 
 ## Overview
 
 Personal Knowledge MCP is a purpose-built MCP service that creates a semantic bridge between AI development workflows and diverse knowledge sources. Unlike traditional knowledge management systems retrofitted for AI access, this project is designed from the ground up for AI assistant integration.
 
-**Current Phase**: Phase 1 Complete, Phase 2 In Progress
+**Current Status**: V1.0 Complete (Phases 1-3 Complete, Phase 4 Framework Ready)
 
 ### Current Capabilities
 
@@ -16,15 +16,20 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 
 | Capability | Description | Status |
 |------------|-------------|--------|
-| **Semantic Search** | Natural language code search across repositories | Available |
-| **Multi-Provider Embeddings** | OpenAI, Transformers.js (local), Ollama support | Available |
-| **Dependency Analysis** | Forward dependencies (what code depends on) | Available |
-| **Impact Analysis** | Reverse dependencies (what depends on code) | Available |
-| **Architecture Insights** | Module structure and inter-module dependencies | Available |
-| **Incremental Updates** | Fast index updates after PR merges | Available |
-| **Multi-Instance Isolation** | Separate Private/Work/Public knowledge bases | Available |
-| **HTTP Transport** | Cursor, VS Code Continue support | Available |
-| **Token Authentication** | Secure API access with scoped tokens | Available |
+| **Semantic Search** | Natural language code search across repositories | Complete |
+| **Multi-Provider Embeddings** | OpenAI, Transformers.js (local), Ollama support | Complete |
+| **Knowledge Graph** | Neo4j-powered code dependency analysis | Complete |
+| **Dependency Analysis** | Forward dependencies (what code depends on) | Complete |
+| **Impact Analysis** | Reverse dependencies (what depends on code) | Complete |
+| **Architecture Insights** | Module structure and inter-module dependencies | Complete |
+| **Path Finding** | Trace execution flow between code entities | Complete |
+| **AST Parsing** | Code-aware indexing for 13 languages | Complete |
+| **Incremental Updates** | Fast index updates after PR merges | Complete |
+| **Multi-Instance Isolation** | Separate Private/Work/Public knowledge bases | Complete |
+| **HTTP Transport** | Cursor, VS Code Continue, and other client support | Complete |
+| **Token Authentication** | Secure API access with scoped tokens | Complete |
+| **Rate Limiting** | Configurable per-minute/per-hour limits | Complete |
+| **OIDC Framework** | Microsoft Entra ID, Auth0, Okta support | Framework Ready |
 
 ### When to Use What
 
@@ -35,15 +40,17 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 | Refactoring impact | `get_dependents` | "What will break if I change validateToken?" |
 | Understand structure | `get_architecture` | "Show me the module organization" |
 | Trace execution flow | `find_path` | "How does login connect to database?" |
+| Repository health | `get_graph_metrics` | "Show dependency statistics" |
 
 ### Key Features
 
 - **MCP-Native Architecture**: Purpose-built for AI assistant integration via the Model Context Protocol
 - **Semantic Code Search**: AI assistants can find relevant code and documentation without full codebase scans
+- **Knowledge Graph**: Neo4j-powered dependency analysis and impact assessment
 - **Private Repository Support**: Secure indexing of private GitHub repositories via PAT
 - **Vector-Based Retrieval**: Fast, accurate semantic search using ChromaDB
 - **Flexible Embedding Providers**: OpenAI (highest quality), Transformers.js (zero-config local), Ollama (GPU acceleration)
-- **Knowledge Graph**: Neo4j-powered dependency and architecture analysis
+- **Multi-Transport Support**: stdio for Claude Code, HTTP/SSE for Cursor and VS Code
 - **Local-First Deployment**: Runs entirely on localhost with Docker Compose
 
 ## Use Cases
@@ -54,6 +61,7 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 
 - Index GitHub repositories (private and public)
 - Semantic search across code, documentation, and reference materials
+- Code dependency analysis and impact assessment
 - Efficient context retrieval for AI assistants (reduces token waste)
 - Query response times under 500ms (95th percentile)
 
@@ -61,39 +69,32 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 
 ## Technology Stack
 
-### Phase 1 Stack
-
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Runtime | Bun 1.0+ | Fast all-in-one JavaScript runtime |
 | Language | TypeScript 5.3+ | Type-safe development |
 | MCP SDK | @modelcontextprotocol/sdk | Official MCP implementation |
 | Vector DB | ChromaDB | Semantic search and similarity |
-| Embeddings | OpenAI text-embedding-3-small | Embedding generation |
-| Deployment | Docker Compose | ChromaDB containerization |
+| Graph DB | Neo4j Community 5.x | Code dependency graph and relationships |
+| AST Parsing | tree-sitter (web-tree-sitter), Roslyn | Code entity extraction for 13 languages |
+| Embeddings | OpenAI, Transformers.js, Ollama | Embedding generation |
+| HTTP Server | Express 5.x | HTTP/SSE transport |
+| Authentication | Bearer Token, OIDC | Secure API access |
+| Deployment | Docker Compose | Container orchestration |
 | Testing | Bun Test | Built-in test runner with coverage |
-
-### Phase 2 Stack (Current)
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Graph DB | Neo4j Community | Code dependency graph and relationships |
-| AST Parsing | tree-sitter (web-tree-sitter) | Code entity extraction for 13 languages |
-| Graph Protocol | Bolt | Neo4j connection protocol |
-| Graph Tools | get_dependencies, get_dependents, get_architecture, find_path | Dependency analysis MCP tools |
 
 ### Supported Languages
 
-The following languages are supported for AST parsing and graph population:
+The following languages are supported for AST parsing, graph population, and semantic search filtering:
 
 | Category | Languages | Parser |
 |----------|-----------|--------|
 | TypeScript/JavaScript | TypeScript, TSX, JavaScript, JSX | tree-sitter |
 | Systems | Rust, C, C++ | tree-sitter |
 | JVM | Java | tree-sitter |
+| Go | Go | tree-sitter |
 | Scripting | Python, Ruby, PHP | tree-sitter |
 | .NET | C# | Roslyn |
-| Go | Go | tree-sitter |
 
 ## Architecture
 
@@ -101,26 +102,38 @@ The following languages are supported for AST parsing and graph population:
 graph TB
     subgraph HOST["HOST SYSTEM (Windows)"]
         CC[Claude Code<br/>Client]
+        CURSOR[Cursor/VS Code<br/>HTTP Clients]
 
-        subgraph MCP_SVC["MCP Service (Node.js/TS)"]
+        subgraph MCP_SVC["MCP Service (Bun/Node.js)"]
+            STDIO[stdio Transport]
+            HTTP[HTTP/SSE Transport]
+            AUTH[Auth Middleware]
             TH[Tool Handlers]
             SS[semantic_search]
             LR[list_indexed_repositories]
             GD[get_dependencies]
             GT[get_dependents]
+            GA[get_architecture]
+            FP[find_path]
             SL[Service Layer]
             SRCH[Search Service]
             REPO[Repository Service]
             GRAPH[Graph Service]
 
+            STDIO --> TH
+            HTTP --> AUTH --> TH
             TH --> SS
             TH --> LR
             TH --> GD
             TH --> GT
+            TH --> GA
+            TH --> FP
             SS --> SL
             LR --> SL
             GD --> GRAPH
             GT --> GRAPH
+            GA --> GRAPH
+            FP --> GRAPH
             SL --> SRCH
             SL --> REPO
         end
@@ -136,7 +149,8 @@ graph TB
 
         FS[Local File System<br/>./data/repos/]
 
-        CC <-->|stdio| MCP_SVC
+        CC <-->|stdio| STDIO
+        CURSOR -->|HTTPS| HTTP
         MCP_SVC -->|HTTP| CDB
         MCP_SVC -->|Bolt| NEO
         MCP_SVC -->|clone/read| FS
@@ -151,8 +165,8 @@ graph TB
     classDef storage fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px,color:#000
     classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:3px,color:#000
 
-    class CC client
-    class MCP_SVC,TH,SS,LR,GD,GT,SL,SRCH,REPO,GRAPH service
+    class CC,CURSOR client
+    class MCP_SVC,STDIO,HTTP,AUTH,TH,SS,LR,GD,GT,GA,FP,SL,SRCH,REPO,GRAPH service
     class CDB,NEO,VOL,NEOVOL,FS storage
     class OAI external
 ```
@@ -162,9 +176,9 @@ graph TB
 ### Prerequisites
 
 - **Bun**: 1.0 or later ([install](https://bun.sh/))
-- **Docker Desktop**: For running ChromaDB
+- **Docker Desktop**: For running ChromaDB and Neo4j
 - **Git**: For repository cloning
-- **OpenAI API Key**: For embedding generation
+- **OpenAI API Key**: For embedding generation (or use local alternatives)
 - **GitHub PAT** (optional): For private repository access
 
 ### Quick Start
@@ -183,12 +197,12 @@ graph TB
 3. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
+   # Edit .env and add your OPENAI_API_KEY and NEO4J_PASSWORD
    ```
 
-4. **Start ChromaDB**:
+4. **Start ChromaDB and Neo4j**:
    ```bash
-   docker-compose up -d
+   docker compose --profile default up -d
    ```
 
 5. **Build the project**:
@@ -196,18 +210,22 @@ graph TB
    bun run build
    ```
 
-6. **Set up Git hooks** (optional but recommended):
+6. **Run database migrations** (for Neo4j):
    ```bash
-   # Pre-commit hooks are automatically set up during install
-   # They will run linting and formatting before each commit
+   bun run cli graph migrate
    ```
 
-7. **Index a repository** (CLI):
+7. **Index a repository**:
    ```bash
    bun run cli index https://github.com/user/repo.git
    ```
 
-8. **Configure Claude Code**:
+8. **Populate the knowledge graph**:
+   ```bash
+   bun run cli graph populate repo-name
+   ```
+
+9. **Configure Claude Code**:
    Add to your Claude Code MCP configuration (`~/.config/claude-code/mcp.json`):
    ```json
    {
@@ -217,17 +235,20 @@ graph TB
          "args": ["run", "C:/src/PersonalKnowledgeMCP/dist/index.js"],
          "env": {
            "OPENAI_API_KEY": "${OPENAI_API_KEY}",
-           "GITHUB_PAT": "${GITHUB_PAT}"
+           "GITHUB_PAT": "${GITHUB_PAT}",
+           "NEO4J_URI": "bolt://localhost:7687",
+           "NEO4J_USER": "neo4j",
+           "NEO4J_PASSWORD": "${NEO4J_PASSWORD}"
          }
        }
      }
    }
    ```
 
-9. **Query from Claude Code**:
-   ```
-   Use the semantic_search tool to find authentication middleware
-   ```
+10. **Query from Claude Code**:
+    ```
+    Use the semantic_search tool to find authentication middleware
+    ```
 
 ### Docker Troubleshooting
 
@@ -243,26 +264,25 @@ docker --version
 netstat -an | findstr :8000
 
 # View detailed logs
-docker-compose logs chromadb
+docker compose logs chromadb
 ```
 
-**API not responding:**
+**Neo4j won't start:**
 
 ```bash
-# Wait up to 30 seconds for initialization
-# Then test the API endpoint
-curl http://localhost:8000/api/v2/heartbeat
+# View detailed logs
+docker compose logs neo4j
 
-# Check container status
-docker ps | grep pk-mcp-chromadb
+# Check Neo4j health
+docker compose exec neo4j cypher-shell -u neo4j -p YOUR_PASSWORD "RETURN 1"
 ```
 
 **Need to reset data:**
 
 ```bash
 # WARNING: This deletes all data
-docker-compose down -v
-docker-compose up -d
+docker compose down -v
+docker compose --profile default up -d
 ```
 
 For detailed Docker operations guide, see [docs/docker-operations.md](docs/docker-operations.md).
@@ -274,8 +294,8 @@ Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, pro
 ### Quick Setup
 
 1. **Prerequisites**:
-   - Personal Knowledge MCP built and ChromaDB running
-   - At least one repository indexed
+   - Personal Knowledge MCP built and containers running
+   - At least one repository indexed and graph populated
    - Bun or Node.js installed
 
 2. **Configure Claude Code**:
@@ -296,7 +316,10 @@ Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, pro
            "OPENAI_API_KEY": "${OPENAI_API_KEY}",
            "GITHUB_PAT": "${GITHUB_PAT}",
            "CHROMADB_HOST": "localhost",
-           "CHROMADB_PORT": "8000"
+           "CHROMADB_PORT": "8000",
+           "NEO4J_URI": "bolt://localhost:7687",
+           "NEO4J_USER": "neo4j",
+           "NEO4J_PASSWORD": "${NEO4J_PASSWORD}"
          }
        }
      }
@@ -306,9 +329,13 @@ Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, pro
 3. **Restart Claude Code** to load the new MCP server
 
 4. **Verify Integration**:
-   - In Claude Code, you should see two new tools available:
+   - In Claude Code, you should see tools available:
      - **`semantic_search`**: Search your indexed code semantically
      - **`list_indexed_repositories`**: View indexed repositories
+     - **`get_dependencies`**: Analyze code dependencies
+     - **`get_dependents`**: Analyze code impact
+     - **`get_architecture`**: View module structure
+     - **`find_path`**: Trace code connections
 
    Try asking: *"Can you list my indexed repositories?"*
 
@@ -326,9 +353,19 @@ Find authentication middleware that validates JWT tokens
 Show me examples of error handling in the API layer
 ```
 
-**Understand architecture**:
+**Dependency analysis**:
 ```
-Where is the database connection logic implemented?
+What does src/services/auth.ts depend on?
+```
+
+**Impact analysis before refactoring**:
+```
+What code will be affected if I change the validateToken function?
+```
+
+**Architecture overview**:
+```
+Show me the module organization of the services directory
 ```
 
 **Cross-repository search**:
@@ -336,15 +373,27 @@ Where is the database connection logic implemented?
 Find all implementations of rate limiting across my projects
 ```
 
-**Dependency analysis** (with graph tools):
-```
-What does src/services/auth.ts depend on?
-```
+### HTTP Client Configuration (Cursor, VS Code)
 
-**Impact analysis before refactoring** (with graph tools):
-```
-What code will be affected if I change the validateToken function?
-```
+For clients that use HTTP transport instead of stdio:
+
+1. **Enable HTTP transport** in your `.env`:
+   ```bash
+   HTTP_TRANSPORT_ENABLED=true
+   HTTP_PORT=3001
+   HTTP_HOST=127.0.0.1
+   ```
+
+2. **Create an authentication token**:
+   ```bash
+   bun run cli token create --name "cursor-dev" --scopes read,write
+   ```
+
+3. **Configure your client** with the HTTP endpoint:
+   - **Endpoint**: `http://localhost:3001/api/v1/mcp`
+   - **Authorization**: `Bearer <your-token>`
+
+See [docs/client-configuration.md](docs/client-configuration.md) for detailed client setup.
 
 ### Incremental Update Workflow
 
@@ -355,10 +404,13 @@ After merging a PR to an indexed repository, update your index to include the la
 # 1. After PR is merged, update the index
 bun run cli update my-project
 
-# 2. Verify update completed
+# 2. Update the knowledge graph
+bun run cli graph populate my-project
+
+# 3. Verify update completed
 bun run cli status
 
-# 3. (Optional) View update history
+# 4. (Optional) View update history
 bun run cli history my-project
 ```
 
@@ -368,39 +420,20 @@ bun run cli history my-project
 bun run cli update-all
 ```
 
-**Handling Stale or Problematic Index:**
-```bash
-# If updates fail or index seems stale, force full re-index
-bun run cli update my-project --force
-
-# Or re-index from scratch
-bun run cli index https://github.com/user/my-project --force
-```
-
-**Agent Integration:**
-When using Claude Code or other AI assistants, the agent can automatically trigger updates after completing PR-related tasks:
-```
-After merging this PR, please update the repository index.
-```
-
 ### Performance
 
 The MCP integration is optimized for fast response times:
 - Tool discovery: <100ms
 - Repository listing: <50ms
 - Semantic search: <500ms (95th percentile)
-
-### Advanced Configuration
-
-For detailed setup instructions, troubleshooting, and advanced configuration options, see:
-- **[Claude Code Setup Guide](docs/claude-code-setup.md)** - Complete setup and configuration
-- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+- Dependency queries: <300ms
+- Architecture queries: <500ms
 
 ### Requirements
 
 - **Bun 1.0+** or **Node.js 18+** (for running the MCP server)
-- **Docker Desktop** (for ChromaDB)
-- **OpenAI API Key** (for embedding generation)
+- **Docker Desktop** (for ChromaDB and Neo4j)
+- **OpenAI API Key** (for embedding generation, or use local alternatives)
 - **At least one indexed repository** (use `bun run cli index <url>`)
 
 
@@ -490,6 +523,29 @@ Query what depends on a file, function, or class. Use for impact analysis before
 
 **Requires**: Neo4j graph database with indexed repository data.
 
+### get_architecture
+
+Get the module structure and inter-module dependencies for a repository.
+
+**Parameters**:
+- `repository` (string, required): Repository name
+- `module_path` (string, optional): Specific module to analyze
+
+**Returns**: Module hierarchy with dependency relationships.
+
+### find_path
+
+Find the shortest path between two code entities in the dependency graph.
+
+**Parameters**:
+- `source_type` (string, required): Source entity type
+- `source_path` (string, required): Source entity path
+- `target_type` (string, required): Target entity type
+- `target_path` (string, required): Target entity path
+- `repository` (string, required): Repository name
+
+**Returns**: Path of entities connecting source to target.
+
 > **Note**: Graph tools require Neo4j and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
 
 ## Embedding Providers
@@ -560,6 +616,7 @@ pk-mcp index <repository-url> [options]
 - `-n, --name <name>` - Custom repository name (defaults to repo name from URL)
 - `-b, --branch <branch>` - Branch to clone (defaults to repository default branch)
 - `-f, --force` - Force reindexing if repository already exists
+- `--provider <provider>` - Embedding provider (openai, transformersjs, ollama)
 
 **Examples:**
 
@@ -573,8 +630,6 @@ pk-mcp index https://github.com/user/repo.git --name my-repo --branch develop
 # Reindex an existing repository
 pk-mcp index https://github.com/user/repo.git --force
 ```
-
-**Output:** Real-time progress through cloning, scanning, chunking, embedding, and storing phases. Shows final statistics including files processed, chunks created, embeddings generated, and duration.
 
 #### search - Semantic Search
 
@@ -590,24 +645,6 @@ pk-mcp search <query> [options]
 - `-r, --repo <name>` - Filter to specific repository
 - `--json` - Output as JSON
 
-**Examples:**
-
-```bash
-# Basic search
-pk-mcp search "authentication middleware"
-
-# Search with custom limit and threshold
-pk-mcp search "error handling" --limit 5 --threshold 0.8
-
-# Search specific repository
-pk-mcp search "database query" --repo my-api
-
-# JSON output for programmatic use
-pk-mcp search "API endpoints" --json
-```
-
-**Output:** Table showing rank, repository, file path, code snippet, and similarity score. JSON output includes full metadata.
-
 #### status - List Repositories
 
 List all indexed repositories with their status and statistics.
@@ -619,60 +656,9 @@ pk-mcp status [options]
 **Options:**
 - `--json` - Output as JSON
 
-**Examples:**
-
-```bash
-# List repositories
-pk-mcp status
-
-# JSON output
-pk-mcp status --json
-```
-
-**Output:** Table showing repository name, URL, file count, chunk count, last indexed timestamp, and status (✓ ready, ⟳ indexing, ✗ error).
-
-#### remove - Remove Repository
-
-Remove a repository from the index.
-
-```bash
-pk-mcp remove <repository-name> [options]
-```
-
-**Options:**
-- `-f, --force` - Skip confirmation prompt
-- `--delete-files` - Also delete local repository files
-
-**Examples:**
-
-```bash
-# Remove with confirmation
-pk-mcp remove my-repo
-
-# Force remove without confirmation
-pk-mcp remove my-repo --force
-
-# Remove and delete local files
-pk-mcp remove my-repo --force --delete-files
-```
-
-**Output:** Confirmation prompt (unless --force), progress spinner, success message indicating what was deleted.
-
-#### health - Health Check
-
-Check the health of all required services.
-
-```bash
-pk-mcp health
-```
-
-**Output:** Status of ChromaDB, OpenAI API, and Metadata Store with response times. Exit code 0 if all healthy, 1 if any unhealthy.
-
-> **Note:** The OpenAI API health check verifies authentication (API key validity) but cannot detect quota exceeded or billing issues. These will only surface during actual embedding generation.
-
 #### update - Update Repository Index
 
-Incrementally update a repository's index with changes since last indexing. This is significantly faster than full re-indexing for typical PR changes.
+Incrementally update a repository's index with changes since last indexing.
 
 ```bash
 pk-mcp update <repository-name> [options]
@@ -683,83 +669,67 @@ pk-mcp update <repository-name> [options]
 - `--json` - Output as JSON
 - `-v, --verbose` - Show all errors with actionable guidance
 
-**Examples:**
+#### graph migrate - Run Graph Migrations
+
+Set up or update the Neo4j schema.
 
 ```bash
-# Incremental update after merging a PR
-pk-mcp update my-api
-
-# Force full re-index (e.g., after force push)
-pk-mcp update my-api --force
+pk-mcp graph migrate [options]
 ```
 
-**Output:** Summary showing commit range, files changed (added/modified/deleted), chunks upserted/deleted, and duration. Reports any file-level errors encountered during processing.
+#### graph populate - Populate Knowledge Graph
 
-**When to use:**
-- After merging a PR to an indexed repository
-- When you want fresh index data without full re-indexing
-- Regular maintenance to keep indexes current
-
-**Automatic fallback to full re-index:**
-- Force push detected (base commit no longer exists)
-- More than 500 files changed (threshold for efficiency)
-
-#### update-all - Update All Repositories
-
-Update all indexed repositories sequentially.
+Parse code and populate the Neo4j knowledge graph for a repository.
 
 ```bash
-pk-mcp update-all [options]
+pk-mcp graph populate <repository-name> [options]
 ```
 
 **Options:**
-- `--json` - Output as JSON
+- `-f, --force` - Force full repopulation
 
-**Examples:**
+#### graph populate-all - Populate All Repositories
+
+Populate the knowledge graph for all indexed repositories.
 
 ```bash
-# Update all repositories at once
-pk-mcp update-all
+pk-mcp graph populate-all [options]
 ```
 
-**Output:** Progress through each repository with individual results. Continues to next repository if one fails.
+#### token create - Create Authentication Token
 
-**Use case:** Daily sync to keep all indexed repositories current.
-
-#### history - View Update History
-
-View the history of incremental updates for a repository.
+Create a new authentication token for HTTP access.
 
 ```bash
-pk-mcp history <repository-name> [options]
+pk-mcp token create --name <name> --scopes <scopes> [options]
 ```
 
 **Options:**
-- `-l, --limit <number>` - Number of updates to show (default: 10)
-- `--json` - Output as JSON
+- `--name <name>` - Token name (required)
+- `--scopes <scopes>` - Comma-separated scopes: read, write, admin
+- `--instances <instances>` - Comma-separated instance access: private, work, public
+- `--expires <duration>` - Expiration: hours, days, weeks, months, years, never
 
-**Examples:**
+#### health - Health Check
+
+Check the health of all required services.
 
 ```bash
-# View last 10 updates
-pk-mcp history my-api
-
-# View last 5 updates
-pk-mcp history my-api --limit 5
-
-# JSON output for scripting
-pk-mcp history my-api --json
+pk-mcp health
 ```
-
-**Output:** Table showing timestamp, commit range, files changed, chunks affected, duration, and status for each update.
 
 ### CLI Configuration
 
 The CLI uses the same environment variables as the MCP server:
 
 ```bash
-# Required
+# Required for OpenAI embeddings
 OPENAI_API_KEY=sk-...
+
+# Required for Neo4j
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-password
 
 # Optional (defaults shown)
 CHROMADB_HOST=localhost
@@ -768,75 +738,6 @@ DATA_PATH=./data
 CLONE_PATH=./data/repositories
 LOG_LEVEL=warn
 ```
-
-### Troubleshooting
-
-**ChromaDB Connection Failed:**
-```bash
-# Verify ChromaDB is running
-docker-compose ps
-
-# Start ChromaDB if needed
-docker-compose up -d
-
-# Check logs
-docker-compose logs chromadb
-```
-
-**Repository Clone Failed:**
-```bash
-# For private repositories, set GitHub PAT
-export GITHUB_PAT=ghp_...
-
-# Verify URL is correct
-# Ensure Git is installed and in PATH
-```
-
-**Enable Verbose Logging:**
-```bash
-LOG_LEVEL=debug pk-mcp <command>
-```
-
-**Incremental Updates Not Working:**
-
-If you get an error when running `pk-mcp update <repo-name>` saying that incremental updates require `lastIndexedCommitSha`, this is a known limitation where the initial indexing doesn't record the commit SHA.
-
-**Workaround (until [Issue #70](https://github.com/sethb75/PersonalKnowledgeMCP/issues/70) is fixed):**
-
-1. Navigate to the cloned repository directory:
-   ```bash
-   cd data/repositories/<repo-name>
-   ```
-
-2. Get the current commit SHA:
-   ```bash
-   git rev-parse HEAD
-   ```
-
-3. Manually add the SHA to `data/repositories.json`:
-   ```json
-   {
-     "repositories": {
-       "repo-name": {
-         "name": "repo-name",
-         "lastIndexedCommitSha": "abc123def456...",
-         ...
-       }
-     }
-   }
-   ```
-
-4. Now incremental updates should work:
-   ```bash
-   pk-mcp update <repo-name>
-   ```
-
-**Alternatively**, you can force a full re-index which will record the commit SHA:
-```bash
-pk-mcp index <repository-url> --force
-```
-
-**Root Cause**: The `IngestionService` doesn't currently record `lastIndexedCommitSha` during initial indexing. This will be fixed in a future update (see [Issue #70](https://github.com/sethb75/PersonalKnowledgeMCP/issues/70)).
 
 ## Development
 
@@ -848,21 +749,26 @@ PersonalKnowledgeMCP/
 │   ├── index.ts                  # MCP server entry point
 │   ├── cli.ts                    # CLI entry point
 │   ├── mcp/                      # MCP server implementation
+│   │   └── tools/                # MCP tool handlers
 │   ├── services/                 # Business logic
 │   ├── providers/                # Embedding providers
 │   ├── storage/                  # ChromaDB client
+│   ├── graph/                    # Neo4j graph operations
+│   │   ├── parsing/              # AST parsing (tree-sitter, Roslyn)
+│   │   ├── extraction/           # Entity and relationship extraction
+│   │   └── migration/            # Schema migrations
+│   ├── http/                     # HTTP/SSE transport
+│   ├── auth/                     # Authentication (token, OIDC)
 │   └── ingestion/                # File processing
 ├── tests/                        # Test suite
 │   ├── unit/                     # Unit tests
 │   ├── integration/              # Integration tests
 │   └── e2e/                      # End-to-end tests
 ├── docs/                         # Documentation
-│   ├── docker-operations.md      # Docker operations guide
-│   ├── Phase1-Core-MCP-Vector-Search-PRD.md
 │   ├── architecture/             # Technical design docs
 │   └── pm/                       # Project management
 ├── config/                       # Configuration files
-├── docker-compose.yml            # ChromaDB deployment
+├── docker-compose.yml            # Container deployment
 └── package.json                  # Dependencies
 ```
 
@@ -876,6 +782,7 @@ bun test --watch      # Run tests in watch mode
 bun test --coverage   # Run tests with coverage report (90% minimum)
 bun run lint          # Run ESLint
 bun run format        # Format code with Prettier
+bun run typecheck     # TypeScript type checking
 bun run cli           # Run CLI commands
 ```
 
@@ -895,42 +802,11 @@ bun test tests/unit/search-service.test.ts
 bun test --watch
 ```
 
-### CLI Commands
-
-```bash
-# Index a repository
-bun run cli index <repository-url> [--name <custom-name>]
-
-# Search indexed code
-bun run cli search "query text" [--limit 10] [--threshold 0.7]
-
-# List indexed repositories
-bun run cli status
-
-# Update a repository with latest changes
-bun run cli update <repository-name>
-
-# Force full re-index
-bun run cli update <repository-name> --force
-
-# Update all repositories
-bun run cli update-all
-
-# View update history for a repository
-bun run cli history <repository-name> [--limit 10]
-
-# Remove a repository
-bun run cli remove <repository-name>
-
-# Health check
-bun run cli health
-```
-
 ## Documentation
 
 ### Getting Started
 - **[Claude Code Setup Guide](docs/claude-code-setup.md)** - Complete MCP integration guide
-- **[MCP Integration Guide](docs/MCP_INTEGRATION_GUIDE.md)** - Alternative integration documentation
+- **[Client Configuration](docs/client-configuration.md)** - HTTP client setup (Cursor, VS Code)
 
 ### Reference Documentation
 - **[CLI Commands Reference](docs/cli-commands-reference.md)** - Complete CLI command documentation
@@ -945,26 +821,28 @@ bun run cli health
 ### Operations
 - **[Docker Operations Guide](docs/docker-operations.md)** - ChromaDB and container management
 - **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+- **[Performance Tuning Guide](docs/performance-tuning-guide.md)** - Optimization strategies
 
 ### Architecture & Design
 - **[Phase 1 Feature Summary](docs/phase1-feature-summary.md)** - Complete feature list, status, and known limitations
-- **[Phase 1 PRD](docs/Phase1-Core-MCP-Vector-Search-PRD.md)** - Product requirements for Phase 1
 - **[System Design Document](docs/architecture/Phase1-System-Design-Document.md)** - Technical architecture and implementation details
-- **[Incremental Updates Architecture](docs/architecture/incremental-updates-plan.md)** - Technical design for incremental index updates
 - **[Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md)** - Multi-transport MCP, security architecture, and deployment strategy
+- **[Knowledge Graph PRD](docs/pm/knowledge-graph-PRD.md)** - Graph database design and tools
 
 ### Development
 - **[Project Configuration](.claude/CLAUDE.md)** - Development guidelines for Claude Code
 
 ## Performance Targets
 
-### Query Performance (Phase 1)
+### Query Performance
 
 - MCP query response: **<500ms** (95th percentile)
 - MCP query response: **<200ms** (50th percentile)
 - Vector similarity search: **<200ms**
+- Dependency queries: **<300ms**
+- Architecture queries: **<500ms**
 
-### Ingestion Performance (Phase 1)
+### Ingestion Performance
 
 - Small repository (<500 files): **<5 minutes**
 - Medium repository (500-2000 files): **<15 minutes**
@@ -979,6 +857,7 @@ The project maintains **90% minimum test coverage** across all components.
 - Search service: 95% coverage (P0)
 - Embedding provider: 90% coverage (P0)
 - ChromaDB client: 90% coverage (P0)
+- Graph service: 90% coverage (P0)
 - File processing: 85-95% coverage (P1)
 
 ## Security
@@ -988,16 +867,17 @@ The project maintains **90% minimum test coverage** across all components.
 - **Input Validation**: All MCP tool inputs validated with Zod schemas
 - **GitHub PAT**: Secure private repository access
 - **No Credential Logging**: API keys and tokens never logged or exposed in errors
+- **Bearer Token Auth**: Scoped tokens with configurable expiration
+- **Rate Limiting**: Configurable per-minute/per-hour request limits
 
-### ChromaDB Authentication (Phase 2)
+### ChromaDB Authentication
 
-ChromaDB supports optional token-based authentication to secure the vector database from unauthorized access. This is recommended for any deployment beyond local development.
+ChromaDB supports optional token-based authentication to secure the vector database from unauthorized access.
 
 #### Enabling Authentication
 
 1. **Generate a secure token**:
    ```bash
-   # Generate a 64-character hex token (256-bit)
    openssl rand -hex 32
    ```
 
@@ -1008,46 +888,13 @@ ChromaDB supports optional token-based authentication to secure the vector datab
 
 3. **Restart the services**:
    ```bash
-   docker-compose down
-   docker-compose up -d
+   docker compose down
+   docker compose --profile default up -d
    ```
-
-#### How It Works
-
-- **When `CHROMADB_AUTH_TOKEN` is set**: ChromaDB requires a valid Bearer token for all API requests. The MCP service and CLI automatically include the token in requests.
-- **When `CHROMADB_AUTH_TOKEN` is empty or unset**: ChromaDB accepts unauthenticated requests (suitable for local development).
-
-This design maintains backward compatibility while allowing production deployments to enable security.
-
-#### Token Rotation
-
-To rotate the authentication token:
-
-1. Generate a new token: `openssl rand -hex 32`
-2. Update the token in your `.env` file
-3. Restart all services: `docker-compose down && docker-compose up -d`
-
-**Note**: During token rotation, there will be brief downtime while services restart.
-
-#### Troubleshooting Authentication
-
-**"Unauthorized" or "401" errors**:
-- Verify `CHROMADB_AUTH_TOKEN` in `.env` matches what ChromaDB was started with
-- Ensure you've restarted the MCP service after changing the token
-- Check container logs: `docker-compose logs chromadb`
-
-**Connection works locally but fails remotely**:
-- Verify the auth token is configured in the remote environment
-- Check that the token is being passed correctly in the client configuration
 
 ## Roadmap
 
-### ✅ Phase 0: Planning and Design (Complete)
-- Product requirements and system design
-- Technology decisions and architecture
-- GitHub issues and project planning
-
-### ✅ Phase 1: Core MCP + Vector Search (Complete)
+### Phase 1: Core MCP + Vector Search (Complete)
 - MCP service with semantic_search and list_indexed_repositories tools
 - ChromaDB vector storage
 - OpenAI embedding generation
@@ -1058,15 +905,13 @@ To rotate the authentication token:
 - 90% test coverage
 - Query response <500ms (p95)
 
-### 🚧 Phase 2: Code Intelligence + Multi-Provider Embeddings (In Progress)
-- **✅ Knowledge Graph** - Neo4j with get_dependencies, get_dependents, get_architecture, find_path tools
-- **✅ Local Embeddings** - Transformers.js (zero-config) and Ollama (GPU) support
-- **✅ Graph Schema Migrations** - CLI commands for database setup
-- AST parsing with tree-sitter (planned)
-- PostgreSQL document store (planned)
-- Local folder ingestion with file watcher (planned)
+### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
+- **Knowledge Graph** - Neo4j with get_dependencies, get_dependents, get_architecture, find_path tools
+- **AST Parsing** - Tree-sitter integration for 12 languages + Roslyn for C#
+- **Local Embeddings** - Transformers.js (zero-config) and Ollama (GPU) support
+- **Graph Schema Migrations** - CLI commands for database setup
 
-### ✅ Phase 3: Multi-Instance + Containerization (Complete)
+### Phase 3: Multi-Instance + Containerization (Complete)
 - **Docker Compose Hardening** - Production-ready container configuration
 - **Multi-Transport MCP** - HTTP/SSE transport alongside stdio for cross-client support
 - **Bearer Token Authentication** - Secure HTTP endpoints with CLI management
@@ -1074,15 +919,17 @@ To rotate the authentication token:
 - **Rate Limiting** - Configurable per-minute/per-hour limits
 - **CORS Support** - Browser client compatibility
 
-See [Docker Containerization PRD](docs/pm/Docker-Containerization-PRD.md) for detailed requirements.
-
-### 📋 Phase 4: Enterprise Features + Automation
-- **OpenID Connect (OIDC)** - Microsoft Entra ID, Auth0, Okta integration
+### Phase 4: Enterprise Features + Automation (Framework Ready)
+- **OpenID Connect (OIDC)** - Microsoft Entra ID, Auth0, Okta integration framework
 - **User Mapping** - Claim-based instance access control
-- Automated update pipelines
-- GitHub webhook handler
-- **Kubernetes Deployment** - Helm charts for production scaling
-- Azure DevOps integration
+- **PostgreSQL** - Configured in Docker Compose for document store
+- **Kubernetes Deployment** - Helm charts prepared
+
+### Future Roadmap
+- Automated update pipelines with GitHub webhooks
+- Azure DevOps repository integration
+- Local folder ingestion with file watcher
+- PDF/Markdown extraction for educational materials
 
 ## Contributing
 
@@ -1099,7 +946,7 @@ cd PersonalKnowledgeMCP
 bun install
 cp .env.example .env
 # Edit .env with your API keys
-docker-compose up -d
+docker compose --profile default up -d
 bun test --coverage
 ```
 
@@ -1107,7 +954,7 @@ Development workflow:
 - Follow guidelines in [.claude/CLAUDE.md](.claude/CLAUDE.md)
 - Work in feature branches (`feature/`, `fix/`, `docs/`)
 - Create PRs for all changes
-- Ensure tests pass and coverage ≥90%
+- Ensure tests pass and coverage >= 90%
 - Pre-commit hooks will auto-format and lint your code
 
 ## Code Statistics
@@ -1150,7 +997,8 @@ Built using:
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - [Bun](https://bun.sh/) - Fast all-in-one JavaScript runtime
 - [ChromaDB](https://www.trychroma.com/) vector database
+- [Neo4j](https://neo4j.com/) graph database
 - [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
+- [tree-sitter](https://tree-sitter.github.io/) parser
 - [simple-git](https://github.com/steveukx/git-js) for Git operations
 - [TypeScript](https://www.typescriptlang.org/)
-

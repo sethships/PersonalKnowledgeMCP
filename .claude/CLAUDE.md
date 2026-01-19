@@ -118,28 +118,33 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - OpenAI embeddings API integration
 - CLI commands for repository management
 
-### Phase 2: Code Intelligence + Multi-Provider Embeddings
+### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
 **Goal**: Add code-aware indexing and local embedding options
-- AST parsing with tree-sitter for 13 languages (TypeScript, TSX, JavaScript, JSX, Python, Java, Go, Rust, C#, C, C++, Ruby, PHP)
-- Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path tools
+- AST parsing with tree-sitter for 12 languages + Roslyn for C# (13 total)
+- Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics tools
 - Multi-provider embeddings: OpenAI, Transformers.js (zero-config local), Ollama (GPU)
 - Graph schema migrations CLI commands
 
-### Phase 3: Multi-Instance + Containerization
+### Phase 3: Multi-Instance + Containerization (Complete)
 **Goal**: Security model and production deployment
 - Multi-instance configuration and deployment templates
 - HTTP/SSE transport alongside stdio for cross-client support
 - Bearer token authentication with CLI management
 - Rate limiting and CORS support
-- Docker Compose hardening
+- Docker Compose hardening with profiles (default, private, work, public, all)
 
-### Phase 4: Enterprise Features + Automation
+### Phase 4: Enterprise Features + Automation (Framework Ready)
 **Goal**: Enterprise integration and operational automation
-- OpenID Connect (OIDC) - Microsoft Entra ID, Auth0, Okta integration
-- User mapping with claim-based instance access control
+- OpenID Connect (OIDC) framework - Microsoft Entra ID, Auth0, Okta integration ready
+- User mapping with claim-based instance access control framework
+- PostgreSQL configured in Docker Compose for document store
+- Kubernetes deployment preparation
+
+### Future Roadmap
 - Azure DevOps repository integration
 - Automated update pipelines and GitHub webhooks
-- Kubernetes deployment with Helm charts
+- Local folder ingestion with file watcher
+- PDF/Markdown extraction for educational materials
 
 ## Key Files and Directories
 
@@ -211,10 +216,13 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Phase**: Phase 2 - Code Intelligence + Multi-Provider Embeddings
+- **Current Status**: V1.0 Complete (Phases 1-3 Complete, Phase 4 Framework Ready)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
-- Knowledge graph with Neo4j implemented and operational
+- Knowledge graph with Neo4j fully implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
+- HTTP/SSE transport with bearer token authentication complete
+- Multi-instance architecture (Private/Work/Public) complete
+- OIDC framework ready for enterprise authentication
 - Prioritize demonstrable value over perfection (MVP mindset)
 - Keep deployment simple initially; complexity can be added as needed
 - Test early and often with real codebases (small, medium, large repositories)
