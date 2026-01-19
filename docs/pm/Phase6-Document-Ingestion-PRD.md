@@ -1,6 +1,6 @@
 # Phase 6: Unstructured Document Ingestion PRD - Personal Knowledge MCP
 
-**Version:** 1.1
+**Version:** 1.3
 **Date:** January 18, 2026
 **Status:** Draft
 **Author:** Product Team
@@ -72,16 +72,21 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 10. **Progress Reporting**: Provide visibility into document processing status
 11. **Embedding Provider Observability**: Basic operational logging for embedding operations during document ingestion (see [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28))
 
+**Advanced Content Processing Goals (P1/P2):**
+12. **OCR for Scanned Documents**: Extract text from image-based PDFs and scanned documents using optical character recognition (P1)
+13. **Complex Table Extraction**: Extract structured table data from PDFs and DOCX documents, preserving row/column relationships (P2)
+14. **Image Content Analysis**: Generate AI-based descriptions of image content for semantic searchability (P2)
+
 ### Non-Goals
 
-1. **OCR for scanned documents**: Text recognition in image-based PDFs is a stretch goal, not MVP
-2. **Complex table extraction**: Structured table data extraction from PDFs is out of scope
-3. **Image content analysis**: AI-based image content understanding (what's in the image) is deferred
-4. **Document format conversion**: Converting between formats (e.g., DOCX to PDF) is not in scope
-5. **Real-time collaborative document editing**: No concurrent editing support
-6. **Cloud storage integration**: OneDrive, Google Drive, Dropbox sync is deferred
-7. **Video/audio file processing**: Multimedia content is out of scope for this phase
-8. **Advanced PDF form extraction**: Extracting form field data is not supported
+1. **Document format conversion**: Converting between formats (e.g., DOCX to PDF) is not in scope
+2. **Real-time collaborative document editing**: No concurrent editing support
+3. **Cloud storage integration**: OneDrive, Google Drive, Dropbox sync is deferred to future phases
+4. **Video/audio file processing**: Multimedia content (video transcription, audio analysis) is out of scope for this phase
+5. **Advanced PDF form extraction**: Extracting interactive form field data and form logic is not supported
+6. **Handwriting recognition**: Recognition of handwritten text in scanned documents is not supported (OCR covers printed text only)
+7. **Multi-language OCR optimization**: While basic multi-language OCR is supported, optimization for non-Latin scripts (CJK, Arabic, etc.) is deferred
+8. **Real-time image content analysis**: Streaming or real-time video frame analysis is out of scope; only static images are analyzed
 
 ---
 
@@ -165,7 +170,51 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 
 *Reference: [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28)*
 
-### 3.3 Use Case Scenarios
+### 3.3 Advanced Content Processing User Stories
+
+#### US-9: Search Scanned Document Content
+**As a** researcher with a collection of scanned academic papers
+**I want to** search the text content within scanned PDFs
+**So that** I can find relevant information even in documents that are image-based rather than text-based
+
+**Acceptance Criteria:**
+- System detects image-only PDFs during ingestion
+- OCR processing extracts text from each page image
+- Extracted text is chunked and embedded for semantic search
+- OCR confidence scores are captured as metadata
+- Processing time warnings for large scanned documents (>10 pages)
+- Support for common scan qualities (150-600 DPI)
+- Graceful handling of low-quality scans with partial text extraction
+
+#### US-10: Extract and Search Table Data
+**As a** analyst reviewing financial reports and data-heavy documents
+**I want to** search for specific data within tables in my PDFs and Word documents
+**So that** I can find numerical data and structured information without manually opening each document
+
+**Acceptance Criteria:**
+- Tables are detected within PDF and DOCX documents
+- Table structure (rows, columns, headers) is preserved in extraction
+- Table data is indexed separately from prose content
+- Search results indicate when matches are within table context
+- Tables can be exported in structured formats (CSV, JSON) via CLI
+- Column headers are used to enhance semantic understanding
+- Multi-page tables spanning page breaks are handled correctly
+
+#### US-11: Search Images by Content Description
+**As a** developer maintaining a large collection of diagrams and screenshots
+**I want to** find images based on what they contain (e.g., "architecture diagram with database")
+**So that** I can locate visual assets by their content rather than just filename or date
+
+**Acceptance Criteria:**
+- Images are analyzed to generate content descriptions
+- Descriptions are embedded for semantic search
+- Search queries can match image content (e.g., "flowchart", "error message screenshot")
+- Analysis supports common image types: diagrams, screenshots, photos, charts
+- Processing can run locally or via cloud API (configurable)
+- Content descriptions are human-readable and stored as metadata
+- Option to re-analyze images with updated models
+
+### 3.4 Use Case Scenarios
 
 **Scenario 1: Graduate Student Research**
 ```
@@ -205,6 +254,51 @@ Action:
 2. Query: search_images(date_range="2026-01-14 to 2026-01-14", type="photo")
 3. Returns images with matching EXIF date
 4. User can narrow by dimensions or other metadata
+```
+
+**Scenario 4: Scanned Academic Paper Research**
+```
+Researcher: "Find information about gradient descent optimization in my scanned textbook chapters."
+
+Action:
+1. User has indexed ~/Documents/Textbooks containing scanned PDFs from older textbooks
+2. System detected these as image-only PDFs during ingestion
+3. OCR processing extracted text from each page (with ~95% accuracy for clean scans)
+4. Claude Code queries: semantic_search("gradient descent optimization convergence")
+5. Returns relevant passages from scanned textbook with:
+   - Source file and page number
+   - OCR confidence indicator
+   - Extracted text content
+6. User can access the original scanned page for verification
+```
+
+**Scenario 5: Financial Report Table Search**
+```
+Analyst: "Find the quarterly revenue figures from last year's annual reports."
+
+Action:
+1. User has indexed ~/Documents/FinancialReports containing annual report PDFs
+2. System extracted tables during ingestion, identifying revenue tables by headers
+3. Query: search_documents("quarterly revenue 2025", include_tables=true)
+4. Returns:
+   - Table context showing "Q1-Q4 Revenue" headers
+   - Structured data: {"Q1": "$2.3M", "Q2": "$2.8M", ...}
+   - Source document and page reference
+5. User can export table data: pk-mcp tables export "annual-report-2025.pdf" --format csv
+```
+
+**Scenario 6: Diagram Content Search**
+```
+Developer: "Find all diagrams showing database architecture."
+
+Action:
+1. User has image folder watched: ~/work/documentation/images
+2. System analyzed images and generated content descriptions:
+   - "architecture-v2.png": "System architecture diagram showing three-tier application with PostgreSQL database, Redis cache, and microservices"
+   - "db-schema.png": "Database schema diagram with users, orders, and products tables with foreign key relationships"
+3. Query: search_images(content_query="database architecture")
+4. Returns images with matching content descriptions, ranked by semantic relevance
+5. User can refine: search_images(content_query="PostgreSQL schema diagram")
 ```
 
 ---
@@ -310,6 +404,84 @@ Action:
 
 *Note: These requirements implement the reduced scope from [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28). Advanced metrics (token usage, cost estimation, histograms) are explicitly out of scope.*
 
+### 4.4 Advanced Content Processing
+
+#### FR-9: OCR for Scanned Documents
+
+| Requirement | Description | Priority |
+|-------------|-------------|----------|
+| FR-9.1 | Detect image-only PDFs during ingestion (no extractable text layer) | P1 |
+| FR-9.2 | Convert PDF pages to images for OCR processing | P1 |
+| FR-9.3 | Extract text from page images using tesseract.js | P1 |
+| FR-9.4 | Support configurable OCR languages (default: English) | P1 |
+| FR-9.5 | Capture OCR confidence scores per page/region | P1 |
+| FR-9.6 | Handle mixed PDFs (some pages text, some scanned) | P1 |
+| FR-9.7 | Provide OCR quality thresholds (skip low-confidence extractions) | P2 |
+| FR-9.8 | Support OCR for standalone images (PNG, JPEG, TIFF) | P2 |
+| FR-9.9 | Progress reporting for long-running OCR operations | P1 |
+| FR-9.10 | Configurable OCR timeout per page (default: 30 seconds) | P2 |
+| FR-9.11 | Option to skip OCR processing via configuration flag | P1 |
+| FR-9.12 | Store original scan quality metrics (DPI detection if available) | P2 |
+
+**Performance Considerations:**
+- OCR processing is CPU-intensive and significantly slower than text extraction
+- Expected processing time: 5-15 seconds per page depending on complexity
+- Memory usage: ~200-500MB during active OCR processing
+- Recommendation: Process OCR documents in background queue with lower priority
+
+#### FR-10: Complex Table Extraction
+
+| Requirement | Description | Priority |
+|-------------|-------------|----------|
+| FR-10.1 | Detect tables within PDF documents | P2 |
+| FR-10.2 | Detect tables within DOCX documents | P2 |
+| FR-10.3 | Extract table structure preserving rows, columns, and headers | P2 |
+| FR-10.4 | Handle merged cells and spanning headers | P2 |
+| FR-10.5 | Extract tables spanning multiple pages in PDFs | P2 |
+| FR-10.6 | Store tables in structured format (JSON) with source reference | P2 |
+| FR-10.7 | Index table content for semantic search with table context metadata | P2 |
+| FR-10.8 | Export individual tables to CSV format via CLI | P2 |
+| FR-10.9 | Export individual tables to JSON format via CLI | P2 |
+| FR-10.10 | Handle nested tables (tables within tables) gracefully | P3 |
+| FR-10.11 | Detect table headers vs data rows heuristically | P2 |
+| FR-10.12 | Support table search filtering in MCP tools | P2 |
+
+**Implementation Notes:**
+- PDF table extraction relies on layout analysis, which may not be 100% accurate
+- DOCX tables are structurally defined and easier to extract accurately
+- Tables with complex formatting (rotated text, nested structures) may require fallback to text extraction
+
+#### FR-11: Image Content Analysis
+
+| Requirement | Description | Priority |
+|-------------|-------------|----------|
+| FR-11.1 | Generate natural language descriptions of image content | P2 |
+| FR-11.2 | Support local processing via Transformers.js (BLIP/ViT models) | P2 |
+| FR-11.3 | Support cloud API processing (OpenAI Vision, Azure AI Vision) as alternative | P2 |
+| FR-11.4 | Configurable processing backend (local vs cloud) | P2 |
+| FR-11.5 | Store content descriptions as searchable metadata | P2 |
+| FR-11.6 | Generate embeddings from content descriptions for semantic search | P2 |
+| FR-11.7 | Detect image type/category (diagram, screenshot, photo, chart, etc.) | P2 |
+| FR-11.8 | Extract text visible in images (signage, labels, UI elements) | P3 |
+| FR-11.9 | Support batch processing for large image collections | P2 |
+| FR-11.10 | Configurable analysis detail level (brief vs detailed descriptions) | P3 |
+| FR-11.11 | Option to skip image analysis via configuration flag | P2 |
+| FR-11.12 | Re-analyze images on demand (model updates, corrections) | P2 |
+
+**Processing Options:**
+
+| Option | Pros | Cons | Recommendation |
+|--------|------|------|----------------|
+| **Local (Transformers.js)** | Privacy, no API costs, offline capable | Slower, requires model download (~500MB-1GB), lower accuracy | Default for privacy-sensitive deployments |
+| **Cloud (OpenAI Vision)** | High accuracy, fast, no local resources | API costs, requires internet, data leaves local system | Recommended for quality when acceptable |
+| **Cloud (Azure AI Vision)** | Enterprise features, good accuracy | API costs, Azure subscription required | Alternative for Azure-heavy environments |
+
+**Performance Considerations:**
+- Local processing: 2-10 seconds per image depending on model and hardware
+- Cloud processing: 1-3 seconds per image (network dependent)
+- Memory for local: ~1-2GB additional when model is loaded
+- Recommendation: Lazy-load model on first image, keep loaded during batch operations
+
 ---
 
 ## 5. Technical Requirements
@@ -360,6 +532,59 @@ Action:
 
 **Recommendation:** Use `chokidar`. It is the de facto standard for Node.js file watching, handles cross-platform quirks, and provides a clean event-based API.
 
+#### OCR Library Options
+
+| Library | Pros | Cons | Recommendation |
+|---------|------|------|----------------|
+| **tesseract.js** | Pure JS, 100+ languages, well-maintained, v6 performance improvements | Large model files (~50MB+), CPU-intensive | **Recommended** |
+| **Scribe.js** | Improved accuracy over tesseract.js, native PDF support | Newer, less community support | Alternative for higher accuracy |
+| **PaddleOCR (via node wrapper)** | Excellent accuracy, good for complex layouts | Requires Python backend or native bindings | Consider for CJK languages |
+| **Cloud OCR (Azure/Google)** | Best accuracy, handles complex documents | API costs, data leaves system, requires internet | Enterprise alternative |
+
+**Recommendation:** Use `tesseract.js` v6+ for local OCR. It provides good accuracy for printed English text with no external dependencies. For scanned PDFs, use `pdfjs-dist` to convert pages to images first. Consider Scribe.js if accuracy requirements are higher than tesseract.js can deliver.
+
+**Note:** Tesseract.js does not directly support PDF input. The workflow requires:
+1. Detect image-only PDF (no text layer)
+2. Convert each PDF page to PNG using `pdfjs-dist`
+3. Process each page image through tesseract.js
+4. Aggregate results with page number metadata
+
+#### Table Extraction Options
+
+| Library | Pros | Cons | Recommendation |
+|---------|------|------|----------------|
+| **pdfreader** | Automatic column detection, rule-based parsing | PDF only, learning curve for rules | **Recommended** for PDF |
+| **pdf-table-extractor** | Simple API, focused on tables | Less maintained, limited features | Alternative |
+| **pdf.js-extract** | Preserves coordinates for layout analysis | Requires manual table detection logic | Low-level option |
+| **mammoth** (DOCX) | Native table support in HTML output | Already recommended for DOCX | **Use existing** for DOCX |
+| **Tabula (via tabula-js)** | Excellent accuracy, Java-based | Requires JRE, heavier deployment | Consider for high accuracy needs |
+
+**Recommendation:** For PDF tables, use `pdfreader` with its rule-based parsing system to detect and extract tabular data. For DOCX tables, extend existing `mammoth` integration to parse table elements from HTML output. If PDF table accuracy is critical, evaluate `tabula-js` (Java dependency) for complex documents.
+
+**Implementation Strategy:**
+1. **DOCX Tables**: Parse `mammoth` HTML output for `<table>` elements, preserve structure
+2. **PDF Tables**: Use `pdfreader` to identify tabular regions, apply heuristics for header detection
+3. **Storage**: Store tables as JSON in PostgreSQL with source reference, index table text in ChromaDB
+
+#### Image Content Analysis Options
+
+| Library | Pros | Cons | Recommendation |
+|---------|------|------|----------------|
+| **@xenova/transformers** | Local inference, BLIP/ViT models, no API costs | Large models (500MB-1GB), slower than cloud | **Recommended** for local |
+| **OpenAI Vision API** | Excellent accuracy, fast, GPT-4V quality | API costs (~$0.01-0.03/image), data sent to cloud | **Recommended** for cloud |
+| **Azure AI Vision** | Enterprise features, image captioning, dense captions | API costs, requires Azure subscription | Enterprise alternative |
+| **Google Gemini API** | Multimodal, good accuracy | API costs, newer service | Alternative |
+| **Custom CLIP embeddings** | Direct image-to-embedding, no caption needed | Less semantic searchability | Specialized use cases |
+
+**Recommendation:** Support both local and cloud options with configuration:
+- **Default (Local)**: Use `@xenova/transformers` with BLIP-base model for privacy-first deployments
+- **Cloud Option**: Use OpenAI Vision API when accuracy is paramount and API costs are acceptable
+
+**Local Model Considerations:**
+- `Xenova/vit-gpt2-image-captioning` - Smaller, faster, lower accuracy
+- `Xenova/blip-image-captioning-base` - Good balance of size and accuracy (**Recommended**)
+- `Xenova/blip-image-captioning-large` - Best accuracy, larger memory footprint
+
 ### 5.2 Performance Requirements
 
 | Metric | Target | Rationale |
@@ -372,6 +597,11 @@ Action:
 | File watcher latency | < 500ms event detection | Near-real-time updates |
 | Debounce period | Configurable, default 2s | Avoid rapid re-indexing |
 | Incremental index update | < 30 seconds for 100 files | Batch processing efficiency |
+| **OCR per page** | < 15 seconds | Scanned document processing |
+| **OCR full document (10 pages)** | < 3 minutes | Background queue processing acceptable |
+| **Table extraction per document** | < 5 seconds | Layout analysis overhead |
+| **Image analysis (local)** | < 10 seconds per image | Model inference time |
+| **Image analysis (cloud)** | < 3 seconds per image | Network round-trip included |
 
 ### 5.3 Resource Requirements
 
@@ -382,19 +612,51 @@ Action:
 | File watcher handles | < 10,000 files per folder | OS limits vary by platform |
 | Maximum document size | 50MB | Prevent processing extremely large files |
 | ChromaDB chunk storage | ~2KB per chunk average | Embeddings + metadata |
+| **OCR processing memory** | < 500MB peak | tesseract.js model + image buffers |
+| **OCR concurrent pages** | 1 (sequential) | Memory and CPU constraints |
+| **Image analysis model memory** | ~1-2GB | BLIP model loaded in memory |
+| **Image analysis concurrent** | 2 parallel | GPU/CPU resource management |
+| **Table extraction memory** | < 200MB peak | Layout analysis buffers |
 
 ### 5.4 Data Storage Requirements
 
+#### Storage Architecture Overview
+
+**Critical Design Decision: What Each Storage Layer Holds**
+
+The Personal Knowledge MCP uses a polyglot storage architecture where each storage layer serves a specific purpose. Source documents remain on the local filesystem and are NOT duplicated in any database.
+
+| Storage Layer | What It Stores | Why |
+|--------------|----------------|-----|
+| **Local Filesystem** | Original source documents (PDF, DOCX, MD, images) | Source of truth; always available to working agents; no duplication needed |
+| **ChromaDB (Vector Store)** | Text chunks with embeddings for semantic search | Fast similarity search; supports semantic queries |
+| **PostgreSQL (Metadata Store)** | Document metadata, structure, processing state, file references | Structured queries; relational data; processing coordination |
+
+**Why NOT Store Full Documents in PostgreSQL:**
+- Source documents are always available on the local filesystem
+- Duplicating files wastes storage (especially for large PDFs and images)
+- The local filesystem is the source of truth for content
+- Agents can read files directly when needed
+- Our system only needs to track what has been indexed and how to find it
+
+**What PostgreSQL Actually Stores:**
+1. **File References**: Paths to source files on disk (not the files themselves)
+2. **Document Metadata**: Title, author, page count, creation date extracted during processing
+3. **Structural Information**: Table of contents, heading hierarchy, table schemas extracted during analysis
+4. **Processing State**: Indexing status, errors, last processed timestamp, content hash for change detection
+5. **Chunk References**: Links between documents and their ChromaDB vector entries
+6. **Configuration**: Watched folder settings, ignore patterns, processing options
+
 #### ChromaDB (Vector Store)
 
-Document chunks stored with metadata:
+Document chunks stored with embeddings for semantic search:
 
 ```typescript
 interface DocumentChunk {
   id: string;                    // {source}:{filePath}:{chunkIndex}
   repository: string;            // "local-folder" or folder identifier
   filePath: string;              // Relative path within watched folder
-  content: string;               // Extracted text content
+  content: string;               // Extracted text content (chunk only, not full document)
   chunkIndex: number;
   totalChunks: number;
   startOffset: number;           // Character offset in document
@@ -414,46 +676,58 @@ interface DocumentChunk {
 }
 ```
 
-#### PostgreSQL (Document Store)
+#### PostgreSQL (Metadata Store)
 
-Full document metadata and extracted content:
+Document metadata, structure, and processing state (NOT full document content):
 
 ```sql
 -- Document metadata table
+-- NOTE: This table stores METADATA and REFERENCES, not actual document content.
+-- Source documents remain on the local filesystem as the source of truth.
 CREATE TABLE documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   source_id VARCHAR(255) NOT NULL,        -- Watched folder identifier
-  file_path VARCHAR(1024) NOT NULL,       -- Relative path
+  file_path VARCHAR(1024) NOT NULL,       -- Path to source file on disk (relative to source root)
+  absolute_path VARCHAR(2048),            -- Full path for direct file access
   document_type VARCHAR(50) NOT NULL,     -- pdf, docx, markdown, image
 
-  -- Extracted metadata
-  title VARCHAR(512),
-  author VARCHAR(255),
-  created_at TIMESTAMP,
-  page_count INTEGER,
-  word_count INTEGER,
+  -- Extracted metadata (parsed from document during processing)
+  title VARCHAR(512),                     -- Document title from metadata
+  author VARCHAR(255),                    -- Document author from metadata
+  created_at TIMESTAMP,                   -- Document creation date from metadata
+  page_count INTEGER,                     -- Number of pages (for multi-page docs)
+  word_count INTEGER,                     -- Approximate word count
+
+  -- Structural information (extracted during analysis)
+  toc_structure JSONB,                    -- Table of contents / heading hierarchy
+  section_count INTEGER,                  -- Number of sections/headings
 
   -- Image-specific metadata
   image_width INTEGER,
   image_height INTEGER,
   image_format VARCHAR(50),
-  exif_data JSONB,
+  exif_data JSONB,                        -- EXIF metadata extracted from image
+  content_description TEXT,               -- AI-generated description (for image content analysis)
 
-  -- File metadata
+  -- File reference metadata (for change detection)
   file_size_bytes BIGINT NOT NULL,
-  content_hash VARCHAR(64) NOT NULL,
-  file_modified_at TIMESTAMP NOT NULL,
+  content_hash VARCHAR(64) NOT NULL,      -- Hash of file content for change detection
+  file_modified_at TIMESTAMP NOT NULL,    -- Last modified time on disk
 
-  -- Processing metadata
+  -- Processing state (coordination metadata)
   indexed_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  processing_status VARCHAR(50) NOT NULL DEFAULT 'pending',
-  processing_error TEXT,
+  processing_status VARCHAR(50) NOT NULL DEFAULT 'pending',  -- pending, processing, indexed, error
+  processing_error TEXT,                  -- Error message if processing failed
+  chunk_count INTEGER DEFAULT 0,          -- Number of chunks in ChromaDB
+  ocr_processed BOOLEAN DEFAULT FALSE,    -- Whether OCR was applied
+  ocr_confidence NUMERIC(5,2),            -- Average OCR confidence score
 
   -- Constraints
   UNIQUE(source_id, file_path),
   INDEX idx_documents_source (source_id),
   INDEX idx_documents_type (document_type),
-  INDEX idx_documents_hash (content_hash)
+  INDEX idx_documents_hash (content_hash),
+  INDEX idx_documents_status (processing_status)
 );
 
 -- Watched folders configuration
@@ -469,6 +743,52 @@ CREATE TABLE watched_folders (
   last_scan_at TIMESTAMP,
   file_count INTEGER DEFAULT 0
 );
+
+-- Extracted tables from documents (for table extraction feature)
+-- Stores structural information about tables, not duplicating source document content
+CREATE TABLE extracted_tables (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  page_number INTEGER,                    -- Page where table appears (for PDFs)
+  table_index INTEGER NOT NULL,           -- Order within document
+
+  -- Table structure (extracted during processing)
+  headers JSONB,                          -- Column headers as JSON array
+  row_count INTEGER NOT NULL,
+  column_count INTEGER NOT NULL,
+  has_header_row BOOLEAN DEFAULT TRUE,
+  has_merged_cells BOOLEAN DEFAULT FALSE,
+  spans_multiple_pages BOOLEAN DEFAULT FALSE,
+
+  -- Flattened text for search (indexed in ChromaDB, stored here for reference)
+  raw_text TEXT,                          -- Flattened table text
+  extraction_confidence NUMERIC(3,2),     -- 0.00-1.00 confidence score
+
+  -- Chunk reference
+  chromadb_chunk_id VARCHAR(255),         -- Reference to ChromaDB vector entry
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  INDEX idx_tables_document (document_id),
+  INDEX idx_tables_confidence (extraction_confidence)
+);
+
+-- Chunk references (links documents to their ChromaDB entries)
+-- Enables efficient cleanup when documents are deleted or re-indexed
+CREATE TABLE document_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  chromadb_id VARCHAR(255) NOT NULL,      -- Reference to ChromaDB vector entry
+  chunk_index INTEGER NOT NULL,
+  start_offset INTEGER,                   -- Character offset in source document
+  end_offset INTEGER,
+  page_number INTEGER,                    -- For PDFs
+  section_heading VARCHAR(512),           -- Nearest heading for context
+
+  UNIQUE(document_id, chunk_index),
+  INDEX idx_chunks_document (document_id),
+  INDEX idx_chunks_chromadb (chromadb_id)
+);
 ```
 
 ---
@@ -477,9 +797,18 @@ CREATE TABLE watched_folders (
 
 ### 6.1 System Architecture
 
+**Storage Layer Responsibilities:**
+
+| Layer | Purpose | Data Stored |
+|-------|---------|-------------|
+| **Local Filesystem** | Source of truth | Original documents (PDF, DOCX, MD, images) |
+| **ChromaDB** | Semantic search | Text chunks + embeddings |
+| **PostgreSQL** | Coordination & queries | Metadata, structure, processing state, references |
+
 ```mermaid
 flowchart TB
     subgraph "Input Sources"
+        FS[("Local Filesystem<br/>(Source Documents)")]
         WF[Watched Folders]
         CLI[CLI Index Command]
     end
@@ -495,13 +824,19 @@ flowchart TB
             IMG[Image Metadata<br/>sharp + exif-parser]
         end
 
+        subgraph "Advanced Processing"
+            OCR[OCR Service<br/>tesseract.js]
+            TBL[Table Extractor<br/>pdfreader]
+            ICA[Image Analysis<br/>Transformers.js/OpenAI]
+        end
+
         CHK[Document Chunker<br/>Extends FileChunker]
         EMB[Embedding Generator<br/>OpenAI/Local]
     end
 
-    subgraph "Storage"
-        CDB[(ChromaDB<br/>Vector Store)]
-        PG[(PostgreSQL<br/>Document Store)]
+    subgraph "Storage (Derived Data Only)"
+        CDB[(ChromaDB<br/>Chunks + Embeddings)]
+        PG[(PostgreSQL<br/>Metadata + References)]
     end
 
     subgraph "MCP Interface"
@@ -510,6 +845,8 @@ flowchart TB
         SI[search_images]
     end
 
+    FS -.->|"Source files remain here"| WF
+    FS -.->|"Source files remain here"| CLI
     WF --> FW
     CLI --> DET
     FW --> DET
@@ -519,19 +856,40 @@ flowchart TB
     DET --> MD
     DET --> IMG
 
+    PDF --> OCR
+    PDF --> TBL
+    DOCX --> TBL
+    IMG --> ICA
+
     PDF --> CHK
     DOCX --> CHK
     MD --> CHK
-    IMG --> PG
+    OCR --> CHK
+    TBL --> CHK
+    ICA --> CHK
 
     CHK --> EMB
-    EMB --> CDB
-    CHK --> PG
+    EMB -->|"Text chunks + embeddings"| CDB
+
+    DET -->|"File references"| PG
+    PDF -->|"Metadata"| PG
+    DOCX -->|"Metadata"| PG
+    IMG -->|"Metadata + EXIF"| PG
+    TBL -->|"Table structure"| PG
+    ICA -->|"Content descriptions"| PG
+    CHK -->|"Chunk references"| PG
 
     CDB --> SS
+    CDB --> SD
     PG --> SD
     PG --> SI
 ```
+
+**Key Data Flow Principles:**
+1. **Source documents stay on disk** - never copied to databases
+2. **ChromaDB receives chunks** - extracted text with embeddings for semantic search
+3. **PostgreSQL receives references** - file paths, metadata, structure, processing state
+4. **MCP tools query both** - ChromaDB for content similarity, PostgreSQL for filtering/metadata
 
 ### 6.2 Integration with Existing Components
 
@@ -964,15 +1322,26 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | `chokidar` | ^3.6.0 | File system watching | MIT |
 | `ignore` | ^5.3.0 | .gitignore-style pattern matching | MIT |
 
-### 9.2 Optional/Stretch Dependencies
+### 9.2 Advanced Content Processing Dependencies
+
+| Package | Version | Purpose | License | Priority |
+|---------|---------|---------|---------|----------|
+| `tesseract.js` | ^6.0.0 | OCR text extraction from images/scanned PDFs | Apache-2.0 | P1 |
+| `pdfjs-dist` | ^4.0.0 | PDF page-to-image conversion for OCR, advanced PDF parsing | Apache-2.0 | P1 |
+| `pdfreader` | ^3.0.0 | PDF table detection and extraction | MIT | P2 |
+| `@xenova/transformers` | ^2.17.0 | Local image captioning (BLIP model) | Apache-2.0 | P2 |
+| `openai` | ^4.0.0 | Cloud image analysis via OpenAI Vision API | MIT | P2 (optional) |
+
+### 9.3 Optional/Enhancement Dependencies
 
 | Package | Version | Purpose | License | Notes |
 |---------|---------|---------|---------|-------|
-| `tesseract.js` | ^5.0.0 | OCR text extraction | Apache-2.0 | Stretch goal - large (~50MB models) |
 | `gray-matter` | ^4.0.3 | Markdown frontmatter parsing | MIT | Optional enhancement |
-| `pdfjs-dist` | ^4.0.0 | Advanced PDF parsing | Apache-2.0 | Alternative if pdf-parse insufficient |
+| `exifr` | ^7.1.3 | Alternative EXIF extraction (more formats) | MIT | Alternative to exif-parser |
+| `tabula-js` | ^1.0.0 | High-accuracy PDF table extraction | MIT | Requires JRE, optional |
+| `@azure/ai-vision-image-analysis` | ^1.0.0 | Azure AI Vision for image analysis | MIT | Enterprise alternative |
 
-### 9.3 Dependency Risk Assessment
+### 9.4 Dependency Risk Assessment
 
 | Dependency | Maintenance Status | Risk | Mitigation |
 |------------|-------------------|------|------------|
@@ -982,8 +1351,12 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | sharp | Very active | Low | Most popular image library |
 | chokidar | Active, stable | Low | Industry standard |
 | exif-parser | Stable but less active | Medium | exifr as alternative |
+| **tesseract.js** | Active, v6 released 2025 | Low | Scribe.js as alternative |
+| **pdfjs-dist** | Very active (Mozilla) | Low | Industry standard |
+| **pdfreader** | Moderate | Medium | Custom implementation fallback |
+| **@xenova/transformers** | Active, growing adoption | Low | Cloud API fallback |
 
-### 9.4 Bundle Size Considerations
+### 9.5 Bundle Size Considerations
 
 | Package | Size Impact | Notes |
 |---------|-------------|-------|
@@ -992,9 +1365,22 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | mammoth | ~1MB | Pure JavaScript |
 | marked | ~300KB | Lightweight |
 | chokidar | ~500KB | Includes fsevents on macOS |
-| tesseract.js | ~50MB+ | Only if OCR enabled (stretch) |
+| **tesseract.js** | ~50MB+ | OCR models downloaded on first use |
+| **pdfjs-dist** | ~10MB | PDF rendering and parsing |
+| **pdfreader** | ~2MB | Based on pdf2json |
+| **@xenova/transformers** | ~5MB (core) | Models downloaded separately (~500MB-1GB) |
 
-**Total estimated addition:** ~37MB (without OCR), ~87MB (with OCR)
+**Total estimated addition:**
+- Base Phase 6: ~37MB
+- With OCR (tesseract.js + pdfjs-dist): ~97MB + models
+- With Image Analysis (local): Additional ~5MB + models (~500MB-1GB)
+- With Image Analysis (cloud): Additional ~1MB (openai SDK only)
+
+**Model Download Considerations:**
+- tesseract.js English model: ~15MB (downloaded on first OCR operation)
+- tesseract.js additional languages: ~5-20MB each
+- BLIP image captioning model: ~500MB-1GB (downloaded on first analysis)
+- Models are cached locally after initial download
 
 ---
 
@@ -1010,6 +1396,12 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | Image metadata extraction | Automated tests against test images | 100% dimensions, >90% EXIF |
 | File watcher reliability | 24-hour stability test | Zero missed events |
 | Incremental update correctness | Add/modify/delete 100 files | 100% correct index state |
+| **OCR extraction accuracy** | Manual sampling of 20 scanned documents | >90% text correctly extracted (clean scans) |
+| **OCR language support** | Automated tests with English documents | 100% successful processing |
+| **Table extraction accuracy** | Manual sampling of 30 documents with tables | >85% table structure preserved |
+| **Table header detection** | Automated tests against known tables | >90% headers correctly identified |
+| **Image content analysis accuracy** | Manual review of 50 image descriptions | >80% descriptions semantically accurate |
+| **Image type classification** | Automated tests with labeled images | >90% correct classification (diagram/photo/screenshot) |
 
 ### 10.2 Performance Success Criteria
 
@@ -1022,6 +1414,12 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | Image metadata search (p95) | < 200ms | MCP query timing |
 | File watcher event latency | < 1 second | Event timestamp comparison |
 | Bulk indexing (1000 docs) | < 30 minutes | End-to-end timing |
+| **OCR per page** | < 15 seconds | Automated benchmark |
+| **OCR document (10 pages)** | < 3 minutes | End-to-end timing |
+| **Table extraction per document** | < 5 seconds | Automated benchmark |
+| **Image analysis (local)** | < 10 seconds per image | Automated benchmark |
+| **Image analysis (cloud)** | < 3 seconds per image | API timing |
+| **Image content search latency (p95)** | < 500ms | MCP query timing |
 
 ### 10.3 Quality Success Criteria
 
@@ -1031,6 +1429,10 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | No P0 bugs in document extraction | 0 for 2 weeks post-launch |
 | Documentation completeness | All new tools and commands documented |
 | CLI help text accuracy | All commands have accurate help |
+| **Test coverage for OCR processing** | >= 85% |
+| **Test coverage for table extraction** | >= 85% |
+| **Test coverage for image analysis** | >= 85% |
+| **OCR error handling coverage** | 100% of error scenarios have graceful handling |
 
 ### 10.4 User Value Success Criteria
 
@@ -1040,6 +1442,10 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | Search relevance | Top-3 results contain relevant content >80% of queries |
 | Folder sync reliability | Watched folders stay synchronized without manual intervention |
 | Error transparency | Users can identify and resolve indexing failures |
+| **Scanned document searchability** | User can find content in scanned PDFs via semantic search |
+| **Table data accessibility** | User can search for and export table data from indexed documents |
+| **Image content discoverability** | User can find images by describing their content |
+| **Processing transparency** | User can see OCR/analysis progress and quality indicators |
 
 ---
 
@@ -1054,6 +1460,11 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | **M3** | MCP Tools | 1 week | search_documents, search_images tools |
 | **M4** | Folder Watching | 2 weeks | chokidar integration, incremental updates |
 | **M5** | CLI & Polish | 1 week | CLI commands, documentation, testing |
+| **M6** | OCR Processing (P1) | 2 weeks | tesseract.js integration, scanned PDF support |
+| **M7** | Table Extraction (P2) | 1.5 weeks | PDF/DOCX table extraction, structured output |
+| **M8** | Image Content Analysis (P2) | 1.5 weeks | Local and cloud image analysis, semantic search |
+
+**Total Phase 6 Duration:** 12 weeks (extended from 7 weeks to accommodate advanced content processing)
 
 ### 11.2 Milestone 1: Core Extractors (Weeks 1-2)
 
@@ -1154,6 +1565,136 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
   - [ ] Add latency warning logs for operations >5s
   - [ ] Surface embedding status in CLI status commands
 
+### 11.7 Milestone 6: OCR Processing (Weeks 8-9)
+
+**Goal:** Enable text extraction from scanned documents and image-only PDFs.
+
+**Deliverables:**
+1. OCR service using tesseract.js
+2. Image-only PDF detection
+3. PDF page-to-image conversion pipeline
+4. OCR configuration and language support
+
+**Tasks:**
+- [ ] Implement `OcrService` class with tesseract.js v6
+- [ ] Create PDF page-to-image converter using pdfjs-dist
+- [ ] Implement image-only PDF detection (no text layer check)
+- [ ] Add OCR confidence score tracking per page
+- [ ] Implement configurable OCR languages (default: English)
+- [ ] Create background processing queue for OCR operations
+- [ ] Add progress reporting for long-running OCR jobs
+- [ ] Implement OCR timeout handling (per-page limits)
+- [ ] Add CLI commands for OCR status and manual triggers
+- [ ] Update MCP tools to include OCR-extracted content in search
+- [ ] Write unit tests for OCR service (>85% coverage)
+- [ ] Write integration tests for full OCR pipeline
+
+**Configuration Options:**
+```typescript
+interface OcrConfig {
+  enabled: boolean;                    // Enable/disable OCR processing
+  languages: string[];                 // ['eng'] by default
+  confidenceThreshold: number;         // Minimum confidence (0-100), default 60
+  pageTimeoutMs: number;               // Per-page timeout, default 30000
+  maxPagesPerDocument: number;         // Limit for very long documents, default 100
+  processingPriority: 'normal' | 'low'; // Background queue priority
+}
+```
+
+### 11.8 Milestone 7: Table Extraction (Weeks 10-11, partial)
+
+**Goal:** Extract structured table data from PDF and DOCX documents.
+
+**Deliverables:**
+1. PDF table detection and extraction
+2. DOCX table extraction via mammoth HTML parsing
+3. Structured table storage format
+4. Table export capabilities
+
+**Tasks:**
+- [ ] Implement `TableExtractor` interface for common table operations
+- [ ] Implement `PdfTableExtractor` using pdfreader
+- [ ] Implement `DocxTableExtractor` parsing mammoth HTML output
+- [ ] Create table structure model (rows, columns, headers, merged cells)
+- [ ] Implement table header detection heuristics
+- [ ] Add multi-page table handling for PDFs
+- [ ] Store extracted tables in PostgreSQL as JSON
+- [ ] Index table text content in ChromaDB with table context metadata
+- [ ] Implement `pk-mcp tables list` CLI command
+- [ ] Implement `pk-mcp tables export` CLI command (CSV/JSON formats)
+- [ ] Add table filtering option to `search_documents` MCP tool
+- [ ] Write unit tests for table extraction (>85% coverage)
+
+**Table Data Model:**
+```typescript
+interface ExtractedTable {
+  id: string;
+  documentId: string;
+  documentPath: string;
+  pageNumber?: number;           // For PDFs
+  tableIndex: number;            // Table order within document
+  headers: string[];             // Detected header row
+  rows: string[][];              // Data rows
+  columnCount: number;
+  rowCount: number;
+  hasHeaderRow: boolean;
+  rawText: string;               // Flattened text for search
+  extractionConfidence: number;  // 0-1 confidence score
+  metadata: {
+    hasMergedCells: boolean;
+    spansMultiplePages: boolean;
+  };
+}
+```
+
+### 11.9 Milestone 8: Image Content Analysis (Weeks 11-12, partial)
+
+**Goal:** Generate and index AI-based descriptions of image content for semantic search.
+
+**Deliverables:**
+1. Local image analysis using Transformers.js
+2. Cloud image analysis via OpenAI Vision API
+3. Image content descriptions stored and searchable
+4. Image type classification
+
+**Tasks:**
+- [ ] Implement `ImageAnalysisService` with provider abstraction
+- [ ] Implement `LocalImageAnalyzer` using @xenova/transformers (BLIP model)
+- [ ] Implement `OpenAIImageAnalyzer` using OpenAI Vision API
+- [ ] Create configuration for analysis provider selection
+- [ ] Implement lazy model loading for local analysis
+- [ ] Add image type classification (diagram, screenshot, photo, chart)
+- [ ] Store content descriptions in PostgreSQL
+- [ ] Generate embeddings from descriptions for ChromaDB
+- [ ] Add `content_query` parameter to `search_images` MCP tool
+- [ ] Implement `pk-mcp images analyze` CLI command
+- [ ] Implement `pk-mcp images reanalyze` CLI command for model updates
+- [ ] Add analysis progress reporting for batch operations
+- [ ] Write unit tests for image analysis (>85% coverage)
+- [ ] Write integration tests for both local and cloud providers
+
+**Configuration Options:**
+```typescript
+interface ImageAnalysisConfig {
+  enabled: boolean;                    // Enable/disable image analysis
+  provider: 'local' | 'openai' | 'azure';  // Analysis provider
+  localModel: string;                  // 'blip-base' | 'blip-large' | 'vit-gpt2'
+  detailLevel: 'brief' | 'detailed';   // Description verbosity
+  classifyImageType: boolean;          // Enable type classification
+  batchSize: number;                   // Images per batch, default 10
+  openai?: {
+    model: string;                     // 'gpt-4-vision-preview'
+    maxTokens: number;                 // Response length limit
+  };
+}
+```
+
+**Privacy Considerations:**
+- Local processing (Transformers.js) keeps all data on-device
+- Cloud processing (OpenAI/Azure) sends image data to external servers
+- Configuration should clearly indicate data privacy implications
+- Consider offering thumbnail-only mode for cloud analysis to reduce data exposure
+
 ---
 
 ## 12. Risks and Mitigations
@@ -1168,14 +1709,25 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | **Image metadata extraction inconsistency** | Low | Medium | Handle missing EXIF gracefully; document which metadata is reliable |
 | **DOCX format variations** | Low | Medium | mammoth handles most cases; document unsupported features |
 | **Sharp native binding issues** | Medium | Low | Test in CI across platforms; have fallback to image-size + exifr |
+| **OCR accuracy on low-quality scans** | High | Medium | Implement confidence thresholds; provide quality warnings; suggest rescanning |
+| **OCR processing time for large documents** | Medium | High | Background queue processing; per-page timeouts; progress reporting |
+| **tesseract.js model download failures** | Medium | Low | Cache models locally; provide offline model installation option |
+| **Table extraction fails on complex layouts** | Medium | High | Document limitations clearly; provide fallback to text-only extraction |
+| **PDF table detection false positives** | Low | Medium | Implement confidence scoring; allow manual table exclusion |
+| **Transformers.js model memory issues** | High | Medium | Lazy loading; model unloading after batch; memory monitoring |
+| **BLIP model accuracy varies by image type** | Medium | Medium | Train on diverse test set; document accuracy expectations; offer cloud fallback |
+| **OpenAI API rate limits** | Medium | Low | Implement rate limiting; batch processing; exponential backoff |
 
 ### 12.2 Product Risks
 
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|------------|
-| **User expects OCR for scanned PDFs** | Medium | High | Clear documentation that OCR is stretch goal; detect and warn about image-only PDFs |
+| **OCR quality expectations too high** | Medium | Medium | Clear documentation of OCR limitations; show confidence scores to users |
 | **Watched folder fills with irrelevant files** | Low | Medium | Good default exclusion patterns; easy pattern configuration |
 | **Index grows too large** | Medium | Low | Document size limits; provide index management tools |
+| **Table extraction results confusing** | Medium | Medium | Clear table preview in CLI; structured export formats; source references |
+| **Image descriptions not useful for search** | Medium | Medium | Test with real user queries; iterate on prompts; offer re-analysis option |
+| **Privacy concerns with cloud image analysis** | High | Medium | Default to local processing; clear privacy documentation; thumbnail-only option |
 
 ### 12.3 Operational Risks
 
@@ -1184,6 +1736,10 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | **Watcher consumes too many file handles** | Medium | Low | Implement handle pooling; test with large folder trees |
 | **Disk space consumption** | Low | Medium | Store extracted text, not full documents; compression in PostgreSQL |
 | **Embedding API costs for documents** | Low | Medium | Track embedding token usage; support local embeddings |
+| **OCR increases indexing time significantly** | Medium | High | Background processing; skip OCR option; prioritize text PDFs |
+| **Image analysis model storage (~1GB)** | Low | Medium | Download on demand; clear cache management; document requirements |
+| **Cloud API costs for image analysis** | Medium | Medium | Local processing default; cost tracking; batch size limits |
+| **CPU load during OCR/analysis operations** | Medium | Medium | Concurrent processing limits; priority queuing; CPU monitoring |
 
 ---
 
@@ -1193,11 +1749,13 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **OCR for scanned PDFs** | tesseract.js integration for image-based PDF text extraction | P2 |
-| **Table extraction** | Structured table data from PDFs and DOCX | P2 |
 | **Presentation files** | PowerPoint (.pptx) support | P2 |
 | **Rich text format** | RTF document support | P3 |
 | **ePub support** | E-book format for reference materials | P3 |
+| **Multi-language OCR optimization** | Enhanced support for non-Latin scripts (CJK, Arabic, etc.) | P3 |
+| **Video thumbnail extraction** | Extract keyframes from video files for indexing | P3 |
+
+*Note: OCR for scanned documents, table extraction, and image content analysis are now included in Phase 6 scope.*
 
 ### 13.2 Medium-Term Enhancements
 
@@ -1207,7 +1765,7 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | **Document versioning** | Track document changes over time | P2 |
 | **Document relationships** | Link related documents via knowledge graph | P2 |
 | **Citation extraction** | Extract bibliographic references from academic papers | P3 |
-| **Image content analysis** | AI-based description of image content | P3 |
+| **Handwriting recognition** | Recognition of handwritten text in scanned documents (beyond printed OCR) | P3 |
 
 ### 13.3 Long-Term Vision
 
@@ -1226,6 +1784,8 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Product Team | Initial Phase 6 Document Ingestion PRD |
 | 1.1 | 2026-01-18 | Product Team | Added embedding provider observability (GitHub Issue #28) as optional P2 scope in M5 |
+| 1.2 | 2026-01-18 | Product Team | Moved OCR, table extraction, and image content analysis from Non-Goals to in-scope; added user stories US-9, US-10, US-11; added functional requirements FR-9, FR-10, FR-11; added milestones M6, M7, M8; updated dependencies |
+| 1.3 | 2026-01-18 | Product Team | **CRITICAL**: Clarified PostgreSQL storage purpose - stores metadata/references/structure, NOT full document content. Added Storage Architecture Overview section. Updated schema with structural tables (extracted_tables, document_chunks). Clarified data flow in architecture diagram. |
 
 ---
 
