@@ -1,6 +1,6 @@
 # Feature Summary
 
-This document summarizes all features implemented in Personal Knowledge MCP V1.0 (Phases 1-3 Complete, Phase 4 Framework Ready).
+This document summarizes all features implemented in Personal Knowledge MCP V1.0 (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only).
 
 ## Overview
 
@@ -101,8 +101,6 @@ The following are intentional limitations in Phase 1, to be addressed in future 
 
 | Feature | Status | Phase | Notes |
 |---------|--------|-------|-------|
-| AST Parsing | **Complete** | Phase 2 | Tree-sitter for 12 languages + Roslyn for C# |
-| Graph Database | **Complete** | Phase 2 | Neo4j with 5 MCP tools |
 | Multi-Provider Embeddings | **Complete** | Phase 2 | OpenAI, Transformers.js, Ollama |
 | HTTP/SSE Transport | **Complete** | Phase 3 | Cross-client support (Cursor, VS Code) |
 | Bearer Token Auth | **Complete** | Phase 3 | CLI management with scopes |
@@ -112,6 +110,12 @@ The following are intentional limitations in Phase 1, to be addressed in future 
 | OIDC Framework | **Framework Ready** | Phase 4 | Microsoft 365, Auth0, Okta support |
 | User Mapping | **Framework Ready** | Phase 4 | Claim-based instance access |
 | PostgreSQL | **Configured** | Phase 4 | In Docker Compose |
+| Neo4j Knowledge Graph | **Complete** | Phase 5 | Code dependency analysis |
+| AST Parsing | **Complete** | Phase 5 | Tree-sitter for 12 languages + Roslyn for C# |
+| Graph MCP Tools | **Complete** | Phase 5 | 5 tools: dependencies, dependents, architecture, path, metrics |
+| Entity Extraction | **Complete** | Phase 5 | Functions, classes, interfaces, relationships |
+| Graph Schema Migrations | **Complete** | Phase 5 | CLI commands for database setup |
+| Incremental Graph Updates | **Complete** | Phase 5 | Integrated with update pipeline |
 | Azure DevOps Integration | Pending | Future | Enterprise repository support |
 | Local File Ingestion | Pending | Future | Watch local folders for changes |
 | PDF/Markdown Extraction | Pending | Future | Educational material support |

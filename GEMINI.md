@@ -10,7 +10,7 @@ The service is built on the Model Context Protocol (MCP), enabling a native, pur
 
 Key functionalities include indexing public and private GitHub repositories, performing semantic searches on the indexed content, and providing AI assistants with relevant context to reduce token usage and improve response accuracy.
 
-The project has reached **V1.0** with Phases 1-3 complete and Phase 4 framework ready. It provides comprehensive semantic code search, knowledge graph analysis, multi-provider embeddings, and enterprise-ready authentication.
+The project has reached **V1.0** with Phases 1-5 complete (Phase 4 enterprise features framework only). It provides comprehensive semantic code search, knowledge graph analysis, multi-provider embeddings, and enterprise-ready authentication.
 
 ## Building and Running
 

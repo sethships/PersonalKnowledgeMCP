@@ -402,11 +402,12 @@ Use the **Infrastructure/Tooling** template for:
 Understanding project phases helps align contributions:
 
 - **Phase 1** (Complete): Core MCP + Vector Search
-- **Phase 2** (Complete): Code Intelligence + Multi-Provider Embeddings (13 languages, Neo4j graph)
+- **Phase 2** (Complete): Code Intelligence + Multi-Provider Embeddings
 - **Phase 3** (Complete): Multi-Instance + HTTP Transport
 - **Phase 4** (Framework Ready): Enterprise Features (OIDC, User Mapping)
+- **Phase 5** (Complete): Knowledge Graph Search (Neo4j, AST parsing for 13 languages, graph MCP tools)
 
-**Current Status**: V1.0 Complete - See [docs/High-level-Personal-Knowledge-MCP-PRD.md](docs/High-level-Personal-Knowledge-MCP-PRD.md) for details.
+**Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only) - See [docs/High-level-Personal-Knowledge-MCP-PRD.md](docs/High-level-Personal-Knowledge-MCP-PRD.md) for details.
 
 ## Getting Help
 

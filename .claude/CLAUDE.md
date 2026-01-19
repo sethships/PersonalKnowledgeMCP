@@ -120,10 +120,9 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
 **Goal**: Add code-aware indexing and local embedding options
-- AST parsing with tree-sitter for 12 languages + Roslyn for C# (13 total)
-- Knowledge graph (Neo4j) with get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics tools
 - Multi-provider embeddings: OpenAI, Transformers.js (zero-config local), Ollama (GPU)
-- Graph schema migrations CLI commands
+- Pluggable embedding provider architecture with per-repository configuration
+- Provider CLI commands for status and setup
 
 ### Phase 3: Multi-Instance + Containerization (Complete)
 **Goal**: Security model and production deployment
@@ -139,6 +138,17 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - User mapping with claim-based instance access control framework
 - PostgreSQL configured in Docker Compose for document store
 - Kubernetes deployment preparation
+
+### Phase 5: Knowledge Graph Search (Complete)
+**Goal**: Add relationship-aware code intelligence via Neo4j
+- Neo4j integration with connection pooling and schema migrations
+- AST parsing with tree-sitter for 12 languages + Roslyn for C# (13 total)
+- Entity extraction: functions, classes, interfaces, imports, and relationships
+- Graph MCP tools: get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
+- Graph ingestion service for populating Neo4j from parsed code
+- Incremental graph updates integrated with update pipeline
+- Graph query metrics and performance monitoring
+- CLI commands: graph migrate, graph populate, graph populate-all
 
 ### Future Roadmap
 - Azure DevOps repository integration
@@ -216,7 +226,7 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 
 ## Project Status and Notes
 
-- **Current Status**: V1.0 Complete (Phases 1-3 Complete, Phase 4 Framework Ready)
+- **Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
 - Knowledge graph with Neo4j fully implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)

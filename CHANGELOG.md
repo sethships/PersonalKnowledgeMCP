@@ -10,13 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Nothing yet
 
-## [1.0.0] - 2026-01-18 (V1.0 Release: Phases 1-3 Complete)
+## [1.0.0] - 2026-01-18 (V1.0 Release: Phases 1-5 Complete)
 
-V1.0 marks the completion of the core platform with comprehensive semantic search, knowledge graph analysis, multi-provider embeddings, and production-ready deployment infrastructure.
+V1.0 marks the completion of the core platform with comprehensive semantic search, knowledge graph analysis, multi-provider embeddings, and production-ready deployment infrastructure. All five phases are complete, with Phase 4 (Enterprise Features) providing framework support for OIDC integration.
 
 ### Added
 
-#### Knowledge Graph (Phase 2)
+#### Knowledge Graph (Phase 5)
 - Neo4j Community Edition integration for code dependency analysis
 - `get_dependencies` MCP tool - query what code depends on
 - `get_dependents` MCP tool - impact analysis for refactoring
@@ -26,7 +26,7 @@ V1.0 marks the completion of the core platform with comprehensive semantic searc
 - Graph schema migrations via CLI (`graph migrate`)
 - Graph population via CLI (`graph populate`, `graph populate-all`)
 
-#### AST Parsing (Phase 2)
+#### AST Parsing (Phase 5)
 - Tree-sitter integration for code-aware indexing
 - Support for 12 languages via tree-sitter:
   - TypeScript (.ts, .mts, .cts), TSX (.tsx)

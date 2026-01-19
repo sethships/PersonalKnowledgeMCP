@@ -8,7 +8,7 @@ An AI-first knowledge management service built on the Model Context Protocol (MC
 
 Personal Knowledge MCP is a purpose-built MCP service that creates a semantic bridge between AI development workflows and diverse knowledge sources. Unlike traditional knowledge management systems retrofitted for AI access, this project is designed from the ground up for AI assistant integration.
 
-**Current Status**: V1.0 Complete (Phases 1-3 Complete, Phase 4 Framework Ready)
+**Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
 
 ### Current Capabilities
 
@@ -906,10 +906,9 @@ ChromaDB supports optional token-based authentication to secure the vector datab
 - Query response <500ms (p95)
 
 ### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
-- **Knowledge Graph** - Neo4j with get_dependencies, get_dependents, get_architecture, find_path tools
-- **AST Parsing** - Tree-sitter integration for 12 languages + Roslyn for C#
 - **Local Embeddings** - Transformers.js (zero-config) and Ollama (GPU) support
-- **Graph Schema Migrations** - CLI commands for database setup
+- **Multi-Provider Architecture** - Pluggable embedding providers with per-repository configuration
+- **Provider CLI Commands** - Status, setup, and provider selection
 
 ### Phase 3: Multi-Instance + Containerization (Complete)
 - **Docker Compose Hardening** - Production-ready container configuration
@@ -924,6 +923,15 @@ ChromaDB supports optional token-based authentication to secure the vector datab
 - **User Mapping** - Claim-based instance access control
 - **PostgreSQL** - Configured in Docker Compose for document store
 - **Kubernetes Deployment** - Helm charts prepared
+
+### Phase 5: Knowledge Graph Search (Complete)
+- **Neo4j Integration** - Graph database for code dependency analysis
+- **AST Parsing** - Tree-sitter integration for 12 languages + Roslyn for C#
+- **Graph MCP Tools** - get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
+- **Entity Extraction** - Functions, classes, interfaces, and relationships from code
+- **Graph Schema Migrations** - CLI commands for database setup
+- **Incremental Graph Updates** - Graph extraction integrated with update pipeline
+- **Graph Query Metrics** - Performance monitoring and statistics
 
 ### Future Roadmap
 - Automated update pipelines with GitHub webhooks
