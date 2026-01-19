@@ -1,6 +1,6 @@
 # Phase 6: Unstructured Document Ingestion PRD - Personal Knowledge MCP
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** January 18, 2026
 **Status:** Draft
 **Author:** Product Team
@@ -70,6 +70,7 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 8. **Nested Folder Structure Support**: Preserve folder hierarchy as metadata for organization context
 9. **Document Metadata Indexing**: Capture and index document properties (author, creation date, title)
 10. **Progress Reporting**: Provide visibility into document processing status
+11. **Embedding Provider Observability**: Basic operational logging for embedding operations during document ingestion (see [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28))
 
 ### Non-Goals
 
@@ -150,6 +151,19 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 **As a** user importing a large document collection
 **I want to** see progress during bulk indexing operations
 **So that** I know how long the process will take and can verify completion
+
+#### US-8: Diagnose Embedding Failures
+**As a** user troubleshooting why documents are not being indexed
+**I want to** see operational metrics for embedding operations (errors, latency warnings)
+**So that** I can identify if the embedding provider is causing issues
+
+**Acceptance Criteria:**
+- Embedding errors are logged with context (provider, model, error type)
+- Slow embedding operations (>5s) generate latency warnings
+- Errors are visible through CLI status commands
+- Follows existing logging framework patterns
+
+*Reference: [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28)*
 
 ### 3.3 Use Case Scenarios
 
@@ -283,6 +297,18 @@ Action:
 | FR-7.6 | Support common formats: JPEG, PNG, GIF, WebP, TIFF | P0 |
 | FR-7.7 | Handle images without EXIF data gracefully | P0 |
 | FR-7.8 | (Stretch) OCR text extraction from images via tesseract.js | P3 |
+
+#### FR-8: Embedding Provider Observability (GitHub Issue #28)
+
+| Requirement | Description | Priority |
+|-------------|-------------|----------|
+| FR-8.1 | Log embedding errors with context (provider name, model, error type, affected document) | P2 |
+| FR-8.2 | Generate latency warnings for embedding operations exceeding 5 seconds | P2 |
+| FR-8.3 | Track simple success/failure counters per indexing session | P3 |
+| FR-8.4 | Integrate with existing logging framework (`src/logging/`) | P2 |
+| FR-8.5 | Surface embedding operation status through CLI status commands | P2 |
+
+*Note: These requirements implement the reduced scope from [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28). Advanced metrics (token usage, cost estimation, histograms) are explicitly out of scope.*
 
 ---
 
@@ -1123,6 +1149,10 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 - [ ] Write user documentation for document features
 - [ ] Update README with document ingestion guide
 - [ ] Final polish and bug fixes
+- [ ] (Optional/P2) Add embedding provider observability logging ([GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28)):
+  - [ ] Add error logging with context to embedding provider
+  - [ ] Add latency warning logs for operations >5s
+  - [ ] Surface embedding status in CLI status commands
 
 ---
 
@@ -1195,6 +1225,7 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Product Team | Initial Phase 6 Document Ingestion PRD |
+| 1.1 | 2026-01-18 | Product Team | Added embedding provider observability (GitHub Issue #28) as optional P2 scope in M5 |
 
 ---
 
