@@ -43,7 +43,7 @@
     "bun"
   ],
   "author": "Seth Buchanan",
-  "license": "TBD",
+  "license": "MIT",
   "bin": {
     "pk-mcp": "./dist/cli.js"
   },

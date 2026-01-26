@@ -147,12 +147,12 @@ OIDC_DEFAULT_SCOPES=read,write
 OIDC_DEFAULT_INSTANCE_ACCESS=work
 ```
 
-### Example Configuration (bibler.us tenant)
+### Example Configuration (your-tenant.example.com tenant)
 
 > **Note**: Replace all placeholder values (`YOUR-TENANT-ID-HERE`, `YOUR-CLIENT-ID-HERE`) with your actual Azure AD values from Step 3.
 
 ```bash
-# Example for bibler.us Microsoft 365 tenant
+# Example for your-tenant.example.com Microsoft 365 tenant
 OIDC_ENABLED=true
 OIDC_ISSUER=https://login.microsoftonline.com/YOUR-TENANT-ID-HERE/v2.0
 OIDC_CLIENT_ID=YOUR-CLIENT-ID-HERE
@@ -229,7 +229,7 @@ curl -v --cookie "pk_mcp_oidc_session=<session-id>" \
 ```json
 {
   "sub": "AaBbCc123...",
-  "email": "user@bibler.us",
+  "email": "user@your-tenant.example.com",
   "name": "User Name"
 }
 ```
@@ -310,7 +310,7 @@ Claims are retrieved from:
 ```json
 {
   "sub": "AaBbCcDdEeFf112233445566778899",
-  "email": "john.doe@bibler.us",
+  "email": "john.doe@your-tenant.example.com",
   "name": "John Doe",
   "picture": null
 }
