@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS watched_folders (
 
     -- Debounce delay in milliseconds before processing file changes
     -- Prevents rapid re-processing when files are being actively modified
-    debounce_ms INTEGER NOT NULL DEFAULT 2000,
+    -- Valid range: 100ms minimum (practical debounce) to 300000ms (5 minutes max)
+    debounce_ms INTEGER NOT NULL DEFAULT 2000 CHECK (debounce_ms >= 100 AND debounce_ms <= 300000),
 
     -- Timestamp when this folder configuration was created
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -47,7 +48,11 @@ CREATE TABLE IF NOT EXISTS watched_folders (
 
     -- Cached count of files currently tracked in this folder
     -- Updated during scans, not a live count
-    file_count INTEGER DEFAULT 0
+    file_count INTEGER DEFAULT 0 CHECK (file_count >= 0),
+
+    -- Timestamp when this configuration was last modified
+    -- Updated by application code on any configuration change (name, patterns, enabled, etc.)
+    updated_at TIMESTAMP WITH TIME ZONE
 );
 
 -- ============================================================================

@@ -67,10 +67,11 @@ SELECT EXISTS(
 | `enabled` | BOOLEAN | NOT NULL | `true` | Whether watching is active |
 | `include_patterns` | TEXT[] | - | NULL | Glob patterns to include (e.g., `['*.pdf', '*.docx']`) |
 | `exclude_patterns` | TEXT[] | - | NULL | Glob patterns to exclude (e.g., `['.git/*', '*.tmp']`) |
-| `debounce_ms` | INTEGER | NOT NULL | `2000` | Debounce delay in milliseconds |
+| `debounce_ms` | INTEGER | NOT NULL, CHECK (100-300000) | `2000` | Debounce delay in milliseconds (100ms-5min) |
 | `created_at` | TIMESTAMP WITH TIME ZONE | NOT NULL | `CURRENT_TIMESTAMP` | When folder was registered |
 | `last_scan_at` | TIMESTAMP WITH TIME ZONE | - | NULL | Last full scan timestamp |
-| `file_count` | INTEGER | - | `0` | Cached count of tracked files |
+| `file_count` | INTEGER | CHECK (>= 0) | `0` | Cached count of tracked files |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | - | NULL | When configuration was last modified |
 
 **Indexes**:
 
