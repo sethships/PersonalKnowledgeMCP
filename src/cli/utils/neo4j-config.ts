@@ -1,37 +1,44 @@
 /**
- * Neo4j Configuration Utility
+ * Graph Database Configuration Utility
  *
- * Shared utility for reading Neo4j configuration from environment variables.
+ * Shared utility for reading graph database configuration from environment variables.
  * Used by all graph commands (migrate, populate, etc.)
+ *
+ * Note: File named neo4j-config.ts for backward compatibility. Environment variables
+ * still use NEO4J_ prefix for existing deployments.
  */
 
-import type { Neo4jConfig } from "../../graph/types.js";
+import type { GraphStorageConfig } from "../../graph/adapters/types.js";
 
 /**
- * Get Neo4j configuration from environment
+ * Get graph database configuration from environment
  *
- * Reads Neo4j connection settings from environment variables:
- * - NEO4J_HOST: Neo4j host (default: localhost)
- * - NEO4J_BOLT_PORT: Bolt protocol port (default: 7687)
+ * Reads graph database connection settings from environment variables:
+ * - NEO4J_HOST: Graph database host (default: localhost)
+ * - NEO4J_BOLT_PORT: Connection port (default: 7687)
  * - NEO4J_USER: Username (default: neo4j)
  * - NEO4J_PASSWORD: Password (required)
  *
- * @returns Neo4j configuration object
+ * Note: Environment variable names use NEO4J_ prefix for backward compatibility
+ * with existing deployments and configuration.
+ *
+ * @returns Graph storage configuration object
  * @throws Error if required environment variables are missing or invalid
  *
  * @example
  * ```typescript
- * import { getNeo4jConfig } from "../utils/neo4j-config.js";
+ * import { getGraphConfig } from "../utils/neo4j-config.js";
+ * import { createGraphAdapter } from "../../graph/adapters/index.js";
  *
  * try {
- *   const config = getNeo4jConfig();
- *   const client = new Neo4jStorageClientImpl(config);
+ *   const config = getGraphConfig();
+ *   const adapter = createGraphAdapter('neo4j', config);
  * } catch (error) {
- *   console.error("Neo4j not configured:", error.message);
+ *   console.error("Graph database not configured:", error.message);
  * }
  * ```
  */
-export function getNeo4jConfig(): Neo4jConfig {
+export function getGraphConfig(): GraphStorageConfig {
   const host = process.env["NEO4J_HOST"] || "localhost";
   const portEnv = process.env["NEO4J_BOLT_PORT"] || "7687";
   const username = process.env["NEO4J_USER"] || "neo4j";
@@ -60,3 +67,8 @@ export function getNeo4jConfig(): Neo4jConfig {
     password,
   };
 }
+
+/**
+ * @deprecated Use getGraphConfig() instead. This function is provided for backward compatibility.
+ */
+export const getNeo4jConfig = getGraphConfig;

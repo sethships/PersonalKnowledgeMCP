@@ -22,8 +22,6 @@ import neo4j, {
   type Relationship as Neo4jRelationship,
 } from "neo4j-driver";
 import type {
-  Neo4jConfig,
-  Neo4jStorageClient,
   GraphNode,
   RepositoryNode,
   FileNode,
@@ -45,6 +43,7 @@ import type {
   ContextItem,
   ContextType,
 } from "./types.js";
+import type { GraphStorageAdapter, GraphStorageConfig } from "./adapters/types.js";
 import {
   GraphError,
   GraphConnectionError,
@@ -62,7 +61,7 @@ import {
 } from "../utils/retry.js";
 
 /**
- * Implementation of the Neo4jStorageClient interface
+ * Implementation of the GraphStorageAdapter interface for Neo4j
  *
  * Provides a high-level abstraction over the Neo4j JavaScript driver with:
  * - Connection pooling and lifecycle management
@@ -72,30 +71,31 @@ import {
  *
  * @example
  * ```typescript
- * const config: Neo4jConfig = {
+ * import { createGraphAdapter } from './graph/adapters';
+ *
+ * const adapter = createGraphAdapter('neo4j', {
  *   host: "localhost",
  *   port: 7687,
  *   username: "neo4j",
  *   password: process.env.NEO4J_PASSWORD!,
- * };
+ * });
  *
- * const client = new Neo4jStorageClientImpl(config);
- * await client.connect();
+ * await adapter.connect();
  *
  * // Execute queries
- * const results = await client.runQuery<{ name: string }>(
+ * const results = await adapter.runQuery<{ name: string }>(
  *   "MATCH (n:Repository) RETURN n.name as name"
  * );
  *
  * // Clean up
- * await client.disconnect();
+ * await adapter.disconnect();
  * ```
  */
-export class Neo4jStorageClientImpl implements Neo4jStorageClient {
+export class Neo4jStorageClientImpl implements GraphStorageAdapter {
   private driver: Driver | null = null;
   /** Normalization factor for impact score calculation (higher = lower score per dependency) */
   private static readonly IMPACT_SCORE_NORMALIZATION = 100;
-  private config: Neo4jConfig;
+  private config: GraphStorageConfig;
   private retryConfig: RetryConfig;
   private logger = getComponentLogger("graph:neo4j");
 
@@ -104,7 +104,7 @@ export class Neo4jStorageClientImpl implements Neo4jStorageClient {
    *
    * @param config - Connection configuration including retry settings
    */
-  constructor(config: Neo4jConfig) {
+  constructor(config: GraphStorageConfig) {
     this.config = config;
     this.retryConfig = config.retry ?? DEFAULT_RETRY_CONFIG;
   }

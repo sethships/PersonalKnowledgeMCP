@@ -3,14 +3,28 @@
  *
  * Type definitions for knowledge graph storage and operations.
  *
- * This module defines the interfaces and types for interacting with the Neo4j
- * knowledge graph database. The graph stores code relationships, dependencies,
- * and semantic concepts to enable relationship-aware queries and impact analysis.
+ * This module defines the interfaces and types for interacting with graph
+ * databases (Neo4j, FalkorDB, etc.). The graph stores code relationships,
+ * dependencies, and semantic concepts to enable relationship-aware queries
+ * and impact analysis.
+ *
+ * For the database-agnostic adapter interface, see {@link ./adapters/types.ts}
  *
  * @see {@link file://./../../docs/architecture/adr/0002-knowledge-graph-architecture.md} ADR-0002
  */
 
 import type { RetryConfig } from "../utils/retry.js";
+
+// =============================================================================
+// Adapter Type Re-exports
+// =============================================================================
+
+// Re-export adapter types for convenience
+export type {
+  GraphAdapterType,
+  GraphStorageConfig,
+  GraphStorageAdapter,
+} from "./adapters/types.js";
 
 // =============================================================================
 // Configuration Types
@@ -697,3 +711,14 @@ export interface Neo4jStorageClient {
    */
   getContext(input: GraphContextInput): Promise<GraphContextResult>;
 }
+
+// =============================================================================
+// Backward Compatibility Note
+// =============================================================================
+
+// The Neo4jConfig and Neo4jStorageClient interfaces above are maintained for
+// backward compatibility. For new code, use the adapter types from ./adapters/types.js:
+// - GraphStorageConfig instead of Neo4jConfig
+// - GraphStorageAdapter instead of Neo4jStorageClient
+//
+// These interfaces are structurally identical, allowing easy migration.

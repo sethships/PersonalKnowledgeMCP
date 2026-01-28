@@ -9,7 +9,7 @@
  *
  * @example
  * ```typescript
- * const runner = new MigrationRunner(neo4jClient);
+ * const runner = new MigrationRunner(graphAdapter);
  * const result = await runner.migrate({ dryRun: false });
  * console.log(`Applied ${result.applied.length} migrations`);
  * ```
@@ -18,7 +18,7 @@
 import { compare as semverCompare } from "semver";
 import { getComponentLogger } from "../../logging/index.js";
 import { GraphSchemaError } from "../errors.js";
-import type { Neo4jStorageClient } from "../types.js";
+import type { GraphStorageAdapter } from "../adapters/types.js";
 import type {
   AppliedMigration,
   MigrationOptions,
@@ -103,16 +103,16 @@ class DefaultMigrationRegistry implements MigrationRegistry {
 // =============================================================================
 
 /**
- * Manages Neo4j schema migrations
+ * Manages graph database schema migrations
  *
- * Tracks applied migrations using SchemaVersion nodes in Neo4j.
+ * Tracks applied migrations using SchemaVersion nodes in the graph database.
  * All migrations should be idempotent using IF NOT EXISTS patterns.
  */
 export class MigrationRunner {
-  private readonly client: Neo4jStorageClient;
+  private readonly client: GraphStorageAdapter;
   private readonly registry: DefaultMigrationRegistry;
 
-  constructor(client: Neo4jStorageClient) {
+  constructor(client: GraphStorageAdapter) {
     this.client = client;
     this.registry = new DefaultMigrationRegistry();
   }

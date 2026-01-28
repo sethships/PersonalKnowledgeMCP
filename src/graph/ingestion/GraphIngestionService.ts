@@ -10,7 +10,7 @@
 
 import type { Logger } from "pino";
 import { getComponentLogger } from "../../logging/index.js";
-import type { Neo4jStorageClient } from "../types.js";
+import type { GraphStorageAdapter } from "../adapters/types.js";
 import { EntityExtractor } from "../extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../extraction/RelationshipExtractor.js";
 import type { CodeEntity, ParameterInfo } from "../parsing/types.js";
@@ -63,7 +63,7 @@ import {
  * @example
  * ```typescript
  * const service = new GraphIngestionService(
- *   neo4jClient,
+ *   graphAdapter,
  *   entityExtractor,
  *   relationshipExtractor
  * );
@@ -84,7 +84,7 @@ export class GraphIngestionService {
   private readonly config: Required<GraphIngestionConfig>;
 
   constructor(
-    private readonly neo4jClient: Neo4jStorageClient,
+    private readonly graphAdapter: GraphStorageAdapter,
     private readonly entityExtractor: EntityExtractor,
     private readonly relationshipExtractor: RelationshipExtractor,
     config?: GraphIngestionConfig
@@ -402,7 +402,7 @@ export class GraphIngestionService {
 
     // Delete all nodes connected to files in this repository
     // This includes Functions, Classes, and their relationships
-    await this.neo4jClient.runQuery(
+    await this.graphAdapter.runQuery(
       `
       MATCH (r:Repository {name: $repositoryName})
       OPTIONAL MATCH (r)-[:CONTAINS]->(f:File)
@@ -466,7 +466,7 @@ export class GraphIngestionService {
       // We use a single query to count and delete atomically
       // Note: Query returns empty array when file doesn't exist (MATCH fails),
       // which is handled by the fallback to { nodesDeleted: 0, relsDeleted: 0 }
-      const result = await this.neo4jClient.runQuery<{
+      const result = await this.graphAdapter.runQuery<{
         nodesDeleted: number;
         relsDeleted: number;
       }>(
@@ -565,7 +565,7 @@ export class GraphIngestionService {
 
       // Create File node using runQuery for flexibility
       const fileNodeId = this.generateFileNodeId(repositoryName, file.path);
-      await this.neo4jClient.runQuery(
+      await this.graphAdapter.runQuery(
         `
         MERGE (f:File {id: $id})
         SET f.path = $path,
@@ -586,7 +586,7 @@ export class GraphIngestionService {
 
       // Create CONTAINS relationship from Repository
       const repoNodeId = this.generateRepositoryNodeId(repositoryName);
-      await this.neo4jClient.runQuery(
+      await this.graphAdapter.runQuery(
         `
         MATCH (r:Repository {id: $repoId})
         MATCH (f:File {id: $fileId})
@@ -601,7 +601,7 @@ export class GraphIngestionService {
         const entityNodeId = this.generateEntityNodeId(repositoryName, file.path, entity);
         const nodeLabel = this.getEntityNodeType(entity);
 
-        await this.neo4jClient.runQuery(
+        await this.graphAdapter.runQuery(
           `
           MERGE (e:${nodeLabel} {id: $id})
           SET e.name = $name,
@@ -625,7 +625,7 @@ export class GraphIngestionService {
         );
         nodesCreated++;
 
-        await this.neo4jClient.runQuery(
+        await this.graphAdapter.runQuery(
           `
           MATCH (f:File {id: $fileId})
           MATCH (e {id: $entityId})
@@ -646,7 +646,7 @@ export class GraphIngestionService {
       for (const importRel of relationshipResult.imports) {
         const moduleNodeId = this.generateModuleNodeId(importRel);
 
-        await this.neo4jClient.runQuery(
+        await this.graphAdapter.runQuery(
           `
           MERGE (m:Module {id: $id})
           SET m.name = $name,
@@ -660,7 +660,7 @@ export class GraphIngestionService {
         );
         nodesCreated++;
 
-        await this.neo4jClient.runQuery(
+        await this.graphAdapter.runQuery(
           `
           MATCH (f:File {id: $fileId})
           MATCH (m:Module {id: $moduleId})
@@ -712,7 +712,7 @@ export class GraphIngestionService {
    * Check if a repository already exists in the graph.
    */
   private async checkRepositoryExists(repositoryName: string): Promise<boolean> {
-    const result = await this.neo4jClient.runQuery<{ count: number }>(
+    const result = await this.graphAdapter.runQuery<{ count: number }>(
       `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
       { name: repositoryName }
     );
@@ -814,7 +814,7 @@ export class GraphIngestionService {
    */
   private async createRepositoryNode(repositoryName: string, repositoryUrl: string): Promise<void> {
     const nodeId = this.generateRepositoryNodeId(repositoryName);
-    await this.neo4jClient.runQuery(
+    await this.graphAdapter.runQuery(
       `
       MERGE (r:Repository {id: $id})
       SET r.name = $name,
@@ -862,7 +862,7 @@ export class GraphIngestionService {
       for (const file of batch) {
         try {
           const fileNodeId = this.generateFileNodeId(repositoryName, file.path);
-          await this.neo4jClient.runQuery(
+          await this.graphAdapter.runQuery(
             `
             MERGE (f:File {id: $id})
             SET f.path = $path,
@@ -880,7 +880,7 @@ export class GraphIngestionService {
           );
           nodesCreated++;
 
-          await this.neo4jClient.runQuery(
+          await this.graphAdapter.runQuery(
             `
             MATCH (r:Repository {id: $repoId})
             MATCH (f:File {id: $fileId})
@@ -948,7 +948,7 @@ export class GraphIngestionService {
           const entityNodeId = this.generateEntityNodeId(repositoryName, filePath, entity);
           const nodeLabel = this.getEntityNodeType(entity);
 
-          await this.neo4jClient.runQuery(
+          await this.graphAdapter.runQuery(
             `
             MERGE (e:${nodeLabel} {id: $id})
             SET e.name = $name,
@@ -985,7 +985,7 @@ export class GraphIngestionService {
 
           // Create DEFINES relationship
           const fileNodeId = this.generateFileNodeId(repositoryName, filePath);
-          await this.neo4jClient.runQuery(
+          await this.graphAdapter.runQuery(
             `
             MATCH (f:File {id: $fileId})
             MATCH (e {id: $entityId})
@@ -1058,7 +1058,7 @@ export class GraphIngestionService {
 
           // Create module node if not already created
           if (!createdModules.has(moduleNodeId)) {
-            await this.neo4jClient.runQuery(
+            await this.graphAdapter.runQuery(
               `
               MERGE (m:Module {id: $id})
               SET m.name = $name,
@@ -1076,7 +1076,7 @@ export class GraphIngestionService {
 
           // Create IMPORTS relationship
           const fileNodeId = this.generateFileNodeId(repositoryName, filePath);
-          await this.neo4jClient.runQuery(
+          await this.graphAdapter.runQuery(
             `
             MATCH (f:File {id: $fileId})
             MATCH (m:Module {id: $moduleId})
