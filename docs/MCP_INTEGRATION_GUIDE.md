@@ -407,6 +407,6 @@ Enable debug logging for troubleshooting:
 
 ## Support and Issues
 
-- **GitHub Issues:** https://github.com/sethb75/PersonalKnowledgeMCP/issues
+- **GitHub Issues:** https://github.com/sethships/PersonalKnowledgeMCP/issues
 - **Documentation:** See `docs/` directory in the repository
 - **PRD:** `docs/High-level-Personal-Knowledge-MCP-PRD.md`

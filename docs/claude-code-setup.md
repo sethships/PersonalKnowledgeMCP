@@ -228,14 +228,14 @@ Before you can search, you need to index at least one repository:
 
 ```bash
 # Index a repository (example: this project itself)
-bun run cli index https://github.com/sethb75/PersonalKnowledgeMCP
+bun run cli index https://github.com/sethships/PersonalKnowledgeMCP
 
 # Check indexing status
 bun run cli status
 
 # Expected output:
 # Repository: PersonalKnowledgeMCP
-# URL: https://github.com/sethb75/PersonalKnowledgeMCP
+# URL: https://github.com/sethships/PersonalKnowledgeMCP
 # Status: ready
 # Chunks: ~250-350 (varies)
 # Last Indexed: 2025-12-12T...
@@ -396,7 +396,7 @@ Personal Knowledge MCP is designed for fast retrieval with minimal token waste:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/sethb75/PersonalKnowledgeMCP/issues)
+- **Issues**: [GitHub Issues](https://github.com/sethships/PersonalKnowledgeMCP/issues)
 - **Documentation**: [Project README](../README.md)
 - **Troubleshooting**: [Troubleshooting Guide](troubleshooting.md)
 - **Architecture**: [Architecture Documentation](architecture/)

@@ -50,7 +50,7 @@ We'll use the PersonalKnowledgeMCP repository itself as the test dataset:
 
 ```bash
 # Index this repository
-bun run cli index https://github.com/sethb75/PersonalKnowledgeMCP
+bun run cli index https://github.com/sethships/PersonalKnowledgeMCP
 
 # Expected output:
 # ✓ Cloning repository...
@@ -147,7 +147,7 @@ Completely close and restart Claude Code to load the MCP server configuration.
   "repositories": [
     {
       "name": "PersonalKnowledgeMCP",
-      "url": "https://github.com/sethb75/PersonalKnowledgeMCP",
+      "url": "https://github.com/sethships/PersonalKnowledgeMCP",
       "file_count": 45-60,
       "chunk_count": 300-400,
       "last_indexed": "2025-12-12T...",

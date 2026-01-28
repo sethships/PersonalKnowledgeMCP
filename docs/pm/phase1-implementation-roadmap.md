@@ -292,4 +292,4 @@ All items must be complete:
 
 *Document generated: 2025-12-10*
 *Last updated: 2025-12-12 - Issue #16 (CLI Commands) marked as completed (14 of 17 issues done, 82% complete)*
-*Repository: sethb75/PersonalKnowledgeMCP*
+*Repository: sethships/PersonalKnowledgeMCP*

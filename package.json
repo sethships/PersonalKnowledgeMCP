@@ -103,12 +103,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/sethb75/PersonalKnowledgeMCP.git"
+    "url": "https://github.com/sethships/PersonalKnowledgeMCP.git"
   },
   "bugs": {
-    "url": "https://github.com/sethb75/PersonalKnowledgeMCP/issues"
+    "url": "https://github.com/sethships/PersonalKnowledgeMCP/issues"
   },
-  "homepage": "https://github.com/sethb75/PersonalKnowledgeMCP#readme",
+  "homepage": "https://github.com/sethships/PersonalKnowledgeMCP#readme",
   "trustedDependencies": [
     "@modelcontextprotocol/sdk"
   ]

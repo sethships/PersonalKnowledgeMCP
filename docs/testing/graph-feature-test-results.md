@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Date:** January 2026
-**Issue:** [#159 - Comprehensive testing with complex repositories](https://github.com/sethb75/PersonalKnowledgeMCP/issues/159)
+**Issue:** [#159 - Comprehensive testing with complex repositories](https://github.com/sethships/PersonalKnowledgeMCP/issues/159)
 
 ---
 
@@ -138,7 +138,7 @@ Based on testing results:
 
 3. Repository indexed and graph populated:
    ```bash
-   bun run cli index https://github.com/sethb75/PersonalKnowledgeMCP.git
+   bun run cli index https://github.com/sethships/PersonalKnowledgeMCP.git
    bun run cli graph populate PersonalKnowledgeMCP
    ```
 

@@ -1684,7 +1684,7 @@ Ensure these labels exist in the repository:
 ---
 
 *Document generated: 2025-12-21*
-*Repository: sethb75/PersonalKnowledgeMCP*
+*Repository: sethships/PersonalKnowledgeMCP*
 
 ---
 

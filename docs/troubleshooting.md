@@ -172,7 +172,7 @@ bun run cli status
 
 If empty, index a repository:
 ```bash
-bun run cli index https://github.com/sethb75/PersonalKnowledgeMCP
+bun run cli index https://github.com/sethships/PersonalKnowledgeMCP
 ```
 
 #### 2. Check ChromaDB is Running
@@ -1263,7 +1263,7 @@ bun run cli update <repository-name> --force
 
 If issues persist after trying these solutions:
 
-1. **Check GitHub Issues**: https://github.com/sethb75/PersonalKnowledgeMCP/issues
+1. **Check GitHub Issues**: https://github.com/sethships/PersonalKnowledgeMCP/issues
 2. **Create New Issue**: Include:
    - Exact error message
    - Steps to reproduce

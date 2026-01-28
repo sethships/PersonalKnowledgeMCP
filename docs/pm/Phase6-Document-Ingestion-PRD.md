@@ -135,7 +135,7 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 8. **Nested Folder Structure Support**: Preserve folder hierarchy as metadata for organization context
 9. **Document Metadata Indexing**: Capture and index document properties (author, creation date, title)
 10. **Progress Reporting**: Provide visibility into document processing status
-11. **Embedding Provider Observability**: Basic operational logging for embedding operations during document ingestion (see [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28))
+11. **Embedding Provider Observability**: Basic operational logging for embedding operations during document ingestion (see [GitHub Issue #28](https://github.com/sethships/PersonalKnowledgeMCP/issues/28))
 
 **Advanced Content Processing Goals (P1/P2):**
 12. **OCR for Scanned Documents**: Extract text from image-based PDFs and scanned documents using optical character recognition (P1)
@@ -233,7 +233,7 @@ The Personal Knowledge MCP currently excels at indexing and searching code repos
 - Errors are visible through CLI status commands
 - Follows existing logging framework patterns
 
-*Reference: [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28)*
+*Reference: [GitHub Issue #28](https://github.com/sethships/PersonalKnowledgeMCP/issues/28)*
 
 ### 3.3 Advanced Content Processing User Stories
 
@@ -467,7 +467,7 @@ Action:
 | FR-8.4 | Integrate with existing logging framework (`src/logging/`) | P2 |
 | FR-8.5 | Surface embedding operation status through CLI status commands | P2 |
 
-*Note: These requirements implement the reduced scope from [GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28). Advanced metrics (token usage, cost estimation, histograms) are explicitly out of scope.*
+*Note: These requirements implement the reduced scope from [GitHub Issue #28](https://github.com/sethships/PersonalKnowledgeMCP/issues/28). Advanced metrics (token usage, cost estimation, histograms) are explicitly out of scope.*
 
 ### 4.4 Advanced Content Processing
 
@@ -1627,7 +1627,7 @@ pk-mcp config set documents.globalExclusions "*.draft.*,~*,._*,.DS_Store"
 - [ ] Write user documentation for document features
 - [ ] Update README with document ingestion guide
 - [ ] Final polish and bug fixes
-- [ ] (Optional/P2) Add embedding provider observability logging ([GitHub Issue #28](https://github.com/sethb75/PersonalKnowledgeMCP/issues/28)):
+- [ ] (Optional/P2) Add embedding provider observability logging ([GitHub Issue #28](https://github.com/sethships/PersonalKnowledgeMCP/issues/28)):
   - [ ] Add error logging with context to embedding provider
   - [ ] Add latency warning logs for operations >5s
   - [ ] Surface embedding status in CLI status commands

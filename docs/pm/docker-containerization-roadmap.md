@@ -3,7 +3,7 @@
 **Date:** 2025-12-21
 **Status:** Planning
 **Parent PRD:** [Docker-Containerization-PRD.md](./Docker-Containerization-PRD.md)
-**Repository:** sethb75/PersonalKnowledgeMCP
+**Repository:** sethships/PersonalKnowledgeMCP
 
 ---
 

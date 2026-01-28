@@ -1153,7 +1153,7 @@ function validateClonePath(clonePath: string, basePath: string): boolean {
 - 🔄 Interrupted update recovery (#55)
 - 🔄 Documentation updates (#59)
 
-For detailed issue tracking, see the [Incremental Updates Milestone](https://github.com/sethb75/PersonalKnowledgeMCP/milestone/2).
+For detailed issue tracking, see the [Incremental Updates Milestone](https://github.com/sethships/PersonalKnowledgeMCP/milestone/2).
 
 ---
 
@@ -1359,7 +1359,7 @@ bun run cli history my-api --limit 10 # Last 10 updates
 
 1. ~~Review this document with stakeholders~~ (Complete)
 2. ~~Answer open questions (Section 11)~~ (Complete - see Decisions Summary)
-3. ~~Create GitHub issues for implementation phases~~ (Complete - see [Milestone](https://github.com/sethb75/PersonalKnowledgeMCP/milestone/2))
+3. ~~Create GitHub issues for implementation phases~~ (Complete - see [Milestone](https://github.com/sethships/PersonalKnowledgeMCP/milestone/2))
 4. ~~Begin Phase 1 implementation~~ (In Progress)
 5. Complete remaining Phase 2 (Observability) issues
 6. Complete remaining Phase 3 (Robustness) issues

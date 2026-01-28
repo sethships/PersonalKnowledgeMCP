@@ -123,7 +123,7 @@ jobs:
 
       - name: Clone MCP Tools
         run: |
-          git clone --depth 1 https://github.com/sethb75/PersonalKnowledgeMCP.git /tmp/mcp
+          git clone --depth 1 https://github.com/sethships/PersonalKnowledgeMCP.git /tmp/mcp
           cd /tmp/mcp && bun install
 
       - name: Update Index
