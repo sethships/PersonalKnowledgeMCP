@@ -2,7 +2,7 @@
 
 An AI-first knowledge management service built on the Model Context Protocol (MCP) that enables Claude Code and other AI assistants to efficiently access, retrieve, and utilize knowledge from software development projects and educational materials.
 
-[![CI/CD](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/sethb75/PersonalKnowledgeMCP/actions/workflows/ci.yml) [![Project Status](https://img.shields.io/badge/status-v1.0-green)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![CI/CD](https://github.com/sethships/PersonalKnowledgeMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/sethships/PersonalKnowledgeMCP/actions/workflows/ci.yml) [![Project Status](https://img.shields.io/badge/status-v1.0-green)]() [![Bun](https://img.shields.io/badge/bun-1.0+-black)]() [![TypeScript](https://img.shields.io/badge/typescript-5.3+-blue)]() [![License](https://img.shields.io/badge/license-MIT-green)]()
 
 ## Overview
 
@@ -194,7 +194,7 @@ graph TB
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/sethb75/PersonalKnowledgeMCP.git
+   git clone https://github.com/sethships/PersonalKnowledgeMCP.git
    cd PersonalKnowledgeMCP
    ```
 
@@ -896,6 +896,16 @@ The project maintains **90% minimum test coverage** across all components.
 - **No Credential Logging**: API keys and tokens never logged or exposed in errors
 - **Bearer Token Auth**: Scoped tokens with configurable expiration
 - **Rate Limiting**: Configurable per-minute/per-hour request limits
+### Data Privacy
+
+**Local Processing by Default**: Personal Knowledge MCP processes all data locally using Transformers.js embeddings. No external API calls are required for basic functionality.
+
+**Optional OpenAI Usage**: When using OpenAI embeddings:
+- Code snippets are sent to OpenAI API for embedding generation
+- The service sets `X-OpenAI-Data-Usage: off` header to opt out of training
+- For sensitive code, use local providers (Transformers.js or Ollama)
+
+**No Telemetry**: The application does not collect usage telemetry. ChromaDB telemetry is explicitly disabled in the default configuration.
 
 ### ChromaDB Authentication
 

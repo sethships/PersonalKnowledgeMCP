@@ -68,4 +68,4 @@ kubectl -n {{ include "pk-mcp.namespace" . }} get all
 # Describe deployment
 kubectl -n {{ include "pk-mcp.namespace" . }} describe deployment {{ include "pk-mcp.mcpService.fullname" . }}
 
-For more information, see: https://github.com/sethb75/PersonalKnowledgeMCP
+For more information, see: https://github.com/sethships/PersonalKnowledgeMCP

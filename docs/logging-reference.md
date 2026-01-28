@@ -60,7 +60,7 @@ Fetches the HEAD commit from GitHub API.
   "component": "services:github-client",
   "operation": "github_get_head_commit",
   "correlationId": "update-1734367200-a3c9f",
-  "owner": "sethb75",
+  "owner": "sethships",
   "repo": "PersonalKnowledgeMCP",
   "ref": "main",
   "msg": "Fetching HEAD commit"
@@ -74,7 +74,7 @@ Fetches the HEAD commit from GitHub API.
   "component": "services:github-client",
   "operation": "github_get_head_commit",
   "correlationId": "update-1734367200-a3c9f",
-  "owner": "sethb75",
+  "owner": "sethships",
   "repo": "PersonalKnowledgeMCP",
   "ref": "main",
   "sha": "d70cf09",
@@ -96,7 +96,7 @@ Fetches the HEAD commit from GitHub API.
   "component": "services:github-client",
   "operation": "github_get_head_commit",
   "correlationId": "update-1734367200-a3c9f",
-  "owner": "sethb75",
+  "owner": "sethships",
   "repo": "NonExistentRepo",
   "ref": "main",
   "error": "Resource not found: https://api.github.com/repos/...",
@@ -117,7 +117,7 @@ Compares two commits and retrieves file changes.
   "component": "services:github-client",
   "operation": "github_compare_commits",
   "correlationId": "update-1734367200-a3c9f",
-  "owner": "sethb75",
+  "owner": "sethships",
   "repo": "PersonalKnowledgeMCP",
   "base": "abc1234",
   "head": "def5678",
@@ -540,7 +540,7 @@ In development, logs use `pino-pretty` for readable output:
 [10:30:45.123] INFO (services:github-client): Retrieved HEAD commit
     correlationId: "update-1734367200-a3c9f"
     operation: "github_get_head_commit"
-    owner: "sethb75"
+    owner: "sethships"
     repo: "PersonalKnowledgeMCP"
     sha: "d70cf09"
     statusCode: 200
@@ -552,7 +552,7 @@ In development, logs use `pino-pretty` for readable output:
 In production, logs output as newline-delimited JSON for machine processing:
 
 ```json
-{"level":"info","time":"2025-12-16T10:30:45.123Z","component":"services:github-client","correlationId":"update-1734367200-a3c9f","operation":"github_get_head_commit","owner":"sethb75","repo":"PersonalKnowledgeMCP","sha":"d70cf09","statusCode":200,"durationMs":145,"msg":"Retrieved HEAD commit"}
+{"level":"info","time":"2025-12-16T10:30:45.123Z","component":"services:github-client","correlationId":"update-1734367200-a3c9f","operation":"github_get_head_commit","owner":"sethships","repo":"PersonalKnowledgeMCP","sha":"d70cf09","statusCode":200,"durationMs":145,"msg":"Retrieved HEAD commit"}
 ```
 
 ## Best Practices
@@ -578,10 +578,10 @@ Here's what a complete update operation looks like in logs:
 {"level":"info","component":"services:incremental-update-coordinator","operation":"coordinator_update_repository","correlationId":"update-1734367200-a3c9f","repository":"PersonalKnowledgeMCP","msg":"Starting incremental update"}
 
 // 2. Fetch HEAD commit
-{"level":"info","component":"services:github-client","operation":"github_get_head_commit","correlationId":"update-1734367200-a3c9f","owner":"sethb75","repo":"PersonalKnowledgeMCP","sha":"d70cf09","statusCode":200,"rateLimit":{"remaining":4999,"limit":5000},"durationMs":145,"msg":"Retrieved HEAD commit"}
+{"level":"info","component":"services:github-client","operation":"github_get_head_commit","correlationId":"update-1734367200-a3c9f","owner":"sethships","repo":"PersonalKnowledgeMCP","sha":"d70cf09","statusCode":200,"rateLimit":{"remaining":4999,"limit":5000},"durationMs":145,"msg":"Retrieved HEAD commit"}
 
 // 3. Compare commits
-{"level":"info","component":"services:github-client","operation":"github_compare_commits","correlationId":"update-1734367200-a3c9f","owner":"sethb75","repo":"PersonalKnowledgeMCP","totalCommits":3,"filesChanged":12,"statusCode":200,"durationMs":234,"msg":"Compared commits"}
+{"level":"info","component":"services:github-client","operation":"github_compare_commits","correlationId":"update-1734367200-a3c9f","owner":"sethships","repo":"PersonalKnowledgeMCP","totalCommits":3,"filesChanged":12,"statusCode":200,"durationMs":234,"msg":"Compared commits"}
 
 // 4. Pipeline starts
 {"level":"info","component":"services:incremental-update-pipeline","operation":"pipeline_process_changes","correlationId":"update-1734367200-a3c9f","repository":"PersonalKnowledgeMCP","totalChanges":12,"msg":"Starting incremental update"}

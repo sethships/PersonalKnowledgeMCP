@@ -464,7 +464,7 @@ Questions to help answer:
 **A:** Anything that might make sense in the context of the given example scenarios. We might choose various code analyzers to add metadata to a vectorDB, for example.
 
 **Q27:** How should the system handle authentication and authorization for external integrations?
-**A:** I'm open to suggestion here. Ideally something secure, simple, and at least on the small-scale, already paid for or free. I do have an active Microsoft365 business standard tenant (bibler.us) that could be used for this puprose, if it makes sense.
+**A:** I'm open to suggestion here. Ideally something secure, simple, and at least on the small-scale, already paid for or free. I do have an active Microsoft365 business standard tenant (your-tenant.example.com) that could be used for this puprose, if it makes sense.
 
 ### Business & Sustainability
 

@@ -5,8 +5,8 @@
 **Status:** ✅ COMPLETE - All Phases Finished (18/18 Issues Closed, Epic Closed)
 **Parent Document:** [incremental-updates-plan.md](../architecture/incremental-updates-plan.md)
 **Project Phase:** Extension of Phase 1 (Core MCP + Vector Search)
-**Epic:** [#41 - Incremental Updates Feature](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41) ✅ CLOSED
-**Milestone:** [Incremental Updates](https://github.com/sethb75/PersonalKnowledgeMCP/milestone/2)
+**Epic:** [#41 - Incremental Updates Feature](https://github.com/sethships/PersonalKnowledgeMCP/issues/41) ✅ CLOSED
+**Milestone:** [Incremental Updates](https://github.com/sethships/PersonalKnowledgeMCP/milestone/2)
 
 ---
 
@@ -50,13 +50,13 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 | Order | Issue | Title | Priority | Effort | Depends On |
 |-------|-------|-------|----------|--------|------------|
-| ~~1~~ | ~~[#42](https://github.com/sethb75/PersonalKnowledgeMCP/issues/42)~~ | ~~Repository Metadata Schema Extension~~ | ~~P0~~ | ~~2-4h~~ | ~~—~~ |
-| ~~1~~ | ~~[#44](https://github.com/sethb75/PersonalKnowledgeMCP/issues/44)~~ | ~~ChromaDB Upsert and Delete Operations~~ | ~~P0~~ | ~~4-6h~~ | ~~—~~ |
-| ~~2~~ | ~~[#43](https://github.com/sethb75/PersonalKnowledgeMCP/issues/43)~~ | ~~GitHub API Client for Change Detection~~ | ~~P0~~ | ~~4-6h~~ | ~~#42~~ |
-| ~~3~~ | ~~[#45](https://github.com/sethb75/PersonalKnowledgeMCP/issues/45)~~ | ~~Incremental Update Pipeline~~ | ~~P0~~ | ~~6-8h~~ | ~~#44~~ |
-| ~~4~~ | ~~[#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46)~~ | ~~Update Coordinator Service~~ | ~~P0~~ | ~~4-6h~~ | ~~#43~~, ~~#45~~ |
-| ~~5~~ | ~~[#47](https://github.com/sethb75/PersonalKnowledgeMCP/issues/47)~~ | ~~CLI Update Commands~~ | ~~P0~~ | ~~3-4h~~ | ~~#46~~ |
-| ~~6~~ | ~~[#48](https://github.com/sethb75/PersonalKnowledgeMCP/issues/48)~~ | ~~Foundation Phase Unit and Integration Tests~~ | ~~P0~~ | ~~4-6h~~ | ~~#42~~-~~#47~~ |
+| ~~1~~ | ~~[#42](https://github.com/sethships/PersonalKnowledgeMCP/issues/42)~~ | ~~Repository Metadata Schema Extension~~ | ~~P0~~ | ~~2-4h~~ | ~~—~~ |
+| ~~1~~ | ~~[#44](https://github.com/sethships/PersonalKnowledgeMCP/issues/44)~~ | ~~ChromaDB Upsert and Delete Operations~~ | ~~P0~~ | ~~4-6h~~ | ~~—~~ |
+| ~~2~~ | ~~[#43](https://github.com/sethships/PersonalKnowledgeMCP/issues/43)~~ | ~~GitHub API Client for Change Detection~~ | ~~P0~~ | ~~4-6h~~ | ~~#42~~ |
+| ~~3~~ | ~~[#45](https://github.com/sethships/PersonalKnowledgeMCP/issues/45)~~ | ~~Incremental Update Pipeline~~ | ~~P0~~ | ~~6-8h~~ | ~~#44~~ |
+| ~~4~~ | ~~[#46](https://github.com/sethships/PersonalKnowledgeMCP/issues/46)~~ | ~~Update Coordinator Service~~ | ~~P0~~ | ~~4-6h~~ | ~~#43~~, ~~#45~~ |
+| ~~5~~ | ~~[#47](https://github.com/sethships/PersonalKnowledgeMCP/issues/47)~~ | ~~CLI Update Commands~~ | ~~P0~~ | ~~3-4h~~ | ~~#46~~ |
+| ~~6~~ | ~~[#48](https://github.com/sethships/PersonalKnowledgeMCP/issues/48)~~ | ~~Foundation Phase Unit and Integration Tests~~ | ~~P0~~ | ~~4-6h~~ | ~~#42~~-~~#47~~ |
 
 **Parallel Tracks:** Issues #42 and #44 can be worked simultaneously (no dependencies).
 
@@ -64,11 +64,11 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 | Order | Issue | Title | Priority | Effort | Depends On |
 |-------|-------|-------|----------|--------|------------|
-| ~~1~~ | ~~[#49](https://github.com/sethb75/PersonalKnowledgeMCP/issues/49)~~ | ~~Update History Tracking~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 1~~ |
-| ~~1~~ | ~~[#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51)~~ | ~~Enhanced Status Command with Update Information~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
-| ~~1~~ | ~~[#52](https://github.com/sethb75/PersonalKnowledgeMCP/issues/52)~~ | ~~Structured Logging for Update Operations~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
-| ~~1~~ | ~~[#53](https://github.com/sethb75/PersonalKnowledgeMCP/issues/53)~~ | ~~Update Metrics Tracking~~ | ~~P2~~ | ~~2-3h~~ | ~~Phase 1~~ |
-| ~~2~~ | ~~[#50](https://github.com/sethb75/PersonalKnowledgeMCP/issues/50)~~ | ~~CLI History Command~~ | ~~P1~~ | ~~2-3h~~ | ~~#49~~ |
+| ~~1~~ | ~~[#49](https://github.com/sethships/PersonalKnowledgeMCP/issues/49)~~ | ~~Update History Tracking~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 1~~ |
+| ~~1~~ | ~~[#51](https://github.com/sethships/PersonalKnowledgeMCP/issues/51)~~ | ~~Enhanced Status Command with Update Information~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
+| ~~1~~ | ~~[#52](https://github.com/sethships/PersonalKnowledgeMCP/issues/52)~~ | ~~Structured Logging for Update Operations~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
+| ~~1~~ | ~~[#53](https://github.com/sethships/PersonalKnowledgeMCP/issues/53)~~ | ~~Update Metrics Tracking~~ | ~~P2~~ | ~~2-3h~~ | ~~Phase 1~~ |
+| ~~2~~ | ~~[#50](https://github.com/sethships/PersonalKnowledgeMCP/issues/50)~~ | ~~CLI History Command~~ | ~~P1~~ | ~~2-3h~~ | ~~#49~~ |
 
 **Parallel Tracks:** Issues #49, #51, #52, #53 can all be worked simultaneously after Phase 1 completes.
 
@@ -76,12 +76,12 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 | Order | Issue | Title | Priority | Effort | Depends On |
 |-------|-------|-------|----------|--------|------------|
-| ~~1~~ | ~~[#54](https://github.com/sethb75/PersonalKnowledgeMCP/issues/54)~~ | ~~Interrupted Update Detection~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 2~~ |
-| ~~1~~ | ~~[#56](https://github.com/sethb75/PersonalKnowledgeMCP/issues/56)~~ | ~~Retry Logic with Exponential Backoff~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
-| ~~1~~ | ~~[#57](https://github.com/sethb75/PersonalKnowledgeMCP/issues/57)~~ | ~~Partial Failure Handling~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 1~~ |
-| ~~2~~ | ~~[#55](https://github.com/sethb75/PersonalKnowledgeMCP/issues/55)~~ | ~~Interrupted Update Recovery~~ | ~~P1~~ | ~~3-4h~~ | ~~#54~~ |
-| ~~3~~ | ~~[#58](https://github.com/sethb75/PersonalKnowledgeMCP/issues/58)~~ | ~~Comprehensive Error Handling Tests~~ | ~~P1~~ | ~~3-4h~~ | ~~#54~~, ~~#55~~, ~~#56~~, ~~#57~~ |
-| ~~4~~ | ~~[#59](https://github.com/sethb75/PersonalKnowledgeMCP/issues/59)~~ | ~~Documentation Updates for Incremental Updates~~ | ~~P1~~ | ~~2-3h~~ | ~~All above~~ |
+| ~~1~~ | ~~[#54](https://github.com/sethships/PersonalKnowledgeMCP/issues/54)~~ | ~~Interrupted Update Detection~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 2~~ |
+| ~~1~~ | ~~[#56](https://github.com/sethships/PersonalKnowledgeMCP/issues/56)~~ | ~~Retry Logic with Exponential Backoff~~ | ~~P1~~ | ~~2-3h~~ | ~~Phase 1~~ |
+| ~~1~~ | ~~[#57](https://github.com/sethships/PersonalKnowledgeMCP/issues/57)~~ | ~~Partial Failure Handling~~ | ~~P1~~ | ~~3-4h~~ | ~~Phase 1~~ |
+| ~~2~~ | ~~[#55](https://github.com/sethships/PersonalKnowledgeMCP/issues/55)~~ | ~~Interrupted Update Recovery~~ | ~~P1~~ | ~~3-4h~~ | ~~#54~~ |
+| ~~3~~ | ~~[#58](https://github.com/sethships/PersonalKnowledgeMCP/issues/58)~~ | ~~Comprehensive Error Handling Tests~~ | ~~P1~~ | ~~3-4h~~ | ~~#54~~, ~~#55~~, ~~#56~~, ~~#57~~ |
+| ~~4~~ | ~~[#59](https://github.com/sethships/PersonalKnowledgeMCP/issues/59)~~ | ~~Documentation Updates for Incremental Updates~~ | ~~P1~~ | ~~2-3h~~ | ~~All above~~ |
 
 **Parallel Tracks:** Issues #54, #56, #57 can be worked simultaneously.
 
@@ -137,7 +137,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ### Phase 1: Foundation (5-7 days)
 
-#### 1.1 Repository Metadata Schema Extension — [#42](https://github.com/sethb75/PersonalKnowledgeMCP/issues/42)
+#### 1.1 Repository Metadata Schema Extension — [#42](https://github.com/sethships/PersonalKnowledgeMCP/issues/42)
 **Effort:** 2-4 hours
 **Priority:** P0
 **Dependencies:** None
@@ -159,7 +159,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.2 GitHub API Client for Change Detection — [#43](https://github.com/sethb75/PersonalKnowledgeMCP/issues/43)
+#### 1.2 GitHub API Client for Change Detection — [#43](https://github.com/sethships/PersonalKnowledgeMCP/issues/43)
 **Effort:** 4-6 hours
 **Priority:** P0
 **Dependencies:** #42
@@ -182,7 +182,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.3 ChromaDB Upsert and Delete Operations — [#44](https://github.com/sethb75/PersonalKnowledgeMCP/issues/44)
+#### 1.3 ChromaDB Upsert and Delete Operations — [#44](https://github.com/sethships/PersonalKnowledgeMCP/issues/44)
 **Effort:** 4-6 hours
 **Priority:** P0
 **Dependencies:** None (can parallel with #42, #43)
@@ -203,7 +203,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.4 Incremental Update Pipeline — [#45](https://github.com/sethb75/PersonalKnowledgeMCP/issues/45) ✅ **COMPLETED**
+#### 1.4 Incremental Update Pipeline — [#45](https://github.com/sethships/PersonalKnowledgeMCP/issues/45) ✅ **COMPLETED**
 **Effort:** 6-8 hours
 **Priority:** P0
 **Dependencies:** ~~#44~~
@@ -228,7 +228,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.5 Update Coordinator Service — [#46](https://github.com/sethb75/PersonalKnowledgeMCP/issues/46) ✅ **COMPLETED**
+#### 1.5 Update Coordinator Service — [#46](https://github.com/sethships/PersonalKnowledgeMCP/issues/46) ✅ **COMPLETED**
 **Effort:** 4-6 hours
 **Priority:** P0
 **Dependencies:** ~~#43~~, ~~#45~~
@@ -258,7 +258,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.6 CLI Update Commands — [#47](https://github.com/sethb75/PersonalKnowledgeMCP/issues/47) ✅ **COMPLETED**
+#### 1.6 CLI Update Commands — [#47](https://github.com/sethships/PersonalKnowledgeMCP/issues/47) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P0
 **Dependencies:** ~~#46~~
@@ -282,7 +282,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 1.7 Unit and Integration Tests for Foundation — [#48](https://github.com/sethb75/PersonalKnowledgeMCP/issues/48) ✅ **COMPLETED**
+#### 1.7 Unit and Integration Tests for Foundation — [#48](https://github.com/sethships/PersonalKnowledgeMCP/issues/48) ✅ **COMPLETED**
 **Effort:** 4-6 hours
 **Priority:** P0
 **Dependencies:** ~~#42~~-~~#47~~
@@ -306,7 +306,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ### Phase 2: Observability (3-4 days)
 
-#### 2.1 Update History Tracking — [#49](https://github.com/sethb75/PersonalKnowledgeMCP/issues/49) ✅ **COMPLETED**
+#### 2.1 Update History Tracking — [#49](https://github.com/sethships/PersonalKnowledgeMCP/issues/49) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P1
 **Dependencies:** ~~Phase 1 complete (#48)~~
@@ -327,7 +327,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 2.2 CLI History Command — [#50](https://github.com/sethb75/PersonalKnowledgeMCP/issues/50) ✅ **COMPLETED**
+#### 2.2 CLI History Command — [#50](https://github.com/sethships/PersonalKnowledgeMCP/issues/50) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** ~~#49~~
@@ -348,7 +348,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 2.3 Enhanced Status Command — [#51](https://github.com/sethb75/PersonalKnowledgeMCP/issues/51) ✅ **COMPLETED**
+#### 2.3 Enhanced Status Command — [#51](https://github.com/sethships/PersonalKnowledgeMCP/issues/51) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** Phase 1 complete (#48)
@@ -368,7 +368,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 2.4 Structured Logging for Updates — [#52](https://github.com/sethb75/PersonalKnowledgeMCP/issues/52) ✅ **COMPLETED**
+#### 2.4 Structured Logging for Updates — [#52](https://github.com/sethships/PersonalKnowledgeMCP/issues/52) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** ~~Phase 1 complete (#48)~~
@@ -389,7 +389,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 2.5 Update Metrics — [#53](https://github.com/sethb75/PersonalKnowledgeMCP/issues/53) ✅ **COMPLETED**
+#### 2.5 Update Metrics — [#53](https://github.com/sethships/PersonalKnowledgeMCP/issues/53) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P2
 **Dependencies:** ~~Phase 1 complete (#48)~~
@@ -410,7 +410,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ### Phase 3: Robustness (4-5 days) ✅ COMPLETE
 
-#### 3.1 Interrupted Update Detection — [#54](https://github.com/sethb75/PersonalKnowledgeMCP/issues/54) ✅ **COMPLETED**
+#### 3.1 Interrupted Update Detection — [#54](https://github.com/sethships/PersonalKnowledgeMCP/issues/54) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P1
 **Dependencies:** ~~Phase 2 complete~~
@@ -429,7 +429,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 3.2 Interrupted Update Recovery — [#55](https://github.com/sethb75/PersonalKnowledgeMCP/issues/55) ✅ **COMPLETED**
+#### 3.2 Interrupted Update Recovery — [#55](https://github.com/sethships/PersonalKnowledgeMCP/issues/55) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P1
 **Dependencies:** ~~#54~~
@@ -450,7 +450,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 3.3 Retry Logic with Exponential Backoff — [#56](https://github.com/sethb75/PersonalKnowledgeMCP/issues/56) ✅ **COMPLETED**
+#### 3.3 Retry Logic with Exponential Backoff — [#56](https://github.com/sethships/PersonalKnowledgeMCP/issues/56) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** ~~Phase 1 complete (#48)~~
@@ -471,7 +471,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 3.4 Partial Failure Handling — [#57](https://github.com/sethb75/PersonalKnowledgeMCP/issues/57) ✅ **COMPLETED**
+#### 3.4 Partial Failure Handling — [#57](https://github.com/sethships/PersonalKnowledgeMCP/issues/57) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P1
 **Dependencies:** ~~Phase 1 complete (#48)~~
@@ -492,7 +492,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 3.5 Comprehensive Error Handling Tests — [#58](https://github.com/sethb75/PersonalKnowledgeMCP/issues/58) ✅ **COMPLETED**
+#### 3.5 Comprehensive Error Handling Tests — [#58](https://github.com/sethships/PersonalKnowledgeMCP/issues/58) ✅ **COMPLETED**
 **Effort:** 3-4 hours
 **Priority:** P1
 **Dependencies:** ~~#54~~, ~~#55~~, ~~#56~~, ~~#57~~
@@ -512,7 +512,7 @@ The implementation follows the **On-Demand Trigger** model as selected in the ar
 
 ---
 
-#### 3.6 Documentation Updates — [#59](https://github.com/sethb75/PersonalKnowledgeMCP/issues/59) ✅ **COMPLETED**
+#### 3.6 Documentation Updates — [#59](https://github.com/sethships/PersonalKnowledgeMCP/issues/59) ✅ **COMPLETED**
 **Effort:** 2-3 hours
 **Priority:** P1
 **Dependencies:** ~~All above (#54-#58)~~
@@ -700,14 +700,14 @@ The implementation can proceed based on the approved architecture plan.
 
 ### Milestone
 
-**Name:** [Incremental Updates](https://github.com/sethb75/PersonalKnowledgeMCP/milestone/2)
+**Name:** [Incremental Updates](https://github.com/sethships/PersonalKnowledgeMCP/milestone/2)
 **Description:** Enable incremental index updates when PRs are merged to monitored repositories
 **Target Date:** 4 weeks from start
 **Status:** ✅ Created
 
 ### Epic
 
-**Issue:** [#41 - Incremental Updates Feature](https://github.com/sethb75/PersonalKnowledgeMCP/issues/41)
+**Issue:** [#41 - Incremental Updates Feature](https://github.com/sethships/PersonalKnowledgeMCP/issues/41)
 
 ### Issue Summary
 

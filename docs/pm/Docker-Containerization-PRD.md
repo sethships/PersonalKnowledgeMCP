@@ -765,7 +765,7 @@ pk-mcp token rotate --name "cursor-dev"
 ### Phase 4: OpenID Connect (OIDC)
 
 **Why OIDC for Phase 4:**
-- User has Microsoft 365 Business Standard tenant (bibler.us)
+- User has Microsoft 365 Business Standard tenant (your-tenant.example.com)
 - Enables SSO with existing identity
 - Proper audit trail for compliance
 - Scales to team access

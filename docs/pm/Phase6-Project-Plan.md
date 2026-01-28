@@ -550,4 +550,4 @@ Before Phase 6 release:
 
 *Document Version: 1.0*
 *Created: January 18, 2026*
-*Repository: sethb75/PersonalKnowledgeMCP*
+*Repository: sethships/PersonalKnowledgeMCP*

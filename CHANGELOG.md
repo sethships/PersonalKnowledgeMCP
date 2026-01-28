@@ -170,6 +170,6 @@ Phase 1 establishes the core foundation for semantic code search via the Model C
 
 ---
 
-[Unreleased]: https://github.com/sethb75/PersonalKnowledgeMCP/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/sethb75/PersonalKnowledgeMCP/compare/v0.1.0...v1.0.0
-[0.1.0]: https://github.com/sethb75/PersonalKnowledgeMCP/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sethships/PersonalKnowledgeMCP/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/sethships/PersonalKnowledgeMCP/compare/v0.1.0...v1.0.0
+[0.1.0]: https://github.com/sethships/PersonalKnowledgeMCP/releases/tag/v0.1.0

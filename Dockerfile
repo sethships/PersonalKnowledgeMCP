@@ -52,7 +52,7 @@ FROM oven/bun:1.1-alpine AS runtime
 LABEL org.opencontainers.image.title="Personal Knowledge MCP"
 LABEL org.opencontainers.image.description="AI-first knowledge management service built on Model Context Protocol"
 LABEL org.opencontainers.image.version="1.0.0"
-LABEL org.opencontainers.image.source="https://github.com/sethb75/PersonalKnowledgeMCP"
+LABEL org.opencontainers.image.source="https://github.com/sethships/PersonalKnowledgeMCP"
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S pkuser && \

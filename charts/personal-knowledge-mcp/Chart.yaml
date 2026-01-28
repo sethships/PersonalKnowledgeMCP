@@ -20,6 +20,6 @@ sources:
   - https://github.com/sethb75/PersonalKnowledgeMCP
 maintainers:
   - name: Seth Bibler
-    email: seth@bibler.us
+    email: sethships@users.noreply.github.com
 icon: ""
 kubeVersion: ">=1.23.0-0"
