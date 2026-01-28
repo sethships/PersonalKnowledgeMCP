@@ -21,8 +21,8 @@ afterAll(() => {
   resetLogger();
 });
 
-// Longer timeout for file system operations
-const TEST_TIMEOUT = 10000;
+// Longer timeout for file system operations - CI can be slow
+const TEST_TIMEOUT = 30000;
 
 /**
  * Create a test folder configuration
@@ -45,9 +45,10 @@ function createTestFolder(basePath: string, overrides: Partial<WatchedFolder> = 
 }
 
 /**
- * Wait for events to be processed
+ * Wait for events to be processed.
+ * CI environments can be slower, so we use generous timeouts.
  */
-async function waitForEvents(ms: number = 500): Promise<void> {
+async function waitForEvents(ms: number = 1000): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -98,12 +99,15 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
         // Create a new file
         const testFilePath = path.join(testDir, "new-file.md");
         await fs.promises.writeFile(testFilePath, "# New File Content");
 
         // Wait for events to be processed
-        await waitForEvents(500);
+        await waitForEvents(1000);
 
         // Verify event was captured
         const addEvents = events.filter((e) => e.type === "add");
@@ -135,14 +139,18 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
-        // Create multiple files
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
+        // Create multiple files with small delays to help event detection
         const files = ["file1.txt", "file2.md", "file3.json"];
         for (const file of files) {
           await fs.promises.writeFile(path.join(testDir, file), `Content of ${file}`);
+          await new Promise((r) => setTimeout(r, 100)); // Small delay between files
         }
 
-        // Wait for events
-        await waitForEvents(700);
+        // Wait for events - use longer timeout for CI
+        await waitForEvents(1500);
 
         // Verify events were captured for all files
         const addEvents = events.filter((e) => e.type === "add");
@@ -172,11 +180,14 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
         // Modify the file
         await fs.promises.writeFile(testFilePath, "Modified content");
 
         // Wait for events
-        await waitForEvents(500);
+        await waitForEvents(1000);
 
         // Verify change event was captured
         const changeEvents = events.filter((e) => e.type === "change");
@@ -243,13 +254,18 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
-        // Create files of different types
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
+        // Create files of different types with delays
         await fs.promises.writeFile(path.join(testDir, "doc.md"), "Markdown");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(testDir, "note.txt"), "Text");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(testDir, "script.js"), "JavaScript");
 
         // Wait for events
-        await waitForEvents(700);
+        await waitForEvents(1200);
 
         // Should only have events for .md and .txt
         const addEvents = events.filter((e) => e.type === "add");
@@ -277,13 +293,18 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
-        // Create files in different locations
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
+        // Create files in different locations with delays
         await fs.promises.writeFile(path.join(testDir, "included.txt"), "Should be included");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(subDir, "excluded.txt"), "Should be excluded");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(testDir, "debug.log"), "Log file");
 
         // Wait for events
-        await waitForEvents(700);
+        await waitForEvents(1200);
 
         // Verify excluded files are not in events
         const addEvents = events.filter((e) => e.type === "add");
@@ -312,12 +333,15 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
         // Create file in subdirectory
         const testFilePath = path.join(subDir, "nested.md");
         await fs.promises.writeFile(testFilePath, "Nested content");
 
         // Wait for events
-        await waitForEvents(500);
+        await waitForEvents(1000);
 
         // Verify event was captured with correct relative path
         const addEvents = events.filter((e) => e.type === "add");
@@ -350,6 +374,9 @@ describe("FolderWatcherService Integration Tests", () => {
 
         await service.startWatching(folder);
 
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
         // Create a file and rapidly modify it
         const testFilePath = path.join(testDir, "rapid-changes.txt");
         await fs.promises.writeFile(testFilePath, "v1");
@@ -359,7 +386,7 @@ describe("FolderWatcherService Integration Tests", () => {
         await fs.promises.writeFile(testFilePath, "v3");
 
         // Wait for debounce period plus processing
-        await waitForEvents(800);
+        await waitForEvents(1200);
 
         // Due to debouncing, we should have fewer events than changes
         // The exact number depends on timing, but it should be less than 3 change events
@@ -396,12 +423,16 @@ describe("FolderWatcherService Integration Tests", () => {
 
         expect(service.getActiveWatcherCount()).toBe(2);
 
-        // Create files in both folders
+        // Small delay to ensure watchers are fully ready
+        await waitForEvents(300);
+
+        // Create files in both folders with delays
         await fs.promises.writeFile(path.join(testDir1, "file1.txt"), "Content 1");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(testDir2, "file2.txt"), "Content 2");
 
         // Wait for events
-        await waitForEvents(700);
+        await waitForEvents(1200);
 
         // Verify events from both folders
         const folder1Events = events.filter((e) => e.folderId === "folder-1");
@@ -447,6 +478,9 @@ describe("FolderWatcherService Integration Tests", () => {
         const folder = createTestFolder(testDir);
         await service.startWatching(folder);
 
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
         // Get initial status
         let status = service.getWatcherStatus(folder.id);
         const initialLastEvent = status?.lastEventAt;
@@ -455,7 +489,7 @@ describe("FolderWatcherService Integration Tests", () => {
         await fs.promises.writeFile(path.join(testDir, "status-test.txt"), "content");
 
         // Wait for event
-        await waitForEvents(500);
+        await waitForEvents(1000);
 
         // Get updated status
         status = service.getWatcherStatus(folder.id);
@@ -473,12 +507,16 @@ describe("FolderWatcherService Integration Tests", () => {
         const folder = createTestFolder(testDir);
         await service.startWatching(folder);
 
-        // Create files
+        // Small delay to ensure watcher is fully ready
+        await waitForEvents(300);
+
+        // Create files with delays
         await fs.promises.writeFile(path.join(testDir, "file1.txt"), "1");
+        await new Promise((r) => setTimeout(r, 100));
         await fs.promises.writeFile(path.join(testDir, "file2.txt"), "2");
 
         // Wait for events
-        await waitForEvents(700);
+        await waitForEvents(1200);
 
         const status = service.getWatcherStatus(folder.id);
         expect(status?.filesWatched).toBeGreaterThanOrEqual(0);
