@@ -1,15 +1,20 @@
 /**
  * @module graph/errors
  *
- * Custom error classes for Neo4j knowledge graph operations.
+ * Custom error classes for graph database operations.
  *
  * These error classes provide structured error handling for graph operations,
  * making it easier to diagnose issues and handle different failure scenarios.
  * The error hierarchy follows the pattern established in storage/errors.ts
  * and providers/errors.ts.
  *
+ * The errors are database-agnostic and work with any graph storage adapter
+ * (Neo4j, FalkorDB, etc.).
+ *
  * @see {@link file://./../../docs/architecture/adr/0002-knowledge-graph-architecture.md} ADR-0002
  */
+
+import type { GraphAdapterType } from "./adapters/types.js";
 
 // =============================================================================
 // Base Error Class
@@ -459,4 +464,104 @@ export function mapNeo4jError(error: Error): GraphError {
 
   // Default to base GraphError
   return new GraphError(error.message, "UNKNOWN_ERROR", error, false);
+}
+
+/**
+ * Map FalkorDB/Redis errors to typed GraphError classes
+ *
+ * FalkorDB uses Redis protocol and has different error patterns than Neo4j.
+ *
+ * @param error - The original FalkorDB/Redis driver error
+ * @returns A typed GraphError subclass
+ */
+function mapFalkorDbError(error: Error): GraphError {
+  const message = error.message.toLowerCase();
+
+  // Authentication errors
+  if (
+    message.includes("noauth") ||
+    message.includes("authentication") ||
+    message.includes("wrongpass") ||
+    message.includes("invalid password")
+  ) {
+    return new GraphAuthenticationError(error.message, error);
+  }
+
+  // Connection errors
+  if (
+    message.includes("connection") ||
+    message.includes("econnrefused") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout") ||
+    message.includes("socket") ||
+    message.includes("redis")
+  ) {
+    return new GraphConnectionError(error.message, error);
+  }
+
+  // Timeout errors
+  if (message.includes("timeout") || message.includes("timed out")) {
+    const timeoutMatch = message.match(/(\d+)\s*(ms|milliseconds|seconds)/i);
+    let timeoutMs = 30000;
+    if (timeoutMatch && timeoutMatch[1] && timeoutMatch[2]) {
+      const value = parseInt(timeoutMatch[1], 10);
+      const unit = timeoutMatch[2].toLowerCase();
+      timeoutMs = value * (unit.startsWith("s") ? 1000 : 1);
+    }
+    return new GraphQueryTimeoutError(error.message, timeoutMs, error);
+  }
+
+  // Graph/Cypher errors
+  if (message.includes("syntax") || message.includes("cypher") || message.includes("graph.query")) {
+    return new GraphQueryError(error.message, undefined, error, false);
+  }
+
+  // Constraint/uniqueness errors
+  if (message.includes("constraint") || message.includes("already exists")) {
+    return new NodeConstraintError(error.message, undefined, undefined, error);
+  }
+
+  // Default to base GraphError
+  return new GraphError(error.message, "UNKNOWN_ERROR", error, false);
+}
+
+/**
+ * Create a typed error from a graph database driver error
+ *
+ * This helper maps database-specific driver errors to our typed error classes
+ * for consistent error handling throughout the application. It dispatches to
+ * the appropriate mapper based on the adapter type.
+ *
+ * @param error - The original driver error
+ * @param adapterType - The graph adapter type (defaults to 'neo4j' for backward compatibility)
+ * @returns A typed GraphError subclass
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await adapter.runQuery(cypher);
+ * } catch (error) {
+ *   throw mapGraphError(error instanceof Error ? error : new Error(String(error)), 'neo4j');
+ * }
+ * ```
+ */
+export function mapGraphError(error: Error, adapterType: GraphAdapterType = "neo4j"): GraphError {
+  switch (adapterType) {
+    case "neo4j":
+      return mapNeo4jError(error);
+
+    case "falkordb":
+      return mapFalkorDbError(error);
+
+    default: {
+      // TypeScript exhaustiveness check
+      const _exhaustiveCheck: never = adapterType;
+      return new GraphError(
+        `Unknown adapter type: ${String(_exhaustiveCheck)}`,
+        "UNKNOWN_ADAPTER",
+        error,
+        false
+      );
+    }
+  }
 }

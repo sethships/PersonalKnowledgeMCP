@@ -5,7 +5,7 @@
  *
  * This module provides the public API for:
  * - AST parsing and entity extraction (parsing submodule)
- * - Neo4j knowledge graph operations (types, errors)
+ * - Graph database operations via the adapter pattern (supports Neo4j, FalkorDB)
  *
  * The knowledge graph complements ChromaDB vector search by storing explicit
  * relationships between code entities (functions, classes, modules) enabling
@@ -16,22 +16,26 @@
  * @example
  * ```typescript
  * import {
- *   Neo4jStorageClient,
- *   Neo4jConfig,
+ *   createGraphAdapter,
+ *   type GraphStorageAdapter,
+ *   type GraphStorageConfig,
  *   GraphTraverseInput,
  *   RelationshipType,
  *   GraphError,
  * } from "./graph/index.js";
  *
- * const config: Neo4jConfig = {
+ * const config: GraphStorageConfig = {
  *   host: "localhost",
  *   port: 7687,
  *   username: "neo4j",
- *   password: process.env.NEO4J_PASSWORD,
+ *   password: process.env.GRAPH_DB_PASSWORD,
  * };
  *
- * // Use the client (implementation in separate issue)
- * const result = await client.traverse({
+ * // Create adapter using factory function
+ * const adapter = createGraphAdapter('neo4j', config);
+ * await adapter.connect();
+ *
+ * const result = await adapter.traverse({
  *   startNode: { type: "function", identifier: "searchService" },
  *   relationships: [RelationshipType.CALLS],
  *   depth: 2,
@@ -52,9 +56,24 @@ export * from "./parsing/index.js";
 export * from "./extraction/index.js";
 
 // =============================================================================
-// Configuration Types
+// Adapter Module (Database-agnostic adapter interface)
 // =============================================================================
 
+export { createGraphAdapter } from "./adapters/index.js";
+
+export type {
+  GraphAdapterType,
+  GraphStorageConfig,
+  GraphStorageAdapter,
+} from "./adapters/types.js";
+
+// =============================================================================
+// Configuration Types (Deprecated - use GraphStorageConfig instead)
+// =============================================================================
+
+/**
+ * @deprecated Use GraphStorageConfig from './adapters/types.js' instead
+ */
 export type { Neo4jConfig } from "./types.js";
 
 // =============================================================================
@@ -115,9 +134,12 @@ export type {
 } from "./types.js";
 
 // =============================================================================
-// Client Interface
+// Client Interface (Deprecated - use GraphStorageAdapter instead)
 // =============================================================================
 
+/**
+ * @deprecated Use GraphStorageAdapter from './adapters/types.js' instead
+ */
 export type { Neo4jStorageClient } from "./types.js";
 
 // =============================================================================
@@ -148,7 +170,7 @@ export {
 // Error Utilities
 // =============================================================================
 
-export { isRetryableGraphError, mapNeo4jError } from "./errors.js";
+export { isRetryableGraphError, mapNeo4jError, mapGraphError } from "./errors.js";
 
 // Schema Module
 // =============================================================================

@@ -50,21 +50,21 @@ export async function healthCommand(deps: CliDependencies): Promise<void> {
     });
   }
 
-  // Check Neo4j (optional - only if configured)
-  if (deps.neo4jClient) {
-    const neo4jStart = performance.now();
+  // Check Graph Database (optional - only if configured)
+  if (deps.graphAdapter) {
+    const graphStart = performance.now();
     try {
-      const isHealthy = await deps.neo4jClient.healthCheck();
+      const isHealthy = await deps.graphAdapter.healthCheck();
       results.push({
-        name: "Neo4j",
+        name: "Graph Database",
         healthy: isHealthy,
-        durationMs: performance.now() - neo4jStart,
+        durationMs: performance.now() - graphStart,
       });
     } catch (error) {
       results.push({
-        name: "Neo4j",
+        name: "Graph Database",
         healthy: false,
-        durationMs: performance.now() - neo4jStart,
+        durationMs: performance.now() - graphStart,
         error: error instanceof Error ? error.message : String(error),
       });
     }
