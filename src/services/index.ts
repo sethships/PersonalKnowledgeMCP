@@ -183,3 +183,45 @@ export type {
 } from "./graph-metrics-types.js";
 export { GRAPH_QUERY_TYPES } from "./graph-metrics-types.js";
 export { GraphMetricsCollector, graphMetricsCollector } from "./graph-metrics-collector.js";
+
+// FolderWatcherService exports
+export { FolderWatcherService } from "./folder-watcher-service.js";
+export type {
+  WatchedFolder,
+  FileEvent,
+  FileEventType,
+  WatcherStatus,
+  WatcherInfo,
+  FileEventHandler,
+  ErrorHandler,
+  FolderWatcherConfig,
+} from "./folder-watcher-types.js";
+export { DEFAULT_FOLDER_WATCHER_CONFIG } from "./folder-watcher-types.js";
+export {
+  FolderWatcherError,
+  FolderNotFoundError,
+  FolderAlreadyWatchedError,
+  WatcherInitializationError,
+  FolderNotWatchedError,
+  InvalidPatternError,
+  WatcherOperationError,
+  MaxWatchersExceededError,
+  isFolderWatcherError,
+  isRetryableFolderWatcherError,
+} from "./folder-watcher-errors.js";
+export {
+  WatchFolderOptionsSchema,
+  FolderWatcherConfigSchema,
+  FolderIdSchema,
+  GlobPatternSchema,
+  validateWatchFolderOptions,
+  validateFolderWatcherConfig,
+  safeValidateWatchFolderOptions,
+  safeValidateFolderWatcherConfig,
+} from "./folder-watcher-validation.js";
+export type {
+  ValidatedWatchFolderOptions,
+  ValidatedFolderWatcherConfig,
+  ValidatedFolderId,
+  ValidatedGlobPattern,
+} from "./folder-watcher-validation.js";
