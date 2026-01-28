@@ -422,7 +422,23 @@ See:
 - **Discussions**: Use GitHub Discussions for questions
 - **Issues**: Search existing issues before creating new ones
 
-## Developer Certificate of OriginThis project uses the Developer Certificate of Origin (DCO) to ensure contributors have the right to submit their contributions. By making a contribution to this project, you certify that:1. The contribution was created in whole or in part by you and you have the right to submit it under the open source license indicated in the file; or2. The contribution is based upon previous work that, to the best of your knowledge, is covered under an appropriate open source license and you have the right under that license to submit that work with modifications; or3. The contribution was provided directly to you by some other person who certified (1) or (2) and you have not modified it.You can signify your acceptance of the DCO by adding a `Signed-off-by` line to your commit messages:```Signed-off-by: Your Name <your.email@example.com>```You can do this automatically with `git commit -s`.
+## Developer Certificate of Origin
+
+This project uses the Developer Certificate of Origin (DCO) to ensure contributors have the right to submit their contributions. By making a contribution to this project, you certify that:
+
+1. The contribution was created in whole or in part by you and you have the right to submit it under the open source license indicated in the file; or
+
+2. The contribution is based upon previous work that, to the best of your knowledge, is covered under an appropriate open source license and you have the right under that license to submit that work with modifications; or
+
+3. The contribution was provided directly to you by some other person who certified (1) or (2) and you have not modified it.
+
+You can signify your acceptance of the DCO by adding a `Signed-off-by` line to your commit messages:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+You can do this automatically with `git commit -s`.
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same license as the project (MIT License).

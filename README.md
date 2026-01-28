@@ -896,7 +896,16 @@ The project maintains **90% minimum test coverage** across all components.
 - **No Credential Logging**: API keys and tokens never logged or exposed in errors
 - **Bearer Token Auth**: Scoped tokens with configurable expiration
 - **Rate Limiting**: Configurable per-minute/per-hour request limits
-### Data Privacy**Local Processing by Default**: Personal Knowledge MCP processes all data locally using Transformers.js embeddings. No external API calls are required for basic functionality.**Optional OpenAI Usage**: When using OpenAI embeddings:- Code snippets are sent to OpenAI API for embedding generation- The service sets `X-OpenAI-Data-Usage: off` header to opt out of training- For sensitive code, use local providers (Transformers.js or Ollama)**No Telemetry**: The application does not collect usage telemetry. ChromaDB telemetry is explicitly disabled in the default configuration.
+### Data Privacy
+
+**Local Processing by Default**: Personal Knowledge MCP processes all data locally using Transformers.js embeddings. No external API calls are required for basic functionality.
+
+**Optional OpenAI Usage**: When using OpenAI embeddings:
+- Code snippets are sent to OpenAI API for embedding generation
+- The service sets `X-OpenAI-Data-Usage: off` header to opt out of training
+- For sensitive code, use local providers (Transformers.js or Ollama)
+
+**No Telemetry**: The application does not collect usage telemetry. ChromaDB telemetry is explicitly disabled in the default configuration.
 
 ### ChromaDB Authentication
 

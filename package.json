@@ -42,7 +42,7 @@
     "ai-assistant",
     "bun"
   ],
-  "author": "Seth Buchanan",
+  "author": "Seth Bibler",
   "license": "MIT",
   "bin": {
     "pk-mcp": "./dist/cli.js"
