@@ -28,7 +28,7 @@ import {
   startStreamableSessionCleanup,
 } from "./http/index.js";
 import { loadInstanceConfig, getEnabledInstances } from "./config/index.js";
-import { Neo4jStorageClientImpl } from "./graph/Neo4jClient.js";
+import { createGraphAdapter } from "./graph/adapters/index.js";
 import type { GraphStorageAdapter } from "./graph/adapters/types.js";
 import { createInstanceRouter } from "./mcp/instance-router.js";
 
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
     if (neo4jPassword) {
       try {
         logger.info("Initializing graph adapter");
-        graphAdapter = new Neo4jStorageClientImpl({
+        graphAdapter = createGraphAdapter("neo4j", {
           host: Bun.env["NEO4J_HOST"] || "localhost",
           port: parseInt(Bun.env["NEO4J_BOLT_PORT"] || "7687", 10),
           username: Bun.env["NEO4J_USER"] || "neo4j",

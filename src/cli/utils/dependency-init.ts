@@ -29,7 +29,7 @@ import { IncrementalUpdateCoordinator } from "../../services/incremental-update-
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
-import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
+import { createGraphAdapter } from "../../graph/adapters/index.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -298,7 +298,7 @@ export async function initializeDependencies(
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
     if (neo4jPassword) {
       try {
-        graphAdapter = new Neo4jStorageClientImpl({
+        graphAdapter = createGraphAdapter("neo4j", {
           host: Bun.env["NEO4J_HOST"] || "localhost",
           port: parseIntEnv("NEO4J_BOLT_PORT", 7687),
           username: Bun.env["NEO4J_USER"] || "neo4j",
