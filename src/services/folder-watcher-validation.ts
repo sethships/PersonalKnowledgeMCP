@@ -7,8 +7,18 @@
  * and watch options using Zod schemas.
  */
 
-import * as path from "node:path";
 import { z } from "zod";
+
+/**
+ * Cross-platform absolute path validation.
+ * Node's path.isAbsolute() is platform-specific and won't recognize Windows paths on Linux.
+ * This regex handles both Windows (C:\, D:/, \\server\) and Unix (/) absolute paths.
+ */
+function isAbsolutePathCrossPlatform(p: string): boolean {
+  // Windows: C:\... or C:/... or \\server\... or //server/...
+  // Unix: /...
+  return /^([a-zA-Z]:[/\\]|[/\\]{2}|[/])/.test(p);
+}
 
 // =============================================================================
 // Watch Options Schema
@@ -24,7 +34,7 @@ export const WatchFolderOptionsSchema = z.object({
   path: z
     .string()
     .min(1, "Path is required")
-    .refine((p) => path.isAbsolute(p), { message: "Path must be an absolute path" }),
+    .refine(isAbsolutePathCrossPlatform, { message: "Path must be an absolute path" }),
 
   /**
    * Display name for the folder

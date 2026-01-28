@@ -63,11 +63,14 @@ describe("FolderWatcherService", () => {
   });
 
   afterEach(async () => {
-    // Stop all watchers
+    // Stop all watchers with timeout to prevent hanging
     try {
-      await service.stopAllWatchers();
+      await Promise.race([
+        service.stopAllWatchers(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Cleanup timeout")), 3000)),
+      ]);
     } catch {
-      // Ignore cleanup errors
+      // Ignore cleanup errors and timeouts
     }
 
     // Clean up test directory
