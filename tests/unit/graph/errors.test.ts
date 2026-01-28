@@ -20,6 +20,7 @@ import {
   TraversalLimitError,
   isRetryableGraphError,
   mapNeo4jError,
+  mapGraphError,
 } from "../../../src/graph/errors.js";
 
 describe("GraphError", () => {
@@ -475,5 +476,122 @@ describe("mapNeo4jError", () => {
     expect(mapped.code).toBe("UNKNOWN_ERROR");
     expect(mapped.retryable).toBe(false);
     expect(mapped.cause).toBe(error);
+  });
+});
+
+describe("mapGraphError", () => {
+  describe("with Neo4j adapter type (default)", () => {
+    test("should delegate to mapNeo4jError when type is 'neo4j'", () => {
+      const error = new Error("authentication failed");
+      const mapped = mapGraphError(error, "neo4j");
+
+      expect(mapped).toBeInstanceOf(GraphAuthenticationError);
+    });
+
+    test("should use 'neo4j' as default adapter type", () => {
+      const error = new Error("connection refused");
+      const mapped = mapGraphError(error);
+
+      expect(mapped).toBeInstanceOf(GraphConnectionError);
+    });
+
+    test("should map all Neo4j error types correctly", () => {
+      // Test various error patterns
+      expect(mapGraphError(new Error("authentication failed"))).toBeInstanceOf(
+        GraphAuthenticationError
+      );
+      expect(mapGraphError(new Error("ECONNREFUSED"))).toBeInstanceOf(GraphConnectionError);
+      expect(mapGraphError(new Error("Query timeout"))).toBeInstanceOf(GraphQueryTimeoutError);
+      expect(mapGraphError(new Error("constraint violation"))).toBeInstanceOf(NodeConstraintError);
+      expect(mapGraphError(new Error("schema error"))).toBeInstanceOf(GraphSchemaError);
+      expect(mapGraphError(new Error("Cypher syntax error"))).toBeInstanceOf(GraphQueryError);
+    });
+  });
+
+  describe("with FalkorDB adapter type", () => {
+    test("should map FalkorDB authentication errors", () => {
+      const patterns = ["NOAUTH", "wrongpass", "invalid password"];
+
+      for (const pattern of patterns) {
+        const error = new Error(pattern);
+        const mapped = mapGraphError(error, "falkordb");
+
+        expect(mapped).toBeInstanceOf(GraphAuthenticationError);
+        expect(mapped.cause).toBe(error);
+      }
+    });
+
+    test("should map FalkorDB connection errors", () => {
+      const patterns = ["connection refused", "ECONNREFUSED", "redis connection failed"];
+
+      for (const pattern of patterns) {
+        const error = new Error(pattern);
+        const mapped = mapGraphError(error, "falkordb");
+
+        expect(mapped).toBeInstanceOf(GraphConnectionError);
+        expect(mapped.cause).toBe(error);
+      }
+    });
+
+    test("should map FalkorDB timeout errors", () => {
+      const error = new Error("Query timeout after 5000 ms");
+      const mapped = mapGraphError(error, "falkordb");
+
+      expect(mapped).toBeInstanceOf(GraphQueryTimeoutError);
+      expect((mapped as GraphQueryTimeoutError).timeoutMs).toBe(5000);
+    });
+
+    test("should map FalkorDB graph query errors", () => {
+      const patterns = ["GRAPH.QUERY syntax error", "Cypher parse error"];
+
+      for (const pattern of patterns) {
+        const error = new Error(pattern);
+        const mapped = mapGraphError(error, "falkordb");
+
+        expect(mapped).toBeInstanceOf(GraphQueryError);
+      }
+    });
+
+    test("should map FalkorDB constraint errors", () => {
+      const error = new Error("Node already exists with unique property");
+      const mapped = mapGraphError(error, "falkordb");
+
+      expect(mapped).toBeInstanceOf(NodeConstraintError);
+    });
+
+    test("should map unknown FalkorDB errors to base GraphError", () => {
+      const error = new Error("Unknown FalkorDB error");
+      const mapped = mapGraphError(error, "falkordb");
+
+      expect(mapped).toBeInstanceOf(GraphError);
+      expect(mapped.code).toBe("UNKNOWN_ERROR");
+      expect(mapped.retryable).toBe(false);
+    });
+  });
+
+  describe("adapter type dispatching", () => {
+    test("should correctly dispatch based on adapter type", () => {
+      // WRONGPASS is a FalkorDB/Redis-specific error pattern
+      const error = new Error("WRONGPASS - bad credentials");
+
+      // FalkorDB should recognize WRONGPASS as auth error
+      const falkorMapped = mapGraphError(error, "falkordb");
+      expect(falkorMapped).toBeInstanceOf(GraphAuthenticationError);
+
+      // Neo4j would not recognize WRONGPASS, so it maps to unknown
+      const neo4jMapped = mapGraphError(error, "neo4j");
+      expect(neo4jMapped.code).toBe("UNKNOWN_ERROR");
+    });
+
+    test("should handle errors consistently across adapters for common patterns", () => {
+      // Common connection error patterns should work for both
+      const connectionError = new Error("ECONNREFUSED 127.0.0.1:7687");
+
+      const neo4jMapped = mapGraphError(connectionError, "neo4j");
+      const falkorMapped = mapGraphError(connectionError, "falkordb");
+
+      expect(neo4jMapped).toBeInstanceOf(GraphConnectionError);
+      expect(falkorMapped).toBeInstanceOf(GraphConnectionError);
+    });
   });
 });

@@ -1,8 +1,8 @@
 /**
- * Graph Populate All Command - Populate Neo4j knowledge graph for all indexed repositories
+ * Graph Populate All Command - Populate knowledge graph for all indexed repositories
  *
  * Iterates through all indexed repositories with status "ready" and populates
- * their Neo4j knowledge graphs. Continues on individual repository failures
+ * their knowledge graphs. Continues on individual repository failures
  * and provides a summary report on completion.
  *
  * @example
@@ -24,16 +24,19 @@ import chalk from "chalk";
 import ora from "ora";
 import Table from "cli-table3";
 import { stat } from "fs/promises";
-import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../graph/adapters/index.js";
 import { GraphIngestionService } from "../../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
 import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
-import type { Neo4jConfig } from "../../graph/types.js";
 import type { GraphIngestionProgress, GraphIngestionStats } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateAllOptions } from "../utils/validation.js";
-import { getNeo4jConfig } from "../utils/neo4j-config.js";
+import { getGraphConfig } from "../utils/neo4j-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -184,10 +187,10 @@ export async function graphPopulateAllCommand(
 ): Promise<void> {
   const { force = false, json = false } = options;
 
-  // Step 1: Get Neo4j config (fail early if not configured)
-  let config: Neo4jConfig;
+  // Step 1: Get graph config (fail early if not configured)
+  let config: GraphStorageConfig;
   try {
-    config = getNeo4jConfig();
+    config = getGraphConfig();
   } catch (error) {
     if (json) {
       console.log(
@@ -225,32 +228,32 @@ export async function graphPopulateAllCommand(
     console.log(chalk.bold(`\nPopulating ${readyRepos.length} repositories...\n`));
   }
 
-  // Step 3: Connect to Neo4j (once for all repositories)
-  let client: Neo4jStorageClientImpl | null = null;
+  // Step 3: Connect to graph database (once for all repositories)
+  let adapter: GraphStorageAdapter | null = null;
   const results: GraphPopulateAllResult[] = [];
 
   try {
     if (!json) {
       const connectSpinner = ora({
-        text: "Connecting to Neo4j...",
+        text: "Connecting to graph database...",
         spinner: "dots",
       }).start();
 
-      client = new Neo4jStorageClientImpl(config);
-      await client.connect();
+      adapter = createGraphAdapter("neo4j", config);
+      await adapter.connect();
 
-      connectSpinner.succeed("Connected to Neo4j");
+      connectSpinner.succeed("Connected to graph database");
       console.log();
     } else {
-      client = new Neo4jStorageClientImpl(config);
-      await client.connect();
+      adapter = createGraphAdapter("neo4j", config);
+      await adapter.connect();
     }
 
     // Step 4: Create shared extractors and ingestion service
     const entityExtractor = new EntityExtractor();
     const relationshipExtractor = new RelationshipExtractor();
     const ingestionService = new GraphIngestionService(
-      client,
+      adapter,
       entityExtractor,
       relationshipExtractor
     );
@@ -385,10 +388,10 @@ export async function graphPopulateAllCommand(
       }
     }
   } finally {
-    // Step 6: Disconnect from Neo4j
-    if (client) {
+    // Step 6: Disconnect from graph database
+    if (adapter) {
       try {
-        await client.disconnect();
+        await adapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

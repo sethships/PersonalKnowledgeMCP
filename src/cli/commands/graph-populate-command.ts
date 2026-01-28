@@ -1,9 +1,9 @@
 /**
- * Graph Populate Command - Populate Neo4j knowledge graph from indexed repository
+ * Graph Populate Command - Populate knowledge graph from indexed repository
  *
  * Reads files from an already-indexed repository's local clone, parses them
  * using tree-sitter, extracts entities and relationships, and stores them
- * in the Neo4j knowledge graph.
+ * in the knowledge graph.
  *
  * @example
  * ```bash
@@ -23,16 +23,19 @@
 import chalk from "chalk";
 import ora from "ora";
 import { stat } from "fs/promises";
-import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../graph/adapters/index.js";
 import { GraphIngestionService } from "../../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
 import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
-import type { Neo4jConfig } from "../../graph/types.js";
 import type { GraphIngestionProgress } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateOptions } from "../utils/validation.js";
-import { getNeo4jConfig } from "../utils/neo4j-config.js";
+import { getGraphConfig } from "../utils/neo4j-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -60,10 +63,10 @@ export async function graphPopulateCommand(
 ): Promise<void> {
   const { force = false, json = false } = options;
 
-  // Get Neo4j config
-  let config: Neo4jConfig;
+  // Get graph config
+  let config: GraphStorageConfig;
   try {
-    config = getNeo4jConfig();
+    config = getGraphConfig();
   } catch (error) {
     if (json) {
       console.log(
@@ -90,7 +93,7 @@ export async function graphPopulateCommand(
     spinner.start();
   }
 
-  let client: Neo4jStorageClientImpl | null = null;
+  let adapter: GraphStorageAdapter | null = null;
 
   try {
     // Step 1: Look up repository metadata
@@ -155,23 +158,23 @@ export async function graphPopulateCommand(
     }
 
     if (!json) {
-      spinner.text = "Connecting to Neo4j...";
+      spinner.text = "Connecting to graph database...";
       spinner.start();
     }
 
-    // Step 3: Connect to Neo4j
-    client = new Neo4jStorageClientImpl(config);
-    await client.connect();
+    // Step 3: Connect to graph database
+    adapter = createGraphAdapter("neo4j", config);
+    await adapter.connect();
 
     if (!json) {
-      spinner.succeed("Connected to Neo4j");
+      spinner.succeed("Connected to graph database");
     }
 
     // Step 4: Create ingestion service
     const entityExtractor = new EntityExtractor();
     const relationshipExtractor = new RelationshipExtractor();
     const ingestionService = new GraphIngestionService(
-      client,
+      adapter,
       entityExtractor,
       relationshipExtractor
     );
@@ -269,10 +272,10 @@ export async function graphPopulateCommand(
 
     process.exit(1);
   } finally {
-    // Disconnect from Neo4j
-    if (client) {
+    // Disconnect from graph database
+    if (adapter) {
       try {
-        await client.disconnect();
+        await adapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

@@ -1,7 +1,7 @@
 /**
- * Graph Migrate Command - Manage Neo4j schema migrations
+ * Graph Migrate Command - Manage graph database schema migrations
  *
- * Applies schema migrations to the Neo4j knowledge graph, including
+ * Applies schema migrations to the knowledge graph, including
  * constraints and indexes for optimal performance.
  *
  * @example
@@ -24,11 +24,14 @@
 
 import chalk from "chalk";
 import ora from "ora";
-import { Neo4jStorageClientImpl } from "../../graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../graph/adapters/index.js";
 import { MigrationRunner, registerAllMigrations } from "../../graph/migration/index.js";
-import type { Neo4jConfig } from "../../graph/types.js";
 import type { ValidatedGraphMigrateOptions } from "../utils/validation.js";
-import { getNeo4jConfig } from "../utils/neo4j-config.js";
+import { getGraphConfig } from "../utils/neo4j-config.js";
 
 /**
  * Execute graph migrate command
@@ -38,10 +41,10 @@ import { getNeo4jConfig } from "../utils/neo4j-config.js";
 export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions): Promise<void> {
   const { dryRun = false, force = false, status = false, json = false } = options;
 
-  // Get Neo4j config and create client
-  let config: Neo4jConfig;
+  // Get graph config and create adapter
+  let config: GraphStorageConfig;
   try {
-    config = getNeo4jConfig();
+    config = getGraphConfig();
   } catch (error) {
     if (json) {
       console.log(
@@ -60,7 +63,7 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
   }
 
   const spinner = ora({
-    text: "Connecting to Neo4j...",
+    text: "Connecting to graph database...",
     color: "cyan",
   });
 
@@ -68,19 +71,19 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
     spinner.start();
   }
 
-  let client: Neo4jStorageClientImpl | null = null;
+  let adapter: GraphStorageAdapter | null = null;
 
   try {
-    // Create client and connect
-    client = new Neo4jStorageClientImpl(config);
-    await client.connect();
+    // Create adapter and connect
+    adapter = createGraphAdapter("neo4j", config);
+    await adapter.connect();
 
     if (!json) {
-      spinner.succeed("Connected to Neo4j");
+      spinner.succeed("Connected to graph database");
     }
 
     // Create migration runner and register migrations
-    const runner = new MigrationRunner(client);
+    const runner = new MigrationRunner(adapter);
     registerAllMigrations(runner);
 
     // Status-only mode
@@ -191,10 +194,10 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
 
     process.exit(1);
   } finally {
-    // Disconnect from Neo4j
-    if (client) {
+    // Disconnect from graph database
+    if (adapter) {
       try {
-        await client.disconnect();
+        await adapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

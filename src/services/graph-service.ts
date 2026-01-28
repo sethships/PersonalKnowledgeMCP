@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 import type { Logger } from "pino";
-import type { Neo4jStorageClient } from "../graph/types.js";
+import type { GraphStorageAdapter } from "../graph/adapters/types.js";
 import { RelationshipType } from "../graph/types.js";
 import { isRetryableGraphError } from "../graph/errors.js";
 import { getComponentLogger } from "../logging/index.js";
@@ -97,7 +97,7 @@ export const DEFAULT_GRAPH_SERVICE_CONFIG: GraphServiceConfig = {
  *
  * @example
  * ```typescript
- * const graphService = new GraphServiceImpl(neo4jClient);
+ * const graphService = new GraphServiceImpl(graphAdapter);
  *
  * // Find what a file depends on
  * const deps = await graphService.getDependencies({
@@ -128,11 +128,11 @@ export class GraphServiceImpl implements GraphService {
   /**
    * Create a new GraphService instance
    *
-   * @param neo4jClient - Neo4j storage client for graph operations
+   * @param graphAdapter - Graph storage adapter for graph operations
    * @param config - Optional configuration overrides
    */
   constructor(
-    private readonly neo4jClient: Neo4jStorageClient,
+    private readonly graphAdapter: GraphStorageAdapter,
     config: Partial<GraphServiceConfig> = {}
   ) {
     this.config = {
@@ -528,7 +528,7 @@ export class GraphServiceImpl implements GraphService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      return await this.neo4jClient.healthCheck();
+      return await this.graphAdapter.healthCheck();
     } catch (error) {
       this.logger.error({ err: error }, "GraphService health check failed");
       return false;
@@ -619,7 +619,7 @@ export class GraphServiceImpl implements GraphService {
    */
   private async executeDependencyQuery(query: ValidatedDependencyQuery): Promise<DependencyResult> {
     // Map to Neo4jClient analyzeDependencies with "dependsOn" direction
-    const result = await this.neo4jClient.analyzeDependencies({
+    const result = await this.graphAdapter.analyzeDependencies({
       target: {
         type: query.entity_type,
         identifier: query.entity_path,
@@ -672,7 +672,7 @@ export class GraphServiceImpl implements GraphService {
    */
   private async executeDependentQuery(query: ValidatedDependentQuery): Promise<DependentResult> {
     // Map to Neo4jClient analyzeDependencies with "dependedOnBy" direction
-    const result = await this.neo4jClient.analyzeDependencies({
+    const result = await this.graphAdapter.analyzeDependencies({
       target: {
         type: query.entity_type,
         identifier: query.entity_path,
@@ -740,7 +740,7 @@ export class GraphServiceImpl implements GraphService {
       ? (query.relationship_types as RelationshipType[])
       : [RelationshipType.IMPORTS, RelationshipType.CALLS, RelationshipType.REFERENCES];
 
-    const result = await this.neo4jClient.traverse({
+    const result = await this.graphAdapter.traverse({
       startNode: {
         type: query.from_entity.type,
         identifier: query.from_entity.path,
@@ -789,7 +789,7 @@ export class GraphServiceImpl implements GraphService {
     const cypher = this.buildArchitectureCypher(query);
 
     // Execute query
-    const results = await this.neo4jClient.runQuery<Record<string, unknown>>(cypher, {
+    const results = await this.graphAdapter.runQuery<Record<string, unknown>>(cypher, {
       repository: query.repository,
       scope: query.scope ?? "",
     });
@@ -1351,7 +1351,7 @@ export class GraphServiceImpl implements GraphService {
       ORDER BY relCount DESC
     `;
 
-    const results = await this.neo4jClient.runQuery<{
+    const results = await this.graphAdapter.runQuery<{
       fromModule: string;
       toModule: string;
       relCount: number;

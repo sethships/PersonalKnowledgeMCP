@@ -13,7 +13,7 @@ import type { SearchService } from "../../services/types.js";
 import type { IngestionService } from "../../services/ingestion-service.js";
 import type { GitHubClient } from "../../services/github-client-types.js";
 import type { TokenService } from "../../auth/types.js";
-import type { Neo4jStorageClient } from "../../graph/types.js";
+import type { GraphStorageAdapter } from "../../graph/adapters/types.js";
 import { SearchServiceImpl } from "../../services/search-service.js";
 import { IngestionService as IngestionServiceImpl } from "../../services/ingestion-service.js";
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
@@ -85,8 +85,8 @@ export interface CliDependencies {
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
   tokenService: TokenService;
-  /** Optional Neo4j client for graph database operations (only if configured) */
-  neo4jClient?: Neo4jStorageClient;
+  /** Optional graph adapter for graph database operations (only if configured) */
+  graphAdapter?: GraphStorageAdapter;
   logger: Logger;
 }
 
@@ -293,34 +293,34 @@ export async function initializeDependencies(
     const tokenService = new TokenServiceImpl(tokenStore);
     logger.debug("Token service initialized");
 
-    // Step 13: Initialize Neo4j client (optional - only if configured)
-    let neo4jClient: Neo4jStorageClient | undefined;
+    // Step 13: Initialize graph adapter (optional - only if configured)
+    let graphAdapter: GraphStorageAdapter | undefined;
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
     if (neo4jPassword) {
       try {
-        neo4jClient = new Neo4jStorageClientImpl({
+        graphAdapter = new Neo4jStorageClientImpl({
           host: Bun.env["NEO4J_HOST"] || "localhost",
           port: parseIntEnv("NEO4J_BOLT_PORT", 7687),
           username: Bun.env["NEO4J_USER"] || "neo4j",
           password: neo4jPassword,
         });
-        await neo4jClient.connect();
-        const isHealthy = await neo4jClient.healthCheck();
+        await graphAdapter.connect();
+        const isHealthy = await graphAdapter.healthCheck();
         if (isHealthy) {
-          logger.debug("Neo4j client initialized and healthy");
+          logger.debug("Graph adapter initialized and healthy");
         } else {
-          logger.warn("Neo4j client initialized but health check failed");
+          logger.warn("Graph adapter initialized but health check failed");
         }
       } catch (error) {
-        // Neo4j is optional - log warning but don't fail CLI startup
+        // Graph database is optional - log warning but don't fail CLI startup
         logger.warn(
           { error: error instanceof Error ? error.message : String(error) },
-          "Neo4j initialization failed - graph features will be unavailable"
+          "Graph database initialization failed - graph features will be unavailable"
         );
-        neo4jClient = undefined;
+        graphAdapter = undefined;
       }
     } else {
-      logger.debug("NEO4J_PASSWORD not set - Neo4j features disabled");
+      logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
     }
 
     return {
@@ -333,7 +333,7 @@ export async function initializeDependencies(
       updatePipeline,
       updateCoordinator,
       tokenService,
-      neo4jClient,
+      graphAdapter,
       logger,
     };
   } catch (error) {

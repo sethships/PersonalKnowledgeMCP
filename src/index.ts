@@ -29,7 +29,7 @@ import {
 } from "./http/index.js";
 import { loadInstanceConfig, getEnabledInstances } from "./config/index.js";
 import { Neo4jStorageClientImpl } from "./graph/Neo4jClient.js";
-import type { Neo4jStorageClient } from "./graph/types.js";
+import type { GraphStorageAdapter } from "./graph/adapters/types.js";
 import { createInstanceRouter } from "./mcp/instance-router.js";
 
 // Initialize logger at application startup
@@ -132,35 +132,35 @@ async function main(): Promise<void> {
       "ChromaDB connection established and healthy"
     );
 
-    // Step 3b: Initialize Neo4j client (optional - only if configured)
-    let neo4jClient: Neo4jStorageClient | undefined;
+    // Step 3b: Initialize graph adapter (optional - only if configured)
+    let graphAdapter: GraphStorageAdapter | undefined;
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
     if (neo4jPassword) {
       try {
-        logger.info("Initializing Neo4j client");
-        neo4jClient = new Neo4jStorageClientImpl({
+        logger.info("Initializing graph adapter");
+        graphAdapter = new Neo4jStorageClientImpl({
           host: Bun.env["NEO4J_HOST"] || "localhost",
           port: parseInt(Bun.env["NEO4J_BOLT_PORT"] || "7687", 10),
           username: Bun.env["NEO4J_USER"] || "neo4j",
           password: neo4jPassword,
         });
-        await neo4jClient.connect();
-        const neo4jHealthy = await neo4jClient.healthCheck();
-        if (neo4jHealthy) {
-          logger.info("Neo4j connection established and healthy");
+        await graphAdapter.connect();
+        const graphHealthy = await graphAdapter.healthCheck();
+        if (graphHealthy) {
+          logger.info("Graph database connection established and healthy");
         } else {
-          logger.warn("Neo4j connection established but health check failed");
+          logger.warn("Graph database connection established but health check failed");
         }
       } catch (error) {
-        // Neo4j is optional - log warning but don't fail server startup
+        // Graph database is optional - log warning but don't fail server startup
         logger.warn(
           { error: error instanceof Error ? error.message : String(error) },
-          "Neo4j initialization failed - graph features will be unavailable"
+          "Graph database initialization failed - graph features will be unavailable"
         );
-        neo4jClient = undefined;
+        graphAdapter = undefined;
       }
     } else {
-      logger.debug("NEO4J_PASSWORD not set - Neo4j features disabled");
+      logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
     }
 
     // Step 4: Initialize repository metadata service (singleton)
@@ -231,11 +231,11 @@ async function main(): Promise<void> {
       await instanceRouter.shutdown();
     });
 
-    // Register Neo4j shutdown hook if initialized
-    if (neo4jClient) {
+    // Register graph adapter shutdown hook if initialized
+    if (graphAdapter) {
       mcpServer.registerPreShutdownHook(async () => {
-        logger.info("Disconnecting Neo4j client");
-        await neo4jClient.disconnect();
+        logger.info("Disconnecting graph adapter");
+        await graphAdapter.disconnect();
       });
     }
     logger.info("MCP server created");
@@ -250,7 +250,7 @@ async function main(): Promise<void> {
         createServerForSse: () => mcpServer.createServerForSse(),
         createServerForStreamableHttp: () => mcpServer.createServerForStreamableHttp(),
         checkChromaDb: () => chromaClient.healthCheck(),
-        checkNeo4j: neo4jClient ? () => neo4jClient.healthCheck() : undefined,
+        checkNeo4j: graphAdapter ? () => graphAdapter.healthCheck() : undefined,
       });
 
       const httpServer = await startHttpServer(app, httpConfig);
