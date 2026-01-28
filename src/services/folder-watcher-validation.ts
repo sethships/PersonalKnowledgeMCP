@@ -7,6 +7,7 @@
  * and watch options using Zod schemas.
  */
 
+import * as path from "node:path";
 import { z } from "zod";
 
 // =============================================================================
@@ -23,15 +24,7 @@ export const WatchFolderOptionsSchema = z.object({
   path: z
     .string()
     .min(1, "Path is required")
-    .refine(
-      (path) => {
-        // Basic path validation - must be absolute
-        // Windows: C:\... or \\server\...
-        // Unix: /...
-        return /^([a-zA-Z]:[/\\]|[/\\]{2}|[/])/.test(path);
-      },
-      { message: "Path must be an absolute path" }
-    ),
+    .refine((p) => path.isAbsolute(p), { message: "Path must be an absolute path" }),
 
   /**
    * Display name for the folder
@@ -205,9 +198,7 @@ export function validateFolderWatcherConfig(config: unknown): ValidatedFolderWat
  * @param options - Options to validate
  * @returns SafeParseResult with success/failure and data/error
  */
-export function safeValidateWatchFolderOptions(
-  options: unknown
-): z.SafeParseReturnType<ValidatedWatchFolderOptions, ValidatedWatchFolderOptions> {
+export function safeValidateWatchFolderOptions(options: unknown) {
   return WatchFolderOptionsSchema.safeParse(options);
 }
 
@@ -217,8 +208,6 @@ export function safeValidateWatchFolderOptions(
  * @param config - Configuration to validate
  * @returns SafeParseResult with success/failure and data/error
  */
-export function safeValidateFolderWatcherConfig(
-  config: unknown
-): z.SafeParseReturnType<ValidatedFolderWatcherConfig, ValidatedFolderWatcherConfig> {
+export function safeValidateFolderWatcherConfig(config: unknown) {
   return FolderWatcherConfigSchema.safeParse(config);
 }

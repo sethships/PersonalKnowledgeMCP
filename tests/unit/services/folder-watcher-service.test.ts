@@ -255,6 +255,35 @@ describe("FolderWatcherService", () => {
       service.removeErrorHandler(handler);
       // No assertion needed - just verify it doesn't throw
     });
+
+    it("should isolate handler exceptions - one failing handler should not stop others", async () => {
+      const receivedEvents: FileEvent[] = [];
+
+      // First handler throws an error
+      const failingHandler = (): void => {
+        throw new Error("Handler failure");
+      };
+
+      // Second handler should still receive events despite first handler failing
+      const successHandler = (event: FileEvent): void => {
+        receivedEvents.push(event);
+      };
+
+      service.onFileEvent(failingHandler);
+      service.onFileEvent(successHandler);
+      await service.startWatching(testFolder);
+
+      // Create a file to trigger events
+      const testFilePath = path.join(testFolder.path, "isolation-test.md");
+      await fs.promises.writeFile(testFilePath, "test content");
+
+      // Wait for debounce (100ms) plus additional time for async handler execution
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // The second handler should still receive events despite the first handler throwing
+      expect(receivedEvents.length).toBeGreaterThanOrEqual(1);
+      expect(receivedEvents.some((e) => e.type === "add")).toBe(true);
+    });
   });
 
   describe("Status methods", () => {

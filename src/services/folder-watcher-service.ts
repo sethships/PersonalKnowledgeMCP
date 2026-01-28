@@ -114,6 +114,11 @@ export class FolderWatcherService {
   private pendingEvents: Map<string, FileEvent> = new Map();
 
   /**
+   * Maximum pending events before warning (observability threshold)
+   */
+  private readonly MAX_PENDING_EVENTS = 10000;
+
+  /**
    * Service configuration with defaults applied
    */
   private readonly config: Required<FolderWatcherConfig>;
@@ -545,6 +550,14 @@ export class FolderWatcherService {
   private debounceEvent(event: FileEvent, folder: WatchedFolder): void {
     const debounceMs = folder.debounceMs || this.config.defaultDebounceMs;
 
+    // Warn if pending events exceed threshold (possible event storm)
+    if (this.pendingEvents.size > this.MAX_PENDING_EVENTS) {
+      this.logger.warn(
+        { count: this.pendingEvents.size, folderId: folder.id },
+        "Pending events threshold exceeded - possible event storm"
+      );
+    }
+
     // Clear existing timer for this file
     const existingTimer = this.debounceTimers.get(event.absolutePath);
     if (existingTimer) {
@@ -560,6 +573,9 @@ export class FolderWatcherService {
       const pendingEvent = this.pendingEvents.get(event.absolutePath);
       if (pendingEvent) {
         this.pendingEvents.delete(event.absolutePath);
+        // Fire-and-forget: emitEvent handles its own errors via try/catch and logging.
+        // We don't await here because the debounce timer callback cannot be async,
+        // and handler failures should not affect the watcher's operation.
         void this.emitEvent(pendingEvent);
       }
     }, debounceMs);
@@ -569,6 +585,9 @@ export class FolderWatcherService {
 
   /**
    * Emit event to all registered handlers
+   *
+   * Handler errors are logged but do not stop other handlers from receiving the event.
+   * Each handler is called sequentially, and exceptions are caught and logged individually.
    */
   private async emitEvent(event: FileEvent): Promise<void> {
     this.logger.debug(
@@ -624,9 +643,12 @@ export class FolderWatcherService {
     const state = this.watchers.get(folderId);
     if (!state) return;
 
+    // Normalize folder path for cross-platform comparison (handles mixed separators on Windows)
+    const normalizedFolderPath = path.normalize(state.folder.path);
+
     // Find and clear timers for files in this folder
     for (const [filePath, timer] of this.debounceTimers.entries()) {
-      if (filePath.startsWith(state.folder.path)) {
+      if (path.normalize(filePath).startsWith(normalizedFolderPath)) {
         clearTimeout(timer);
         this.debounceTimers.delete(filePath);
         this.pendingEvents.delete(filePath);
