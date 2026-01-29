@@ -224,6 +224,45 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ============================================================================
+  # FalkorDB - Alternative Graph Database (Apache 2.0 licensed)
+  # For code dependency and knowledge relationship storage
+  # Uses Redis protocol - alternative to Neo4j
+  # ============================================================================
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: pk-mcp-falkordb
+    profiles:
+      - falkordb
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - falkordb-data:/data
+    environment:
+      - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-testpassword}
+    networks:
+      - pk-mcp-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${FALKORDB_PASSWORD:-testpassword} ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   pk-mcp-network:
     driver: bridge
@@ -246,4 +285,7 @@ volumes:
   neo4j-data:
     driver: local
   neo4j-logs:
+    driver: local
+  # FalkorDB
+  falkordb-data:
     driver: local

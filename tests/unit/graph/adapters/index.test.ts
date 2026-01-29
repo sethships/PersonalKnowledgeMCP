@@ -17,6 +17,7 @@ import {
   type GraphStorageAdapter,
 } from "../../../../src/graph/adapters/index.js";
 import { Neo4jStorageClientImpl } from "../../../../src/graph/Neo4jClient.js";
+import { FalkorDBAdapter } from "../../../../src/graph/adapters/FalkorDBAdapter.js";
 import { initializeLogger } from "../../../../src/logging/index.js";
 
 // Initialize logger for tests
@@ -75,14 +76,37 @@ describe("Graph Adapter Factory", () => {
     });
 
     describe("FalkorDB adapter", () => {
-      it("should throw an error for 'falkordb' type (not yet implemented)", () => {
-        expect(() => createGraphAdapter("falkordb", testConfig)).toThrow(
-          "FalkorDB adapter not yet implemented"
-        );
+      it("should create a FalkorDBAdapter for 'falkordb' type", () => {
+        const falkorConfig: GraphStorageConfig = {
+          ...testConfig,
+          port: 6379, // FalkorDB uses Redis port
+        };
+
+        const adapter = createGraphAdapter("falkordb", falkorConfig);
+
+        expect(adapter).toBeInstanceOf(FalkorDBAdapter);
       });
 
-      it("should include issue reference in error message", () => {
-        expect(() => createGraphAdapter("falkordb", testConfig)).toThrow(/issue #336/);
+      it("should implement GraphStorageAdapter interface", () => {
+        const falkorConfig: GraphStorageConfig = {
+          ...testConfig,
+          port: 6379,
+        };
+
+        const adapter = createGraphAdapter("falkordb", falkorConfig);
+
+        // Verify all required methods exist
+        expect(typeof adapter.connect).toBe("function");
+        expect(typeof adapter.disconnect).toBe("function");
+        expect(typeof adapter.healthCheck).toBe("function");
+        expect(typeof adapter.runQuery).toBe("function");
+        expect(typeof adapter.upsertNode).toBe("function");
+        expect(typeof adapter.deleteNode).toBe("function");
+        expect(typeof adapter.createRelationship).toBe("function");
+        expect(typeof adapter.deleteRelationship).toBe("function");
+        expect(typeof adapter.traverse).toBe("function");
+        expect(typeof adapter.analyzeDependencies).toBe("function");
+        expect(typeof adapter.getContext).toBe("function");
       });
     });
 

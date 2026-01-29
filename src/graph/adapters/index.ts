@@ -25,6 +25,7 @@
 
 import type { GraphAdapterType, GraphStorageConfig, GraphStorageAdapter } from "./types.js";
 import { Neo4jStorageClientImpl } from "../Neo4jClient.js";
+import { FalkorDBAdapter } from "./FalkorDBAdapter.js";
 
 // =============================================================================
 // Factory Function
@@ -71,9 +72,7 @@ export function createGraphAdapter(
       return new Neo4jStorageClientImpl(config);
 
     case "falkordb":
-      throw new Error(
-        "FalkorDB adapter not yet implemented. See issue #336 for implementation tracking."
-      );
+      return new FalkorDBAdapter(config);
 
     default: {
       // TypeScript exhaustiveness check
