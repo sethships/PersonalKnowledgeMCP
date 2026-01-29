@@ -30,6 +30,11 @@ coverage = true
 # Test output
 verbose = true
 
+# Default test timeout in milliseconds (30 seconds)
+# Individual tests can override with third argument to test() or it()
+# Integration tests should set explicit longer timeouts as needed
+timeout = 30000
+
 # Limit test discovery to project tests directory only
 # (data/ contains cloned repos with their own tests that have unmet dependencies)
 root = "tests"

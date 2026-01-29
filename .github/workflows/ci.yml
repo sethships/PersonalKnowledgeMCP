@@ -10,6 +10,9 @@ jobs:
   test-and-build:
     name: Test & Build
     runs-on: ubuntu-latest
+    # Timeout for entire job - prevents CI from running indefinitely
+    # Target: 15 minutes max (includes setup, tests, build, cleanup)
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -78,12 +81,16 @@ jobs:
 
       - name: Run tests with coverage
         # Run main tests first (excluding isolated tests to prevent vi.mock leakage)
-        run: bun test --coverage --coverage-reporter=lcov tests/example.test.ts tests/integration tests/mcp tests/services tests/unit tests/cli tests/helpers tests/fixtures
+        # Timeout: 10 minutes for main test suite (should complete in ~3-5 minutes normally)
+        timeout-minutes: 10
+        run: bun test --coverage --coverage-reporter=lcov --timeout 30000 tests/example.test.ts tests/integration tests/mcp tests/services tests/unit tests/cli tests/helpers tests/fixtures
 
       - name: Run isolated tests
         # Run isolated tests separately to prevent vi.mock from leaking to other test files
         # These tests mock modules that would affect other tests if run together
-        run: bun test tests/isolated
+        # Timeout: 3 minutes (isolated tests are few and fast)
+        timeout-minutes: 3
+        run: bun test --timeout 30000 tests/isolated
 
       - name: Build project
         run: bun run build
@@ -113,6 +120,8 @@ jobs:
     needs: test-and-build
     # Only run on main branch or PRs that touch auth-related files
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    # Timeout for entire job - auth tests should complete quickly
+    timeout-minutes: 8
 
     steps:
       - name: Checkout code
@@ -156,7 +165,8 @@ jobs:
           NEO4J_PASSWORD: ci-dummy-not-used
 
       - name: Run ChromaDB Auth Integration Tests
-        run: bun test tests/integration/storage/chroma-auth-integration.test.ts
+        timeout-minutes: 3
+        run: bun test --timeout 30000 tests/integration/storage/chroma-auth-integration.test.ts
         env:
           RUN_AUTH_INTEGRATION_TESTS: "true"
           CHROMADB_TEST_AUTH_TOKEN: ${{ secrets.CHROMADB_TEST_AUTH_TOKEN || 'ci-test-token-12345' }}

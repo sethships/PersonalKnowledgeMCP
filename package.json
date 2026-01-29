@@ -57,6 +57,7 @@
     "chokidar": "5.0.0",
     "chromadb": "^1.8.1",
     "cli-table3": "0.6.5",
+    "falkordb": "^6.6.0",
     "commander": "^12.1.0",
     "cookie-parser": "1.4.7",
     "cors": "2.8.5",
