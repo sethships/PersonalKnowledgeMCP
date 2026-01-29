@@ -221,8 +221,16 @@ export class FolderWatcherService {
     // Clean up debounce timers for this folder
     this.cleanupFolderTimers(folderId);
 
-    // Close watcher
-    await state.watcher.close();
+    // Close watcher with timeout to prevent hanging
+    await Promise.race([
+      state.watcher.close(),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
+          resolve();
+        }, 2000);
+      }),
+    ]);
 
     // Remove from map
     this.watchers.delete(folderId);
@@ -243,13 +251,23 @@ export class FolderWatcherService {
     this.debounceTimers.clear();
     this.pendingEvents.clear();
 
-    // Close all watchers
+    // Close all watchers with individual timeouts to prevent hanging
     const closePromises: Promise<void>[] = [];
-    for (const state of this.watchers.values()) {
-      closePromises.push(state.watcher.close());
+    for (const [folderId, state] of this.watchers.entries()) {
+      const closeWithTimeout = Promise.race([
+        state.watcher.close(),
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
+            resolve();
+          }, 2000);
+        }),
+      ]);
+      closePromises.push(closeWithTimeout);
     }
 
-    await Promise.all(closePromises);
+    // Use allSettled to ensure we don't hang on individual failures
+    await Promise.allSettled(closePromises);
 
     // Clear map
     this.watchers.clear();
