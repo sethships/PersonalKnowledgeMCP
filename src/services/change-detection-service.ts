@@ -305,6 +305,10 @@ export class ChangeDetectionService {
       previousState,
       sizeBytes,
       timer: setTimeout(() => {
+        // Guard against timer firing after dispose
+        if (this.disposed) {
+          return;
+        }
         // Rename window expired - emit as delete
         this.pendingUnlinks.delete(correlationKey);
         this.logger.debug(
