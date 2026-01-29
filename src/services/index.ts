@@ -225,3 +225,28 @@ export type {
   ValidatedFolderId,
   ValidatedGlobPattern,
 } from "./folder-watcher-validation.js";
+
+// ChangeDetectionService exports
+export { ChangeDetectionService } from "./change-detection-service.js";
+export type {
+  ChangeCategory,
+  DetectedChange,
+  FileState,
+  ChangeDetectionConfig,
+  DetectedChangeHandler,
+  PendingUnlink,
+} from "./change-detection-types.js";
+export { DEFAULT_CHANGE_DETECTION_CONFIG } from "./change-detection-types.js";
+export {
+  ChangeDetectionError,
+  StateTrackingError,
+  RenameCorrelationError,
+  isChangeDetectionError,
+  isRetryableChangeDetectionError,
+} from "./change-detection-errors.js";
+export {
+  ChangeDetectionConfigSchema,
+  validateChangeDetectionConfig,
+  safeValidateChangeDetectionConfig,
+} from "./change-detection-validation.js";
+export type { ValidatedChangeDetectionConfig } from "./change-detection-validation.js";
