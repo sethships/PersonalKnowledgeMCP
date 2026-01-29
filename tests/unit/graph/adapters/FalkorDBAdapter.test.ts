@@ -100,7 +100,7 @@ describe("FalkorDBAdapter", () => {
     test("should connect successfully", async () => {
       const adapter = new FalkorDBAdapter(testFalkorConfig);
       // Health check query should succeed
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
 
       await adapter.connect();
 
@@ -121,7 +121,7 @@ describe("FalkorDBAdapter", () => {
   describe("disconnect", () => {
     test("should disconnect gracefully", async () => {
       const adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
 
       await adapter.connect();
       await adapter.disconnect();
@@ -140,7 +140,7 @@ describe("FalkorDBAdapter", () => {
   describe("healthCheck", () => {
     test("should return true when connected and healthy", async () => {
       const adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
 
       await adapter.connect();
       const healthy = await adapter.healthCheck();
@@ -162,7 +162,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -178,10 +178,10 @@ describe("FalkorDBAdapter", () => {
     });
 
     test("should execute query and return results", async () => {
+      // Use FalkorDB's actual format: data is array of objects with named properties
       mockGraph.setQueryResult("MATCH", {
-        headers: ["name", "count"],
-        data: [["test", 5]],
         metadata: [],
+        data: [{ name: "test", count: 5 }],
       });
 
       const results = await adapter.runQuery<{ name: string; count: number }>(
@@ -225,7 +225,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -473,7 +473,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -507,7 +507,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -614,7 +614,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -650,7 +650,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -758,7 +758,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -839,12 +839,11 @@ describe("FalkorDBAdapter", () => {
 
     test("should calculate impact score", async () => {
       mockGraph.setQueryResult("MATCH", {
-        headers: ["dep", "relType", "depth"],
-        data: [
-          [sampleMockFalkorNodes.file, "IMPORTS", 1],
-          [sampleMockFalkorNodes.function, "CALLS", 1],
-        ],
         metadata: [],
+        data: [
+          { dep: sampleMockFalkorNodes.file, relType: "IMPORTS", depth: 1 },
+          { dep: sampleMockFalkorNodes.function, relType: "CALLS", depth: 1 },
+        ],
       });
 
       const result = await adapter.analyzeDependencies({
@@ -877,7 +876,7 @@ describe("FalkorDBAdapter", () => {
 
     beforeEach(async () => {
       adapter = new FalkorDBAdapter(testFalkorConfig);
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -1047,7 +1046,7 @@ describe("FalkorDBAdapter", () => {
           backoffMultiplier: 2,
         },
       });
-      mockGraph.setQueryResult("RETURN 1", { headers: ["health"], data: [[1]], metadata: [] });
+      mockGraph.setQueryResult("RETURN 1", { metadata: [], data: [{ health: 1 }] });
       await adapter.connect();
     });
 
@@ -1068,9 +1067,8 @@ describe("FalkorDBAdapter", () => {
       };
 
       mockGraph.setQueryResult("MATCH", {
-        headers: ["count"],
-        data: [[1]],
         metadata: [],
+        data: [{ count: 1 }],
       });
 
       const results = await adapter.runQuery("MATCH (n) RETURN count(n) as count");

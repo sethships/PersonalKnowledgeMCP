@@ -23,7 +23,7 @@ import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 // Integration test configuration - uses environment variables or defaults
 const integrationConfig: GraphStorageConfig = {
   host: process.env["FALKORDB_HOST"] ?? "localhost",
-  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6380", 10),
   username: process.env["FALKORDB_USERNAME"] ?? "default",
   password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
   database: "knowledge_graph_test",

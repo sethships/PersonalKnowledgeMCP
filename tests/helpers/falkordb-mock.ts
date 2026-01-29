@@ -9,12 +9,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 /**
- * GraphReply type based on FalkorDB's response structure
+ * GraphReply type based on FalkorDB's actual response structure
+ * FalkorDB returns data as array of objects with named properties
  */
 export type GraphReply<T> = {
-  headers?: string[];
-  data?: Array<T>;
   metadata?: string[];
+  data?: Array<T>;
 };
 
 /**
@@ -72,26 +72,37 @@ export function createMockFalkorRelationship(
 }
 
 /**
- * Mock query result structure
+ * Mock query result structure matching FalkorDB's actual format
+ * FalkorDB returns data as array of objects with named properties
  */
-export interface MockQueryResult<T = unknown[]> {
-  headers?: string[];
-  data?: Array<T>;
+export interface MockQueryResult<T = Record<string, unknown>> {
   metadata?: string[];
+  data?: Array<T>;
 }
 
 /**
  * Create a mock query result
+ * @param keys - Column names to use as object keys
+ * @param data - Array of value arrays that will be converted to objects
+ * @param metadata - Optional metadata strings
  */
-export function createMockQueryResult<T = unknown[]>(
-  headers: string[],
-  data: Array<T>,
+export function createMockQueryResult<T = Record<string, unknown>>(
+  keys: string[],
+  data: Array<unknown[]>,
   metadata: string[] = []
 ): MockQueryResult<T> {
+  // Convert array data to object format matching FalkorDB's actual response
+  const objectData = data.map((row) => {
+    const obj: Record<string, unknown> = {};
+    keys.forEach((key, index) => {
+      obj[key] = row[index];
+    });
+    return obj as T;
+  });
+
   return {
-    headers,
-    data,
     metadata,
+    data: objectData,
   };
 }
 
@@ -138,13 +149,12 @@ export class MockGraph {
     }
 
     if (!result) {
-      result = { headers: [], data: [], metadata: [] };
+      result = { metadata: [], data: [] };
     }
 
     return {
-      headers: result.headers,
-      data: result.data as T[] | undefined,
       metadata: result.metadata ?? [],
+      data: result.data as T[] | undefined,
     };
   }
 

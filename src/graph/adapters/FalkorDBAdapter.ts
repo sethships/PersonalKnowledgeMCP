@@ -336,16 +336,25 @@ export class FalkorDBAdapter implements GraphStorageAdapter {
    * @param result - FalkorDB query result
    * @returns Array of mapped objects
    */
-  private convertFalkorResult<T>(result: { headers?: string[]; data?: Array<unknown[]> }): T[] {
-    if (!result.headers || !result.data) {
+  private convertFalkorResult<T>(result: unknown): T[] {
+    // FalkorDB's actual runtime format is { metadata: string[], data: Record<string, unknown>[] }
+    // but the library's type definition says data is unknown[][]
+    // Cast to the actual runtime type
+    const typedResult = result as {
+      metadata?: string[];
+      data?: Array<Record<string, unknown>>;
+    };
+
+    if (!typedResult.data || typedResult.data.length === 0) {
       return [];
     }
 
-    return result.data.map((row) => {
+    // FalkorDB returns data as array of objects with named properties
+    return typedResult.data.map((row) => {
       const obj: Record<string, unknown> = {};
-      result.headers!.forEach((header, index) => {
-        obj[header] = this.convertFalkorValue(row[index]);
-      });
+      for (const [key, value] of Object.entries(row)) {
+        obj[key] = this.convertFalkorValue(value);
+      }
       return obj as T;
     });
   }
