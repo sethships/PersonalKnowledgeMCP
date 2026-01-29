@@ -31,6 +31,8 @@ import { loadInstanceConfig, getEnabledInstances } from "./config/index.js";
 import { createGraphAdapter } from "./graph/adapters/index.js";
 import type { GraphStorageAdapter } from "./graph/adapters/types.js";
 import { createInstanceRouter } from "./mcp/instance-router.js";
+import { GraphServiceImpl } from "./services/graph-service.js";
+import type { GraphService } from "./services/graph-service-types.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -163,6 +165,13 @@ async function main(): Promise<void> {
       logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
     }
 
+    // Step 3c: Initialize graph service (if adapter available)
+    let graphService: GraphService | undefined;
+    if (graphAdapter) {
+      graphService = new GraphServiceImpl(graphAdapter);
+      logger.info("Graph service initialized");
+    }
+
     // Step 4: Initialize repository metadata service (singleton)
     logger.info("Initializing repository metadata service");
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
@@ -217,13 +226,18 @@ async function main(): Promise<void> {
 
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
-    const mcpServer = new PersonalKnowledgeMCPServer(searchService, repositoryService, {
-      name: "personal-knowledge-mcp",
-      version: "1.0.0",
-      capabilities: {
-        tools: true,
+    const mcpServer = new PersonalKnowledgeMCPServer(
+      searchService,
+      repositoryService,
+      {
+        name: "personal-knowledge-mcp",
+        version: "1.0.0",
+        capabilities: {
+          tools: true,
+        },
       },
-    });
+      { graphService }
+    );
 
     // Register instance router shutdown hook
     mcpServer.registerPreShutdownHook(async () => {
