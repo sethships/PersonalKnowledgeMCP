@@ -471,3 +471,67 @@ export type ValidatedModelsValidateOptions = z.infer<typeof ModelsValidateComman
 export type ValidatedModelsClearOptions = z.infer<typeof ModelsClearCommandOptionsSchema>;
 export type ValidatedModelsPathOptions = z.infer<typeof ModelsPathCommandOptionsSchema>;
 export type ValidatedModelsImportOptions = z.infer<typeof ModelsImportCommandOptionsSchema>;
+
+// ============================================================================
+// Graph Transfer Command Validation Schema
+// ============================================================================
+
+/**
+ * Valid graph adapter types for migration
+ */
+const GRAPH_ADAPTER_ENUM = z.enum(["neo4j", "falkordb"]);
+
+/**
+ * Schema for graph transfer command options
+ *
+ * Validates options for migrating data between graph databases (Neo4j to FalkorDB).
+ */
+export const GraphTransferCommandOptionsSchema = z.object({
+  source: z
+    .string()
+    .optional()
+    .default("neo4j")
+    .transform((val) => val.toLowerCase())
+    .pipe(GRAPH_ADAPTER_ENUM),
+  target: z
+    .string()
+    .optional()
+    .default("falkordb")
+    .transform((val) => val.toLowerCase())
+    .pipe(GRAPH_ADAPTER_ENUM),
+  dryRun: z.boolean().optional(),
+  batchSize: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 1000))
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(1)
+        .max(10000)
+        .refine((n) => !isNaN(n), {
+          message: "batch-size must be a valid number between 1-10000",
+        })
+    ),
+  validationSamples: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : 10))
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(0)
+        .max(100)
+        .refine((n) => !isNaN(n), {
+          message: "validation-samples must be a valid number between 0-100",
+        })
+    ),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for graph transfer command
+ */
+export type ValidatedGraphTransferOptions = z.infer<typeof GraphTransferCommandOptionsSchema>;
