@@ -18,7 +18,7 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 |------------|-------------|--------|
 | **Semantic Search** | Natural language code search across repositories | Complete |
 | **Multi-Provider Embeddings** | OpenAI, Transformers.js (local), Ollama support | Complete |
-| **Knowledge Graph** | Neo4j-powered code dependency analysis | Complete |
+| **Knowledge Graph** | FalkorDB-powered code dependency analysis | Complete |
 | **Dependency Analysis** | Forward dependencies (what code depends on) | Complete |
 | **Impact Analysis** | Reverse dependencies (what depends on code) | Complete |
 | **Architecture Insights** | Module structure and inter-module dependencies | Complete |
@@ -46,7 +46,7 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 
 - **MCP-Native Architecture**: Purpose-built for AI assistant integration via the Model Context Protocol
 - **Semantic Code Search**: AI assistants can find relevant code and documentation without full codebase scans
-- **Knowledge Graph**: Neo4j-powered dependency analysis and impact assessment
+- **Knowledge Graph**: FalkorDB-powered dependency analysis and impact assessment
 - **Private Repository Support**: Secure indexing of private GitHub repositories via PAT
 - **Vector-Based Retrieval**: Fast, accurate semantic search using ChromaDB
 - **Flexible Embedding Providers**: OpenAI (highest quality), Transformers.js (zero-config local), Ollama (GPU acceleration)
@@ -75,7 +75,7 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 | Language | TypeScript 5.3+ | Type-safe development |
 | MCP SDK | @modelcontextprotocol/sdk | Official MCP implementation |
 | Vector DB | ChromaDB | Semantic search and similarity |
-| Graph DB | Neo4j Community 5.x | Code dependency graph and relationships |
+| Graph DB | FalkorDB 4.x | Code dependency graph and relationships |
 | AST Parsing | tree-sitter (web-tree-sitter), Roslyn | Code entity extraction for 13 languages |
 | Embeddings | OpenAI, Transformers.js, Ollama | Embedding generation |
 | HTTP Server | Express 5.x | HTTP/SSE transport |
@@ -140,11 +140,11 @@ graph TB
 
         subgraph DOCKER["Docker Containers"]
             CDB[ChromaDB<br/>Vector Database<br/>Port: 8000]
-            NEO[Neo4j<br/>Graph Database<br/>Port: 7687]
+            FALKR[FalkorDB<br/>Graph Database<br/>Port: 6380]
             VOL[Volume: ./data/chromadb]
-            NEOVOL[Volume: ./data/neo4j]
+            FALKRVOL[Volume: ./data/falkordb]
             CDB -.->|persists to| VOL
-            NEO -.->|persists to| NEOVOL
+            FALKR -.->|persists to| FALKRVOL
         end
 
         FS[Local File System<br/>./data/repos/]
@@ -152,7 +152,7 @@ graph TB
         CC <-->|stdio| STDIO
         CURSOR -->|HTTPS| HTTP
         MCP_SVC -->|HTTP| CDB
-        MCP_SVC -->|Bolt| NEO
+        MCP_SVC -->|Redis| FALKR
         MCP_SVC -->|clone/read| FS
     end
 
@@ -174,7 +174,7 @@ graph TB
 
     class CC,CURSOR client
     class MCP_SVC,STDIO,HTTP,AUTH,TH,SS,LR,GD,GT,GA,FP,SL,SRCH,REPO,GRAPH service
-    class CDB,NEO,VOL,NEOVOL,FS storage
+    class CDB,FALKR,VOL,FALKRVOL,FS storage
     class LOCAL,OLLAMA embed
     class OAI external
 ```
@@ -184,7 +184,7 @@ graph TB
 ### Prerequisites
 
 - **Bun**: 1.0 or later ([install](https://bun.sh/))
-- **Docker Desktop**: For running ChromaDB and Neo4j
+- **Docker Desktop**: For running ChromaDB and FalkorDB
 - **Git**: For repository cloning
 - **GitHub PAT** (optional): For private repository access
 
@@ -206,11 +206,11 @@ graph TB
 3. **Configure environment**:
    ```bash
    cp .env.example .env
-   # Edit .env and set NEO4J_PASSWORD (required for graph database)
+   # Edit .env and set FALKORDB_PASSWORD (required for graph database)
    # OpenAI API key is OPTIONAL - local embeddings work without it
    ```
 
-4. **Start ChromaDB and Neo4j**:
+4. **Start ChromaDB and FalkorDB**:
    ```bash
    docker compose --profile default up -d
    ```
@@ -220,7 +220,7 @@ graph TB
    bun run build
    ```
 
-6. **Run database migrations** (for Neo4j):
+6. **Run database migrations** (for FalkorDB):
    ```bash
    bun run cli graph migrate
    ```
@@ -246,9 +246,9 @@ graph TB
          "env": {
            "OPENAI_API_KEY": "${OPENAI_API_KEY}",
            "GITHUB_PAT": "${GITHUB_PAT}",
-           "NEO4J_URI": "bolt://localhost:7687",
-           "NEO4J_USER": "neo4j",
-           "NEO4J_PASSWORD": "${NEO4J_PASSWORD}"
+           "FALKORDB_HOST": "localhost",
+           "FALKORDB_PORT": "6380",
+           "FALKORDB_PASSWORD": "${FALKORDB_PASSWORD}"
          }
        }
      }
@@ -277,14 +277,14 @@ netstat -an | findstr :8000
 docker compose logs chromadb
 ```
 
-**Neo4j won't start:**
+**FalkorDB won't start:**
 
 ```bash
 # View detailed logs
-docker compose logs neo4j
+docker compose logs falkordb
 
-# Check Neo4j health
-docker compose exec neo4j cypher-shell -u neo4j -p YOUR_PASSWORD "RETURN 1"
+# Check FalkorDB health
+docker compose exec falkordb redis-cli -a YOUR_PASSWORD ping
 ```
 
 **Need to reset data:**
@@ -327,9 +327,9 @@ Personal Knowledge MCP is designed to seamlessly integrate with Claude Code, pro
            "GITHUB_PAT": "${GITHUB_PAT}",
            "CHROMADB_HOST": "localhost",
            "CHROMADB_PORT": "8000",
-           "NEO4J_URI": "bolt://localhost:7687",
-           "NEO4J_USER": "neo4j",
-           "NEO4J_PASSWORD": "${NEO4J_PASSWORD}"
+           "FALKORDB_HOST": "localhost",
+           "FALKORDB_PORT": "6380",
+           "FALKORDB_PASSWORD": "${FALKORDB_PASSWORD}"
          }
        }
      }
@@ -442,7 +442,7 @@ The MCP integration is optimized for fast response times:
 ### Requirements
 
 - **Bun 1.0+** or **Node.js 18+** (for running the MCP server)
-- **Docker Desktop** (for ChromaDB and Neo4j)
+- **Docker Desktop** (for ChromaDB and FalkorDB)
 - **At least one indexed repository** (use `bun run cli index <url>`)
 
 **Note**: No API keys required for basic operation. Local embedding providers (Transformers.js, Ollama) work offline without external dependencies.
@@ -505,7 +505,7 @@ Query what a file, function, or class depends on. Returns imports, calls, and in
 }
 ```
 
-**Requires**: Neo4j graph database with indexed repository data.
+**Requires**: FalkorDB graph database with indexed repository data.
 
 ### get_dependents
 
@@ -532,7 +532,7 @@ Query what depends on a file, function, or class. Use for impact analysis before
 - List of dependent entities with relationship types
 - Impact analysis metrics (direct count, transitive count, impact score)
 
-**Requires**: Neo4j graph database with indexed repository data.
+**Requires**: FalkorDB graph database with indexed repository data.
 
 ### get_architecture
 
@@ -557,7 +557,7 @@ Find the shortest path between two code entities in the dependency graph.
 
 **Returns**: Path of entities connecting source to target.
 
-> **Note**: Graph tools require Neo4j and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
+> **Note**: Graph tools require FalkorDB and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
 
 ## Embedding Providers
 
@@ -694,7 +694,7 @@ pk-mcp update <repository-name> [options]
 
 #### graph migrate - Run Graph Migrations
 
-Set up or update the Neo4j schema.
+Set up or update the FalkorDB schema.
 
 ```bash
 pk-mcp graph migrate [options]
@@ -702,7 +702,7 @@ pk-mcp graph migrate [options]
 
 #### graph populate - Populate Knowledge Graph
 
-Parse code and populate the Neo4j knowledge graph for a repository.
+Parse code and populate the FalkorDB knowledge graph for a repository.
 
 ```bash
 pk-mcp graph populate <repository-name> [options]
@@ -753,10 +753,10 @@ EMBEDDING_PROVIDER=transformers
 # Optional: OpenAI API key (only needed if using OpenAI provider)
 # OPENAI_API_KEY=sk-...
 
-# Required for Neo4j graph database
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-password
+# Required for FalkorDB graph database
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6380
+FALKORDB_PASSWORD=your-password
 
 # Optional (defaults shown)
 CHROMADB_HOST=localhost
@@ -780,7 +780,7 @@ PersonalKnowledgeMCP/
 │   ├── services/                 # Business logic
 │   ├── providers/                # Embedding providers
 │   ├── storage/                  # ChromaDB client
-│   ├── graph/                    # Neo4j graph operations
+│   ├── graph/                    # FalkorDB graph operations
 │   │   ├── parsing/              # AST parsing (tree-sitter, Roslyn)
 │   │   ├── extraction/           # Entity and relationship extraction
 │   │   └── migration/            # Schema migrations
@@ -843,7 +843,7 @@ bun test --watch
 ### Feature Guides
 - **[Embedding Provider Guide](docs/embedding-providers.md)** - OpenAI, Transformers.js, and Ollama configuration
 - **[Graph Tools Guide](docs/graph-tools.md)** - Dependency analysis and impact assessment tools
-- **[Neo4j Setup Guide](docs/neo4j-setup.md)** - Knowledge graph database setup
+- **[FalkorDB Setup Guide](docs/graph-database-setup.md)** - Knowledge graph database setup
 
 ### Operations
 - **[Docker Operations Guide](docs/docker-operations.md)** - ChromaDB and container management
@@ -962,7 +962,7 @@ ChromaDB supports optional token-based authentication to secure the vector datab
 - **Kubernetes Deployment** - Helm charts prepared
 
 ### Phase 5: Knowledge Graph Search (Complete)
-- **Neo4j Integration** - Graph database for code dependency analysis
+- **FalkorDB Integration** - Graph database for code dependency analysis (Apache 2.0 licensed)
 - **AST Parsing** - Tree-sitter integration for 12 languages + Roslyn for C#
 - **Graph MCP Tools** - get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
 - **Entity Extraction** - Functions, classes, interfaces, and relationships from code
@@ -1050,7 +1050,7 @@ Built using:
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - [Bun](https://bun.sh/) - Fast all-in-one JavaScript runtime
 - [ChromaDB](https://www.trychroma.com/) vector database
-- [Neo4j](https://neo4j.com/) graph database
+- [FalkorDB](https://www.falkordb.com/) graph database
 - [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
 - [tree-sitter](https://tree-sitter.github.io/) parser
 - [simple-git](https://github.com/steveukx/git-js) for Git operations

@@ -1,6 +1,6 @@
 # Graph Tools - Personal Knowledge MCP
 
-This guide documents the graph-based MCP tools that enable code dependency analysis and impact assessment using the knowledge graph backed by Neo4j.
+This guide documents the graph-based MCP tools that enable code dependency analysis and impact assessment using the knowledge graph backed by FalkorDB.
 
 ## Overview
 
@@ -28,9 +28,9 @@ The Personal Knowledge MCP provides two graph-based tools that complement semant
 
 Before using graph tools, ensure:
 
-1. **Neo4j is running**: The knowledge graph requires Neo4j Community Edition
+1. **FalkorDB is running**: The knowledge graph requires FalkorDB
    ```bash
-   docker-compose up -d neo4j
+   docker compose --profile default up -d falkordb
    ```
 
 2. **Repository is indexed with AST parsing**: Graph data requires code analysis beyond simple text indexing
@@ -39,12 +39,12 @@ Before using graph tools, ensure:
    pk-mcp graph populate <repository-name>
    ```
 
-3. **GraphService is enabled**: The MCP server must be configured with Neo4j connection
+3. **GraphService is enabled**: The MCP server must be configured with FalkorDB connection
    ```bash
    # Required environment variables
-   NEO4J_URI=bolt://localhost:7687
-   NEO4J_USER=neo4j
-   NEO4J_PASSWORD=your-password
+   FALKORDB_HOST=localhost
+   FALKORDB_PORT=6380
+   FALKORDB_PASSWORD=your-password
    ```
 
 ### Supported Languages for Graph Population
@@ -410,12 +410,12 @@ Graph tools are optimized for fast response times:
 
 ### "No graph data available" Error
 
-**Cause**: Neo4j is not running or not configured.
+**Cause**: FalkorDB is not running or not configured.
 
 **Solutions**:
-1. Start Neo4j: `docker-compose up -d neo4j`
-2. Verify connection: `docker-compose logs neo4j`
-3. Check environment variables: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
+1. Start FalkorDB: `docker compose --profile default up -d falkordb`
+2. Verify connection: `docker compose logs falkordb`
+3. Check environment variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_PASSWORD`
 
 ### Empty Results
 
