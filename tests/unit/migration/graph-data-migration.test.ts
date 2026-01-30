@@ -39,104 +39,105 @@ function createMockAdapter(
   const nodeCountByLabel = options.nodeCountByLabel ?? {};
   const relationshipCountByType = options.relationshipCountByType ?? {};
 
-  let _nodeOffset = 0;
-  let _relOffset = 0;
   let newNodeId = 1000;
+
+  const runQueryImpl = async <T>(
+    cypher: string,
+    params?: Record<string, unknown>
+  ): Promise<T[]> => {
+    // Handle node export query
+    if (cypher.includes("MATCH (n)") && cypher.includes("labels(n)") && cypher.includes("SKIP")) {
+      const offset = (params?.["offset"] as number) ?? 0;
+      const limit = (params?.["limit"] as number) ?? 1000;
+      const batch = nodes.slice(offset, offset + limit).map((n) => ({
+        id: n.id,
+        labels: n.labels,
+        properties: n.properties,
+      }));
+      return batch as unknown as T[];
+    }
+
+    // Handle relationship export query
+    if (cypher.includes("MATCH (a)-[r]->(b)") && cypher.includes("SKIP")) {
+      const offset = (params?.["offset"] as number) ?? 0;
+      const limit = (params?.["limit"] as number) ?? 1000;
+      const batch = relationships.slice(offset, offset + limit).map((r) => ({
+        id: r.id,
+        type: r.type,
+        startNodeId: r.startNodeId,
+        endNodeId: r.endNodeId,
+        properties: r.properties,
+      }));
+      return batch as unknown as T[];
+    }
+
+    // Handle node count query
+    if (cypher.includes("count(n)") && !cypher.includes("UNWIND")) {
+      return [{ count: nodes.length }] as unknown as T[];
+    }
+
+    // Handle relationship count query
+    if (cypher.includes("count(r)")) {
+      return [{ count: relationships.length }] as unknown as T[];
+    }
+
+    // Handle node count by label query
+    if (cypher.includes("UNWIND labels(n)")) {
+      const counts = Object.entries(nodeCountByLabel).map(([label, count]) => ({
+        label,
+        count,
+      }));
+      return counts as unknown as T[];
+    }
+
+    // Handle relationship count by type query
+    if (cypher.includes("type(r) AS type")) {
+      const counts = Object.entries(relationshipCountByType).map(([type, count]) => ({
+        type,
+        count,
+      }));
+      return counts as unknown as T[];
+    }
+
+    // Handle node creation (import)
+    if (cypher.includes("CREATE (n")) {
+      newNodeId++;
+      return [{ newId: String(newNodeId) }] as unknown as T[];
+    }
+
+    // Handle relationship creation (import)
+    if (cypher.includes("CREATE (a)-[r:")) {
+      return [] as unknown as T[];
+    }
+
+    // Handle sample query for validation
+    if (cypher.includes("rand()") && cypher.includes("ORDER BY r")) {
+      const limit = (params?.["limit"] as number) ?? 10;
+      return nodes.slice(0, limit).map((n) => ({
+        id: n.id,
+        labels: n.labels,
+        properties: n.properties,
+      })) as unknown as T[];
+    }
+
+    // Handle source ID lookup for validation
+    if (cypher.includes("_source_id = $sourceId")) {
+      const sourceId = params?.["sourceId"] as string;
+      const node = nodes.find((n) => n.id === sourceId);
+      if (node) {
+        return [{ properties: { ...node.properties, _source_id: sourceId } }] as unknown as T[];
+      }
+      return [] as unknown as T[];
+    }
+
+    return [] as unknown as T[];
+  };
 
   return {
     connect: mock(() => Promise.resolve()),
     disconnect: mock(() => Promise.resolve()),
     healthCheck: mock(() => Promise.resolve(true)),
-    runQuery: mock(async <T>(cypher: string, params?: Record<string, unknown>): Promise<T[]> => {
-      // Handle node export query
-      if (cypher.includes("MATCH (n)") && cypher.includes("labels(n)") && cypher.includes("SKIP")) {
-        const offset = (params?.offset as number) ?? 0;
-        const limit = (params?.limit as number) ?? 1000;
-        const batch = nodes.slice(offset, offset + limit).map((n) => ({
-          id: n.id,
-          labels: n.labels,
-          properties: n.properties,
-        }));
-        _nodeOffset = offset + batch.length;
-        return batch as unknown as T[];
-      }
-
-      // Handle relationship export query
-      if (cypher.includes("MATCH (a)-[r]->(b)") && cypher.includes("SKIP")) {
-        const offset = (params?.offset as number) ?? 0;
-        const limit = (params?.limit as number) ?? 1000;
-        const batch = relationships.slice(offset, offset + limit).map((r) => ({
-          id: r.id,
-          type: r.type,
-          startNodeId: r.startNodeId,
-          endNodeId: r.endNodeId,
-          properties: r.properties,
-        }));
-        _relOffset = offset + batch.length;
-        return batch as unknown as T[];
-      }
-
-      // Handle node count query
-      if (cypher.includes("count(n)") && !cypher.includes("UNWIND")) {
-        return [{ count: nodes.length }] as unknown as T[];
-      }
-
-      // Handle relationship count query
-      if (cypher.includes("count(r)")) {
-        return [{ count: relationships.length }] as unknown as T[];
-      }
-
-      // Handle node count by label query
-      if (cypher.includes("UNWIND labels(n)")) {
-        const counts = Object.entries(nodeCountByLabel).map(([label, count]) => ({
-          label,
-          count,
-        }));
-        return counts as unknown as T[];
-      }
-
-      // Handle relationship count by type query
-      if (cypher.includes("type(r) AS type")) {
-        const counts = Object.entries(relationshipCountByType).map(([type, count]) => ({
-          type,
-          count,
-        }));
-        return counts as unknown as T[];
-      }
-
-      // Handle node creation (import)
-      if (cypher.includes("CREATE (n")) {
-        newNodeId++;
-        return [{ newId: String(newNodeId) }] as unknown as T[];
-      }
-
-      // Handle relationship creation (import)
-      if (cypher.includes("CREATE (a)-[r:")) {
-        return [] as unknown as T[];
-      }
-
-      // Handle sample query for validation
-      if (cypher.includes("rand()") && cypher.includes("ORDER BY r")) {
-        const limit = (params?.limit as number) ?? 10;
-        return nodes.slice(0, limit).map((n) => ({
-          id: n.id,
-          labels: n.labels,
-          properties: n.properties,
-        })) as unknown as T[];
-      }
-
-      // Handle source ID lookup for validation
-      if (cypher.includes("_source_id = $sourceId")) {
-        const sourceId = params?.sourceId as string;
-        const node = nodes.find((n) => n.id === sourceId);
-        if (node) {
-          return [{ properties: { ...node.properties, _source_id: sourceId } }] as unknown as T[];
-        }
-        return [] as unknown as T[];
-      }
-
-      return [] as unknown as T[];
-    }),
+    runQuery: runQueryImpl,
     upsertNode: mock(() => Promise.resolve({} as never)),
     deleteNode: mock(() => Promise.resolve(true)),
     createRelationship: mock(() => Promise.resolve({} as never)),
@@ -312,9 +313,9 @@ describe("GraphDataMigrationService", () => {
 
       expect(result.nodes).toBe(3);
       expect(result.relationships).toBe(2);
-      expect(result.nodesByLabel.Repository).toBe(1);
-      expect(result.nodesByLabel.File).toBe(2);
-      expect(result.relationshipsByType.CONTAINS).toBe(2);
+      expect(result.nodesByLabel["Repository"]).toBe(1);
+      expect(result.nodesByLabel["File"]).toBe(2);
+      expect(result.relationshipsByType["CONTAINS"]).toBe(2);
     });
   });
 
