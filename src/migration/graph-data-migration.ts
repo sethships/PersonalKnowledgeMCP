@@ -160,6 +160,26 @@ export interface MigrationResult {
 }
 
 // =============================================================================
+// Validation Patterns
+// =============================================================================
+
+/**
+ * Valid Cypher identifier pattern: alphanumeric and underscore only, starting with letter or underscore.
+ * This prevents Cypher injection attacks when interpolating labels or relationship types into queries.
+ */
+const VALID_CYPHER_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Validates a Cypher identifier (label or relationship type) to prevent injection attacks.
+ *
+ * @param identifier - The string to validate
+ * @returns true if the identifier is safe to use in Cypher queries
+ */
+function isValidCypherIdentifier(identifier: string): boolean {
+  return VALID_CYPHER_IDENTIFIER.test(identifier);
+}
+
+// =============================================================================
 // Migration Service
 // =============================================================================
 
@@ -371,6 +391,16 @@ export class GraphDataMigrationService {
 
       for (const node of batch) {
         try {
+          // Validate all labels to prevent Cypher injection
+          const invalidLabels = node.labels.filter((l) => !isValidCypherIdentifier(l));
+          if (invalidLabels.length > 0) {
+            errors.push({
+              node,
+              error: `Invalid label(s): "${invalidLabels.join('", "')}". Labels must contain only alphanumeric characters and underscores, starting with a letter or underscore.`,
+            });
+            continue;
+          }
+
           // Build labels string
           const labelsStr = node.labels.map((l) => `:${l}`).join("");
 
@@ -398,9 +428,9 @@ export class GraphDataMigrationService {
       options.onProgress?.({
         phase: "import",
         step: "Importing nodes",
-        processed: i + batch.length,
+        processed: imported,
         total: nodes.length,
-        percentage: Math.round(((i + batch.length) / nodes.length) * 100),
+        percentage: Math.round((imported / nodes.length) * 100),
       });
 
       this.logger.debug({ imported, processed: i + batch.length }, "Imported node batch");
@@ -442,6 +472,15 @@ export class GraphDataMigrationService {
 
       for (const rel of batch) {
         try {
+          // Validate relationship type to prevent Cypher injection
+          if (!isValidCypherIdentifier(rel.type)) {
+            errors.push({
+              relationship: rel,
+              error: `Invalid relationship type "${rel.type}". Type must contain only alphanumeric characters and underscores, starting with a letter or underscore.`,
+            });
+            continue;
+          }
+
           // Get the new node IDs from the mapping
           const newStartId = nodeIdMap.get(rel.startNodeId);
           const newEndId = nodeIdMap.get(rel.endNodeId);
@@ -478,9 +517,9 @@ export class GraphDataMigrationService {
       options.onProgress?.({
         phase: "import",
         step: "Importing relationships",
-        processed: i + batch.length,
+        processed: imported,
         total: relationships.length,
-        percentage: Math.round(((i + batch.length) / relationships.length) * 100),
+        percentage: Math.round((imported / relationships.length) * 100),
       });
 
       this.logger.debug({ imported, processed: i + batch.length }, "Imported relationship batch");
@@ -707,9 +746,31 @@ export class GraphDataMigrationService {
           const targetProps = { ...targetNodes[0].properties };
           delete targetProps["_source_id"];
 
-          propertiesMatch =
-            JSON.stringify(sourceProps, Object.keys(sourceProps).sort()) ===
-            JSON.stringify(targetProps, Object.keys(targetProps).sort());
+          // Deep comparison that handles special types (BigInt, Date, etc.)
+          try {
+            // Replacer function to handle BigInt and other special types
+            const replacer = (_key: string, value: unknown): unknown => {
+              if (typeof value === "bigint") {
+                return value.toString();
+              }
+              return value;
+            };
+
+            // Sort keys for consistent comparison
+            const sortedStringify = (obj: Record<string, unknown>): string => {
+              const sortedKeys = Object.keys(obj).sort();
+              const sorted: Record<string, unknown> = {};
+              for (const key of sortedKeys) {
+                sorted[key] = obj[key];
+              }
+              return JSON.stringify(sorted, replacer);
+            };
+
+            propertiesMatch = sortedStringify(sourceProps) === sortedStringify(targetProps);
+          } catch {
+            // If JSON serialization fails (circular refs, etc.), fall back to false
+            propertiesMatch = false;
+          }
         }
 
         sampleChecks.push({

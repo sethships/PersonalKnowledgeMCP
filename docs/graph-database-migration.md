@@ -189,7 +189,7 @@ NEO4J_PASSWORD=your-neo4j-password
 
 # FalkorDB configuration (target)
 FALKORDB_HOST=localhost
-FALKORDB_PORT=6379
+FALKORDB_PORT=6380
 FALKORDB_USER=default
 FALKORDB_PASSWORD=
 FALKORDB_GRAPH_NAME=knowledge_graph
@@ -246,7 +246,21 @@ The migration tool works in three phases:
 | Large | 100K-1M | 500K-5M | 10-60 minutes |
 | Very Large | >1M | >5M | 1+ hours |
 
+**Memory Requirements**: The migration tool loads all data into memory. Ensure sufficient RAM:
+- Small/Medium graphs: 2-4GB available RAM
+- Large graphs: 8-16GB available RAM
+- Very Large graphs: 32GB+ RAM recommended
+
 For large graphs, reduce batch size: `--batch-size 500`
+
+### Partial Failure Behavior
+
+**Important**: The migration is NOT atomic. Partial failures leave the target database in an inconsistent state. If the migration is interrupted mid-import:
+- Orphaned nodes may remain in the target database
+- Some relationships may be missing
+- Data integrity is not guaranteed
+
+If migration fails partway through, you should clean up and retry.
 
 ### Rollback
 
@@ -254,7 +268,7 @@ If migration fails:
 
 ```bash
 # Clear FalkorDB and retry
-redis-cli -p 6379 GRAPH.DELETE knowledge_graph
+redis-cli -p 6380 GRAPH.DELETE knowledge_graph
 pk-mcp graph transfer
 
 # Or repopulate from source repositories

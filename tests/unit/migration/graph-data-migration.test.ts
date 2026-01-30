@@ -426,6 +426,32 @@ describe("GraphDataMigrationService", () => {
       expect(nodeIdMap.has("old-1")).toBe(true);
       expect(nodeIdMap.has("old-2")).toBe(true);
     });
+
+    test("should reject nodes with invalid labels (Cypher injection prevention)", async () => {
+      const testNodes: ExportedNode[] = [
+        { id: "valid-1", labels: ["ValidLabel"], properties: { name: "test" } },
+        { id: "invalid-1", labels: ["Bad Label"], properties: { name: "spaces not allowed" } },
+        {
+          id: "invalid-2",
+          labels: ["Inject]->(x) DELETE x//"],
+          properties: { name: "injection attempt" },
+        },
+        { id: "invalid-3", labels: ["123StartWithNumber"], properties: { name: "bad start" } },
+        { id: "valid-2", labels: ["_UnderscoreStart", "AlsoValid123"], properties: {} },
+      ];
+
+      const mockAdapter = createMockAdapter();
+      const service = new GraphDataMigrationService();
+      const nodeIdMap = new Map<string, string>();
+
+      const result = await service.importNodes(mockAdapter, testNodes, {}, nodeIdMap);
+
+      expect(result.imported).toBe(2); // Only valid-1 and valid-2
+      expect(result.errors).toHaveLength(3); // invalid-1, invalid-2, invalid-3
+      expect(result.errors.some((e) => e.error.includes("Bad Label"))).toBe(true);
+      expect(result.errors.some((e) => e.error.includes("Inject"))).toBe(true);
+      expect(result.errors.some((e) => e.error.includes("123StartWithNumber"))).toBe(true);
+    });
   });
 
   describe("importRelationships", () => {
@@ -473,6 +499,61 @@ describe("GraphDataMigrationService", () => {
       expect(result.imported).toBe(0);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.error).toContain("Missing node mapping");
+    });
+
+    test("should reject relationships with invalid types (Cypher injection prevention)", async () => {
+      const testRelationships: ExportedRelationship[] = [
+        { id: "r1", type: "VALID_TYPE", startNodeId: "old-1", endNodeId: "old-2", properties: {} },
+        {
+          id: "r2",
+          type: "BAD TYPE",
+          startNodeId: "old-1",
+          endNodeId: "old-2",
+          properties: {},
+        },
+        {
+          id: "r3",
+          type: "INJECT]->(x) DELETE x WITH a CREATE (a)-[r:FAKE",
+          startNodeId: "old-1",
+          endNodeId: "old-2",
+          properties: {},
+        },
+        {
+          id: "r4",
+          type: "123STARTS_WITH_NUMBER",
+          startNodeId: "old-1",
+          endNodeId: "old-2",
+          properties: {},
+        },
+        {
+          id: "r5",
+          type: "_UNDERSCORE_START",
+          startNodeId: "old-1",
+          endNodeId: "old-2",
+          properties: {},
+        },
+      ];
+
+      const nodeIdMap = new Map<string, string>([
+        ["old-1", "new-1"],
+        ["old-2", "new-2"],
+      ]);
+
+      const mockAdapter = createMockAdapter();
+      const service = new GraphDataMigrationService();
+
+      const result = await service.importRelationships(
+        mockAdapter,
+        testRelationships,
+        nodeIdMap,
+        {}
+      );
+
+      expect(result.imported).toBe(2); // Only VALID_TYPE and _UNDERSCORE_START
+      expect(result.errors).toHaveLength(3); // BAD TYPE, INJECT..., 123STARTS...
+      expect(result.errors.some((e) => e.error.includes("BAD TYPE"))).toBe(true);
+      expect(result.errors.some((e) => e.error.includes("INJECT"))).toBe(true);
+      expect(result.errors.some((e) => e.error.includes("123STARTS_WITH_NUMBER"))).toBe(true);
     });
   });
 });
