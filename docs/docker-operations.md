@@ -1,5 +1,9 @@
 # Docker Operations Guide
 
+> **Note:** This guide is being updated for the FalkorDB migration. Some sections still reference Neo4j.
+> The graph database has been migrated from Neo4j to FalkorDB. See [Migration Guide](graph-database-migration.md) for details.
+> Neo4j-specific backup/restore scripts will be replaced with FalkorDB equivalents in a future update.
+
 Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring.
 
 ## Overview
@@ -17,10 +21,10 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
   - Health checks enabled
   - Log rotation configured
 
-- **Neo4j** - Graph database for code relationships and dependencies
-  - Image: `neo4j:5.x-community` (pinned version)
-  - Port: `127.0.0.1:7687` (Bolt), `127.0.0.1:7474` (HTTP)
-  - Volume: `neo4j-data`
+- **FalkorDB** - Graph database for code relationships and dependencies
+  - Image: `falkordb/falkordb:v4.4.1` (pinned version)
+  - Port: `127.0.0.1:6380` (Redis protocol)
+  - Volume: `falkordb-data`
   - Resource limits: 2 CPU / 2GB RAM max
   - Health checks enabled
 

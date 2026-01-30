@@ -2,11 +2,15 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Date
 
 2026-01-26
+
+## Implementation Date
+
+2026-01-29
 
 ## Context
 

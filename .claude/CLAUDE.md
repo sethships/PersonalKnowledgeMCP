@@ -15,10 +15,10 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - **Language**: TypeScript 5.3+ (strict type safety)
 - **MCP SDK**: Official Anthropic MCP SDK (@modelcontextprotocol/sdk)
 - **AST Parsing**: tree-sitter (web-tree-sitter) for 12 languages, Roslyn for C# (13 total)
-- **Containers**: Docker for ChromaDB and Neo4j containerization
+- **Containers**: Docker for ChromaDB and FalkorDB containerization
 - **Storage Backends**:
   - Vector DB (ChromaDB) for semantic search
-  - Graph DB (Neo4j Community) for code relationships and dependencies
+  - Graph DB (FalkorDB) for code relationships and dependencies
   - Document Store (PostgreSQL with JSON) for artifacts (Framework Ready)
 - **Embedding Providers**: OpenAI API, Transformers.js (local), Ollama (GPU)
 - **Platform**: Cross-platform with Windows development environment (PowerShell 7, Bun)
@@ -140,12 +140,12 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - Kubernetes deployment preparation
 
 ### Phase 5: Knowledge Graph Search (Complete)
-**Goal**: Add relationship-aware code intelligence via Neo4j
-- Neo4j integration with connection pooling and schema migrations
+**Goal**: Add relationship-aware code intelligence via FalkorDB
+- FalkorDB integration with connection pooling and schema migrations (Apache 2.0 licensed)
 - AST parsing with tree-sitter for 12 languages + Roslyn for C# (13 total)
 - Entity extraction: functions, classes, interfaces, imports, and relationships
 - Graph MCP tools: get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
-- Graph ingestion service for populating Neo4j from parsed code
+- Graph ingestion service for populating FalkorDB from parsed code
 - Incremental graph updates integrated with update pipeline
 - Graph query metrics and performance monitoring
 - CLI commands: graph migrate, graph populate, graph populate-all
@@ -238,7 +238,7 @@ See [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for detailed require
 - **Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)
 - **Next Phase**: Phase 6 - Unstructured Document Ingestion (PRD completed January 2026)
 - Repository reorganized for Bun/TypeScript/ChromaDB (December 2024)
-- Knowledge graph with Neo4j fully implemented and operational
+- Knowledge graph with FalkorDB fully implemented and operational
 - Multi-provider embedding support (OpenAI, Transformers.js, Ollama)
 - HTTP/SSE transport with bearer token authentication complete
 - Multi-instance architecture (Private/Work/Public) complete

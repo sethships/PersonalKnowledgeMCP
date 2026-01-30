@@ -1,6 +1,10 @@
 # ADR-0002: Knowledge Graph Architecture
 
-**Status:** Proposed
+**Status:** Superseded by [ADR-0004](0004-graph-database-migration-neo4j-to-falkordb.md)
+
+> **Note:** This ADR originally selected Neo4j as the graph database. Due to licensing concerns
+> (Neo4j Community Edition is GPLv3), the project migrated to FalkorDB (Apache 2.0 licensed).
+> See [ADR-0004](0004-graph-database-migration-neo4j-to-falkordb.md) for details.
 
 **Date:** 2026-01-01
 
