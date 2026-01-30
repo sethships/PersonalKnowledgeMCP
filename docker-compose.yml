@@ -1,5 +1,5 @@
-# Personal Knowledge MCP - Docker Compose Configuration (Phase 3)
-# Phase 3: Multi-Instance Support with ChromaDB and FalkorDB Production Hardening
+# Personal Knowledge MCP - Docker Compose Configuration
+# Multi-Instance Support with ChromaDB and FalkorDB (Production Hardened)
 # MCP service runs on host (not containerized) due to stdio transport requirement
 #
 # Usage:

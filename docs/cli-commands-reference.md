@@ -379,7 +379,7 @@ pk-mcp health
 pk-mcp health
 ```
 
-**Output**: Status of ChromaDB, OpenAI API (if configured), Neo4j (if configured), and Metadata Store with response times.
+**Output**: Status of ChromaDB, OpenAI API (if configured), FalkorDB (if configured), and Metadata Store with response times.
 
 **Exit Codes**:
 - `0` - All services healthy
@@ -522,11 +522,11 @@ pk-mcp token rotate --name "Cursor IDE"
 
 ## Graph Commands
 
-Manage the Neo4j knowledge graph for code dependency analysis.
+Manage the FalkorDB knowledge graph for code dependency analysis.
 
 ### graph migrate - Apply Schema Migrations
 
-Apply schema migrations to the Neo4j knowledge graph.
+Apply schema migrations to the FalkorDB knowledge graph.
 
 **Syntax**:
 ```bash

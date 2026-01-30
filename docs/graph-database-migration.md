@@ -77,8 +77,12 @@ If you have an existing installation with Neo4j and graph data, follow these ste
 
 If you want to preserve your graph data, export it first:
 
+> **Note**: The APOC export command below requires the APOC plugin to be installed in Neo4j.
+> Neo4j Community Edition does not include APOC by default. If APOC is not available,
+> you can skip this step - graph data can be regenerated from your indexed repositories.
+
 ```bash
-# Connect to Neo4j and export
+# Connect to Neo4j and export (requires APOC plugin)
 docker compose exec neo4j cypher-shell -u neo4j -p YOUR_PASSWORD \
   "CALL apoc.export.json.all('backup.json')"
 
@@ -86,7 +90,8 @@ docker compose exec neo4j cypher-shell -u neo4j -p YOUR_PASSWORD \
 docker cp pk-mcp-neo4j:/var/lib/neo4j/backup.json ./neo4j-backup.json
 ```
 
-> **Note**: Graph data can be regenerated from your indexed repositories, so export is optional.
+> **Recommended**: Since graph data can be regenerated from indexed repositories, most users
+> can skip the export and simply repopulate the graph after migration (Step 7).
 
 ### Step 2: Stop Neo4j
 
