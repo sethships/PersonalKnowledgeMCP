@@ -47,6 +47,10 @@ export interface DebounceConfig {
    * Maximum wait time before forcing execution (optional)
    * If set, execution will occur after this duration even if new events keep arriving
    * Useful to prevent indefinite accumulation during sustained activity
+   *
+   * **Note**: When not set, batch size is unbounded - items accumulate indefinitely
+   * until a quiet period occurs. For memory-constrained environments or
+   * high-throughput scenarios, consider setting this to bound accumulation.
    */
   maxWaitMs?: number;
 }
@@ -246,6 +250,7 @@ export function createDebouncedBatcher<T>(
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
   let firstItemTime: number | null = null;
+  let executionInProgress = false;
 
   /**
    * Clear all timers
@@ -262,32 +267,44 @@ export function createDebouncedBatcher<T>(
   }
 
   /**
-   * Execute with current pending items
+   * Execute with current pending items.
+   * Uses executionInProgress guard to prevent race conditions between
+   * flush() calls and timer-triggered executions.
    */
   async function execute(): Promise<void> {
-    clearTimers();
-
-    const items = pendingItems;
-    const totalWaitMs = firstItemTime !== null ? Date.now() - firstItemTime : delayMs;
-
-    pendingItems = [];
-    firstItemTime = null;
-
-    if (items.length === 0) {
+    // Guard against concurrent execution (e.g., flush() racing with timer)
+    if (executionInProgress) {
       return;
     }
+    executionInProgress = true;
 
-    logger?.debug(
-      {
-        batchSize: items.length,
-        totalWaitMs,
-        delayMs,
-      },
-      "Executing debounced batch"
-    );
+    try {
+      clearTimers();
 
-    if (onExecute) {
-      await onExecute(items);
+      const items = pendingItems;
+      const totalWaitMs = firstItemTime !== null ? Date.now() - firstItemTime : delayMs;
+
+      pendingItems = [];
+      firstItemTime = null;
+
+      if (items.length === 0) {
+        return;
+      }
+
+      logger?.debug(
+        {
+          batchSize: items.length,
+          totalWaitMs,
+          delayMs,
+        },
+        "Executing debounced batch"
+      );
+
+      if (onExecute) {
+        await onExecute(items);
+      }
+    } finally {
+      executionInProgress = false;
     }
   }
 

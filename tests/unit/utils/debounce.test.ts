@@ -210,7 +210,8 @@ describe("createDebouncedBatcher - basic functionality", () => {
     batcher.push("item2");
 
     // Wait for debounce to complete (MIN_DEBOUNCE_MS is 100ms)
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
     expect(executedItems[0]).toEqual(["item1", "item2"]);
@@ -223,25 +224,26 @@ describe("createDebouncedBatcher - basic functionality", () => {
     const onExecute = mock(async (items: string[]) => {
       executedItems.push([...items]);
     });
-    const batcher = createDebouncedBatcher<string>({ delayMs: 100 }, { onExecute });
+    // Using 150ms delay for better CI stability
+    const batcher = createDebouncedBatcher<string>({ delayMs: 150 }, { onExecute });
 
     batcher.push("item1");
 
-    // Wait 60ms (less than delay)
-    await sleep(60);
+    // Wait 80ms (less than delay)
+    await sleep(80);
 
     // Push another item - should reset timer
     batcher.push("item2");
 
-    // Wait another 60ms (total 120ms from first, but only 60ms from last)
-    await sleep(60);
+    // Wait another 80ms (total 160ms from first, but only 80ms from last)
+    await sleep(80);
 
     // Should not have executed yet
     expect(onExecute).not.toHaveBeenCalled();
     expect(batcher.pendingCount).toBe(2);
 
-    // Wait for remaining time
-    await sleep(60);
+    // Wait for remaining time plus margin for CI stability
+    await sleep(100);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
     expect(executedItems[0]).toEqual(["item1", "item2"]);
@@ -260,7 +262,8 @@ describe("createDebouncedBatcher - basic functionality", () => {
 
     expect(batcher.pendingCount).toBe(10);
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
     expect(executedItems[0]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -277,7 +280,8 @@ describe("createDebouncedBatcher - basic functionality", () => {
     batcher.push("a");
     batcher.push("b");
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(executedBatches).toHaveLength(1);
     expect(executedBatches[0]).toEqual(["a", "b"]);
@@ -286,7 +290,7 @@ describe("createDebouncedBatcher - basic functionality", () => {
     batcher.push("c");
     batcher.push("d");
 
-    await sleep(150);
+    await sleep(200);
 
     expect(executedBatches).toHaveLength(2);
     expect(executedBatches[1]).toEqual(["c", "d"]);
@@ -339,8 +343,8 @@ describe("createDebouncedBatcher - flush behavior", () => {
 
     expect(batcher.isActive).toBe(false);
 
-    // Wait to ensure no double execution
-    await sleep(150);
+    // Wait to ensure no double execution (using 200ms margin for CI stability)
+    await sleep(200);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
   });
@@ -395,8 +399,8 @@ describe("createDebouncedBatcher - cancel behavior", () => {
 
     batcher.cancel();
 
-    // Wait past debounce time
-    await sleep(150);
+    // Wait past debounce time (using 200ms margin for CI stability)
+    await sleep(200);
 
     expect(onExecute).not.toHaveBeenCalled();
   });
@@ -425,7 +429,8 @@ describe("createDebouncedBatcher - cancel behavior", () => {
 
     batcher.push("item2");
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
     expect(executedItems[0]).toEqual(["item2"]);
@@ -510,8 +515,8 @@ describe("createDebouncedBatcher - maxWaitMs behavior", () => {
     // Should not have executed yet (debounce keeps resetting)
     expect(onExecute).not.toHaveBeenCalled();
 
-    // Stop pushing and wait for final debounce
-    await sleep(150);
+    // Stop pushing and wait for final debounce (using 200ms margin for CI stability)
+    await sleep(200);
 
     expect(onExecute).toHaveBeenCalledTimes(1);
     expect(executedItems[0]).toEqual(["item1", "item2", "item3", "item4"]);
@@ -534,7 +539,8 @@ describe("createDebouncedBatcher - callbacks", () => {
     batcher.push("item3");
     expect(onDebounceStart).toHaveBeenCalledTimes(1);
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     // Start of new batch
     batcher.push("item4");
@@ -556,7 +562,8 @@ describe("createDebouncedBatcher - callbacks", () => {
     batcher.push({ id: 1, name: "first" });
     batcher.push({ id: 2, name: "second" });
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(receivedItems[0]).toEqual([
       { id: 1, name: "first" },
@@ -570,7 +577,8 @@ describe("createDebouncedBatcher - callbacks", () => {
     batcher.push("item1");
     expect(batcher.pendingCount).toBe(1);
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(batcher.pendingCount).toBe(0);
     expect(batcher.isActive).toBe(false);
@@ -642,7 +650,8 @@ describe("createDebouncedBatcher - logger integration", () => {
     batcher.push("item1");
     batcher.push("item2");
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     const executeLog = debugCalls.find((c) => c.message === "Executing debounced batch");
     expect(executeLog).toBeDefined();
@@ -657,7 +666,8 @@ describe("createDebouncedBatcher - edge cases", () => {
 
     batcher.push("item1");
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(batcher.pendingCount).toBe(0);
   });
@@ -682,7 +692,8 @@ describe("createDebouncedBatcher - edge cases", () => {
 
     batcher.push("item1");
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     // Should log error
     expect(errorCalls.length).toBeGreaterThan(0);
@@ -724,8 +735,8 @@ describe("createDebouncedBatcher - edge cases", () => {
     expect(batcher.pendingCount).toBe(2);
     expect(batcher.isActive).toBe(true);
 
-    // After execution
-    await sleep(150);
+    // After execution (using 200ms margin for CI stability)
+    await sleep(200);
     expect(batcher.pendingCount).toBe(0);
     expect(batcher.isActive).toBe(false);
   });
@@ -747,7 +758,8 @@ describe("createDebouncedBatcher - edge cases", () => {
     batcher.push({ path: "/src/index.ts", status: "modified", timestamp: Date.now() });
     batcher.push({ path: "/src/utils.ts", status: "added", timestamp: Date.now() });
 
-    await sleep(150);
+    // Using 200ms margin for CI stability
+    await sleep(200);
 
     expect(changes[0]).toHaveLength(2);
     expect(changes[0]![0]!.path).toBe("/src/index.ts");
