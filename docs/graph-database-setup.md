@@ -1,16 +1,6 @@
-# Neo4j Setup Guide (DEPRECATED)
+# FalkorDB Setup Guide
 
-> **DEPRECATED**: Personal Knowledge MCP has migrated from Neo4j to FalkorDB.
->
-> - **New installations**: See [FalkorDB Setup Guide](graph-database-setup.md)
-> - **Migrating from Neo4j**: See [Migration Guide](graph-database-migration.md)
-> - **Why we migrated**: See [ADR-0004](architecture/adr/0004-graph-database-migration-neo4j-to-falkordb.md)
->
-> This document is preserved for historical reference only.
-
----
-
-This guide covers Neo4j installation, configuration, and usage for the Personal Knowledge MCP knowledge graph features.
+This guide covers FalkorDB installation, configuration, and usage for the Personal Knowledge MCP knowledge graph features.
 
 ## Table of Contents
 
@@ -18,7 +8,6 @@ This guide covers Neo4j installation, configuration, and usage for the Personal 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
   - [Docker Compose (Recommended)](#docker-compose-recommended)
-  - [Native Installation](#native-installation)
 - [Configuration](#configuration)
 - [Schema Setup](#schema-setup)
 - [Populating the Graph](#populating-the-graph)
@@ -30,17 +19,19 @@ This guide covers Neo4j installation, configuration, and usage for the Personal 
 
 ## Overview
 
-Neo4j is the graph database that powers the knowledge graph features in Personal Knowledge MCP, enabling:
+FalkorDB is the graph database that powers the knowledge graph features in Personal Knowledge MCP, enabling:
 
 - **Dependency analysis** - What does this code depend on?
 - **Impact analysis** - What will break if I change this?
 - **Architecture visualization** - How is the codebase structured?
 - **Path tracing** - How are these components connected?
 
-### When You Need Neo4j
+FalkorDB is an Apache 2.0 licensed graph database with Cypher support, chosen for its permissive licensing and compatibility. See [ADR-0004](architecture/adr/0004-graph-database-migration-neo4j-to-falkordb.md) for the decision rationale.
 
-| Feature | Requires Neo4j |
-|---------|---------------|
+### When You Need FalkorDB
+
+| Feature | Requires FalkorDB |
+|---------|-------------------|
 | `semantic_search` | No |
 | `list_indexed_repositories` | No |
 | `get_dependencies` | **Yes** |
@@ -49,15 +40,15 @@ Neo4j is the graph database that powers the knowledge graph features in Personal
 | `find_path` | **Yes** |
 | `get_graph_metrics` | **Yes** |
 
-If you only need semantic search, you can skip Neo4j setup.
+If you only need semantic search, you can skip FalkorDB setup.
 
 ---
 
 ## Prerequisites
 
-- **Docker Desktop**: For running Neo4j container
-- **At least 2GB RAM**: Neo4j requires significant memory
-- **Disk space**: 500MB minimum for Neo4j + data
+- **Docker Desktop**: For running FalkorDB container
+- **At least 2GB RAM**: FalkorDB requires memory for graph operations
+- **Disk space**: 500MB minimum for FalkorDB + data
 
 ---
 
@@ -65,82 +56,48 @@ If you only need semantic search, you can skip Neo4j setup.
 
 ### Docker Compose (Recommended)
 
-Personal Knowledge MCP includes Neo4j in `docker-compose.yml`.
+Personal Knowledge MCP includes FalkorDB in `docker-compose.yml`.
 
 **1. Configure environment variables**
 
 Add to your `.env` file:
 
 ```bash
-# Required - Neo4j authentication
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-secure-password  # Generate with: openssl rand -base64 32
+# Required - FalkorDB authentication
+FALKORDB_PASSWORD=your-secure-password  # Generate with: openssl rand -base64 32
 
-# Optional - Customize ports (defaults shown)
-NEO4J_HOST=localhost
-NEO4J_BOLT_PORT=7687
-NEO4J_HTTP_PORT=7474
+# Optional - Customize settings (defaults shown)
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6380
+FALKORDB_DATABASE=knowledge_graph
 ```
 
-> **Important**: `NEO4J_PASSWORD` is required. Docker Compose will fail without it.
+> **Important**: `FALKORDB_PASSWORD` is required for authentication.
 
-**2. Start Neo4j**
+**2. Start FalkorDB**
 
 ```bash
-# Start Neo4j with the default profile
-docker compose --profile default up -d neo4j
+# Start FalkorDB with the default profile
+docker compose --profile default up -d falkordb
 
 # Or start all services
 docker compose --profile default up -d
 ```
 
-**3. Verify Neo4j is running**
+**3. Verify FalkorDB is running**
 
 ```bash
 # Check container status
-docker compose ps neo4j
+docker compose ps falkordb
 
 # View logs
-docker compose logs neo4j
+docker compose logs falkordb
 
-# Test connection
-curl http://localhost:7474
+# Test connection with redis-cli
+docker compose exec falkordb redis-cli -a your-password ping
 ```
 
-**Expected output**: Neo4j container running with healthy status.
-
-### Native Installation
-
-If you prefer running Neo4j natively (without Docker):
-
-**1. Download Neo4j Community**
-
-Visit [Neo4j Download Center](https://neo4j.com/download-center/#community) and download Neo4j Community Edition 5.x.
-
-**2. Install and start**
-
-Follow the platform-specific instructions:
-- **Windows**: Run the installer, start via Neo4j Desktop or service
-- **macOS**: `brew install neo4j` then `neo4j start`
-- **Linux**: Extract tarball, run `./bin/neo4j start`
-
-**3. Set initial password**
-
-```bash
-# Via cypher-shell
-./bin/cypher-shell -u neo4j -p neo4j
-# You'll be prompted to change the password
-```
-
-**4. Configure environment**
-
-```bash
-NEO4J_HOST=localhost
-NEO4J_BOLT_PORT=7687
-NEO4J_HTTP_PORT=7474
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-new-password
-```
+**Expected output**: FalkorDB container running with healthy status, `PONG` response from ping.
 
 ---
 
@@ -150,11 +107,10 @@ NEO4J_PASSWORD=your-new-password
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEO4J_USER` | Yes | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | Yes | - | Neo4j password |
-| `NEO4J_HOST` | No | `localhost` | Neo4j hostname |
-| `NEO4J_BOLT_PORT` | No | `7687` | Bolt protocol port |
-| `NEO4J_HTTP_PORT` | No | `7474` | HTTP/Browser port |
+| `FALKORDB_HOST` | No | `localhost` | FalkorDB hostname |
+| `FALKORDB_PORT` | No | `6380` | Redis protocol port |
+| `FALKORDB_PASSWORD` | Yes | - | Authentication password |
+| `FALKORDB_DATABASE` | No | `knowledge_graph` | Graph database name |
 
 ### Docker Compose Resource Limits
 
@@ -171,24 +127,19 @@ deploy:
       memory: 512M
 ```
 
-Neo4j memory settings:
-- **Heap**: 512MB initial, 1GB max
-- **Page cache**: 512MB
-
 To modify for larger codebases, update `docker-compose.yml`:
 
 ```yaml
-environment:
-  - NEO4J_server_memory_heap_initial__size=1g
-  - NEO4J_server_memory_heap_max__size=2g
-  - NEO4J_server_memory_pagecache_size=1g
+deploy:
+  resources:
+    limits:
+      memory: 4G
 ```
 
 ### Data Persistence
 
 Graph data is stored in Docker volumes:
-- `neo4j-data`: Graph database files
-- `neo4j-logs`: Neo4j logs
+- `falkordb-data`: Graph database files
 
 Data persists across container restarts. To reset:
 
@@ -208,8 +159,8 @@ Before using graph tools, apply the database schema:
 # Apply schema migrations
 pk-mcp graph migrate
 
-# Or check current status first
-pk-mcp graph migrate --status
+# Or via bun
+bun run cli graph migrate
 ```
 
 **Expected output**:
@@ -283,7 +234,18 @@ pk-mcp graph populate my-api --force
 
 ```bash
 pk-mcp health
-# Should show "Neo4j: OK"
+# Should show "FalkorDB: OK"
+```
+
+### Test Connection
+
+```bash
+# Test with redis-cli
+docker compose exec falkordb redis-cli -a your-password ping
+# Should return: PONG
+
+# Test graph query
+docker compose exec falkordb redis-cli -a your-password GRAPH.QUERY knowledge_graph "MATCH (n) RETURN count(n)"
 ```
 
 ### Test Graph Queries
@@ -292,26 +254,6 @@ pk-mcp health
 ```bash
 # In Claude Code, ask:
 "What does src/services/auth.ts depend on?"
-```
-
-**Via Neo4j Browser:**
-
-1. Open http://localhost:7474
-2. Log in with your credentials
-3. Run a test query:
-
-```cypher
-// Count nodes by type
-MATCH (n)
-RETURN labels(n)[0] AS type, count(*) AS count
-ORDER BY count DESC
-```
-
-```cypher
-// Sample file dependencies
-MATCH (f:File)-[r:IMPORTS]->(dep)
-RETURN f.path AS file, dep.path AS imports
-LIMIT 10
 ```
 
 ### Verify Graph Metrics
@@ -329,65 +271,61 @@ LIMIT 10
 
 **Check disk usage:**
 ```bash
-docker compose exec neo4j du -sh /data
+docker compose exec falkordb du -sh /data
 ```
 
 **View logs:**
 ```bash
-docker compose logs neo4j --tail 100
+docker compose logs falkordb --tail 100
 ```
 
 **Backup data:**
 ```bash
-# Stop Neo4j first
-docker compose stop neo4j
+# Stop FalkorDB first
+docker compose stop falkordb
 
 # Copy data volume
-docker run --rm -v pk-mcp-neo4j-data:/data -v $(pwd):/backup alpine \
-  tar cvf /backup/neo4j-backup.tar /data
+docker run --rm -v pk-mcp-falkordb-data:/data -v $(pwd):/backup alpine \
+  tar cvf /backup/falkordb-backup.tar /data
 
 # Restart
-docker compose start neo4j
+docker compose start falkordb
 ```
 
 ### Performance Tuning
 
 For large codebases (>10K files):
 
-1. **Increase heap memory** in docker-compose.yml:
+1. **Increase memory** in docker-compose.yml:
    ```yaml
-   - NEO4J_server_memory_heap_max__size=4g
+   deploy:
+     resources:
+       limits:
+         memory: 4G
    ```
 
-2. **Increase page cache** for faster queries:
-   ```yaml
-   - NEO4J_server_memory_pagecache_size=2g
-   ```
+2. **Ensure adequate Docker memory** in Docker Desktop settings
 
-3. **Ensure adequate Docker memory** in Docker Desktop settings
-
-### Updating Neo4j
+### Updating FalkorDB
 
 ```bash
 # Pull latest image
-docker compose pull neo4j
+docker compose pull falkordb
 
 # Recreate container
-docker compose up -d neo4j
+docker compose up -d falkordb
 ```
-
-> **Note**: Major version upgrades may require data migration. Check Neo4j release notes.
 
 ---
 
 ## Troubleshooting
 
-### Neo4j Won't Start
+### FalkorDB Won't Start
 
 **Check password is set:**
 ```bash
 # .env must contain:
-NEO4J_PASSWORD=your-password
+FALKORDB_PASSWORD=your-password
 ```
 
 **Check Docker resources:**
@@ -396,58 +334,43 @@ NEO4J_PASSWORD=your-password
 
 **View startup logs:**
 ```bash
-docker compose logs neo4j
+docker compose logs falkordb
 ```
 
 ### "No graph data available" Error
 
-**Cause**: Neo4j not running or not configured.
+**Cause**: FalkorDB not running or not configured.
 
 **Solution:**
-1. Start Neo4j: `docker compose --profile default up -d neo4j`
+1. Start FalkorDB: `docker compose --profile default up -d falkordb`
 2. Apply migrations: `pk-mcp graph migrate`
 3. Populate graph: `pk-mcp graph populate my-api`
 
 ### Connection Refused
 
-**Check Neo4j is running:**
+**Check FalkorDB is running:**
 ```bash
-docker compose ps neo4j
+docker compose ps falkordb
 ```
 
-**Check ports are accessible:**
+**Check port is accessible:**
 ```bash
-# Bolt port
-curl http://localhost:7687 2>&1 | head -1
-
-# HTTP port
-curl http://localhost:7474
+# Test connection
+docker compose exec falkordb redis-cli -a your-password ping
 ```
 
 **Verify environment variables:**
 ```bash
-echo $NEO4J_HOST
-echo $NEO4J_BOLT_PORT
+echo $FALKORDB_HOST
+echo $FALKORDB_PORT
 ```
 
 ### Authentication Failed
 
 **Check credentials match:**
 ```bash
-# Test with cypher-shell
-docker compose exec neo4j cypher-shell -u neo4j -p your-password "RETURN 1"
-```
-
-**Reset password (if needed):**
-```bash
-# Stop Neo4j
-docker compose stop neo4j
-
-# Remove auth file
-docker compose run --rm neo4j bash -c "rm /data/dbms/auth"
-
-# Restart and set new password
-docker compose up -d neo4j
+# Test with redis-cli
+docker compose exec falkordb redis-cli -a your-password ping
 ```
 
 ### Slow Queries
@@ -461,13 +384,7 @@ docker compose up -d neo4j
 **Common causes:**
 - Large depth parameter (use depth=1 or 2)
 - Missing indexes (re-run migrations)
-- Insufficient memory (increase heap)
-
-**Add custom indexes if needed:**
-```cypher
-// Example: Index on file paths
-CREATE INDEX file_path_index IF NOT EXISTS FOR (f:File) ON (f.path)
-```
+- Insufficient memory (increase limit)
 
 ### Data Corruption
 
@@ -477,7 +394,7 @@ CREATE INDEX file_path_index IF NOT EXISTS FOR (f:File) ON (f.path)
 ```bash
 # WARNING: Deletes all graph data
 docker compose down -v
-docker compose --profile default up -d neo4j
+docker compose --profile default up -d falkordb
 pk-mcp graph migrate
 pk-mcp graph populate-all
 ```
@@ -491,7 +408,8 @@ pk-mcp graph populate-all
 - [Configuration Reference](configuration-reference.md) - All environment variables
 - [Docker Operations Guide](docker-operations.md) - General Docker guidance
 - [Troubleshooting Guide](troubleshooting.md) - General troubleshooting
+- [Migration Guide](graph-database-migration.md) - Migrating from Neo4j
 
 ---
 
-**Last Updated**: 2026-01-16
+**Last Updated**: 2026-01-29

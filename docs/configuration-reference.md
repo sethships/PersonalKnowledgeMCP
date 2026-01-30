@@ -154,28 +154,26 @@ POSTGRES_PORT=5432
 
 ## Graph Database Configuration
 
-### Neo4j (Knowledge Graph)
+### FalkorDB (Knowledge Graph)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEO4J_USER` | Yes* | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | Yes* | - | Neo4j password (container won't start without it) |
-| `NEO4J_HOST` | No | `localhost` | Neo4j hostname |
-| `NEO4J_BOLT_PORT` | No | `7687` | Neo4j Bolt protocol port |
-| `NEO4J_HTTP_PORT` | No | `7474` | Neo4j HTTP/Browser port |
+| `FALKORDB_HOST` | No | `localhost` | FalkorDB hostname |
+| `FALKORDB_PORT` | No | `6380` | FalkorDB Redis protocol port |
+| `FALKORDB_PASSWORD` | Yes* | - | FalkorDB password for authentication |
+| `FALKORDB_DATABASE` | No | `knowledge_graph` | Graph database name |
 
 *Required when using graph features.
 
 **Example**:
 ```bash
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-secure-password  # Use: openssl rand -base64 32
-NEO4J_HOST=localhost
-NEO4J_BOLT_PORT=7687
-NEO4J_HTTP_PORT=7474
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6380
+FALKORDB_PASSWORD=your-secure-password  # Use: openssl rand -base64 32
+FALKORDB_DATABASE=knowledge_graph
 ```
 
-> **See Also**: [Neo4j Setup Guide](neo4j-setup.md) and [Graph Tools Guide](graph-tools.md)
+> **See Also**: [FalkorDB Setup Guide](graph-database-setup.md) and [Graph Tools Guide](graph-tools.md)
 
 ---
 
@@ -444,8 +442,8 @@ docker compose --profile default up -d     # Single instance (backwards compatib
 ## Related Documentation
 
 - [Embedding Provider Guide](embedding-providers.md) - Detailed provider configuration
-- [Graph Tools Guide](graph-tools.md) - Neo4j and knowledge graph usage
-- [Neo4j Setup Guide](neo4j-setup.md) - Neo4j installation and configuration
+- [Graph Tools Guide](graph-tools.md) - FalkorDB and knowledge graph usage
+- [FalkorDB Setup Guide](graph-database-setup.md) - FalkorDB installation and configuration
 - [CLI Commands Reference](cli-commands-reference.md) - Complete CLI documentation
 - [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
 - [Claude Code Setup Guide](claude-code-setup.md) - MCP integration

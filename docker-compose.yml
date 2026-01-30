@@ -1,5 +1,5 @@
 # Personal Knowledge MCP - Docker Compose Configuration (Phase 3)
-# Phase 3: Multi-Instance Support with ChromaDB Production Hardening
+# Phase 3: Multi-Instance Support with ChromaDB and FalkorDB Production Hardening
 # MCP service runs on host (not containerized) due to stdio transport requirement
 #
 # Usage:
@@ -131,55 +131,6 @@ services:
       - CHROMA_AUTH_TOKEN_TRANSPORT_HEADER=Authorization
 
   # ============================================================================
-  # Graph Database (Neo4j Community) - Phase 2
-  # For code dependency and knowledge relationship storage
-  # ============================================================================
-  neo4j:
-    image: neo4j:5.25.1-community
-    container_name: pk-mcp-neo4j
-    profiles:
-      - default
-      - all
-    ports:
-      - "127.0.0.1:7474:7474" # HTTP
-      - "127.0.0.1:7687:7687" # Bolt
-    volumes:
-      - neo4j-data:/data
-      - neo4j-logs:/logs
-    environment:
-      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set}
-      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
-      - NEO4J_server_memory_heap_initial__size=512m
-      - NEO4J_server_memory_heap_max__size=1g
-      - NEO4J_server_memory_pagecache_size=512m
-    networks:
-      - pk-mcp-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ============================================================================
   # Document Store (PostgreSQL) - Phase 4
   # ============================================================================
   postgres:
@@ -225,15 +176,16 @@ services:
         max-file: "3"
 
   # ============================================================================
-  # FalkorDB - Alternative Graph Database (Apache 2.0 licensed)
+  # FalkorDB - Graph Database (Apache 2.0 licensed)
   # For code dependency and knowledge relationship storage
-  # Uses Redis protocol - alternative to Neo4j
+  # Uses Redis protocol on port 6380
   # ============================================================================
   falkordb:
     image: falkordb/falkordb:v4.4.1
     container_name: pk-mcp-falkordb
     profiles:
-      - falkordb
+      - default
+      - all
     ports:
       - "127.0.0.1:6380:6379"
     volumes:
@@ -280,11 +232,6 @@ volumes:
     driver: local
   # PostgreSQL
   postgres-data:
-    driver: local
-  # Neo4j
-  neo4j-data:
-    driver: local
-  neo4j-logs:
     driver: local
   # FalkorDB
   falkordb-data:

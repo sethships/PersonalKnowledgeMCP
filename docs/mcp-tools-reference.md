@@ -237,9 +237,9 @@ None required.
 
 ## Graph Tools
 
-Graph tools require Neo4j to be running and populated with repository data.
+Graph tools require FalkorDB to be running and populated with repository data.
 
-> **Prerequisites**: See [Neo4j Setup Guide](neo4j-setup.md) and [Graph Tools Guide](graph-tools.md).
+> **Prerequisites**: See [FalkorDB Setup Guide](graph-database-setup.md) and [Graph Tools Guide](graph-tools.md).
 
 ### get_dependencies
 
@@ -743,7 +743,7 @@ X-RateLimit-Reset: 1736963400
 ## Related Documentation
 
 - [Graph Tools Guide](graph-tools.md) - Detailed usage examples
-- [Neo4j Setup Guide](neo4j-setup.md) - Graph database setup
+- [FalkorDB Setup Guide](graph-database-setup.md) - Graph database setup
 - [Configuration Reference](configuration-reference.md) - Environment variables
 - [Claude Code Setup Guide](claude-code-setup.md) - MCP integration
 - [Troubleshooting Guide](troubleshooting.md) - Common issues
