@@ -230,7 +230,7 @@ services:
   # Uses Redis protocol - alternative to Neo4j
   # ============================================================================
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb:v4.4.1
     container_name: pk-mcp-falkordb
     profiles:
       - falkordb

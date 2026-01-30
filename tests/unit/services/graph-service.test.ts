@@ -16,18 +16,20 @@ import {
   GraphServiceTimeoutError,
 } from "../../../src/services/graph-service-errors.js";
 import { QueryCache, DEFAULT_CACHE_CONFIG } from "../../../src/services/graph-service-cache.js";
-import type { Neo4jStorageClient } from "../../../src/graph/types.js";
+import type { GraphStorageAdapter } from "../../../src/graph/adapters/types.js";
 import { RelationshipType } from "../../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // =============================================================================
-// Mock Neo4j Client
+// Mock Graph Storage Adapter
 // =============================================================================
 
 /**
- * Create a mock Neo4jStorageClient for testing
+ * Create a mock GraphStorageAdapter for testing
+ *
+ * Uses the adapter interface to properly test the service abstraction layer.
  */
-function createMockNeo4jClient(overrides?: Partial<Neo4jStorageClient>): Neo4jStorageClient {
+function createMockGraphAdapter(overrides?: Partial<GraphStorageAdapter>): GraphStorageAdapter {
   return {
     connect: mock(() => Promise.resolve()),
     disconnect: mock(() => Promise.resolve()),
@@ -193,13 +195,13 @@ const MOCK_TRAVERSE_RESULT = {
 // =============================================================================
 
 describe("GraphServiceImpl", () => {
-  let mockClient: Neo4jStorageClient;
+  let mockAdapter: GraphStorageAdapter;
   let service: GraphServiceImpl;
 
   beforeEach(() => {
     initializeLogger({ level: "error", format: "json" });
-    mockClient = createMockNeo4jClient();
-    service = new GraphServiceImpl(mockClient);
+    mockAdapter = createMockGraphAdapter();
+    service = new GraphServiceImpl(mockAdapter);
   });
 
   afterEach(() => {
@@ -212,24 +214,24 @@ describe("GraphServiceImpl", () => {
 
   describe("constructor", () => {
     test("accepts Neo4j client without config", () => {
-      const svc = new GraphServiceImpl(mockClient);
+      const svc = new GraphServiceImpl(mockAdapter);
       expect(svc).toBeInstanceOf(GraphServiceImpl);
     });
 
     test("accepts custom timeout configuration", () => {
-      const svc = new GraphServiceImpl(mockClient, { timeoutMs: 60000 });
+      const svc = new GraphServiceImpl(mockAdapter, { timeoutMs: 60000 });
       expect(svc).toBeInstanceOf(GraphServiceImpl);
     });
 
     test("accepts custom cache configuration", () => {
-      const svc = new GraphServiceImpl(mockClient, {
+      const svc = new GraphServiceImpl(mockAdapter, {
         cache: { ttlMs: 120000, maxEntries: 50 },
       });
       expect(svc).toBeInstanceOf(GraphServiceImpl);
     });
 
     test("merges partial config with defaults", () => {
-      const svc = new GraphServiceImpl(mockClient, { timeoutMs: 45000 });
+      const svc = new GraphServiceImpl(mockAdapter, { timeoutMs: 45000 });
       const stats = svc.getCacheStats();
       expect(stats.dependency.ttlMs).toBe(DEFAULT_CACHE_CONFIG.ttlMs);
     });
@@ -304,7 +306,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("accepts valid depth values", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         // depth 1
         const result1 = await service.getDependencies({
@@ -331,7 +333,7 @@ describe("GraphServiceImpl", () => {
 
     describe("execution", () => {
       test("returns dependencies for valid file query", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result = await service.getDependencies(TEST_QUERIES.dependency.valid);
 
@@ -343,7 +345,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("includes transitive dependencies when requested", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result = await service.getDependencies(TEST_QUERIES.dependency.withDepth);
 
@@ -352,7 +354,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("handles zero dependencies gracefully", async () => {
-        mockClient.analyzeDependencies = mock(() =>
+        mockAdapter.analyzeDependencies = mock(() =>
           Promise.resolve({
             direct: [],
             transitive: [],
@@ -368,7 +370,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("calls analyzeDependencies with correct direction", async () => {
-        const analyzeSpy = spyOn(mockClient, "analyzeDependencies");
+        const analyzeSpy = spyOn(mockAdapter, "analyzeDependencies");
 
         await service.getDependencies(TEST_QUERIES.dependency.valid);
 
@@ -380,7 +382,7 @@ describe("GraphServiceImpl", () => {
 
     describe("caching", () => {
       test("caches results and returns from_cache=true on second call", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result1 = await service.getDependencies(TEST_QUERIES.dependency.valid);
         expect(result1.metadata.from_cache).toBe(false);
@@ -389,23 +391,23 @@ describe("GraphServiceImpl", () => {
         expect(result2.metadata.from_cache).toBe(true);
 
         // Should only have called analyzeDependencies once
-        expect(mockClient.analyzeDependencies).toHaveBeenCalledTimes(1);
+        expect(mockAdapter.analyzeDependencies).toHaveBeenCalledTimes(1);
       });
 
       test("different queries have different cache keys", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         await service.getDependencies(TEST_QUERIES.dependency.valid);
         await service.getDependencies(TEST_QUERIES.dependency.withDepth);
 
         // Should have called analyzeDependencies twice (different queries)
-        expect(mockClient.analyzeDependencies).toHaveBeenCalledTimes(2);
+        expect(mockAdapter.analyzeDependencies).toHaveBeenCalledTimes(2);
       });
     });
 
     describe("error handling", () => {
       test("wraps Neo4j errors in GraphServiceOperationError", async () => {
-        mockClient.analyzeDependencies = mock(() =>
+        mockAdapter.analyzeDependencies = mock(() =>
           Promise.reject(new Error("Connection refused"))
         );
 
@@ -441,7 +443,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("allows optional repository", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result = await service.getDependents(TEST_QUERIES.dependent.crossRepo);
 
@@ -451,7 +453,7 @@ describe("GraphServiceImpl", () => {
 
     describe("execution", () => {
       test("returns dependents for valid query", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result = await service.getDependents(TEST_QUERIES.dependent.valid);
 
@@ -463,7 +465,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("calls analyzeDependencies with dependedOnBy direction", async () => {
-        const analyzeSpy = spyOn(mockClient, "analyzeDependencies");
+        const analyzeSpy = spyOn(mockAdapter, "analyzeDependencies");
 
         await service.getDependents(TEST_QUERIES.dependent.valid);
 
@@ -473,7 +475,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("includes impact analysis in result", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         const result = await service.getDependents(TEST_QUERIES.dependent.valid);
 
@@ -485,7 +487,7 @@ describe("GraphServiceImpl", () => {
 
     describe("caching", () => {
       test("caches dependent results separately from dependency results", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         // Query dependents
         await service.getDependents({
@@ -502,7 +504,7 @@ describe("GraphServiceImpl", () => {
         });
 
         // Should have called twice (different caches)
-        expect(mockClient.analyzeDependencies).toHaveBeenCalledTimes(2);
+        expect(mockAdapter.analyzeDependencies).toHaveBeenCalledTimes(2);
       });
     });
   });
@@ -554,7 +556,7 @@ describe("GraphServiceImpl", () => {
 
     describe("execution", () => {
       test("returns path when one exists", async () => {
-        mockClient.traverse = mock(() => Promise.resolve(MOCK_TRAVERSE_RESULT));
+        mockAdapter.traverse = mock(() => Promise.resolve(MOCK_TRAVERSE_RESULT));
 
         const result = await service.getPath(TEST_QUERIES.path.valid);
 
@@ -564,7 +566,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("returns path_exists=false when no path found", async () => {
-        mockClient.traverse = mock(() =>
+        mockAdapter.traverse = mock(() =>
           Promise.resolve({
             nodes: [{ id: "1", type: "Function", properties: { name: "isolated" } }],
             relationships: [],
@@ -580,7 +582,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("uses default relationship types when not specified", async () => {
-        const traverseSpy = spyOn(mockClient, "traverse");
+        const traverseSpy = spyOn(mockAdapter, "traverse");
 
         await service.getPath(TEST_QUERIES.path.valid);
 
@@ -592,7 +594,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("respects max_hops parameter", async () => {
-        const traverseSpy = spyOn(mockClient, "traverse");
+        const traverseSpy = spyOn(mockAdapter, "traverse");
 
         await service.getPath(TEST_QUERIES.path.withMaxHops);
 
@@ -603,7 +605,7 @@ describe("GraphServiceImpl", () => {
 
       test("returns path_exists=false when source and target exist but are disconnected", async () => {
         // Both nodes exist in traversal results, but no edges connect them
-        mockClient.traverse = mock(() =>
+        mockAdapter.traverse = mock(() =>
           Promise.resolve({
             nodes: [
               {
@@ -665,13 +667,13 @@ describe("GraphServiceImpl", () => {
 
     describe("execution", () => {
       test("returns architecture structure for valid query", async () => {
-        mockClient.runQuery = mock(() =>
+        mockAdapter.runQuery = mock(() =>
           Promise.resolve([
             { package: "src", module: "services", fileCount: 5 },
             { package: "src", module: "utils", fileCount: 3 },
             { package: "tests", module: "unit", fileCount: 10 },
           ])
-        ) as Neo4jStorageClient["runQuery"];
+        ) as GraphStorageAdapter["runQuery"];
 
         const result = await service.getArchitecture(TEST_QUERIES.architecture.valid);
 
@@ -682,7 +684,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("includes scope filter when provided", async () => {
-        const runQuerySpy = spyOn(mockClient, "runQuery");
+        const runQuerySpy = spyOn(mockAdapter, "runQuery");
 
         await service.getArchitecture(TEST_QUERIES.architecture.withScope);
 
@@ -693,7 +695,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("returns empty structure for repository with no files", async () => {
-        mockClient.runQuery = mock(() => Promise.resolve([]));
+        mockAdapter.runQuery = mock(() => Promise.resolve([]));
 
         const result = await service.getArchitecture(TEST_QUERIES.architecture.valid);
 
@@ -704,14 +706,14 @@ describe("GraphServiceImpl", () => {
 
     describe("inter-module dependencies", () => {
       test("includes inter-module dependency information", async () => {
-        mockClient.runQuery = mock((cypher: string) => {
+        mockAdapter.runQuery = mock((cypher: string) => {
           if (cypher.includes("IMPORTS")) {
             return Promise.resolve([
               { fromModule: "src", toModule: "lib", relCount: 15, relTypes: ["IMPORTS"] },
             ]);
           }
           return Promise.resolve([{ package: "src", fileCount: 5 }]);
-        }) as Neo4jStorageClient["runQuery"];
+        }) as GraphStorageAdapter["runQuery"];
 
         const result = await service.getArchitecture(TEST_QUERIES.architecture.valid);
 
@@ -726,7 +728,7 @@ describe("GraphServiceImpl", () => {
 
   describe("healthCheck", () => {
     test("returns true when Neo4j is healthy", async () => {
-      mockClient.healthCheck = mock(() => Promise.resolve(true));
+      mockAdapter.healthCheck = mock(() => Promise.resolve(true));
 
       const result = await service.healthCheck();
 
@@ -734,7 +736,7 @@ describe("GraphServiceImpl", () => {
     });
 
     test("returns false when Neo4j is unhealthy", async () => {
-      mockClient.healthCheck = mock(() => Promise.resolve(false));
+      mockAdapter.healthCheck = mock(() => Promise.resolve(false));
 
       const result = await service.healthCheck();
 
@@ -742,7 +744,7 @@ describe("GraphServiceImpl", () => {
     });
 
     test("returns false when healthCheck throws", async () => {
-      mockClient.healthCheck = mock(() => Promise.reject(new Error("Connection failed")));
+      mockAdapter.healthCheck = mock(() => Promise.reject(new Error("Connection failed")));
 
       const result = await service.healthCheck();
 
@@ -757,12 +759,12 @@ describe("GraphServiceImpl", () => {
   describe("timeout handling", () => {
     test("throws GraphServiceTimeoutError on timeout", async () => {
       // Create service with very short timeout
-      const shortTimeoutService = new GraphServiceImpl(mockClient, { timeoutMs: 10 });
+      const shortTimeoutService = new GraphServiceImpl(mockAdapter, { timeoutMs: 10 });
 
       // Mock a slow operation
-      mockClient.analyzeDependencies = mock(
+      mockAdapter.analyzeDependencies = mock(
         () => new Promise((resolve) => setTimeout(() => resolve(MOCK_DEPENDENCY_RESULT), 100))
-      ) as Neo4jStorageClient["analyzeDependencies"];
+      ) as GraphStorageAdapter["analyzeDependencies"];
 
       await expect(
         shortTimeoutService.getDependencies(TEST_QUERIES.dependency.valid)
@@ -770,11 +772,11 @@ describe("GraphServiceImpl", () => {
     });
 
     test("timeout error includes timeout value", async () => {
-      const shortTimeoutService = new GraphServiceImpl(mockClient, { timeoutMs: 15 });
+      const shortTimeoutService = new GraphServiceImpl(mockAdapter, { timeoutMs: 15 });
 
-      mockClient.analyzeDependencies = mock(
+      mockAdapter.analyzeDependencies = mock(
         () => new Promise((resolve) => setTimeout(() => resolve(MOCK_DEPENDENCY_RESULT), 100))
-      ) as Neo4jStorageClient["analyzeDependencies"];
+      ) as GraphStorageAdapter["analyzeDependencies"];
 
       try {
         await shortTimeoutService.getDependencies(TEST_QUERIES.dependency.valid);
@@ -792,7 +794,7 @@ describe("GraphServiceImpl", () => {
 
   describe("cache management", () => {
     test("clearCache removes all cached entries", async () => {
-      mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+      mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
       // Populate cache
       await service.getDependencies(TEST_QUERIES.dependency.valid);
@@ -806,7 +808,7 @@ describe("GraphServiceImpl", () => {
       expect(result.metadata.from_cache).toBe(false);
 
       // Should have been called 3 times (2 before clear + 1 after)
-      expect(mockClient.analyzeDependencies).toHaveBeenCalledTimes(3);
+      expect(mockAdapter.analyzeDependencies).toHaveBeenCalledTimes(3);
     });
 
     test("getCacheStats returns statistics for all caches", () => {
@@ -822,7 +824,7 @@ describe("GraphServiceImpl", () => {
 
     describe("clearCacheForRepository", () => {
       test("clears cache for specified repository only", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         // Populate cache with entries from two different repositories
         const queryRepoA = { ...TEST_QUERIES.dependency.valid, repository: "repo-a" };
@@ -850,7 +852,7 @@ describe("GraphServiceImpl", () => {
       });
 
       test("does not affect cache for other repositories", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
         // Populate cache for multiple repositories
         await service.getDependencies({
@@ -889,11 +891,11 @@ describe("GraphServiceImpl", () => {
       });
 
       test("clears all query types for the repository", async () => {
-        mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
-        mockClient.traverse = mock(() => Promise.resolve(MOCK_TRAVERSE_RESULT));
-        mockClient.runQuery = mock(() =>
+        mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+        mockAdapter.traverse = mock(() => Promise.resolve(MOCK_TRAVERSE_RESULT));
+        mockAdapter.runQuery = mock(() =>
           Promise.resolve([{ package: "src", fileCount: 5 }])
-        ) as Neo4jStorageClient["runQuery"];
+        ) as GraphStorageAdapter["runQuery"];
 
         const repository = "multi-query-repo";
 
@@ -956,7 +958,7 @@ describe("GraphServiceImpl", () => {
 
   describe("performance tracking", () => {
     test("includes query_time_ms in metadata", async () => {
-      mockClient.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
+      mockAdapter.analyzeDependencies = mock(() => Promise.resolve(MOCK_DEPENDENCY_RESULT));
 
       const result = await service.getDependencies(TEST_QUERIES.dependency.valid);
 
@@ -966,9 +968,9 @@ describe("GraphServiceImpl", () => {
 
     test("query_time_ms reflects actual operation time", async () => {
       // Mock with artificial delay
-      mockClient.analyzeDependencies = mock(
+      mockAdapter.analyzeDependencies = mock(
         () => new Promise((resolve) => setTimeout(() => resolve(MOCK_DEPENDENCY_RESULT), 50))
-      ) as Neo4jStorageClient["analyzeDependencies"];
+      ) as GraphStorageAdapter["analyzeDependencies"];
 
       const result = await service.getDependencies(TEST_QUERIES.dependency.valid);
 

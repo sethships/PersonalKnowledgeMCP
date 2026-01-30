@@ -10,18 +10,17 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { RelationshipType } from "../../../src/graph/types.js";
-import type {
-  Neo4jConfig,
-  FileNode,
-  FunctionNode,
-  RepositoryNode,
-} from "../../../src/graph/types.js";
+import type { FileNode, FunctionNode, RepositoryNode } from "../../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // Integration test configuration - uses environment variables or defaults
-const integrationConfig: Neo4jConfig = {
+const integrationConfig: GraphStorageConfig = {
   host: process.env["NEO4J_HOST"] ?? "localhost",
   port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
   username: process.env["NEO4J_USERNAME"] ?? "neo4j",
@@ -42,11 +41,11 @@ async function isNeo4jAvailable(): Promise<boolean> {
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const adapter = createGraphAdapter("neo4j", integrationConfig);
     try {
-      await client.connect();
-      const healthy = await client.healthCheck();
-      await client.disconnect();
+      await adapter.connect();
+      const healthy = await adapter.healthCheck();
+      await adapter.disconnect();
       return healthy;
     } catch {
       return false;
@@ -57,7 +56,7 @@ async function isNeo4jAvailable(): Promise<boolean> {
 }
 
 describe("Neo4jStorageClientImpl Integration Tests", () => {
-  let client: Neo4jStorageClientImpl;
+  let client: GraphStorageAdapter;
   let neo4jAvailable: boolean;
 
   beforeAll(async () => {
@@ -69,7 +68,7 @@ describe("Neo4jStorageClientImpl Integration Tests", () => {
       return;
     }
 
-    client = new Neo4jStorageClientImpl(integrationConfig);
+    client = createGraphAdapter("neo4j", integrationConfig);
     await client.connect();
   });
 
@@ -105,7 +104,7 @@ describe("Neo4jStorageClientImpl Integration Tests", () => {
         return;
       }
 
-      const client2 = new Neo4jStorageClientImpl(integrationConfig);
+      const client2 = createGraphAdapter("neo4j", integrationConfig);
       await client2.connect();
 
       const healthy1 = await client.healthCheck();
