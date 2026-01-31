@@ -12,7 +12,7 @@
  * - reset-update: Reset stuck update state
  * - health: Health check
  * - token: Manage authentication tokens (create, list, revoke, rotate)
- * - graph: Manage knowledge graph (migrate, populate)
+ * - graph: Manage knowledge graph (migrate, populate, transfer)
  * - providers: Manage embedding providers (status, setup)
  * - models: Manage embedding model cache (list, status, validate, clear, path, import)
  */
@@ -39,6 +39,7 @@ import {
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import { graphPopulateAllCommand } from "./commands/graph-populate-all-command.js";
+import { graphTransferCommand } from "./commands/graph-transfer-command.js";
 import { providersStatusCommand, providersSetupCommand } from "./commands/providers-command.js";
 import {
   modelsListCommand,
@@ -64,6 +65,7 @@ import {
   GraphMigrateCommandOptionsSchema,
   GraphPopulateCommandOptionsSchema,
   GraphPopulateAllCommandOptionsSchema,
+  GraphTransferCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
   ModelsListCommandOptionsSchema,
@@ -351,6 +353,25 @@ graphProgram
       const validatedOptions = GraphPopulateAllCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await graphPopulateAllCommand(validatedOptions, deps.repositoryService);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Graph transfer subcommand (data migration between databases)
+graphProgram
+  .command("transfer")
+  .description("Migrate graph data from one database to another (e.g., Neo4j to FalkorDB)")
+  .option("-s, --source <type>", "Source database type (neo4j, falkordb)", "neo4j")
+  .option("-t, --target <type>", "Target database type (neo4j, falkordb)", "falkordb")
+  .option("--dry-run", "Show what would be migrated without writing to target")
+  .option("-b, --batch-size <number>", "Batch size for processing (1-10000)", "1000")
+  .option("--validation-samples <number>", "Number of nodes to sample for validation (0-100)", "10")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = GraphTransferCommandOptionsSchema.parse(options);
+      await graphTransferCommand(validatedOptions);
     } catch (error) {
       handleCommandError(error);
     }
