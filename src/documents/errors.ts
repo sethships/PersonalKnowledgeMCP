@@ -69,7 +69,7 @@ export class DocumentError extends Error {
     }
 
     if (options?.cause?.stack) {
-      this.stack = `${this.stack}\nCaused by: ${options.cause.stack}`;
+      this.stack = `${this.stack ?? ""}\nCaused by: ${options.cause.stack}`;
     }
   }
 }

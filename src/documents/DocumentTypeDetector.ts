@@ -8,7 +8,12 @@
  */
 
 import * as path from "node:path";
-import { DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS, EXTENSION_TO_TYPE } from "./constants.js";
+import {
+  DOCUMENT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  EXTENSION_TO_TYPE,
+  type ExtensionDocumentType,
+} from "./constants.js";
 import type { DocumentExtractor, DocumentType } from "./types.js";
 import { PdfExtractor } from "./extractors/PdfExtractor.js";
 import { DocxExtractor } from "./extractors/DocxExtractor.js";
@@ -86,9 +91,9 @@ export class DocumentTypeDetector {
       return "unknown";
     }
 
-    const mappedType = EXTENSION_TO_TYPE[extension];
-    if (mappedType) {
-      return mappedType as DetectedType;
+    const mappedType: ExtensionDocumentType | undefined = EXTENSION_TO_TYPE[extension];
+    if (mappedType !== undefined) {
+      return mappedType;
     }
 
     return "unknown";

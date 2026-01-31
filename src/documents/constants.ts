@@ -122,9 +122,16 @@ export const DOCUMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Document type string literal union for extension mapping.
+ * Includes all document types and "image" for image files.
+ */
+export type ExtensionDocumentType = "pdf" | "docx" | "markdown" | "txt" | "image";
+
+/**
  * Extension to document type mapping.
  *
  * Maps file extensions to their corresponding document type.
+ * Returns a strongly-typed union of document types.
  *
  * @example
  * ```typescript
@@ -132,7 +139,7 @@ export const DOCUMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
  * const docType2 = EXTENSION_TO_TYPE[".md"]; // "markdown"
  * ```
  */
-export const EXTENSION_TO_TYPE: Readonly<Record<string, string>> = {
+export const EXTENSION_TO_TYPE: Readonly<Record<string, ExtensionDocumentType>> = {
   // PDF
   ".pdf": "pdf",
   // DOCX
