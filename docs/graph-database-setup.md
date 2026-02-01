@@ -408,8 +408,7 @@ pk-mcp graph populate-all
 - [Configuration Reference](configuration-reference.md) - All environment variables
 - [Docker Operations Guide](docker-operations.md) - General Docker guidance
 - [Troubleshooting Guide](troubleshooting.md) - General troubleshooting
-- [Migration Guide](graph-database-migration.md) - Migrating from Neo4j
 
 ---
 
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-01-31

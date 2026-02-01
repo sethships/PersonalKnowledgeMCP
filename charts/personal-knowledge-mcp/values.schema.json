@@ -274,14 +274,6 @@
         }
       }
     },
-    "neo4j": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        }
-      }
-    },
     "secrets": {
       "type": "object",
       "properties": {

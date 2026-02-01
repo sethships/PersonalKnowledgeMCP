@@ -1,6 +1,13 @@
 # Graph Database Migration Guide: Neo4j to FalkorDB
 
-This guide helps existing users migrate from Neo4j to FalkorDB for the Personal Knowledge MCP knowledge graph features.
+> **Migration Status: COMPLETE**
+>
+> As of version 1.1.0, Neo4j support has been fully removed from the codebase. FalkorDB is now the
+> only supported graph database. The `graph transfer` CLI command has been removed. If you still
+> have Neo4j data, follow the [Existing Users](#existing-users) section to repopulate your graph
+> from indexed repositories.
+
+This guide documents the migration from Neo4j to FalkorDB for the Personal Knowledge MCP knowledge graph features.
 
 ## Table of Contents
 
@@ -8,9 +15,7 @@ This guide helps existing users migrate from Neo4j to FalkorDB for the Personal 
 - [What Changed](#what-changed)
 - [New Installations](#new-installations)
 - [Existing Users](#existing-users)
-- [Data Migration CLI Tool](#data-migration-cli-tool)
 - [Environment Variable Changes](#environment-variable-changes)
-- [Breaking Changes](#breaking-changes)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -150,131 +155,6 @@ pk-mcp health
 "What does src/services/auth.ts depend on?"
 ```
 
-### Option B: Data Migration (Advanced)
-
-If you need to preserve your existing graph data exactly, use the data migration CLI tool (see next section).
-
----
-
-## Data Migration CLI Tool
-
-The `pk-mcp graph transfer` command provides automated data migration between graph databases.
-
-### Quick Start
-
-```bash
-# Preview what would be migrated (dry run)
-pk-mcp graph transfer --dry-run
-
-# Perform the migration
-pk-mcp graph transfer
-```
-
-### Prerequisites
-
-Both Neo4j and FalkorDB must be running:
-
-```bash
-docker compose up neo4j falkordb -d
-```
-
-Configure both databases in `.env`:
-
-```bash
-# Neo4j configuration (source)
-NEO4J_HOST=localhost
-NEO4J_BOLT_PORT=7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-neo4j-password
-
-# FalkorDB configuration (target)
-FALKORDB_HOST=localhost
-FALKORDB_PORT=6380
-FALKORDB_USER=default
-FALKORDB_PASSWORD=
-FALKORDB_GRAPH_NAME=knowledge_graph
-```
-
-### CLI Reference
-
-```bash
-pk-mcp graph transfer [options]
-```
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-s, --source <type>` | Source database type | `neo4j` |
-| `-t, --target <type>` | Target database type | `falkordb` |
-| `--dry-run` | Show what would be migrated without writing | `false` |
-| `-b, --batch-size <number>` | Batch size for processing (1-10000) | `1000` |
-| `--validation-samples <number>` | Number of nodes to sample for validation (0-100) | `10` |
-| `-j, --json` | Output results as JSON | `false` |
-
-### Examples
-
-```bash
-# Default migration (Neo4j to FalkorDB)
-pk-mcp graph transfer
-
-# Dry run to preview migration
-pk-mcp graph transfer --dry-run
-
-# Custom batch size for large graphs
-pk-mcp graph transfer --batch-size 500
-
-# Skip validation sampling
-pk-mcp graph transfer --validation-samples 0
-
-# Output as JSON for scripting
-pk-mcp graph transfer --json
-```
-
-### Migration Process
-
-The migration tool works in three phases:
-
-1. **Export**: All nodes and relationships are exported from the source database in batches
-2. **Import**: Data is imported into the target database with ID mapping preserved
-3. **Validation**: Counts are compared and sample nodes are verified for property equality
-
-### Performance Considerations
-
-| Graph Size | Nodes | Relationships | Approximate Time |
-|------------|-------|---------------|------------------|
-| Small | <10K | <50K | < 1 minute |
-| Medium | 10K-100K | 50K-500K | 1-10 minutes |
-| Large | 100K-1M | 500K-5M | 10-60 minutes |
-| Very Large | >1M | >5M | 1+ hours |
-
-**Memory Requirements**: The migration tool loads all data into memory. Ensure sufficient RAM:
-- Small/Medium graphs: 2-4GB available RAM
-- Large graphs: 8-16GB available RAM
-- Very Large graphs: 32GB+ RAM recommended
-
-For large graphs, reduce batch size: `--batch-size 500`
-
-### Partial Failure Behavior
-
-**Important**: The migration is NOT atomic. Partial failures leave the target database in an inconsistent state. If the migration is interrupted mid-import:
-- Orphaned nodes may remain in the target database
-- Some relationships may be missing
-- Data integrity is not guaranteed
-
-If migration fails partway through, you should clean up and retry.
-
-### Rollback
-
-If migration fails:
-
-```bash
-# Clear FalkorDB and retry
-redis-cli -p 6380 GRAPH.DELETE knowledge_graph
-pk-mcp graph transfer
-
-# Or repopulate from source repositories
-pk-mcp graph populate-all --force
-```
-
 ---
 
 ## Environment Variable Changes
@@ -336,7 +216,17 @@ If you have Claude Code configured with Neo4j environment variables, update your
 
 ---
 
-## Breaking Changes
+## Breaking Changes (v1.1.0)
+
+### Neo4j Code Removed
+
+As of v1.1.0, all Neo4j code has been removed from the codebase:
+
+- `Neo4jStorageClientImpl` class removed
+- `createGraphAdapter("neo4j", ...)` no longer supported
+- `graph transfer` CLI command removed
+- `neo4j-driver` npm package removed
+- All Neo4j-related test files, scripts, and documentation removed
 
 ### Port Change
 
@@ -407,20 +297,6 @@ docker volume rm pk-mcp-neo4j-data pk-mcp-neo4j-logs
 **Cause**: FalkorDB has ~95% Cypher compatibility; some advanced features may differ
 
 **Solution**: Most standard queries work. For APOC-equivalent functions, check [FalkorDB documentation](https://docs.falkordb.com/).
-
-### Data transfer validation failed
-
-**Cause**: Some nodes or relationships failed to import
-
-**Solution**:
-```bash
-# Run with JSON output to see detailed errors
-pk-mcp graph transfer --json
-
-# Check for special characters or large property values
-# Consider repopulating instead
-pk-mcp graph populate-all --force
-```
 
 ---
 

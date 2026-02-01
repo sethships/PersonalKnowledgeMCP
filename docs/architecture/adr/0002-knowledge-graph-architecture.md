@@ -746,3 +746,4 @@ These are explicitly out of scope for the initial implementation but represent t
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | Architecture Team | Initial ADR for knowledge graph integration |
+| 1.1 | 2026-01-31 | Architecture Team | Neo4j code removed; FalkorDB is now the only supported graph database |

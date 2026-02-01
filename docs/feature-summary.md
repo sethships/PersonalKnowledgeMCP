@@ -44,7 +44,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | `token list` | Complete | List tokens |
 | `token revoke` | Complete | Revoke a token |
 | `token rotate` | Complete | Rotate a token |
-| `graph migrate` | Complete | Run Neo4j schema migrations |
+| `graph migrate` | Complete | Run FalkorDB schema migrations |
 | `graph populate` | Complete | Populate knowledge graph for a repository |
 | `graph populate-all` | Complete | Populate knowledge graph for all repositories |
 | `providers status` | Complete | Show available embedding providers |
@@ -54,7 +54,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | Component | Status | Description |
 |-----------|--------|-------------|
 | ChromaDB Integration | Complete | Vector storage and similarity search |
-| Neo4j Integration | Complete | Graph database for code relationships |
+| FalkorDB Integration | Complete | Graph database for code relationships |
 | OpenAI Embeddings | Complete | text-embedding-3-small (1536 dimensions) |
 | Transformers.js Embeddings | Complete | Zero-config local embeddings |
 | Ollama Embeddings | Complete | GPU-accelerated local embeddings |
@@ -71,7 +71,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | Chunk-Level Updates | Complete | Efficient upsert/delete operations |
 | Update History | Complete | Full audit trail |
 | Recovery Mechanisms | Complete | Handle interrupted updates |
-| Graph Incremental Updates | Complete | Update Neo4j on file changes |
+| Graph Incremental Updates | Complete | Update FalkorDB on file changes |
 
 ### Authentication Framework
 
@@ -97,7 +97,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Neo4j Integration | Complete | Connection pooling, health checks |
+| FalkorDB Integration | Complete | Connection pooling, health checks |
 | Schema Migrations | Complete | CLI-driven database setup |
 | AST Parsing | Complete | Tree-sitter for 12 languages + Roslyn for C# |
 | Entity Extraction | Complete | Functions, classes, interfaces |
@@ -135,7 +135,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 2. **Single User**: No multi-user support; designed for individual developer use
 3. **GitHub Only**: Repository indexing limited to GitHub (Azure DevOps in future)
 4. **Code Files Only**: Document ingestion (PDF, DOCX) planned for Phase 6
-5. **Docker Required**: ChromaDB and Neo4j run in Docker containers
+5. **Docker Required**: ChromaDB and FalkorDB run in Docker containers
 
 ## Technology Stack
 
@@ -145,7 +145,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | Language | TypeScript | 5.3+ |
 | MCP SDK | @modelcontextprotocol/sdk | Latest |
 | Vector DB | ChromaDB | 0.6+ |
-| Graph DB | Neo4j Community | 5.x |
+| Graph DB | FalkorDB Community | 5.x |
 | AST Parsing | tree-sitter (web-tree-sitter), Roslyn | Latest |
 | Embeddings | OpenAI, Transformers.js, Ollama | Multiple |
 | HTTP Server | Express | 5.x |
@@ -182,7 +182,7 @@ The system supports 13 programming languages for AST parsing and graph populatio
 | [Client Configuration](client-configuration.md) | Detailed configuration |
 | [Troubleshooting](troubleshooting.md) | Common issues and fixes |
 | [Docker Operations](docker-operations.md) | Container management |
-| [Neo4j Setup](neo4j-setup.md) | Knowledge graph database setup |
+| [FalkorDB Setup](graph-database-setup.md) | Knowledge graph database setup |
 | [Graph Tools](graph-tools.md) | Dependency analysis tools |
 | [System Design](architecture/Phase1-System-Design-Document.md) | Technical architecture |
 

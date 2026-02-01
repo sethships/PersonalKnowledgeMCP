@@ -1,9 +1,5 @@
 # Docker Operations Guide
 
-> **Note:** This guide is being updated for the FalkorDB migration. Some sections still reference Neo4j.
-> The graph database has been migrated from Neo4j to FalkorDB. See [Migration Guide](graph-database-migration.md) for details.
-> Neo4j-specific backup/restore scripts will be replaced with FalkorDB equivalents in a future update.
-
 Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring.
 
 ## Overview
@@ -123,21 +119,8 @@ docker-compose logs --since="1h"
 # ChromaDB restore (PowerShell)
 .\scripts\restore-chromadb.ps1 -BackupFile ".\backups\chromadb-backup-YYYYMMDD-HHMMSS.tar.gz"
 
-# Neo4j backup (Bash) - stops container for consistent backup
-./scripts/backup-neo4j.sh
-
-# Neo4j backup (PowerShell)
-.\scripts\backup-neo4j.ps1
-
-# Neo4j restore (Bash)
-./scripts/restore-neo4j.sh ./backups/neo4j-backup-YYYYMMDD-HHMMSS.tar.gz
-
-# Neo4j restore (PowerShell)
-.\scripts\restore-neo4j.ps1 -BackupFile ".\backups\neo4j-backup-YYYYMMDD-HHMMSS.tar.gz"
-
 # List available backups
 ls -lt ./backups/chromadb-backup-*.tar.gz | head -5
-ls -lt ./backups/neo4j-backup-*.tar.gz | head -5
 ```
 
 ### Monitoring
@@ -1661,38 +1644,6 @@ PostgreSQL automatically runs SQL scripts from `./init-scripts/` on first startu
 - Currently includes placeholder schema for Phase 2 document store
 - Add migration scripts with numbered prefixes as needed
 
-### Neo4j (Phase 4)
-
-**Purpose:** Graph database for code dependencies and knowledge relationships.
-
-**Uncomment in docker-compose.yml:**
-```yaml
-neo4j:
-  image: neo4j:5.25.1-community
-  container_name: pk-mcp-neo4j
-  ports:
-    - "7474:7474"  # HTTP
-    - "7687:7687"  # Bolt
-  volumes:
-    - neo4j-data:/data
-    - neo4j-logs:/logs
-  environment:
-    - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
-    - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
-  networks:
-    - pk-mcp-network
-  restart: unless-stopped
-```
-
-**Add volume definitions:**
-```yaml
-volumes:
-  neo4j-data:
-    driver: local
-  neo4j-logs:
-    driver: local
-```
-
 ## Backup and Restore Automation
 
 The `scripts/` directory contains automated backup and restore scripts with retention policies for ChromaDB data volumes. These scripts support both Bash (Linux, WSL, Git Bash) and PowerShell (Windows) environments.
@@ -1706,11 +1657,6 @@ The `scripts/` directory contains automated backup and restore scripts with rete
 | `restore-chromadb.sh` | Bash restore script for ChromaDB with confirmation |
 | `restore-chromadb.ps1` | PowerShell restore script for ChromaDB |
 | `test-backup-restore.sh` | ChromaDB backup/restore verification test script |
-| `backup-neo4j.sh` | Bash backup script for Neo4j with retention policy |
-| `backup-neo4j.ps1` | PowerShell backup script for Neo4j |
-| `restore-neo4j.sh` | Bash restore script for Neo4j with confirmation |
-| `restore-neo4j.ps1` | PowerShell restore script for Neo4j |
-| `test-backup-restore-neo4j.sh` | Neo4j backup/restore verification test script |
 
 ### Creating Backups
 
@@ -1861,178 +1807,6 @@ In case of data loss or corruption:
 
 5. **Document the incident** for future reference.
 
-### Neo4j Backup and Restore
-
-The backup scripts for Neo4j follow the same patterns as ChromaDB but with an important difference: Neo4j Community Edition does not support online backups, so the scripts stop the container before creating a backup to ensure data consistency.
-
-#### Creating Neo4j Backups
-
-**Bash (Linux/WSL/Git Bash):**
-```bash
-# Basic usage - creates backup in ./backups with 30-day retention
-./scripts/backup-neo4j.sh
-
-# Custom backup directory and retention
-./scripts/backup-neo4j.sh --backup-dir /mnt/backups --retention 7
-
-# Dry-run mode (shows what would happen without making changes)
-./scripts/backup-neo4j.sh --dry-run
-
-# Using environment variables
-BACKUP_DIR=/backups RETENTION_DAYS=14 ./scripts/backup-neo4j.sh
-```
-
-**PowerShell (Windows):**
-```powershell
-# Basic usage
-.\scripts\backup-neo4j.ps1
-
-# Custom backup directory and retention
-.\scripts\backup-neo4j.ps1 -BackupDir "D:\Backups" -RetentionDays 7
-
-# Dry-run mode
-.\scripts\backup-neo4j.ps1 -DryRun
-
-# Quiet mode (minimal output)
-.\scripts\backup-neo4j.ps1 -Quiet
-```
-
-**Neo4j Backup Features:**
-- Automatic volume detection (finds Neo4j volume matching `neo4j.*data$` pattern)
-- Automatic container stop/start for consistent backups
-- Timestamped archives: `neo4j-backup-YYYYMMDD-HHMMSS.tar.gz`
-- SHA256 checksum generation for integrity verification
-- JSON metadata file with backup details
-- Configurable retention policy (default: 30 days)
-- Cross-platform compatibility (Bash and PowerShell)
-- Exit codes for scripting integration
-
-**Important:** The backup process briefly stops the Neo4j container. Plan backups during low-usage periods if the database is actively being used.
-
-#### Restoring Neo4j from Backup
-
-**Bash (Linux/WSL/Git Bash):**
-```bash
-# Interactive restore (prompts for confirmation)
-./scripts/restore-neo4j.sh ./backups/neo4j-backup-20241221-120000.tar.gz
-
-# Non-interactive restore (skip confirmation)
-./scripts/restore-neo4j.sh ./backups/neo4j-backup-20241221-120000.tar.gz --yes
-
-# Restore to specific volume
-./scripts/restore-neo4j.sh ./backups/neo4j-backup-20241221-120000.tar.gz --volume my-neo4j-data
-```
-
-**PowerShell (Windows):**
-```powershell
-# Interactive restore
-.\scripts\restore-neo4j.ps1 -BackupFile ".\backups\neo4j-backup-20241221-120000.tar.gz"
-
-# Non-interactive restore
-.\scripts\restore-neo4j.ps1 -BackupFile ".\backups\neo4j-backup-20241221-120000.tar.gz" -Force
-```
-
-**Restore Process:**
-1. Validates backup file exists and is a valid gzip archive
-2. Verifies checksum if `.sha256` file exists
-3. Auto-detects or validates target volume
-4. Prompts for confirmation (unless `--yes`/`-Force` flag)
-5. Stops Neo4j container
-6. Clears existing volume data
-7. Extracts backup to volume
-8. Restarts container
-9. Waits for health check (using cypher-shell)
-10. Provides verification commands
-
-**Environment Variables for Health Check:**
-- `NEO4J_USER` - Neo4j username (default: `neo4j`)
-- `NEO4J_PASSWORD` - Neo4j password (required for health check, can be set in `.env` file)
-
-#### Verifying Neo4j Backup/Restore
-
-Run the verification test script to ensure backup and restore work correctly:
-
-```bash
-# Run full verification test
-./scripts/test-backup-restore-neo4j.sh
-
-# Verbose output
-./scripts/test-backup-restore-neo4j.sh --verbose
-
-# Keep test artifacts for inspection
-./scripts/test-backup-restore-neo4j.sh --keep
-```
-
-**Prerequisites:**
-- Neo4j container running and healthy
-- `NEO4J_PASSWORD` environment variable set (or in `.env` file)
-
-**Test Process:**
-1. Verifies Neo4j is running and accessible
-2. Creates a test node with known properties
-3. Creates backup (stops and restarts container)
-4. Deletes test node (simulates data loss)
-5. Restores from backup
-6. Verifies test node exists with correct values
-7. Cleans up test artifacts
-
-#### Scheduled Neo4j Backups
-
-**Linux/macOS (cron):**
-```bash
-# Edit crontab
-crontab -e
-
-# Add daily backup at 3 AM (offset from ChromaDB backup)
-0 3 * * * NEO4J_PASSWORD=yourpassword /path/to/project/scripts/backup-neo4j.sh --quiet >> /var/log/neo4j-backup.log 2>&1
-```
-
-**Windows (Task Scheduler):**
-```powershell
-# Create scheduled task for daily backup at 3 AM
-$action = New-ScheduledTaskAction -Execute "PowerShell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\path\to\project\scripts\backup-neo4j.ps1 -Quiet"
-$trigger = New-ScheduledTaskTrigger -Daily -At 3:00AM
-Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "Neo4j Daily Backup"
-```
-
-#### Neo4j Disaster Recovery Procedure
-
-In case of Neo4j data loss or corruption:
-
-1. **Stop the service** (if not already stopped):
-   ```bash
-   docker-compose stop neo4j
-   ```
-
-2. **Identify latest backup**:
-   ```bash
-   ls -lt ./backups/neo4j-backup-*.tar.gz | head -5
-   ```
-
-3. **Verify backup integrity** (if checksum exists):
-   ```bash
-   # Compare stored checksum with actual
-   cat ./backups/neo4j-backup-YYYYMMDD-HHMMSS.tar.gz.sha256
-   sha256sum ./backups/neo4j-backup-YYYYMMDD-HHMMSS.tar.gz
-   ```
-
-4. **Restore from backup**:
-   ```bash
-   ./scripts/restore-neo4j.sh ./backups/neo4j-backup-YYYYMMDD-HHMMSS.tar.gz --yes
-   ```
-
-5. **Verify restoration**:
-   ```bash
-   # Check Neo4j browser
-   # Open http://localhost:7474 in a browser
-
-   # Or via cypher-shell
-   docker exec pk-mcp-neo4j cypher-shell -u neo4j -p <password> "MATCH (n) RETURN count(n) AS nodeCount"
-   ```
-
-6. **Document the incident** for future reference.
-
 ## Multi-Instance Deployment
 
 The Personal Knowledge MCP supports running multiple isolated ChromaDB instances for different security tiers. This enables separation of Private, Work, and Public knowledge bases.
@@ -2102,17 +1876,6 @@ Use the `--volume` flag to specify which instance to backup:
     --backup-dir ./backups/public
 ```
 
-**Neo4j Instances:**
-```bash
-# Backup private Neo4j instance
-./scripts/backup-neo4j.sh --volume personalknowledgemcp_neo4j-data-private \
-    --backup-dir ./backups/private
-
-# Backup work Neo4j instance
-./scripts/backup-neo4j.sh --volume personalknowledgemcp_neo4j-data-work \
-    --backup-dir ./backups/work
-```
-
 ### Restore to Specific Instance
 
 **ChromaDB:**
@@ -2120,13 +1883,6 @@ Use the `--volume` flag to specify which instance to backup:
 # Restore to private instance
 ./scripts/restore-chromadb.sh ./backups/private/chromadb-backup-*.tar.gz \
     --volume personalknowledgemcp_chromadb-data-private
-```
-
-**Neo4j:**
-```bash
-# Restore to private Neo4j instance
-./scripts/restore-neo4j.sh ./backups/private/neo4j-backup-*.tar.gz \
-    --volume personalknowledgemcp_neo4j-data-private
 ```
 
 ### Security Considerations

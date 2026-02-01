@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Nothing yet
+### Removed
+- **Neo4j Support**: All Neo4j code has been removed from the codebase after successful migration to FalkorDB (per ADR-0004)
+  - Removed `Neo4jStorageClientImpl` class and `neo4j-driver` dependency
+  - Removed `graph transfer` CLI command (migration complete)
+  - Removed Neo4j backup/restore scripts
+  - Removed Neo4j test files, benchmarks, and fixtures
+  - Removed Neo4j documentation and Helm chart configurations
+  - Updated `GraphAdapterType` to only support `"falkordb"`
+  - Changed environment variables from `NEO4J_*` to `FALKORDB_*`
+
+### Changed
+- Main entry point now uses FalkorDB environment variables (`FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USER`, `FALKORDB_PASSWORD`, `FALKORDB_DATABASE`)
+- Graph CLI commands (`graph migrate`, `graph populate`, `graph populate-all`) now exclusively use FalkorDB
+- Error mapping in graph module now defaults to FalkorDB adapter
+
+### Breaking Changes
+- `NEO4J_*` environment variables are no longer recognized
+- `createGraphAdapter("neo4j", ...)` is no longer supported
+- `mapNeo4jError` function has been removed
+- `graph transfer` CLI command has been removed
 
 ## [1.0.0] - 2026-01-18 (V1.0 Release: Phases 1-5 Complete)
 
@@ -17,7 +35,7 @@ V1.0 marks the completion of the core platform with comprehensive semantic searc
 ### Added
 
 #### Knowledge Graph (Phase 5)
-- Neo4j Community Edition integration for code dependency analysis
+- FalkorDB integration for code dependency analysis (migrated from Neo4j)
 - `get_dependencies` MCP tool - query what code depends on
 - `get_dependents` MCP tool - impact analysis for refactoring
 - `get_architecture` MCP tool - module structure visualization
@@ -89,7 +107,7 @@ V1.0 marks the completion of the core platform with comprehensive semantic searc
 ### Documentation
 - Comprehensive embedding provider guide
 - Graph tools documentation
-- Neo4j setup guide
+- FalkorDB setup guide
 - Client configuration guide for Cursor and VS Code
 - Performance tuning guide
 - Troubleshooting guide updates

@@ -19,7 +19,6 @@ import {
   GraphSchemaError,
   TraversalLimitError,
   isRetryableGraphError,
-  mapNeo4jError,
   mapGraphError,
 } from "../../../src/graph/errors.js";
 
@@ -367,148 +366,8 @@ describe("isRetryableGraphError", () => {
   });
 });
 
-describe("mapNeo4jError", () => {
-  test("should map authentication errors", () => {
-    const patterns = ["authentication failed", "Unauthorized access", "invalid credentials"];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(GraphAuthenticationError);
-      expect(mapped.cause).toBe(error);
-    }
-  });
-
-  test("should map connection errors", () => {
-    const patterns = [
-      "connection refused",
-      "ECONNREFUSED",
-      "ECONNRESET",
-      "ETIMEDOUT",
-      "socket error",
-    ];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(GraphConnectionError);
-      expect(mapped.cause).toBe(error);
-    }
-  });
-
-  test("should map timeout errors", () => {
-    const error = new Error("Query timeout after 30000 ms");
-    const mapped = mapNeo4jError(error);
-
-    expect(mapped).toBeInstanceOf(GraphQueryTimeoutError);
-    expect((mapped as GraphQueryTimeoutError).timeoutMs).toBe(30000);
-  });
-
-  test("should map timeout errors with seconds", () => {
-    const error = new Error("Operation timed out after 5 seconds");
-    const mapped = mapNeo4jError(error);
-
-    expect(mapped).toBeInstanceOf(GraphQueryTimeoutError);
-    expect((mapped as GraphQueryTimeoutError).timeoutMs).toBe(5000);
-  });
-
-  test("should map timeout errors without explicit time", () => {
-    const error = new Error("Query timeout occurred");
-    const mapped = mapNeo4jError(error);
-
-    expect(mapped).toBeInstanceOf(GraphQueryTimeoutError);
-    expect((mapped as GraphQueryTimeoutError).timeoutMs).toBe(30000); // default
-  });
-
-  test("should map constraint errors", () => {
-    const patterns = ["constraint violation", "Node already exists"];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(NodeConstraintError);
-    }
-  });
-
-  test("should map schema errors", () => {
-    const patterns = ["schema error", "Index creation failed"];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(GraphSchemaError);
-    }
-  });
-
-  test("should map query syntax errors", () => {
-    const patterns = ["Cypher syntax error", "Invalid syntax at position"];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(GraphQueryError);
-      expect(mapped.retryable).toBe(false);
-    }
-  });
-
-  test("should map deadlock errors as retryable query errors", () => {
-    const patterns = ["Deadlock detected", "Transaction terminated"];
-
-    for (const pattern of patterns) {
-      const error = new Error(pattern);
-      const mapped = mapNeo4jError(error);
-
-      expect(mapped).toBeInstanceOf(GraphQueryError);
-      expect(mapped.retryable).toBe(true);
-    }
-  });
-
-  test("should map unknown errors to base GraphError", () => {
-    const error = new Error("Unknown error occurred");
-    const mapped = mapNeo4jError(error);
-
-    expect(mapped).toBeInstanceOf(GraphError);
-    expect(mapped.code).toBe("UNKNOWN_ERROR");
-    expect(mapped.retryable).toBe(false);
-    expect(mapped.cause).toBe(error);
-  });
-});
-
 describe("mapGraphError", () => {
-  describe("with Neo4j adapter type (default)", () => {
-    test("should delegate to mapNeo4jError when type is 'neo4j'", () => {
-      const error = new Error("authentication failed");
-      const mapped = mapGraphError(error, "neo4j");
-
-      expect(mapped).toBeInstanceOf(GraphAuthenticationError);
-    });
-
-    test("should use 'neo4j' as default adapter type", () => {
-      const error = new Error("connection refused");
-      const mapped = mapGraphError(error);
-
-      expect(mapped).toBeInstanceOf(GraphConnectionError);
-    });
-
-    test("should map all Neo4j error types correctly", () => {
-      // Test various error patterns
-      expect(mapGraphError(new Error("authentication failed"))).toBeInstanceOf(
-        GraphAuthenticationError
-      );
-      expect(mapGraphError(new Error("ECONNREFUSED"))).toBeInstanceOf(GraphConnectionError);
-      expect(mapGraphError(new Error("Query timeout"))).toBeInstanceOf(GraphQueryTimeoutError);
-      expect(mapGraphError(new Error("constraint violation"))).toBeInstanceOf(NodeConstraintError);
-      expect(mapGraphError(new Error("schema error"))).toBeInstanceOf(GraphSchemaError);
-      expect(mapGraphError(new Error("Cypher syntax error"))).toBeInstanceOf(GraphQueryError);
-    });
-  });
-
-  describe("with FalkorDB adapter type", () => {
+  describe("with FalkorDB adapter type (default)", () => {
     test("should map FalkorDB authentication errors", () => {
       const patterns = ["NOAUTH", "wrongpass", "invalid password"];
 
@@ -567,31 +426,21 @@ describe("mapGraphError", () => {
       expect(mapped.code).toBe("UNKNOWN_ERROR");
       expect(mapped.retryable).toBe(false);
     });
-  });
 
-  describe("adapter type dispatching", () => {
-    test("should correctly dispatch based on adapter type", () => {
-      // WRONGPASS is a FalkorDB/Redis-specific error pattern
-      const error = new Error("WRONGPASS - bad credentials");
+    test("should use 'falkordb' as default adapter type", () => {
+      const error = new Error("connection refused");
+      const mapped = mapGraphError(error);
 
-      // FalkorDB should recognize WRONGPASS as auth error
-      const falkorMapped = mapGraphError(error, "falkordb");
-      expect(falkorMapped).toBeInstanceOf(GraphAuthenticationError);
-
-      // Neo4j would not recognize WRONGPASS, so it maps to unknown
-      const neo4jMapped = mapGraphError(error, "neo4j");
-      expect(neo4jMapped.code).toBe("UNKNOWN_ERROR");
+      expect(mapped).toBeInstanceOf(GraphConnectionError);
     });
 
-    test("should handle errors consistently across adapters for common patterns", () => {
-      // Common connection error patterns should work for both
-      const connectionError = new Error("ECONNREFUSED 127.0.0.1:7687");
-
-      const neo4jMapped = mapGraphError(connectionError, "neo4j");
-      const falkorMapped = mapGraphError(connectionError, "falkordb");
-
-      expect(neo4jMapped).toBeInstanceOf(GraphConnectionError);
-      expect(falkorMapped).toBeInstanceOf(GraphConnectionError);
+    test("should map all FalkorDB error types correctly", () => {
+      // Test various error patterns
+      expect(mapGraphError(new Error("NOAUTH"))).toBeInstanceOf(GraphAuthenticationError);
+      expect(mapGraphError(new Error("ECONNREFUSED"))).toBeInstanceOf(GraphConnectionError);
+      expect(mapGraphError(new Error("Query timeout"))).toBeInstanceOf(GraphQueryTimeoutError);
+      expect(mapGraphError(new Error("constraint violation"))).toBeInstanceOf(NodeConstraintError);
+      expect(mapGraphError(new Error("Cypher syntax error"))).toBeInstanceOf(GraphQueryError);
     });
   });
 });

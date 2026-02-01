@@ -110,22 +110,6 @@ app.kubernetes.io/component: postgres
 {{- end }}
 
 {{/*
-Component labels for Neo4j
-*/}}
-{{- define "pk-mcp.neo4j.labels" -}}
-{{ include "pk-mcp.labels" . }}
-app.kubernetes.io/component: neo4j
-{{- end }}
-
-{{/*
-Selector labels for Neo4j
-*/}}
-{{- define "pk-mcp.neo4j.selectorLabels" -}}
-{{ include "pk-mcp.selectorLabels" . }}
-app.kubernetes.io/component: neo4j
-{{- end }}
-
-{{/*
 Create the name of the service account to use for MCP Service
 */}}
 {{- define "pk-mcp.serviceAccountName" -}}
@@ -203,17 +187,6 @@ PostgreSQL port
 {{- end }}
 
 {{/*
-Neo4j hostname (internal service DNS)
-*/}}
-{{- define "pk-mcp.neo4jHost" -}}
-{{- if .Values.neo4j.enabled }}
-{{- printf "%s-neo4j" (include "pk-mcp.fullname" .) }}
-{{- else }}
-{{- "neo4j" }}
-{{- end }}
-{{- end }}
-
-{{/*
 Common annotations
 */}}
 {{- define "pk-mcp.annotations" -}}
@@ -241,13 +214,6 @@ PostgreSQL full name
 */}}
 {{- define "pk-mcp.postgres.fullname" -}}
 {{- printf "%s-postgres" (include "pk-mcp.fullname" .) }}
-{{- end }}
-
-{{/*
-Neo4j full name
-*/}}
-{{- define "pk-mcp.neo4j.fullname" -}}
-{{- printf "%s-neo4j" (include "pk-mcp.fullname" .) }}
 {{- end }}
 
 {{/*

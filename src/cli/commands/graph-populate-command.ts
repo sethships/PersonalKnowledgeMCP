@@ -35,7 +35,7 @@ import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
 import type { GraphIngestionProgress } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateOptions } from "../utils/validation.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
+import { getFalkorDBConfig } from "../utils/falkordb-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -66,7 +66,7 @@ export async function graphPopulateCommand(
   // Get graph config
   let config: GraphStorageConfig;
   try {
-    config = getGraphConfig();
+    config = getFalkorDBConfig();
   } catch (error) {
     if (json) {
       console.log(
@@ -78,8 +78,8 @@ export async function graphPopulateCommand(
     } else {
       console.error(chalk.red("\n" + (error instanceof Error ? error.message : String(error))));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Set NEO4J_PASSWORD in your .env file");
-      console.error("  • Or export NEO4J_PASSWORD in your shell");
+      console.error("  • Set FALKORDB_PASSWORD in your .env file");
+      console.error("  • Or export FALKORDB_PASSWORD in your shell");
     }
     process.exit(1);
   }
@@ -163,7 +163,7 @@ export async function graphPopulateCommand(
     }
 
     // Step 3: Connect to graph database
-    adapter = createGraphAdapter("neo4j", config);
+    adapter = createGraphAdapter("falkordb", config);
     await adapter.connect();
 
     if (!json) {
@@ -238,7 +238,7 @@ export async function graphPopulateCommand(
         );
       } else {
         console.error(
-          chalk.red(`\nRepository "${repositoryName}" already has graph data in Neo4j.`)
+          chalk.red(`\nRepository "${repositoryName}" already has graph data in FalkorDB.`)
         );
         console.error("\n" + chalk.bold("Options:"));
         console.error("  • Use --force to delete existing data and repopulate");
@@ -260,10 +260,12 @@ export async function graphPopulateCommand(
       console.error(chalk.red(`\nError: ${errorMessage}`));
 
       // Provide context-specific guidance
-      if (errorMessage.includes("Neo4j") || errorMessage.includes("connect")) {
+      if (errorMessage.includes("FalkorDB") || errorMessage.includes("connect")) {
         console.error("\n" + chalk.bold("Next steps:"));
-        console.error("  • Verify Neo4j is running: " + chalk.gray("docker compose up neo4j -d"));
-        console.error("  • Check Neo4j connection settings in .env");
+        console.error(
+          "  • Verify FalkorDB is running: " + chalk.gray("docker compose up falkordb -d")
+        );
+        console.error("  • Check FalkorDB connection settings in .env");
         console.error(
           "  • Ensure schema migrations are applied: " + chalk.gray("pk-mcp graph migrate")
         );

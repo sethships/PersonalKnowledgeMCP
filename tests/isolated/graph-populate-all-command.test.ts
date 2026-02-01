@@ -22,8 +22,8 @@ import { createTestRepositoryInfo } from "../fixtures/repository-fixtures.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
 // Mock modules
-vi.mock("../../src/graph/Neo4jClient.js", () => ({
-  Neo4jStorageClientImpl: vi.fn().mockImplementation(() => ({
+vi.mock("../../src/graph/adapters/index.js", () => ({
+  createGraphAdapter: vi.fn().mockImplementation(() => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
   })),
@@ -37,8 +37,8 @@ vi.mock("../../src/graph/extraction/RelationshipExtractor.js", () => ({
   RelationshipExtractor: vi.fn().mockImplementation(() => ({})),
 }));
 
-// NOTE: We intentionally do NOT mock neo4j-config.js here.
-// Mocking it causes vi.mock() pollution that breaks unit tests for getNeo4jConfig
+// NOTE: We intentionally do NOT mock falkordb-config.js here.
+// Mocking it causes vi.mock() pollution that breaks unit tests for getFalkorDBConfig
 // in other test files (even with vi.resetModules()). Instead, we set up the
 // required environment variables in beforeEach to let the real function work.
 
@@ -140,10 +140,10 @@ describe("Graph Populate All Command", () => {
     // Save original environment and set up Neo4j config env vars
     // (required since we don't mock neo4j-config.js to avoid vi.mock pollution)
     originalEnv = { ...process.env };
-    process.env["NEO4J_PASSWORD"] = "testpassword";
-    process.env["NEO4J_HOST"] = "localhost";
-    process.env["NEO4J_BOLT_PORT"] = "7687";
-    process.env["NEO4J_USER"] = "neo4j";
+    process.env["FALKORDB_PASSWORD"] = "testpassword";
+    process.env["FALKORDB_HOST"] = "localhost";
+    process.env["FALKORDB_PORT"] = "6379";
+    process.env["FALKORDB_USER"] = "default";
 
     // Initialize logger for tests
     initializeLogger({ level: "silent", format: "json" });

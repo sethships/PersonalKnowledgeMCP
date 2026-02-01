@@ -405,7 +405,7 @@ Understanding project phases helps align contributions:
 - **Phase 2** (Complete): Code Intelligence + Multi-Provider Embeddings
 - **Phase 3** (Complete): Multi-Instance + HTTP Transport
 - **Phase 4** (Framework Ready): Enterprise Features (OIDC, User Mapping)
-- **Phase 5** (Complete): Knowledge Graph Search (Neo4j, AST parsing for 13 languages, graph MCP tools)
+- **Phase 5** (Complete): Knowledge Graph Search (FalkorDB, AST parsing for 13 languages, graph MCP tools)
 - **Phase 6** (Planned): Unstructured Document Ingestion (PDF, DOCX, local folder watching)
 
 **Current Status**: V1.0 Complete (Phases 1-5 Complete, Phase 4 Enterprise Features Framework Only)

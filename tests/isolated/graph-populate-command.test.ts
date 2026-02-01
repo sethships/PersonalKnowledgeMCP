@@ -1,7 +1,7 @@
 /**
  * Tests for Graph Populate Command
  *
- * Tests the CLI command for populating the Neo4j knowledge graph
+ * Tests the CLI command for populating the FalkorDB knowledge graph
  * from an indexed repository.
  */
 
@@ -21,12 +21,12 @@ import type { RepositoryInfo, RepositoryMetadataService } from "../../src/reposi
 // Bun's vi.mock() hoists to module level and affects global module cache.
 // Real ora works fine in non-TTY environments (spinner methods work, just isSpinning=false).
 
-// Mock Neo4j client
+// Mock graph adapter factory
 const mockConnect = vi.fn().mockResolvedValue(undefined);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../../src/graph/Neo4jClient.js", () => ({
-  Neo4jStorageClientImpl: vi.fn().mockImplementation(() => ({
+vi.mock("../../src/graph/adapters/index.js", () => ({
+  createGraphAdapter: vi.fn().mockImplementation(() => ({
     connect: mockConnect,
     disconnect: mockDisconnect,
   })),
@@ -79,10 +79,10 @@ describe("Graph Populate Command", () => {
     originalEnv = { ...process.env };
 
     // Set up required environment variables
-    process.env["NEO4J_PASSWORD"] = "testpassword";
-    process.env["NEO4J_HOST"] = "localhost";
-    process.env["NEO4J_BOLT_PORT"] = "7687";
-    process.env["NEO4J_USER"] = "neo4j";
+    process.env["FALKORDB_PASSWORD"] = "testpassword";
+    process.env["FALKORDB_HOST"] = "localhost";
+    process.env["FALKORDB_PORT"] = "6379";
+    process.env["FALKORDB_USER"] = "default";
 
     // Create mocks
     mockGetRepository = vi.fn();

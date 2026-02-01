@@ -36,7 +36,7 @@ import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
 import type { GraphIngestionProgress, GraphIngestionStats } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateAllOptions } from "../utils/validation.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
+import { getFalkorDBConfig } from "../utils/falkordb-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -175,7 +175,7 @@ async function validateRepository(repo: RepositoryInfo): Promise<string | undefi
 /**
  * Execute graph populate-all command
  *
- * Populates the Neo4j knowledge graph for all indexed repositories
+ * Populates the FalkorDB knowledge graph for all indexed repositories
  * with status "ready".
  *
  * @param options - Command options
@@ -190,7 +190,7 @@ export async function graphPopulateAllCommand(
   // Step 1: Get graph config (fail early if not configured)
   let config: GraphStorageConfig;
   try {
-    config = getGraphConfig();
+    config = getFalkorDBConfig();
   } catch (error) {
     if (json) {
       console.log(
@@ -202,8 +202,8 @@ export async function graphPopulateAllCommand(
     } else {
       console.error(chalk.red("\n" + (error instanceof Error ? error.message : String(error))));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Set NEO4J_PASSWORD in your .env file");
-      console.error("  • Or export NEO4J_PASSWORD in your shell");
+      console.error("  • Set FALKORDB_PASSWORD in your .env file");
+      console.error("  • Or export FALKORDB_PASSWORD in your shell");
     }
     return;
   }
@@ -239,13 +239,13 @@ export async function graphPopulateAllCommand(
         spinner: "dots",
       }).start();
 
-      adapter = createGraphAdapter("neo4j", config);
+      adapter = createGraphAdapter("falkordb", config);
       await adapter.connect();
 
       connectSpinner.succeed("Connected to graph database");
       console.log();
     } else {
-      adapter = createGraphAdapter("neo4j", config);
+      adapter = createGraphAdapter("falkordb", config);
       await adapter.connect();
     }
 

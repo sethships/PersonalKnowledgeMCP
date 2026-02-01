@@ -32,26 +32,29 @@ import type {
  * Supported graph database adapter types
  *
  * Used by the factory function to instantiate the correct adapter implementation.
+ *
+ * Note: Neo4j support was removed in favor of FalkorDB per ADR-0004.
  */
-export type GraphAdapterType = "neo4j" | "falkordb";
+export type GraphAdapterType = "falkordb";
 
 // =============================================================================
 // Configuration Types
 // =============================================================================
 
 /**
- * Configuration for any graph storage adapter
+ * Configuration for the FalkorDB graph storage adapter
  *
- * This interface is database-agnostic and works with both Neo4j and FalkorDB.
- * Database-specific options are handled internally by each adapter implementation.
+ * This interface configures the FalkorDB adapter which is the only supported
+ * graph database backend (Neo4j was removed per ADR-0004).
  *
  * @example
  * ```typescript
  * const config: GraphStorageConfig = {
  *   host: "localhost",
- *   port: 7687,
- *   username: "neo4j",
- *   password: process.env.GRAPH_DB_PASSWORD,
+ *   port: 6379,
+ *   username: "default",
+ *   password: process.env.FALKORDB_PASSWORD,
+ *   database: "knowledge_graph",
  * };
  * ```
  */
@@ -59,7 +62,7 @@ export interface GraphStorageConfig {
   /** Graph database server host (default: 'localhost') */
   host: string;
 
-  /** Graph database server port (Neo4j Bolt: 7687, FalkorDB: 6379) */
+  /** Graph database server port (FalkorDB default: 6379) */
   port: number;
 
   /** Username for authentication */
@@ -80,8 +83,7 @@ export interface GraphStorageConfig {
   /**
    * Database/graph name
    *
-   * For Neo4j: The database name (default: 'neo4j')
-   * For FalkorDB: The graph name within Redis
+   * For FalkorDB: The graph name within Redis (default: 'knowledge_graph')
    */
   database?: string;
 }

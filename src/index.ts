@@ -136,15 +136,16 @@ async function main(): Promise<void> {
 
     // Step 3b: Initialize graph adapter (optional - only if configured)
     let graphAdapter: GraphStorageAdapter | undefined;
-    const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
-    if (neo4jPassword) {
+    const falkordbPassword = Bun.env["FALKORDB_PASSWORD"];
+    if (falkordbPassword) {
       try {
-        logger.info("Initializing graph adapter");
-        graphAdapter = createGraphAdapter("neo4j", {
-          host: Bun.env["NEO4J_HOST"] || "localhost",
-          port: parseInt(Bun.env["NEO4J_BOLT_PORT"] || "7687", 10),
-          username: Bun.env["NEO4J_USER"] || "neo4j",
-          password: neo4jPassword,
+        logger.info("Initializing graph adapter (FalkorDB)");
+        graphAdapter = createGraphAdapter("falkordb", {
+          host: Bun.env["FALKORDB_HOST"] || "localhost",
+          port: parseInt(Bun.env["FALKORDB_PORT"] || "6379", 10),
+          username: Bun.env["FALKORDB_USER"] || "default",
+          password: falkordbPassword,
+          database: Bun.env["FALKORDB_DATABASE"] || "knowledge_graph",
         });
         await graphAdapter.connect();
         const graphHealthy = await graphAdapter.healthCheck();
@@ -162,7 +163,7 @@ async function main(): Promise<void> {
         graphAdapter = undefined;
       }
     } else {
-      logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
+      logger.debug("FALKORDB_PASSWORD not set - Graph database features disabled");
     }
 
     // Step 3c: Initialize graph service (if adapter available)

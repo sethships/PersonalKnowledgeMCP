@@ -5,11 +5,13 @@
  *
  * This module provides the public API for:
  * - AST parsing and entity extraction (parsing submodule)
- * - Graph database operations via the adapter pattern (supports Neo4j, FalkorDB)
+ * - Graph database operations via the adapter pattern (FalkorDB)
  *
  * The knowledge graph complements ChromaDB vector search by storing explicit
  * relationships between code entities (functions, classes, modules) enabling
  * relationship-aware queries and dependency analysis.
+ *
+ * Note: Neo4j support was removed in favor of FalkorDB per ADR-0004.
  *
  * @see {@link file://./../docs/architecture/adr/0002-knowledge-graph-architecture.md} ADR-0002
  *
@@ -26,13 +28,14 @@
  *
  * const config: GraphStorageConfig = {
  *   host: "localhost",
- *   port: 7687,
- *   username: "neo4j",
- *   password: process.env.GRAPH_DB_PASSWORD,
+ *   port: 6379,
+ *   username: "default",
+ *   password: process.env.FALKORDB_PASSWORD,
+ *   database: "knowledge_graph",
  * };
  *
  * // Create adapter using factory function
- * const adapter = createGraphAdapter('neo4j', config);
+ * const adapter = createGraphAdapter('falkordb', config);
  * await adapter.connect();
  *
  * const result = await adapter.traverse({
@@ -72,7 +75,8 @@ export type {
 // =============================================================================
 
 /**
- * @deprecated Use GraphStorageConfig from './adapters/types.js' instead
+ * @deprecated Use GraphStorageConfig from './adapters/types.js' instead.
+ * Neo4j was removed in favor of FalkorDB per ADR-0004.
  */
 export type { Neo4jConfig } from "./types.js";
 
@@ -138,15 +142,10 @@ export type {
 // =============================================================================
 
 /**
- * @deprecated Use GraphStorageAdapter from './adapters/types.js' instead
+ * @deprecated Use GraphStorageAdapter from './adapters/types.js' instead.
+ * Neo4j was removed in favor of FalkorDB per ADR-0004.
  */
 export type { Neo4jStorageClient } from "./types.js";
-
-// =============================================================================
-// Client Implementation
-// =============================================================================
-
-export { Neo4jStorageClientImpl } from "./Neo4jClient.js";
 
 // =============================================================================
 // Error Classes
@@ -170,7 +169,7 @@ export {
 // Error Utilities
 // =============================================================================
 
-export { isRetryableGraphError, mapNeo4jError, mapGraphError } from "./errors.js";
+export { isRetryableGraphError, mapGraphError } from "./errors.js";
 
 // Schema Module
 // =============================================================================

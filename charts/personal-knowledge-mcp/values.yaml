@@ -413,65 +413,6 @@ postgres:
   tolerations: []
 
 # =============================================================================
-# Neo4j Configuration (Phase 4 - Optional)
-# =============================================================================
-neo4j:
-  # Enable Neo4j deployment
-  enabled: false
-
-  # Container image configuration
-  image:
-    repository: neo4j
-    tag: "5.25.1-community"
-    pullPolicy: IfNotPresent
-
-  # Resource requests and limits
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "500m"
-    limits:
-      memory: "2Gi"
-      cpu: "2"
-
-  # Persistence configuration
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: ""
-    accessMode: ReadWriteOnce
-
-  # Pod security context
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 7474
-    runAsGroup: 7474
-    fsGroup: 7474
-
-  # Service configuration
-  service:
-    type: ClusterIP
-    boltPort: 7687
-    httpPort: 7474
-    annotations: {}
-
-  # Neo4j configuration
-  config:
-    acceptLicenseAgreement: "yes"
-    heapInitialSize: "512m"
-    heapMaxSize: "2G"
-    pagecacheSize: "1G"
-
-  # Termination grace period in seconds
-  terminationGracePeriodSeconds: 120
-
-  # Node selector for scheduling
-  nodeSelector: {}
-
-  # Tolerations for scheduling
-  tolerations: []
-
-# =============================================================================
 # Secrets Configuration
 # =============================================================================
 secrets:
