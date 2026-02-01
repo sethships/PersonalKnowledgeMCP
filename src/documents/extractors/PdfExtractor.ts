@@ -416,8 +416,8 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
 
     return {
       documentType: "pdf",
-      title: info?.Title || undefined,
-      author: info?.Author || undefined,
+      title: info?.Title?.trim() || undefined,
+      author: info?.Author?.trim() || undefined,
       createdAt: this.parsePdfDate(info?.CreationDate),
       pageCount: pdfData.numpages,
       wordCount: this.countWords(pdfData.text),
