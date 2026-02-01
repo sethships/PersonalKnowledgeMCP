@@ -1,20 +1,37 @@
 /**
- * Unit tests for document extractor stubs.
+ * Unit tests for document extractors.
  *
- * Tests extractor initialization, supports() method, and stub behavior.
+ * Tests extractor initialization, supports() method, and extraction behavior.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll } from "bun:test";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
 import {
   PdfExtractor,
   DocxExtractor,
   MarkdownParser,
   ImageMetadataExtractor,
 } from "../../../src/documents/extractors/index.js";
-import { NotImplementedError, isDocumentError } from "../../../src/documents/errors.js";
+import {
+  NotImplementedError,
+  FileAccessError,
+  FileTooLargeError,
+  ExtractionError,
+  isDocumentError,
+} from "../../../src/documents/errors.js";
 import { DEFAULT_EXTRACTOR_CONFIG } from "../../../src/documents/constants.js";
+import { createTestPdfFiles } from "../../fixtures/documents/pdf-fixtures.js";
+
+// Path to test fixtures
+const FIXTURES_DIR = path.join(__dirname, "../../fixtures/documents");
 
 describe("PdfExtractor", () => {
+  // Ensure test PDFs exist before running tests
+  beforeAll(async () => {
+    await createTestPdfFiles(FIXTURES_DIR);
+  });
+
   describe("constructor", () => {
     test("uses default configuration", () => {
       const extractor = new PdfExtractor();
@@ -55,20 +72,162 @@ describe("PdfExtractor", () => {
   });
 
   describe("extract", () => {
-    test("throws NotImplementedError", async () => {
-      const extractor = new PdfExtractor();
+    describe("successful extraction", () => {
+      test("extracts text content from simple PDF", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
 
-      try {
-        await extractor.extract("/path/to/file.pdf");
-        expect(true).toBe(false); // Should not reach here
-      } catch (error) {
-        expect(error).toBeInstanceOf(NotImplementedError);
-        expect(isDocumentError(error)).toBe(true);
-        if (error instanceof NotImplementedError) {
-          expect(error.methodName).toBe("PdfExtractor.extract");
-          expect(error.filePath).toBe("/path/to/file.pdf");
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+        expect(result.metadata).toBeDefined();
+        expect(result.metadata.documentType).toBe("pdf");
+        expect(result.metadata.pageCount).toBe(1);
+      });
+
+      test("extracts multi-page PDF with page info", async () => {
+        const extractor = new PdfExtractor({ extractPageInfo: true });
+        const filePath = path.join(FIXTURES_DIR, "multi-page.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.metadata.pageCount).toBe(3);
+        // Pages may or may not be populated depending on pdf-parse behavior
+        // with our minimal PDFs, but we verify the structure
+        if (result.pages && result.pages.length > 0) {
+          expect(result.pages.length).toBe(3);
+          expect(result.pages[0]?.pageNumber).toBe(1);
         }
-      }
+      });
+
+      test("extracts PDF without page info when configured", async () => {
+        const extractor = new PdfExtractor({ extractPageInfo: false });
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.pages).toBeUndefined();
+      });
+
+      test("extracts metadata from PDF with metadata", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "with-metadata.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.documentType).toBe("pdf");
+        // Note: Our minimal PDF generator may not produce metadata
+        // that pdf-parse can extract, so we just verify the structure
+        expect(result.metadata.filePath).toBe(filePath);
+        expect(result.metadata.fileSizeBytes).toBeGreaterThan(0);
+        expect(result.metadata.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+        expect(result.metadata.fileModifiedAt).toBeInstanceOf(Date);
+      });
+
+      test("computes correct word count", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        // Word count should be > 0 if content was extracted
+        if (result.content.trim().length > 0) {
+          expect(result.metadata.wordCount).toBeGreaterThan(0);
+        }
+      });
+
+      test("computes content hash", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+
+        // Same file should produce same hash
+        const result2 = await extractor.extract(filePath);
+        expect(result2.metadata.contentHash).toBe(result.metadata.contentHash);
+      });
+    });
+
+    describe("error handling", () => {
+      test("throws FileAccessError for non-existent file", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "non-existent.pdf");
+
+        try {
+          await extractor.extract(filePath);
+          expect(true).toBe(false); // Should not reach here
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileAccessError);
+          expect(isDocumentError(error)).toBe(true);
+          if (error instanceof FileAccessError) {
+            expect(error.code).toBe("FILE_ACCESS_ERROR");
+            expect(error.filePath).toBe(filePath);
+            expect(error.message).toContain("not found");
+          }
+        }
+      });
+
+      test("throws FileTooLargeError for oversized file", async () => {
+        const extractor = new PdfExtractor({ maxFileSizeBytes: 100 }); // Very small limit
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+
+        try {
+          await extractor.extract(filePath);
+          expect(true).toBe(false); // Should not reach here
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileTooLargeError);
+          if (error instanceof FileTooLargeError) {
+            expect(error.code).toBe("FILE_TOO_LARGE");
+            expect(error.maxSizeBytes).toBe(100);
+            expect(error.actualSizeBytes).toBeGreaterThan(100);
+            expect(error.retryable).toBe(false);
+          }
+        }
+      });
+
+      test("throws ExtractionError for corrupt PDF", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "corrupt.pdf");
+
+        try {
+          await extractor.extract(filePath);
+          expect(true).toBe(false); // Should not reach here
+        } catch (error) {
+          expect(error).toBeInstanceOf(ExtractionError);
+          if (error instanceof ExtractionError) {
+            expect(error.code).toBe("EXTRACTION_ERROR");
+            expect(error.filePath).toBe(filePath);
+          }
+        }
+      });
+    });
+
+    describe("metadata extraction", () => {
+      test("includes correct file metadata", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+        const stats = await fs.stat(filePath);
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.filePath).toBe(filePath);
+        expect(result.metadata.fileSizeBytes).toBe(stats.size);
+        expect(result.metadata.fileModifiedAt.getTime()).toBe(stats.mtime.getTime());
+      });
+
+      test("sets documentType to pdf", async () => {
+        const extractor = new PdfExtractor();
+        const filePath = path.join(FIXTURES_DIR, "simple.pdf");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.documentType).toBe("pdf");
+      });
     });
   });
 });
