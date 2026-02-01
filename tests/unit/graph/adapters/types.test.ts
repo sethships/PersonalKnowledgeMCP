@@ -28,11 +28,6 @@ import { RelationshipType } from "../../../../src/graph/types.js";
 
 describe("GraphStorageAdapter Types", () => {
   describe("GraphAdapterType", () => {
-    it("should accept valid adapter type 'neo4j'", () => {
-      const adapterType: GraphAdapterType = "neo4j";
-      expect(adapterType).toBe("neo4j");
-    });
-
     it("should accept valid adapter type 'falkordb'", () => {
       const adapterType: GraphAdapterType = "falkordb";
       expect(adapterType).toBe("falkordb");
@@ -77,19 +72,6 @@ describe("GraphStorageAdapter Types", () => {
       expect(config.connectionAcquisitionTimeout).toBe(60000);
       expect(config.retry?.maxRetries).toBe(5);
       expect(config.database).toBe("knowledge_graph");
-    });
-
-    it("should work with Neo4j default configuration values", () => {
-      const neo4jConfig: GraphStorageConfig = {
-        host: "localhost",
-        port: 7687,
-        username: "neo4j",
-        password: "test",
-        database: "neo4j",
-      };
-
-      expect(neo4jConfig.port).toBe(7687);
-      expect(neo4jConfig.database).toBe("neo4j");
     });
 
     it("should work with FalkorDB typical configuration values", () => {

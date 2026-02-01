@@ -1,20 +1,23 @@
 /**
  * Integration tests for GraphIngestionService
  *
- * These tests require a running Neo4j instance and test the complete
+ * These tests require a running FalkorDB instance and test the complete
  * ingestion pipeline from file content to graph storage.
  *
  * To run these tests:
- * 1. Start Neo4j: docker compose up -d neo4j
+ * 1. Start FalkorDB: docker compose up -d falkordb
  * 2. Run: bun test tests/integration/graph/graph-ingestion.test.ts
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { GraphIngestionService } from "../../../src/graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../../src/graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../../src/graph/extraction/RelationshipExtractor.js";
-import type { Neo4jConfig } from "../../../src/graph/types.js";
 import type {
   GraphIngestionOptions,
   GraphIngestionProgress,
@@ -23,11 +26,12 @@ import type {
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // Integration test configuration
-const integrationConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+const integrationConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: process.env["FALKORDB_DATABASE"] ?? "test_graph",
   maxConnectionPoolSize: 10,
   connectionAcquisitionTimeout: 10000,
 };
@@ -96,14 +100,14 @@ export interface User {
   },
 ];
 
-// Helper to check if Neo4j is available
-async function isNeo4jAvailable(): Promise<boolean> {
+// Helper to check if FalkorDB is available
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 2000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const client = createGraphAdapter("falkordb", integrationConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -118,24 +122,24 @@ async function isNeo4jAvailable(): Promise<boolean> {
 }
 
 describe("GraphIngestionService Integration Tests", () => {
-  let client: Neo4jStorageClientImpl;
+  let client: GraphStorageAdapter;
   let service: GraphIngestionService;
   let entityExtractor: EntityExtractor;
   let relationshipExtractor: RelationshipExtractor;
-  let neo4jAvailable: boolean;
+  let falkordbAvailable: boolean;
   let testRepoName: string;
 
   beforeAll(async () => {
     initializeLogger({ level: "error", format: "json" });
-    neo4jAvailable = await isNeo4jAvailable();
+    falkordbAvailable = await isFalkorDBAvailable();
 
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Integration tests will be skipped.");
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Integration tests will be skipped.");
       return;
     }
 
     // Initialize client and extractors
-    client = new Neo4jStorageClientImpl(integrationConfig);
+    client = createGraphAdapter("falkordb", integrationConfig);
     await client.connect();
 
     entityExtractor = new EntityExtractor();
@@ -150,7 +154,7 @@ describe("GraphIngestionService Integration Tests", () => {
   });
 
   afterAll(async () => {
-    if (neo4jAvailable && client) {
+    if (falkordbAvailable && client) {
       // Clean up all test data
       try {
         await client.runQuery(
@@ -167,8 +171,8 @@ describe("GraphIngestionService Integration Tests", () => {
 
   describe("end-to-end ingestion", () => {
     test("should ingest files and create Repository node", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -194,8 +198,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should create File nodes with CONTAINS relationships", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -221,8 +225,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should create Function nodes with DEFINES relationships", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -250,8 +254,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should create Class nodes with DEFINES relationships", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -276,8 +280,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should create Module nodes with IMPORTS relationships", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -303,8 +307,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should report progress during ingestion", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -334,8 +338,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should return accurate statistics", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -356,8 +360,8 @@ describe("GraphIngestionService Integration Tests", () => {
 
   describe("force re-ingestion", () => {
     test("should allow re-ingestion with force flag", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -387,8 +391,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should delete old data before re-ingestion", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -425,8 +429,8 @@ describe("GraphIngestionService Integration Tests", () => {
 
   describe("deleteRepositoryData", () => {
     test("should delete all repository data", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -459,8 +463,8 @@ describe("GraphIngestionService Integration Tests", () => {
 
   describe("error handling", () => {
     test("should handle files with syntax errors gracefully", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -489,8 +493,8 @@ describe("GraphIngestionService Integration Tests", () => {
     });
 
     test("should skip unsupported file types", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -524,8 +528,8 @@ describe("GraphIngestionService Integration Tests", () => {
 
   describe("single file ingestion", () => {
     test("should ingest a single file successfully", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 

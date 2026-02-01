@@ -15,9 +15,12 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { GraphServiceImpl } from "../../../src/services/graph-service.js";
-import type { Neo4jConfig } from "../../../src/graph/types.js";
 import type {
   DependencyQuery,
   DependentQuery,
@@ -28,11 +31,12 @@ import type {
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // Integration test configuration
-const integrationConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+const integrationConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: "test_graph",
   maxConnectionPoolSize: 10,
   connectionAcquisitionTimeout: 10000,
 };
@@ -49,14 +53,14 @@ const TARGETS = {
   mcpQueryResponse: 500, // p95 target
 };
 
-// Helper to check Neo4j availability
-async function isNeo4jAvailable(): Promise<boolean> {
+// Helper to check FalkorDB availability
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 2000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const client = createGraphAdapter("falkordb", integrationConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -72,7 +76,7 @@ async function isNeo4jAvailable(): Promise<boolean> {
 
 // Helper to check repository population
 async function isRepositoryPopulated(
-  client: Neo4jStorageClientImpl,
+  client: GraphStorageAdapter,
   repoName: string
 ): Promise<boolean> {
   try {
@@ -132,42 +136,42 @@ async function measurePerformance<T>(
 }
 
 describe("Graph Query Performance", () => {
-  let neo4jClient: Neo4jStorageClientImpl;
+  let graphClient: GraphStorageAdapter;
   let graphService: GraphServiceImpl;
-  let neo4jAvailable: boolean;
+  let falkordbAvailable: boolean;
   let repoPopulated: boolean;
 
   beforeAll(async () => {
     initializeLogger({ level: "silent", format: "json" });
-    neo4jAvailable = await isNeo4jAvailable();
+    falkordbAvailable = await isFalkorDBAvailable();
 
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Performance tests will be skipped.");
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Performance tests will be skipped.");
       return;
     }
 
-    neo4jClient = new Neo4jStorageClientImpl(integrationConfig);
-    await neo4jClient.connect();
+    graphClient = createGraphAdapter("falkordb", integrationConfig);
+    await graphClient.connect();
 
-    repoPopulated = await isRepositoryPopulated(neo4jClient, TEST_REPO);
+    repoPopulated = await isRepositoryPopulated(graphClient, TEST_REPO);
     if (!repoPopulated) {
       console.log(`Repository ${TEST_REPO} is not populated. Performance tests will be skipped.`);
     }
 
-    graphService = new GraphServiceImpl(neo4jClient);
+    graphService = new GraphServiceImpl(graphClient);
   });
 
   afterAll(async () => {
-    if (neo4jClient) {
-      await neo4jClient.disconnect();
+    if (graphClient) {
+      await graphClient.disconnect();
     }
     resetLogger();
   });
 
   describe("Dependency Query Performance", () => {
     test(`simple dependency query should complete in <${TARGETS.simpleDependencyQuery}ms`, async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -193,8 +197,8 @@ describe("Graph Query Performance", () => {
     });
 
     test(`transitive query (3 hops) should complete in <${TARGETS.transitiveQuery3Hops}ms`, async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -222,8 +226,8 @@ describe("Graph Query Performance", () => {
 
   describe("Dependents Query Performance", () => {
     test("impact analysis query should complete in reasonable time", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -249,8 +253,8 @@ describe("Graph Query Performance", () => {
 
   describe("Architecture Query Performance", () => {
     test(`architecture query should complete in <${TARGETS.architectureQuery}ms`, async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -273,8 +277,8 @@ describe("Graph Query Performance", () => {
     });
 
     test("scoped architecture query should be faster than full repo", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -308,8 +312,8 @@ describe("Graph Query Performance", () => {
 
   describe("Path Finding Performance", () => {
     test(`path finding should complete in <${TARGETS.pathFindingQuery}ms`, async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -347,8 +351,8 @@ describe("Graph Query Performance", () => {
 
   describe("Concurrent Query Performance", () => {
     test("should handle concurrent queries efficiently", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -388,8 +392,8 @@ describe("Graph Query Performance", () => {
 
   describe("Cache Performance", () => {
     test("cached queries should be significantly faster", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
@@ -426,8 +430,8 @@ describe("Graph Query Performance", () => {
 
   describe("Performance Summary", () => {
     test("should generate performance summary report", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 

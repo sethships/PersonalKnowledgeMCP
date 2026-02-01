@@ -6,12 +6,12 @@
  * - Muzehub-code: Medium-sized TypeScript project (~859 files)
  *
  * Tests require:
- * 1. Running Neo4j instance
+ * 1. Running FalkorDB instance
  * 2. Repository indexed in ChromaDB
  * 3. Graph populated via `pk-mcp graph populate <repo>`
  *
  * To run:
- * 1. docker-compose up -d neo4j chromadb
+ * 1. docker-compose up -d falkordb chromadb
  * 2. bun run cli graph migrate
  * 3. bun run cli index https://github.com/sethb75/PersonalKnowledgeMCP.git
  * 4. bun run cli graph populate PersonalKnowledgeMCP
@@ -21,9 +21,12 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { GraphServiceImpl } from "../../../src/services/graph-service.js";
-import type { Neo4jConfig } from "../../../src/graph/types.js";
 import type {
   DependencyQuery,
   DependentQuery,
@@ -35,11 +38,12 @@ import type {
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // Integration test configuration
-const integrationConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+const integrationConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: "test_graph",
   maxConnectionPoolSize: 10,
   connectionAcquisitionTimeout: 10000,
 };
@@ -47,14 +51,14 @@ const integrationConfig: Neo4jConfig = {
 // Repository name for testing
 const TEST_REPO = "PersonalKnowledgeMCP";
 
-// Helper to check if Neo4j is available
-async function isNeo4jAvailable(): Promise<boolean> {
+// Helper to check if FalkorDB is available
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 2000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const client = createGraphAdapter("falkordb", integrationConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -70,7 +74,7 @@ async function isNeo4jAvailable(): Promise<boolean> {
 
 // Helper to check if repository is populated in graph
 async function isRepositoryPopulated(
-  client: Neo4jStorageClientImpl,
+  client: GraphStorageAdapter,
   repoName: string
 ): Promise<boolean> {
   try {
@@ -85,10 +89,7 @@ async function isRepositoryPopulated(
 }
 
 // Helper to get file count in graph
-async function getGraphFileCount(
-  client: Neo4jStorageClientImpl,
-  repoName: string
-): Promise<number> {
+async function getGraphFileCount(client: GraphStorageAdapter, repoName: string): Promise<number> {
   const results = await client.runQuery<{ count: number }>(
     `MATCH (f:File {repository: $repo}) RETURN count(f) as count`,
     { repo: repoName }
@@ -97,36 +98,36 @@ async function getGraphFileCount(
 }
 
 describe("Comprehensive Real Repository Tests", () => {
-  let neo4jClient: Neo4jStorageClientImpl;
+  let graphClient: GraphStorageAdapter;
   let graphService: GraphServiceImpl;
-  let neo4jAvailable: boolean;
+  let falkordbAvailable: boolean;
   let repoPopulated: boolean;
 
   beforeAll(async () => {
     initializeLogger({ level: "silent", format: "json" });
-    neo4jAvailable = await isNeo4jAvailable();
+    falkordbAvailable = await isFalkorDBAvailable();
 
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Integration tests will be skipped.");
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Integration tests will be skipped.");
       return;
     }
 
-    neo4jClient = new Neo4jStorageClientImpl(integrationConfig);
-    await neo4jClient.connect();
+    graphClient = createGraphAdapter("falkordb", integrationConfig);
+    await graphClient.connect();
 
-    repoPopulated = await isRepositoryPopulated(neo4jClient, TEST_REPO);
+    repoPopulated = await isRepositoryPopulated(graphClient, TEST_REPO);
     if (!repoPopulated) {
       console.log(
         `Repository ${TEST_REPO} is not populated in graph. Run: bun run cli graph populate ${TEST_REPO}`
       );
     }
 
-    graphService = new GraphServiceImpl(neo4jClient);
+    graphService = new GraphServiceImpl(graphClient);
   });
 
   afterAll(async () => {
-    if (neo4jClient) {
-      await neo4jClient.disconnect();
+    if (graphClient) {
+      await graphClient.disconnect();
     }
     resetLogger();
   });
@@ -134,12 +135,12 @@ describe("Comprehensive Real Repository Tests", () => {
   describe("PersonalKnowledgeMCP Repository Tests", () => {
     describe("repository validation", () => {
       test("repository exists in graph", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
-        const results = await neo4jClient.runQuery<{
+        const results = await graphClient.runQuery<{
           name: string;
           status: string;
         }>(`MATCH (r:Repository {name: $name}) RETURN r.name as name, r.status as status`, {
@@ -152,23 +153,23 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("repository has indexed files", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
-        const fileCount = await getGraphFileCount(neo4jClient, TEST_REPO);
+        const fileCount = await getGraphFileCount(graphClient, TEST_REPO);
         // PersonalKnowledgeMCP should have 100+ files in src/
         expect(fileCount).toBeGreaterThan(100);
       });
 
       test("repository has CONTAINS relationships", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
-        const results = await neo4jClient.runQuery<{ count: number }>(
+        const results = await graphClient.runQuery<{ count: number }>(
           `MATCH (:Repository {name: $name})-[:CONTAINS]->(:File) RETURN count(*) as count`,
           { name: TEST_REPO }
         );
@@ -179,8 +180,8 @@ describe("Comprehensive Real Repository Tests", () => {
 
     describe("dependency queries", () => {
       test("should find dependencies of get-dependencies.ts", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -205,8 +206,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should find dependencies of graph-service.ts", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -224,8 +225,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should handle transitive dependencies at depth 2", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -251,8 +252,8 @@ describe("Comprehensive Real Repository Tests", () => {
 
     describe("dependent queries (impact analysis)", () => {
       test("should find dependents of graph/types.ts", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -271,8 +272,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should find dependents of logging/index.ts", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -291,8 +292,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should calculate impact score correctly", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -319,8 +320,8 @@ describe("Comprehensive Real Repository Tests", () => {
 
     describe("architecture queries", () => {
       test("should return repository architecture at modules level", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -341,8 +342,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should return scoped architecture for src/graph/", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -366,8 +367,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should identify inter-module dependencies", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -387,8 +388,8 @@ describe("Comprehensive Real Repository Tests", () => {
 
     describe("path finding", () => {
       test("should find path between related files", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -401,7 +402,7 @@ describe("Comprehensive Real Repository Tests", () => {
 
         const toEntity: EntityReference = {
           type: "file",
-          path: "src/graph/Neo4jClient.ts",
+          path: "src/graph/adapters/FalkorDBAdapter.ts",
           repository: TEST_REPO,
         };
 
@@ -423,8 +424,8 @@ describe("Comprehensive Real Repository Tests", () => {
       });
 
       test("should handle non-existent paths gracefully", async () => {
-        if (!neo4jAvailable || !repoPopulated) {
-          console.log("Skipping: Neo4j or repository not available");
+        if (!falkordbAvailable || !repoPopulated) {
+          console.log("Skipping: FalkorDB or repository not available");
           return;
         }
 
@@ -458,22 +459,22 @@ describe("Comprehensive Real Repository Tests", () => {
 
   describe("Cross-Repository Validation", () => {
     test("entity counts should be consistent with filesystem", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
-      const graphFileCount = await getGraphFileCount(neo4jClient, TEST_REPO);
+      const graphFileCount = await getGraphFileCount(graphClient, TEST_REPO);
 
       // Should have substantial number of files
       expect(graphFileCount).toBeGreaterThan(50);
 
       // Get function and class counts
-      const functionResults = await neo4jClient.runQuery<{ count: number }>(
+      const functionResults = await graphClient.runQuery<{ count: number }>(
         `MATCH (f:Function {repository: $repo}) RETURN count(f) as count`,
         { repo: TEST_REPO }
       );
-      const classResults = await neo4jClient.runQuery<{ count: number }>(
+      const classResults = await graphClient.runQuery<{ count: number }>(
         `MATCH (c:Class {repository: $repo}) RETURN count(c) as count`,
         { repo: TEST_REPO }
       );
@@ -488,12 +489,12 @@ describe("Comprehensive Real Repository Tests", () => {
     });
 
     test("IMPORTS relationships should exist", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
-      const results = await neo4jClient.runQuery<{ count: number }>(
+      const results = await graphClient.runQuery<{ count: number }>(
         `MATCH (:File {repository: $repo})-[:IMPORTS]->() RETURN count(*) as count`,
         { repo: TEST_REPO }
       );
@@ -503,12 +504,12 @@ describe("Comprehensive Real Repository Tests", () => {
     });
 
     test("DEFINES relationships should connect files to entities", async () => {
-      if (!neo4jAvailable || !repoPopulated) {
-        console.log("Skipping: Neo4j or repository not available");
+      if (!falkordbAvailable || !repoPopulated) {
+        console.log("Skipping: FalkorDB or repository not available");
         return;
       }
 
-      const results = await neo4jClient.runQuery<{ count: number }>(
+      const results = await graphClient.runQuery<{ count: number }>(
         `MATCH (:File {repository: $repo})-[:DEFINES]->() RETURN count(*) as count`,
         { repo: TEST_REPO }
       );

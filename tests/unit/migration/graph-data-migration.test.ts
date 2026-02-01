@@ -275,11 +275,11 @@ describe("GraphDataMigrationService", () => {
       });
       const service = new GraphDataMigrationService();
 
-      const result = await service.exportGraph(mockAdapter, "neo4j");
+      const result = await service.exportGraph(mockAdapter, "falkordb");
 
       expect(result.nodes).toHaveLength(2);
       expect(result.relationships).toHaveLength(1);
-      expect(result.metadata.sourceType).toBe("neo4j");
+      expect(result.metadata.sourceType).toBe("falkordb");
       expect(result.metadata.nodeCount).toBe(2);
       expect(result.metadata.relationshipCount).toBe(1);
       expect(result.metadata.nodeLabels).toContain("Repository");
@@ -558,65 +558,5 @@ describe("GraphDataMigrationService", () => {
   });
 });
 
-describe("Validation Schema", () => {
-  test("GraphTransferCommandOptionsSchema should validate defaults", async () => {
-    const { GraphTransferCommandOptionsSchema } =
-      await import("../../../src/cli/utils/validation.js");
-
-    const result = GraphTransferCommandOptionsSchema.parse({});
-
-    expect(result.source).toBe("neo4j");
-    expect(result.target).toBe("falkordb");
-    expect(result.batchSize).toBe(1000);
-    expect(result.validationSamples).toBe(10);
-  });
-
-  test("GraphTransferCommandOptionsSchema should validate custom values", async () => {
-    const { GraphTransferCommandOptionsSchema } =
-      await import("../../../src/cli/utils/validation.js");
-
-    const result = GraphTransferCommandOptionsSchema.parse({
-      source: "FalkorDB",
-      target: "Neo4j",
-      batchSize: "500",
-      validationSamples: "20",
-      dryRun: true,
-      json: true,
-    });
-
-    expect(result.source).toBe("falkordb");
-    expect(result.target).toBe("neo4j");
-    expect(result.batchSize).toBe(500);
-    expect(result.validationSamples).toBe(20);
-    expect(result.dryRun).toBe(true);
-    expect(result.json).toBe(true);
-  });
-
-  test("GraphTransferCommandOptionsSchema should reject invalid adapter type", async () => {
-    const { GraphTransferCommandOptionsSchema } =
-      await import("../../../src/cli/utils/validation.js");
-
-    expect(() => {
-      GraphTransferCommandOptionsSchema.parse({
-        source: "invalid",
-      });
-    }).toThrow();
-  });
-
-  test("GraphTransferCommandOptionsSchema should reject invalid batch size", async () => {
-    const { GraphTransferCommandOptionsSchema } =
-      await import("../../../src/cli/utils/validation.js");
-
-    expect(() => {
-      GraphTransferCommandOptionsSchema.parse({
-        batchSize: "0",
-      });
-    }).toThrow();
-
-    expect(() => {
-      GraphTransferCommandOptionsSchema.parse({
-        batchSize: "99999",
-      });
-    }).toThrow();
-  });
-});
+// Note: GraphTransferCommandOptionsSchema validation tests removed as
+// the graph transfer command was removed after Neo4j to FalkorDB migration

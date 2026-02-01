@@ -13,18 +13,22 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { GraphServiceImpl } from "../../../src/services/graph-service.js";
-import type { Neo4jConfig } from "../../../src/graph/types.js";
 import type { DependencyQuery, DependentQuery } from "../../../src/services/graph-service-types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 // Integration test configuration
-const integrationConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+const integrationConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: "test_graph",
   maxConnectionPoolSize: 10,
   connectionAcquisitionTimeout: 10000,
 };
@@ -34,14 +38,14 @@ const TEST_REPO = "PersonalKnowledgeMCP";
 // Source directory for ground truth comparison
 const SOURCE_DIR = path.resolve(process.cwd(), "src");
 
-// Helper to check if Neo4j is available
-async function isNeo4jAvailable(): Promise<boolean> {
+// Helper to check if FalkorDB is available
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 2000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const client = createGraphAdapter("falkordb", integrationConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -57,7 +61,7 @@ async function isNeo4jAvailable(): Promise<boolean> {
 
 // Helper to check if repository is populated
 async function isRepositoryPopulated(
-  client: Neo4jStorageClientImpl,
+  client: GraphStorageAdapter,
   repoName: string
 ): Promise<boolean> {
   try {
@@ -179,48 +183,48 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Helper to check if test should be skipped due to Neo4j unavailability.
+ * Helper to check if test should be skipped due to FalkorDB unavailability.
  * Logs a message when skipping and returns true if test should be skipped.
  */
-function shouldSkipTest(neo4jAvailable: boolean, repoPopulated: boolean): boolean {
-  if (!neo4jAvailable || !repoPopulated) {
-    console.log("Skipping: Neo4j or repository not available");
+function shouldSkipTest(falkordbAvailable: boolean, repoPopulated: boolean): boolean {
+  if (!falkordbAvailable || !repoPopulated) {
+    console.log("Skipping: FalkorDB or repository not available");
     return true;
   }
   return false;
 }
 
 describe("Dependency Accuracy Validation", () => {
-  let neo4jClient: Neo4jStorageClientImpl;
+  let graphClient: GraphStorageAdapter;
   let graphService: GraphServiceImpl;
-  let neo4jAvailable: boolean;
+  let falkordbAvailable: boolean;
   let repoPopulated: boolean;
 
   beforeAll(async () => {
     initializeLogger({ level: "silent", format: "json" });
-    neo4jAvailable = await isNeo4jAvailable();
+    falkordbAvailable = await isFalkorDBAvailable();
 
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Accuracy tests will be skipped.");
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Accuracy tests will be skipped.");
       return;
     }
 
-    neo4jClient = new Neo4jStorageClientImpl(integrationConfig);
-    await neo4jClient.connect();
+    graphClient = createGraphAdapter("falkordb", integrationConfig);
+    await graphClient.connect();
 
-    repoPopulated = await isRepositoryPopulated(neo4jClient, TEST_REPO);
+    repoPopulated = await isRepositoryPopulated(graphClient, TEST_REPO);
     if (!repoPopulated) {
       console.log(
         `Repository ${TEST_REPO} is not populated in graph. Accuracy tests will be skipped.`
       );
     }
 
-    graphService = new GraphServiceImpl(neo4jClient);
+    graphService = new GraphServiceImpl(graphClient);
   });
 
   afterAll(async () => {
-    if (neo4jClient) {
-      await neo4jClient.disconnect();
+    if (graphClient) {
+      await graphClient.disconnect();
     }
     resetLogger();
   });
@@ -232,13 +236,13 @@ describe("Dependency Accuracy Validation", () => {
     const testFiles = [
       "src/mcp/tools/get-dependencies.ts",
       "src/services/graph-service.ts",
-      "src/graph/Neo4jClient.ts",
+      "src/graph/adapters/FalkorDBAdapter.ts",
       "src/cli.ts",
     ];
 
     for (const testFile of testFiles) {
       test(`should accurately identify dependencies of ${testFile}`, async () => {
-        if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+        if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
         const filePath = path.resolve(process.cwd(), testFile);
         if (!fs.existsSync(filePath)) {
@@ -321,7 +325,7 @@ describe("Dependency Accuracy Validation", () => {
 
     for (const targetFile of targetFiles) {
       test(`should find >95% of files importing ${targetFile}`, async () => {
-        if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+        if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
         // Get ground truth using filesystem scan
         const groundTruthImporters = findImportersOfFile(targetFile, SOURCE_DIR);
@@ -387,7 +391,7 @@ describe("Dependency Accuracy Validation", () => {
 
   describe("Precision and Recall Metrics", () => {
     test("should calculate overall accuracy metrics", async () => {
-      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+      if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
       // Sample of files to test
       const sampleFiles = [
@@ -447,7 +451,7 @@ describe("Dependency Accuracy Validation", () => {
 
   describe("Edge Cases", () => {
     test("should handle files with no imports", async () => {
-      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+      if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
       // Find a simple file with few imports
       const query: DependencyQuery = {
@@ -469,7 +473,7 @@ describe("Dependency Accuracy Validation", () => {
     });
 
     test("should handle circular import scenarios", async () => {
-      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+      if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
       // Query for files that might have circular imports
       const query: DependencyQuery = {
@@ -488,7 +492,7 @@ describe("Dependency Accuracy Validation", () => {
     });
 
     test("should handle re-exported modules", async () => {
-      if (shouldSkipTest(neo4jAvailable, repoPopulated)) return;
+      if (shouldSkipTest(falkordbAvailable, repoPopulated)) return;
 
       // Index files often re-export from other files
       const query: DependencyQuery = {

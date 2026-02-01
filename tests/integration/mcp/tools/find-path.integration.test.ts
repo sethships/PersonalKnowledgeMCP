@@ -1,28 +1,33 @@
 /**
  * Integration tests for find_path MCP tool
  *
- * These tests require a running Neo4j instance and test the full path
- * from MCP tool handler through GraphService to Neo4j.
+ * These tests require a running FalkorDB instance and test the full path
+ * from MCP tool handler through GraphService to FalkorDB.
  *
  * To run these tests:
- * 1. Start Neo4j: docker run -d --name neo4j-test -p 7687:7687 -e NEO4J_AUTH=neo4j/testpassword neo4j:5
+ * 1. Start FalkorDB: docker-compose up -d falkordb
  * 2. Run: bun test tests/integration/mcp/tools/find-path.integration.test.ts
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../../src/graph/adapters/index.js";
 import { GraphServiceImpl } from "../../../../src/services/graph-service.js";
 import { createFindPathHandler } from "../../../../src/mcp/tools/find-path.js";
 import { RelationshipType } from "../../../../src/graph/types.js";
-import type { Neo4jConfig, FileNode, FunctionNode } from "../../../../src/graph/types.js";
+import type { FileNode, FunctionNode } from "../../../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
 
 // Integration test configuration
-const integrationConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+const integrationConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: "test_graph",
   maxConnectionPoolSize: 10,
   connectionAcquisitionTimeout: 10000,
 };
@@ -31,14 +36,14 @@ const integrationConfig: Neo4jConfig = {
 const TEST_PREFIX = `find_path_test_${Date.now()}`;
 const TEST_REPO = `${TEST_PREFIX}_repo`;
 
-// Helper to check if Neo4j is available
-async function isNeo4jAvailable(): Promise<boolean> {
+// Helper to check if FalkorDB is available
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 2000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(integrationConfig);
+    const client = createGraphAdapter("falkordb", integrationConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -53,23 +58,23 @@ async function isNeo4jAvailable(): Promise<boolean> {
 }
 
 describe("find_path MCP Tool Integration Tests", () => {
-  let neo4jClient: Neo4jStorageClientImpl;
+  let graphClient: GraphStorageAdapter;
   let graphService: GraphServiceImpl;
-  let neo4jAvailable: boolean;
+  let falkordbAvailable: boolean;
 
   beforeAll(async () => {
     initializeLogger({ level: "silent", format: "json" });
-    neo4jAvailable = await isNeo4jAvailable();
+    falkordbAvailable = await isFalkorDBAvailable();
 
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Integration tests will be skipped.");
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Integration tests will be skipped.");
       return;
     }
 
-    neo4jClient = new Neo4jStorageClientImpl(integrationConfig);
-    await neo4jClient.connect();
+    graphClient = createGraphAdapter("falkordb", integrationConfig);
+    await graphClient.connect();
 
-    graphService = new GraphServiceImpl(neo4jClient);
+    graphService = new GraphServiceImpl(graphClient);
 
     // Set up test graph with a path:
     // handleLogin -> validateUser -> findUser -> dbQuery
@@ -77,17 +82,17 @@ describe("find_path MCP Tool Integration Tests", () => {
   });
 
   afterAll(async () => {
-    if (neo4jAvailable && neo4jClient) {
+    if (falkordbAvailable && graphClient) {
       // Clean up test data
       try {
-        await neo4jClient.runQuery(
+        await graphClient.runQuery(
           `MATCH (n) WHERE n.id STARTS WITH $prefix OR n.repository = $repo DETACH DELETE n`,
           { prefix: TEST_PREFIX, repo: TEST_REPO }
         );
       } catch (error) {
         console.error("Failed to clean up test data:", error);
       }
-      await neo4jClient.disconnect();
+      await graphClient.disconnect();
     }
     resetLogger();
   });
@@ -114,7 +119,7 @@ describe("find_path MCP Tool Integration Tests", () => {
         startLine: 1,
         endLine: 10,
       };
-      await neo4jClient.upsertNode(functionNode);
+      await graphClient.upsertNode(functionNode);
     }
 
     // Create file nodes
@@ -135,7 +140,7 @@ describe("find_path MCP Tool Integration Tests", () => {
         hash: `hash_${file}`,
         repository: TEST_REPO,
       };
-      await neo4jClient.upsertNode(fileNode);
+      await graphClient.upsertNode(fileNode);
     }
 
     // Create relationships: handleLogin -> validateUser -> findUser -> dbQuery
@@ -160,7 +165,7 @@ describe("find_path MCP Tool Integration Tests", () => {
             ? "src/db/users.ts"
             : "src/db/connection.ts";
 
-      await neo4jClient.createRelationship(
+      await graphClient.createRelationship(
         `${TEST_PREFIX}_Function:${TEST_REPO}:${fromFile}:${call.from}`,
         `${TEST_PREFIX}_Function:${TEST_REPO}:${toFile}:${call.to}`,
         RelationshipType.CALLS,
@@ -176,7 +181,7 @@ describe("find_path MCP Tool Integration Tests", () => {
     ];
 
     for (const imp of imports) {
-      await neo4jClient.createRelationship(
+      await graphClient.createRelationship(
         `${TEST_PREFIX}_File:${TEST_REPO}:${imp.from}`,
         `${TEST_PREFIX}_File:${TEST_REPO}:${imp.to}`,
         RelationshipType.IMPORTS,
@@ -187,8 +192,8 @@ describe("find_path MCP Tool Integration Tests", () => {
 
   describe("Path Finding", () => {
     test("should find direct path between connected entities", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -215,8 +220,8 @@ describe("find_path MCP Tool Integration Tests", () => {
     });
 
     test("should handle no path found gracefully", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -240,8 +245,8 @@ describe("find_path MCP Tool Integration Tests", () => {
     });
 
     test("should respect max_hops limit", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -267,8 +272,8 @@ describe("find_path MCP Tool Integration Tests", () => {
     });
 
     test("should filter by relationship types", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -293,8 +298,8 @@ describe("find_path MCP Tool Integration Tests", () => {
 
   describe("Performance", () => {
     test("should complete path finding within 500ms", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -324,8 +329,8 @@ describe("find_path MCP Tool Integration Tests", () => {
 
   describe("Error Handling", () => {
     test("should handle non-existent repository gracefully", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 

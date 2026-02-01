@@ -21,12 +21,15 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, afterEach } from "bun:test";
-import { Neo4jStorageClientImpl } from "../../../src/graph/Neo4jClient.js";
+import {
+  createGraphAdapter,
+  type GraphStorageAdapter,
+  type GraphStorageConfig,
+} from "../../../src/graph/adapters/index.js";
 import { GraphIngestionService } from "../../../src/graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../../src/graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../../src/graph/extraction/RelationshipExtractor.js";
 import { GraphServiceImpl } from "../../../src/services/graph-service.js";
-import type { Neo4jConfig } from "../../../src/graph/types.js";
 import type {
   DependencyQuery,
   ArchitectureQuery,
@@ -77,12 +80,13 @@ const ciTolerance = getCITolerance();
 const verbose = process.env["VERBOSE"] === "true";
 const skipCleanup = process.env["SKIP_CLEANUP"] === "true";
 
-// Neo4j configuration
-const neo4jConfig: Neo4jConfig = {
-  host: process.env["NEO4J_HOST"] ?? "localhost",
-  port: parseInt(process.env["NEO4J_PORT"] ?? "7687", 10),
-  username: process.env["NEO4J_USERNAME"] ?? "neo4j",
-  password: process.env["NEO4J_PASSWORD"] ?? "testpassword",
+// FalkorDB configuration
+const falkordbConfig: GraphStorageConfig = {
+  host: process.env["FALKORDB_HOST"] ?? "localhost",
+  port: parseInt(process.env["FALKORDB_PORT"] ?? "6379", 10),
+  username: process.env["FALKORDB_USER"] ?? "default",
+  password: process.env["FALKORDB_PASSWORD"] ?? "testpassword",
+  database: "test_graph",
   maxConnectionPoolSize: 20,
   connectionAcquisitionTimeout: 30000,
 };
@@ -119,15 +123,15 @@ const CI_TARGETS = Object.fromEntries(
 // ============================================================================
 
 /**
- * Check Neo4j availability with timeout
+ * Check FalkorDB availability with timeout
  */
-async function isNeo4jAvailable(): Promise<boolean> {
+async function isFalkorDBAvailable(): Promise<boolean> {
   const timeout = new Promise<boolean>((resolve) => {
     setTimeout(() => resolve(false), 5000);
   });
 
   const connectionCheck = (async () => {
-    const client = new Neo4jStorageClientImpl(neo4jConfig);
+    const client = createGraphAdapter("falkordb", falkordbConfig);
     try {
       await client.connect();
       const healthy = await client.healthCheck();
@@ -144,7 +148,7 @@ async function isNeo4jAvailable(): Promise<boolean> {
 /**
  * Clean up test repository data
  */
-async function cleanupTestData(client: Neo4jStorageClientImpl, repoName: string): Promise<void> {
+async function cleanupTestData(client: GraphStorageAdapter, repoName: string): Promise<void> {
   try {
     await client.runQuery(
       `
@@ -226,8 +230,8 @@ function formatDuration(ms: number): string {
 // ============================================================================
 
 describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance)`, () => {
-  let neo4jClient: Neo4jStorageClientImpl;
-  let neo4jAvailable: boolean;
+  let graphClient: GraphStorageAdapter;
+  let falkordbAvailable: boolean;
   let entityExtractor: EntityExtractor;
   let relationshipExtractor: RelationshipExtractor;
   let ingestionService: GraphIngestionService;
@@ -238,17 +242,17 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
   beforeAll(async () => {
     initializeLogger({ level: verbose ? "debug" : "silent", format: "json" });
 
-    // Check Neo4j availability
-    neo4jAvailable = await isNeo4jAvailable();
-    if (!neo4jAvailable) {
-      console.log("Neo4j is not available. Scale performance tests will be skipped.");
-      console.log("Start Neo4j with: docker-compose up -d neo4j");
+    // Check FalkorDB availability
+    falkordbAvailable = await isFalkorDBAvailable();
+    if (!falkordbAvailable) {
+      console.log("FalkorDB is not available. Scale performance tests will be skipped.");
+      console.log("Start FalkorDB with: docker-compose up -d falkordb");
       return;
     }
 
     // Initialize services
-    neo4jClient = new Neo4jStorageClientImpl(neo4jConfig);
-    await neo4jClient.connect();
+    graphClient = createGraphAdapter("falkordb", falkordbConfig);
+    await graphClient.connect();
 
     // EntityExtractor and RelationshipExtractor create their own TreeSitterParser instances
     entityExtractor = new EntityExtractor();
@@ -259,7 +263,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
     const batchSize = testScale === "small" ? 20 : testScale === "medium" ? 50 : 100;
 
     ingestionService = new GraphIngestionService(
-      neo4jClient,
+      graphClient,
       entityExtractor,
       relationshipExtractor,
       {
@@ -268,7 +272,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
       }
     );
 
-    graphService = new GraphServiceImpl(neo4jClient);
+    graphService = new GraphServiceImpl(graphClient);
 
     // Generate unique test repo name
     testRepoName = `scale-test-${testScale}-${Date.now()}`;
@@ -281,13 +285,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
   }, 120000);
 
   afterAll(async () => {
-    if (neo4jClient && testRepoName && !skipCleanup) {
+    if (graphClient && testRepoName && !skipCleanup) {
       console.log(`\nCleaning up test repository: ${testRepoName}`);
-      await cleanupTestData(neo4jClient, testRepoName);
+      await cleanupTestData(graphClient, testRepoName);
     }
 
-    if (neo4jClient) {
-      await neo4jClient.disconnect();
+    if (graphClient) {
+      await graphClient.disconnect();
     }
 
     resetLogger();
@@ -298,10 +302,10 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
 
   afterEach(async () => {
     // Clean up any additional repos created during tests
-    if (neo4jClient && !skipCleanup) {
+    if (graphClient && !skipCleanup) {
       for (const repo of createdRepos) {
         if (repo !== testRepoName) {
-          await cleanupTestData(neo4jClient, repo);
+          await cleanupTestData(graphClient, repo);
         }
       }
       createdRepos.length = 0;
@@ -314,8 +318,8 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
 
   describe("Graph Population Performance", () => {
     test("should populate graph within PRD targets", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
@@ -388,13 +392,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
 
   describe("Query Performance at Scale", () => {
     test("simple 1-hop queries should meet PRD targets", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Need populated data
-      const hasData = await neo4jClient.runQuery<{ count: number }>(
+      const hasData = await graphClient.runQuery<{ count: number }>(
         `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
         { name: testRepoName }
       );
@@ -405,7 +409,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
       }
 
       // Get a file to query
-      const files = await neo4jClient.runQuery<{ path: string }>(
+      const files = await graphClient.runQuery<{ path: string }>(
         `MATCH (r:Repository {name: $name})-[:CONTAINS]->(f:File) RETURN f.path as path LIMIT 10`,
         { name: testRepoName }
       );
@@ -437,13 +441,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
     }, 60000);
 
     test("3-level transitive queries should meet PRD targets", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Check for data
-      const hasData = await neo4jClient.runQuery<{ count: number }>(
+      const hasData = await graphClient.runQuery<{ count: number }>(
         `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
         { name: testRepoName }
       );
@@ -454,7 +458,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
       }
 
       // Get a file with dependencies for transitive query
-      const files = await neo4jClient.runQuery<{ path: string; depCount: number }>(
+      const files = await graphClient.runQuery<{ path: string; depCount: number }>(
         `
         MATCH (r:Repository {name: $name})-[:CONTAINS]->(f:File)
         OPTIONAL MATCH (f)-[:IMPORTS]->(m:Module)
@@ -495,13 +499,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
     }, 60000);
 
     test("architecture queries should meet PRD targets", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Check for data
-      const hasData = await neo4jClient.runQuery<{ count: number }>(
+      const hasData = await graphClient.runQuery<{ count: number }>(
         `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
         { name: testRepoName }
       );
@@ -529,13 +533,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
     }, 60000);
 
     test("concurrent queries should scale reasonably", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Check for data
-      const hasData = await neo4jClient.runQuery<{ count: number }>(
+      const hasData = await graphClient.runQuery<{ count: number }>(
         `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
         { name: testRepoName }
       );
@@ -546,7 +550,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
       }
 
       // Get multiple files
-      const files = await neo4jClient.runQuery<{ path: string }>(
+      const files = await graphClient.runQuery<{ path: string }>(
         `MATCH (r:Repository {name: $name})-[:CONTAINS]->(f:File) RETURN f.path as path LIMIT 5`,
         { name: testRepoName }
       );
@@ -591,13 +595,13 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
 
   describe("Incremental Update Performance", () => {
     test("single file update should meet PRD targets", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Check for data
-      const hasData = await neo4jClient.runQuery<{ count: number }>(
+      const hasData = await graphClient.runQuery<{ count: number }>(
         `MATCH (r:Repository {name: $name}) RETURN count(r) as count`,
         { name: testRepoName }
       );
@@ -608,7 +612,7 @@ describe(`Scale Performance Tests (${testScale} scale, ${ciTolerance}x tolerance
       }
 
       // Get a file to update
-      const files = await neo4jClient.runQuery<{ path: string }>(
+      const files = await graphClient.runQuery<{ path: string }>(
         `MATCH (r:Repository {name: $name})-[:CONTAINS]->(f:File) RETURN f.path as path LIMIT 1`,
         { name: testRepoName }
       );
@@ -668,13 +672,13 @@ export class UpdatedClass {
 
   describe("Performance Summary Report", () => {
     test("should generate comprehensive performance summary", async () => {
-      if (!neo4jAvailable) {
-        console.log("Skipping: Neo4j not available");
+      if (!falkordbAvailable) {
+        console.log("Skipping: FalkorDB not available");
         return;
       }
 
       // Check for data
-      const repoStats = await neo4jClient.runQuery<{
+      const repoStats = await graphClient.runQuery<{
         fileCount: number;
         nodeCount: number;
         relCount: number;
@@ -737,7 +741,7 @@ console.log(`
 ║    VERBOSE          - Detailed output (true/false)                   ║
 ║                                                                      ║
 ║  Prerequisites:                                                      ║
-║    - Neo4j running (docker-compose up -d neo4j)                      ║
+║    - FalkorDB running (docker-compose up -d falkordb)                ║
 ║    - Sufficient memory for test scale                                ║
 ║                                                                      ║
 ║  Examples:                                                           ║
