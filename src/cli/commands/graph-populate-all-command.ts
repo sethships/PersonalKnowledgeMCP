@@ -36,7 +36,11 @@ import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
 import type { GraphIngestionProgress, GraphIngestionStats } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateAllOptions } from "../utils/validation.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
+import {
+  getAdapterConfig,
+  getAdapterDisplayName,
+  getAdapterConfigHint,
+} from "../utils/graph-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -175,7 +179,7 @@ async function validateRepository(repo: RepositoryInfo): Promise<string | undefi
 /**
  * Execute graph populate-all command
  *
- * Populates the Neo4j knowledge graph for all indexed repositories
+ * Populates the knowledge graph for all indexed repositories
  * with status "ready".
  *
  * @param options - Command options
@@ -185,12 +189,13 @@ export async function graphPopulateAllCommand(
   options: ValidatedGraphPopulateAllOptions,
   repositoryService: RepositoryMetadataService
 ): Promise<void> {
-  const { force = false, json = false } = options;
+  const { adapter, force = false, json = false } = options;
+  const adapterDisplayName = getAdapterDisplayName(adapter);
 
   // Step 1: Get graph config (fail early if not configured)
   let config: GraphStorageConfig;
   try {
-    config = getGraphConfig();
+    config = getAdapterConfig(adapter);
   } catch (error) {
     if (json) {
       console.log(
@@ -202,8 +207,7 @@ export async function graphPopulateAllCommand(
     } else {
       console.error(chalk.red("\n" + (error instanceof Error ? error.message : String(error))));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Set NEO4J_PASSWORD in your .env file");
-      console.error("  • Or export NEO4J_PASSWORD in your shell");
+      console.error("  • " + getAdapterConfigHint(adapter));
     }
     return;
   }
@@ -229,31 +233,31 @@ export async function graphPopulateAllCommand(
   }
 
   // Step 3: Connect to graph database (once for all repositories)
-  let adapter: GraphStorageAdapter | null = null;
+  let graphAdapter: GraphStorageAdapter | null = null;
   const results: GraphPopulateAllResult[] = [];
 
   try {
     if (!json) {
       const connectSpinner = ora({
-        text: "Connecting to graph database...",
+        text: `Connecting to ${adapterDisplayName}...`,
         spinner: "dots",
       }).start();
 
-      adapter = createGraphAdapter("neo4j", config);
-      await adapter.connect();
+      graphAdapter = createGraphAdapter(adapter, config);
+      await graphAdapter.connect();
 
-      connectSpinner.succeed("Connected to graph database");
+      connectSpinner.succeed(`Connected to ${adapterDisplayName}`);
       console.log();
     } else {
-      adapter = createGraphAdapter("neo4j", config);
-      await adapter.connect();
+      graphAdapter = createGraphAdapter(adapter, config);
+      await graphAdapter.connect();
     }
 
     // Step 4: Create shared extractors and ingestion service
     const entityExtractor = new EntityExtractor();
     const relationshipExtractor = new RelationshipExtractor();
     const ingestionService = new GraphIngestionService(
-      adapter,
+      graphAdapter,
       entityExtractor,
       relationshipExtractor
     );
@@ -389,9 +393,9 @@ export async function graphPopulateAllCommand(
     }
   } finally {
     // Step 6: Disconnect from graph database
-    if (adapter) {
+    if (graphAdapter) {
       try {
-        await adapter.disconnect();
+        await graphAdapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

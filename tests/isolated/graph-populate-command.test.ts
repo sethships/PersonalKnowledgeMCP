@@ -137,12 +137,57 @@ describe("Graph Populate Command", () => {
       expect(GraphPopulateCommandOptionsSchema).toBeDefined();
     });
 
-    it("should validate empty options", async () => {
+    it("should validate empty options with default adapter", async () => {
       const { GraphPopulateCommandOptionsSchema } =
         await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({});
       expect(result.success).toBe(true);
+      if (result.success) {
+        // Default adapter should be falkordb
+        expect(result.data.adapter).toBe("falkordb");
+      }
+    });
+
+    it("should validate adapter option with neo4j", async () => {
+      const { GraphPopulateCommandOptionsSchema } =
+        await import("../../src/cli/utils/validation.js");
+
+      const result = GraphPopulateCommandOptionsSchema.safeParse({ adapter: "neo4j" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.adapter).toBe("neo4j");
+      }
+    });
+
+    it("should validate adapter option with falkordb", async () => {
+      const { GraphPopulateCommandOptionsSchema } =
+        await import("../../src/cli/utils/validation.js");
+
+      const result = GraphPopulateCommandOptionsSchema.safeParse({ adapter: "falkordb" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.adapter).toBe("falkordb");
+      }
+    });
+
+    it("should reject invalid adapter option", async () => {
+      const { GraphPopulateCommandOptionsSchema } =
+        await import("../../src/cli/utils/validation.js");
+
+      const result = GraphPopulateCommandOptionsSchema.safeParse({ adapter: "invalid" });
+      expect(result.success).toBe(false);
+    });
+
+    it("should handle adapter option case-insensitively", async () => {
+      const { GraphPopulateCommandOptionsSchema } =
+        await import("../../src/cli/utils/validation.js");
+
+      const result = GraphPopulateCommandOptionsSchema.safeParse({ adapter: "NEO4J" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.adapter).toBe("neo4j");
+      }
     });
 
     it("should validate force option", async () => {
@@ -167,16 +212,18 @@ describe("Graph Populate Command", () => {
       }
     });
 
-    it("should validate both options together", async () => {
+    it("should validate all options together", async () => {
       const { GraphPopulateCommandOptionsSchema } =
         await import("../../src/cli/utils/validation.js");
 
       const result = GraphPopulateCommandOptionsSchema.safeParse({
+        adapter: "neo4j",
         force: true,
         json: true,
       });
       expect(result.success).toBe(true);
       if (result.success) {
+        expect(result.data.adapter).toBe("neo4j");
         expect(result.data.force).toBe(true);
         expect(result.data.json).toBe(true);
       }
@@ -199,7 +246,7 @@ describe("Graph Populate Command", () => {
           await import("../../src/cli/commands/graph-populate-command.js");
 
         await expect(
-          graphPopulateCommand("test-repo", {}, mockRepositoryService)
+          graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService)
         ).rejects.toThrow();
       } finally {
         mockExit.mockRestore();
@@ -218,7 +265,7 @@ describe("Graph Populate Command", () => {
           await import("../../src/cli/commands/graph-populate-command.js");
 
         await expect(
-          graphPopulateCommand("test-repo", {}, mockRepositoryService)
+          graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService)
         ).rejects.toThrow();
       } finally {
         mockExit.mockRestore();
@@ -238,7 +285,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("non-existent", {}, mockRepositoryService);
+        await graphPopulateCommand("non-existent", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         // Expected error from process.exit mock
       } finally {
@@ -261,7 +308,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         // Expected error from process.exit mock
       } finally {
@@ -284,7 +331,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         // Expected error from process.exit mock
       } finally {
@@ -333,7 +380,7 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+      await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
 
       // Verify service calls
       expect(mockConnect).toHaveBeenCalled();
@@ -366,7 +413,11 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", { force: true }, mockRepositoryService);
+      await graphPopulateCommand(
+        "test-repo",
+        { adapter: "neo4j", force: true },
+        mockRepositoryService
+      );
 
       // Verify force was passed to ingestion service
       expect(mockIngestFiles).toHaveBeenCalledWith(
@@ -400,7 +451,11 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
+      await graphPopulateCommand(
+        "test-repo",
+        { adapter: "neo4j", json: true },
+        mockRepositoryService
+      );
 
       // Verify JSON output
       expect(consoleLogSpy).toHaveBeenCalled();
@@ -423,7 +478,11 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
+        await graphPopulateCommand(
+          "test-repo",
+          { adapter: "neo4j", json: true },
+          mockRepositoryService
+        );
       } catch (error) {
         expect(consoleLogSpy).toHaveBeenCalled();
         const jsonOutput = consoleLogSpy.mock.calls[0]?.[0] as string;
@@ -446,7 +505,11 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
+        await graphPopulateCommand(
+          "test-repo",
+          { adapter: "neo4j", json: true },
+          mockRepositoryService
+        );
       } catch (error) {
         expect(consoleLogSpy).toHaveBeenCalled();
         const jsonOutput = consoleLogSpy.mock.calls[0]?.[0] as string;
@@ -491,7 +554,7 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+      await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
 
       // Should only process 4 files (ts, tsx, js, jsx)
       const ingestCall = mockIngestFiles.mock.calls[0];
@@ -535,7 +598,7 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+      await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
 
       // Should only process 1 file (not the one in node_modules)
       const ingestCall = mockIngestFiles.mock.calls[0];
@@ -563,7 +626,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         // Expected error from process.exit mock
       } finally {
@@ -597,7 +660,7 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+      await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
 
       // Should complete without throwing
       expect(mockDisconnect).toHaveBeenCalled();
@@ -632,7 +695,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         expect(mockExit).toHaveBeenCalledWith(1);
       } finally {
@@ -661,7 +724,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         expect(consoleErrorSpy).toHaveBeenCalled();
         const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(" ")).join(" ");
@@ -692,7 +755,11 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
+        await graphPopulateCommand(
+          "test-repo",
+          { adapter: "neo4j", json: true },
+          mockRepositoryService
+        );
       } catch (error) {
         expect(consoleLogSpy).toHaveBeenCalled();
         const jsonOutput = consoleLogSpy.mock.calls[0]?.[0] as string;
@@ -723,7 +790,7 @@ describe("Graph Populate Command", () => {
         const { graphPopulateCommand } =
           await import("../../src/cli/commands/graph-populate-command.js");
 
-        await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+        await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
       } catch (error) {
         // Expected to throw
       } finally {
@@ -816,7 +883,7 @@ describe("Graph Populate Command", () => {
       const { graphPopulateCommand } =
         await import("../../src/cli/commands/graph-populate-command.js");
 
-      await graphPopulateCommand("test-repo", {}, mockRepositoryService);
+      await graphPopulateCommand("test-repo", { adapter: "neo4j" }, mockRepositoryService);
 
       expect(capturedCallback).not.toBeNull();
     });

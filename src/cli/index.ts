@@ -311,7 +311,8 @@ const graphProgram = program.command("graph").description("Manage knowledge grap
 // Graph migrate subcommand
 graphProgram
   .command("migrate")
-  .description("Apply schema migrations to Neo4j knowledge graph")
+  .description("Apply schema migrations to graph database")
+  .option("-a, --adapter <type>", "Graph adapter: neo4j or falkordb", "falkordb")
   .option("--dry-run", "Show what would be executed without applying")
   .option("-f, --force", "Re-apply all migrations even if already applied")
   .option("--status", "Show current schema version and pending migrations")
@@ -330,6 +331,7 @@ graphProgram
   .command("populate")
   .description("Populate knowledge graph from an indexed repository")
   .argument("<repository>", "Repository name to populate")
+  .option("-a, --adapter <type>", "Graph adapter: neo4j or falkordb", "falkordb")
   .option("-f, --force", "Delete existing graph data and repopulate")
   .option("-j, --json", "Output as JSON")
   .action(async (repository: string, options: Record<string, unknown>) => {
@@ -346,6 +348,7 @@ graphProgram
 graphProgram
   .command("populate-all")
   .description("Populate knowledge graph for all indexed repositories")
+  .option("-a, --adapter <type>", "Graph adapter: neo4j or falkordb", "falkordb")
   .option("-f, --force", "Delete existing graph data and repopulate")
   .option("-j, --json", "Output as JSON")
   .action(async (options: Record<string, unknown>) => {
