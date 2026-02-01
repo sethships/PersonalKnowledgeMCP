@@ -75,7 +75,7 @@ Manage knowledge for active coding projects with intelligent semantic indexing:
 | Language | TypeScript 5.3+ | Type-safe development |
 | MCP SDK | @modelcontextprotocol/sdk | Official MCP implementation |
 | Vector DB | ChromaDB | Semantic search and similarity |
-| Graph DB | FalkorDB 4.x | Code dependency graph and relationships |
+| Graph DB | FalkorDB 4.x (default), Neo4j (optional) | Code dependency graph and relationships |
 | AST Parsing | tree-sitter (web-tree-sitter), Roslyn | Code entity extraction for 13 languages |
 | Embeddings | OpenAI, Transformers.js, Ollama | Embedding generation |
 | HTTP Server | Express 5.x | HTTP/SSE transport |
@@ -1043,6 +1043,8 @@ Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules,
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+For detailed information about dependency licensing, including graph database options (FalkorDB vs Neo4j), see [Licensing Information](docs/licensing.md).
 
 ## Acknowledgments
 

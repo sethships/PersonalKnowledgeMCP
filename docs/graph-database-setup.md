@@ -28,6 +28,8 @@ FalkorDB is the graph database that powers the knowledge graph features in Perso
 
 FalkorDB is an Apache 2.0 licensed graph database with Cypher support, chosen for its permissive licensing and compatibility. See [ADR-0004](architecture/adr/0004-graph-database-migration-neo4j-to-falkordb.md) for the decision rationale.
 
+> **Note**: Neo4j is also supported as an alternative adapter via `--adapter neo4j`. If you have existing Neo4j infrastructure, see [Licensing Information](licensing.md) for important licensing considerations before choosing Neo4j.
+
 ### When You Need FalkorDB
 
 | Feature | Requires FalkorDB |
