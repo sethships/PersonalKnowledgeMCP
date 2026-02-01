@@ -306,9 +306,22 @@ export type ValidatedTokenRotateOptions = z.infer<typeof TokenRotateCommandOptio
 // ============================================================================
 
 /**
+ * Valid graph adapter types for graph commands
+ *
+ * Shared between migrate, populate, populate-all, and transfer commands.
+ */
+const GRAPH_ADAPTER_ENUM = z.enum(["neo4j", "falkordb"]);
+
+/**
  * Schema for graph migrate command options
  */
 export const GraphMigrateCommandOptionsSchema = z.object({
+  adapter: z
+    .string()
+    .optional()
+    .default("falkordb")
+    .transform((val) => val.toLowerCase())
+    .pipe(GRAPH_ADAPTER_ENUM),
   dryRun: z.boolean().optional(),
   force: z.boolean().optional(),
   status: z.boolean().optional(),
@@ -324,6 +337,12 @@ export type ValidatedGraphMigrateOptions = z.infer<typeof GraphMigrateCommandOpt
  * Schema for graph populate command options
  */
 export const GraphPopulateCommandOptionsSchema = z.object({
+  adapter: z
+    .string()
+    .optional()
+    .default("falkordb")
+    .transform((val) => val.toLowerCase())
+    .pipe(GRAPH_ADAPTER_ENUM),
   force: z.boolean().optional(),
   json: z.boolean().optional(),
 });
@@ -337,6 +356,12 @@ export type ValidatedGraphPopulateOptions = z.infer<typeof GraphPopulateCommandO
  * Schema for graph populate-all command options
  */
 export const GraphPopulateAllCommandOptionsSchema = z.object({
+  adapter: z
+    .string()
+    .optional()
+    .default("falkordb")
+    .transform((val) => val.toLowerCase())
+    .pipe(GRAPH_ADAPTER_ENUM),
   force: z.boolean().optional(),
   json: z.boolean().optional(),
 });
@@ -475,11 +500,6 @@ export type ValidatedModelsImportOptions = z.infer<typeof ModelsImportCommandOpt
 // ============================================================================
 // Graph Transfer Command Validation Schema
 // ============================================================================
-
-/**
- * Valid graph adapter types for migration
- */
-const GRAPH_ADAPTER_ENUM = z.enum(["neo4j", "falkordb"]);
 
 /**
  * Schema for graph transfer command options

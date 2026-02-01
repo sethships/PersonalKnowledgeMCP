@@ -30,8 +30,14 @@ import {
   type GraphStorageConfig,
 } from "../../graph/adapters/index.js";
 import { MigrationRunner, registerAllMigrations } from "../../graph/migration/index.js";
+import { initializeLogger, type LogLevel } from "../../logging/index.js";
 import type { ValidatedGraphMigrateOptions } from "../utils/validation.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
+import {
+  getAdapterConfig,
+  getAdapterDisplayName,
+  getAdapterConfigHint,
+  getAdapterDockerCommand,
+} from "../utils/graph-config.js";
 
 /**
  * Execute graph migrate command
@@ -39,12 +45,19 @@ import { getGraphConfig } from "../utils/neo4j-config.js";
  * @param options - Command options
  */
 export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions): Promise<void> {
-  const { dryRun = false, force = false, status = false, json = false } = options;
+  // Initialize logger for CLI (commands that don't use initializeDependencies)
+  initializeLogger({
+    level: (Bun.env["LOG_LEVEL"] as LogLevel) || "warn",
+    format: (Bun.env["LOG_FORMAT"] as "json" | "pretty") || "pretty",
+  });
 
-  // Get graph config and create adapter
+  const { adapter, dryRun = false, force = false, status = false, json = false } = options;
+  const adapterDisplayName = getAdapterDisplayName(adapter);
+
+  // Get graph config for selected adapter
   let config: GraphStorageConfig;
   try {
-    config = getGraphConfig();
+    config = getAdapterConfig(adapter);
   } catch (error) {
     if (json) {
       console.log(
@@ -56,14 +69,13 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
     } else {
       console.error(chalk.red("\n" + (error instanceof Error ? error.message : String(error))));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Set NEO4J_PASSWORD in your .env file");
-      console.error("  • Or export NEO4J_PASSWORD in your shell");
+      console.error("  • " + getAdapterConfigHint(adapter));
     }
     process.exit(1);
   }
 
   const spinner = ora({
-    text: "Connecting to graph database...",
+    text: `Connecting to ${adapterDisplayName}...`,
     color: "cyan",
   });
 
@@ -71,19 +83,19 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
     spinner.start();
   }
 
-  let adapter: GraphStorageAdapter | null = null;
+  let graphAdapter: GraphStorageAdapter | null = null;
 
   try {
     // Create adapter and connect
-    adapter = createGraphAdapter("neo4j", config);
-    await adapter.connect();
+    graphAdapter = createGraphAdapter(adapter, config);
+    await graphAdapter.connect();
 
     if (!json) {
-      spinner.succeed("Connected to graph database");
+      spinner.succeed(`Connected to ${adapterDisplayName}`);
     }
 
     // Create migration runner and register migrations
-    const runner = new MigrationRunner(adapter);
+    const runner = new MigrationRunner(graphAdapter);
     registerAllMigrations(runner);
 
     // Status-only mode
@@ -187,17 +199,20 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
     } else {
       console.error(chalk.red(`\nError: ${errorMessage}`));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Verify Neo4j is running: " + chalk.gray("docker compose up neo4j -d"));
-      console.error("  • Check Neo4j connection settings in .env");
-      console.error("  • Verify Neo4j credentials are correct");
+      console.error(
+        `  • Verify ${adapterDisplayName} is running: ` +
+          chalk.gray(getAdapterDockerCommand(adapter))
+      );
+      console.error(`  • Check ${adapterDisplayName} connection settings in .env`);
+      console.error(`  • Verify ${adapterDisplayName} credentials are correct`);
     }
 
     process.exit(1);
   } finally {
     // Disconnect from graph database
-    if (adapter) {
+    if (graphAdapter) {
       try {
-        await adapter.disconnect();
+        await graphAdapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

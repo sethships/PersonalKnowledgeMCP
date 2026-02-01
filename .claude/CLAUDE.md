@@ -107,6 +107,55 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 9. Merge to main
 10. Automated deployment to test environment
 
+### Mandatory Pre-PR Update Checklist
+
+**CRITICAL**: Before pushing ANY code changes to a PR branch, the agent MUST complete ALL items in this checklist. Skipping any step risks CI failures and wasted review cycles.
+
+**Run this checklist for EVERY commit to a PR branch:**
+
+1. **TypeScript Type Check** (MANDATORY)
+   ```bash
+   bun run typecheck
+   ```
+   - All type errors must be resolved before pushing
+   - Do NOT rely on CI to catch type errors (wastes GitHub Actions minutes)
+
+2. **Full Test Suite** (MANDATORY)
+   ```bash
+   bun test
+   ```
+   - All tests must pass locally before pushing
+   - If any test fails, fix the issue before proceeding
+
+3. **Related Test File Search** (MANDATORY when changing defaults/configs)
+   - When changing default values, constants, or configuration:
+     - Search for ALL test files that might reference the changed value
+     - Use `grep -r "oldValue" tests/` or similar to find affected tests
+     - Update ALL test expectations to match new values
+   - Example: Changing `port = 6379` to `port = 6380` requires updating tests that expect `6379`
+
+4. **Build Verification** (MANDATORY)
+   ```bash
+   bun run build
+   ```
+   - Build must complete without errors or warnings
+   - Verify output files are generated correctly
+
+5. **Coverage Check** (RECOMMENDED)
+   ```bash
+   bun test --coverage
+   ```
+   - Verify coverage meets 90% minimum threshold
+   - New code should have appropriate test coverage
+
+**Rationale**: This checklist prevents the common failure pattern where:
+- Code changes pass local development testing
+- A related test file is missed during updates
+- CI fails on a test that wasn't run locally
+- Additional commit cycles are needed to fix the oversight
+
+**The agent MUST run these checks locally before every push to avoid wasting CI resources and reviewer time.**
+
 ## Phased Implementation Plan
 
 ### Phase 1: Core MCP + Vector Search (Complete)

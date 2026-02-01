@@ -29,9 +29,9 @@ import chalk from "chalk";
 import ora from "ora";
 import type { ValidatedGraphTransferOptions } from "../utils/validation.js";
 import { createMigrationService, type MigrationProgress } from "../../migration/index.js";
-import type { GraphStorageConfig, GraphAdapterType } from "../../graph/adapters/types.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
-import { getFalkorDBConfig } from "../utils/falkordb-config.js";
+import type { GraphStorageConfig } from "../../graph/adapters/types.js";
+import { initializeLogger, type LogLevel } from "../../logging/index.js";
+import { getAdapterConfig } from "../utils/graph-config.js";
 
 /**
  * Format bytes into human-readable string
@@ -43,23 +43,6 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Get configuration for the specified adapter type
- */
-function getAdapterConfig(adapterType: GraphAdapterType): GraphStorageConfig {
-  switch (adapterType) {
-    case "neo4j":
-      return getGraphConfig();
-    case "falkordb":
-      return getFalkorDBConfig();
-    default: {
-      // TypeScript exhaustiveness check
-      const _exhaustiveCheck: never = adapterType;
-      throw new Error(`Unsupported adapter type: ${String(_exhaustiveCheck)}`);
-    }
-  }
-}
-
-/**
  * Execute graph transfer command
  *
  * Migrates data from source graph database to target graph database.
@@ -67,6 +50,12 @@ function getAdapterConfig(adapterType: GraphAdapterType): GraphStorageConfig {
  * @param options - Command options
  */
 export async function graphTransferCommand(options: ValidatedGraphTransferOptions): Promise<void> {
+  // Initialize logger for CLI (commands that don't use initializeDependencies)
+  initializeLogger({
+    level: (Bun.env["LOG_LEVEL"] as LogLevel) || "warn",
+    format: (Bun.env["LOG_FORMAT"] as "json" | "pretty") || "pretty",
+  });
+
   const {
     source = "neo4j",
     target = "falkordb",

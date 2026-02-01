@@ -35,7 +35,12 @@ import { RepositoryExistsError } from "../../graph/ingestion/errors.js";
 import type { GraphIngestionProgress } from "../../graph/ingestion/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { ValidatedGraphPopulateOptions } from "../utils/validation.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
+import {
+  getAdapterConfig,
+  getAdapterDisplayName,
+  getAdapterConfigHint,
+  getAdapterDockerCommand,
+} from "../utils/graph-config.js";
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
@@ -61,12 +66,13 @@ export async function graphPopulateCommand(
   options: ValidatedGraphPopulateOptions,
   repositoryService: RepositoryMetadataService
 ): Promise<void> {
-  const { force = false, json = false } = options;
+  const { adapter, force = false, json = false } = options;
+  const adapterDisplayName = getAdapterDisplayName(adapter);
 
-  // Get graph config
+  // Get graph config for selected adapter
   let config: GraphStorageConfig;
   try {
-    config = getGraphConfig();
+    config = getAdapterConfig(adapter);
   } catch (error) {
     if (json) {
       console.log(
@@ -78,8 +84,7 @@ export async function graphPopulateCommand(
     } else {
       console.error(chalk.red("\n" + (error instanceof Error ? error.message : String(error))));
       console.error("\n" + chalk.bold("Next steps:"));
-      console.error("  • Set NEO4J_PASSWORD in your .env file");
-      console.error("  • Or export NEO4J_PASSWORD in your shell");
+      console.error("  • " + getAdapterConfigHint(adapter));
     }
     process.exit(1);
   }
@@ -93,7 +98,7 @@ export async function graphPopulateCommand(
     spinner.start();
   }
 
-  let adapter: GraphStorageAdapter | null = null;
+  let graphAdapter: GraphStorageAdapter | null = null;
 
   try {
     // Step 1: Look up repository metadata
@@ -158,23 +163,23 @@ export async function graphPopulateCommand(
     }
 
     if (!json) {
-      spinner.text = "Connecting to graph database...";
+      spinner.text = `Connecting to ${adapterDisplayName}...`;
       spinner.start();
     }
 
     // Step 3: Connect to graph database
-    adapter = createGraphAdapter("neo4j", config);
-    await adapter.connect();
+    graphAdapter = createGraphAdapter(adapter, config);
+    await graphAdapter.connect();
 
     if (!json) {
-      spinner.succeed("Connected to graph database");
+      spinner.succeed(`Connected to ${adapterDisplayName}`);
     }
 
     // Step 4: Create ingestion service
     const entityExtractor = new EntityExtractor();
     const relationshipExtractor = new RelationshipExtractor();
     const ingestionService = new GraphIngestionService(
-      adapter,
+      graphAdapter,
       entityExtractor,
       relationshipExtractor
     );
@@ -238,7 +243,9 @@ export async function graphPopulateCommand(
         );
       } else {
         console.error(
-          chalk.red(`\nRepository "${repositoryName}" already has graph data in Neo4j.`)
+          chalk.red(
+            `\nRepository "${repositoryName}" already has graph data in ${adapterDisplayName}.`
+          )
         );
         console.error("\n" + chalk.bold("Options:"));
         console.error("  • Use --force to delete existing data and repopulate");
@@ -260,12 +267,16 @@ export async function graphPopulateCommand(
       console.error(chalk.red(`\nError: ${errorMessage}`));
 
       // Provide context-specific guidance
-      if (errorMessage.includes("Neo4j") || errorMessage.includes("connect")) {
+      if (errorMessage.includes("connect") || errorMessage.includes("ECONNREFUSED")) {
         console.error("\n" + chalk.bold("Next steps:"));
-        console.error("  • Verify Neo4j is running: " + chalk.gray("docker compose up neo4j -d"));
-        console.error("  • Check Neo4j connection settings in .env");
         console.error(
-          "  • Ensure schema migrations are applied: " + chalk.gray("pk-mcp graph migrate")
+          `  • Verify ${adapterDisplayName} is running: ` +
+            chalk.gray(getAdapterDockerCommand(adapter))
+        );
+        console.error(`  • Check ${adapterDisplayName} connection settings in .env`);
+        console.error(
+          "  • Ensure schema migrations are applied: " +
+            chalk.gray(`pk-mcp graph migrate --adapter ${adapter}`)
         );
       }
     }
@@ -273,9 +284,9 @@ export async function graphPopulateCommand(
     process.exit(1);
   } finally {
     // Disconnect from graph database
-    if (adapter) {
+    if (graphAdapter) {
       try {
-        await adapter.disconnect();
+        await graphAdapter.disconnect();
       } catch {
         // Ignore disconnect errors during cleanup
       }

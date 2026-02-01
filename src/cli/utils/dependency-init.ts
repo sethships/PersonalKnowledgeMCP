@@ -30,6 +30,7 @@ import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
 import { createGraphAdapter } from "../../graph/adapters/index.js";
+import { getDefaultAdapterType, getAdapterConfig, getAdapterDisplayName } from "./graph-config.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -294,33 +295,51 @@ export async function initializeDependencies(
     logger.debug("Token service initialized");
 
     // Step 13: Initialize graph adapter (optional - only if configured)
+    // Uses default adapter type from environment or FalkorDB as default
     let graphAdapter: GraphStorageAdapter | undefined;
+    const adapterType = getDefaultAdapterType();
+    const adapterDisplayName = getAdapterDisplayName(adapterType);
+
+    // Check if the selected adapter has configuration available
+    // Note: FalkorDB allows empty password (passwordless mode), so we check !== undefined
+    // Neo4j requires a password, so we use truthy check
+    const falkordbPassword = Bun.env["FALKORDB_PASSWORD"];
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
-    if (neo4jPassword) {
+    const hasAdapterConfig =
+      (adapterType === "falkordb" && falkordbPassword !== undefined) ||
+      (adapterType === "neo4j" && neo4jPassword);
+
+    if (hasAdapterConfig) {
       try {
-        graphAdapter = createGraphAdapter("neo4j", {
-          host: Bun.env["NEO4J_HOST"] || "localhost",
-          port: parseIntEnv("NEO4J_BOLT_PORT", 7687),
-          username: Bun.env["NEO4J_USER"] || "neo4j",
-          password: neo4jPassword,
-        });
+        const graphConfig = getAdapterConfig(adapterType);
+        graphAdapter = createGraphAdapter(adapterType, graphConfig);
         await graphAdapter.connect();
         const isHealthy = await graphAdapter.healthCheck();
         if (isHealthy) {
-          logger.debug("Graph adapter initialized and healthy");
+          logger.debug(
+            { adapter: adapterType },
+            `${adapterDisplayName} adapter initialized and healthy`
+          );
         } else {
-          logger.warn("Graph adapter initialized but health check failed");
+          logger.warn(
+            { adapter: adapterType },
+            `${adapterDisplayName} adapter initialized but health check failed`
+          );
         }
       } catch (error) {
         // Graph database is optional - log warning but don't fail CLI startup
         logger.warn(
-          { error: error instanceof Error ? error.message : String(error) },
-          "Graph database initialization failed - graph features will be unavailable"
+          { adapter: adapterType, error: error instanceof Error ? error.message : String(error) },
+          `${adapterDisplayName} initialization failed - graph features will be unavailable`
         );
         graphAdapter = undefined;
       }
     } else {
-      logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
+      const envVar = adapterType === "falkordb" ? "FALKORDB_PASSWORD" : "NEO4J_PASSWORD";
+      logger.debug(
+        { adapter: adapterType },
+        `${envVar} not set - Graph database features disabled`
+      );
     }
 
     return {

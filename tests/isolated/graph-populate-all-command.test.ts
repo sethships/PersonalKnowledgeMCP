@@ -57,6 +57,85 @@ vi.mock("../../src/graph/ingestion/GraphIngestionService.js", () => ({
   })),
 }));
 
+describe("GraphPopulateAllCommandOptionsSchema validation", () => {
+  it("should import validation schema correctly", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    expect(GraphPopulateAllCommandOptionsSchema).toBeDefined();
+  });
+
+  it("should validate empty options with default adapter", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Default adapter should be falkordb
+      expect(result.data.adapter).toBe("falkordb");
+    }
+  });
+
+  it("should validate adapter option with neo4j", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({ adapter: "neo4j" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adapter).toBe("neo4j");
+    }
+  });
+
+  it("should validate adapter option with falkordb", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({ adapter: "falkordb" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adapter).toBe("falkordb");
+    }
+  });
+
+  it("should reject invalid adapter option", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({ adapter: "invalid" });
+    expect(result.success).toBe(false);
+  });
+
+  it("should handle adapter option case-insensitively", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({ adapter: "FALKORDB" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adapter).toBe("falkordb");
+    }
+  });
+
+  it("should validate all options together", async () => {
+    const { GraphPopulateAllCommandOptionsSchema } =
+      await import("../../src/cli/utils/validation.js");
+
+    const result = GraphPopulateAllCommandOptionsSchema.safeParse({
+      adapter: "neo4j",
+      force: true,
+      json: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adapter).toBe("neo4j");
+      expect(result.data.force).toBe(true);
+      expect(result.data.json).toBe(true);
+    }
+  });
+});
+
 describe("Graph Populate All Command", () => {
   let mockRepositoryService: RepositoryMetadataService;
   let mockListRepositories: Mock<() => Promise<RepositoryInfo[]>>;
@@ -186,7 +265,7 @@ describe("Graph Populate All Command", () => {
     it("should show message when no ready repos found", async () => {
       mockListRepositories.mockResolvedValue([]);
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("No repositories with status 'ready' found")
@@ -197,7 +276,7 @@ describe("Graph Populate All Command", () => {
     it("should show next steps when no ready repos", async () => {
       mockListRepositories.mockResolvedValue([]);
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Next steps"));
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("pk-mcp status"));
@@ -210,7 +289,7 @@ describe("Graph Populate All Command", () => {
         createRepoWithLocalPath("repo2", "error"),
       ]);
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("No repositories with status 'ready' found")
@@ -221,7 +300,7 @@ describe("Graph Populate All Command", () => {
     it("should output empty JSON when no repos and --json flag", async () => {
       mockListRepositories.mockResolvedValue([]);
 
-      await graphPopulateAllCommand({ json: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", json: true }, mockRepositoryService);
 
       const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
         try {
@@ -252,7 +331,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(mockIngestFiles).toHaveBeenCalledTimes(1);
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Summary"));
@@ -270,7 +349,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createFailedResult("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 failed"));
     });
@@ -282,7 +361,7 @@ describe("Graph Populate All Command", () => {
       });
       mockListRepositories.mockResolvedValue([repo]);
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       // Should fail during validation (no localPath)
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 failed"));
@@ -299,7 +378,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockRejectedValue(new RepositoryExistsError("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 skipped"));
     });
@@ -315,7 +394,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo1"));
 
-      await graphPopulateAllCommand({ force: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", force: true }, mockRepositoryService);
 
       expect(mockIngestFiles).toHaveBeenCalledWith(
         expect.any(Array),
@@ -341,7 +420,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(mockIngestFiles).toHaveBeenCalledTimes(3);
     });
@@ -364,7 +443,7 @@ describe("Graph Populate All Command", () => {
         .mockRejectedValueOnce(new Error("Connection error"))
         .mockResolvedValueOnce(createSuccessResult("repo3"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(mockIngestFiles).toHaveBeenCalledTimes(3);
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("2 populated"));
@@ -391,7 +470,7 @@ describe("Graph Populate All Command", () => {
         .mockRejectedValueOnce(new RepositoryExistsError("repo3"))
         .mockResolvedValueOnce(createFailedResult("repo4"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Summary"));
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 populated"));
@@ -415,7 +494,7 @@ describe("Graph Populate All Command", () => {
         .mockResolvedValueOnce(createSuccessResult("repo1"))
         .mockResolvedValueOnce(createPartialResult("repo2"));
 
-      await graphPopulateAllCommand({ json: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", json: true }, mockRepositoryService);
 
       const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
         try {
@@ -451,7 +530,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockRejectedValue(new Error("Connection timeout"));
 
-      await graphPopulateAllCommand({ json: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", json: true }, mockRepositoryService);
 
       const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
         try {
@@ -480,7 +559,7 @@ describe("Graph Populate All Command", () => {
       const successResult = createSuccessResult("repo1");
       mockIngestFiles.mockResolvedValue(successResult);
 
-      await graphPopulateAllCommand({ json: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", json: true }, mockRepositoryService);
 
       const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
         try {
@@ -510,7 +589,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       // Verify column headers
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Repository"));
@@ -531,7 +610,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Success"));
     });
@@ -547,7 +626,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockRejectedValue(new RepositoryExistsError("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Skipped"));
     });
@@ -563,7 +642,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createFailedResult("repo1"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Failed"));
     });
@@ -585,7 +664,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("Populating 3 repositories")
@@ -605,7 +684,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockRejectedValue(new RepositoryExistsError("repo1"));
 
-      await graphPopulateAllCommand({ force: false }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", force: false }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 skipped"));
     });
@@ -621,7 +700,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo1"));
 
-      await graphPopulateAllCommand({ force: true }, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j", force: true }, mockRepositoryService);
 
       expect(mockIngestFiles).toHaveBeenCalledWith(
         expect.any(Array),
@@ -643,7 +722,7 @@ describe("Graph Populate All Command", () => {
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo"));
 
       const startTime = Date.now();
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
       const duration = Date.now() - startTime;
 
       // Should complete quickly (all mocked)
@@ -662,7 +741,7 @@ describe("Graph Populate All Command", () => {
 
       mockIngestFiles.mockResolvedValue(createSuccessResult("repo"));
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("10 populated"));
     });
@@ -680,7 +759,7 @@ describe("Graph Populate All Command", () => {
         { name: "config.json", isDirectory: () => false, isFile: () => true },
       ]);
 
-      await graphPopulateAllCommand({}, mockRepositoryService);
+      await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);
 
       // Should be skipped due to no supported files
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("1 skipped"));
