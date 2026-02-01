@@ -435,28 +435,9 @@ describe("Graph Populate Command", () => {
       }
     });
 
-    it("should output JSON when FALKORDB_PASSWORD is missing", async () => {
-      delete process.env["FALKORDB_PASSWORD"];
-
-      const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
-        throw new Error("process.exit called");
-      });
-
-      try {
-        const { graphPopulateCommand } =
-          await import("../../src/cli/commands/graph-populate-command.js");
-
-        await graphPopulateCommand("test-repo", { json: true }, mockRepositoryService);
-      } catch (error) {
-        expect(consoleLogSpy).toHaveBeenCalled();
-        const jsonOutput = consoleLogSpy.mock.calls[0]?.[0] as string;
-        const parsed = JSON.parse(jsonOutput);
-        expect(parsed.success).toBe(false);
-        expect(parsed.error).toContain("FALKORDB_PASSWORD");
-      } finally {
-        mockExit.mockRestore();
-      }
-    });
+    // Note: FALKORDB_PASSWORD is optional (defaults to empty string)
+    // Unlike Neo4j, FalkorDB allows connecting without authentication
+    // So we don't test for missing password error here
   });
 
   describe("File scanning behavior", () => {
@@ -704,7 +685,7 @@ describe("Graph Populate Command", () => {
       }
     });
 
-    it("should always disconnect Neo4j client even on error", async () => {
+    it("should always disconnect graph client even on error", async () => {
       await writeFile(join(testDir, "index.ts"), "export const foo = 1;");
 
       const repoWithTestPath: RepositoryInfo = {
@@ -823,5 +804,5 @@ describe("Graph Populate Command", () => {
   });
 });
 
-// Note: Neo4j Config Utility Tests have been moved to tests/unit/cli/neo4j-config.test.ts
+// Note: FalkorDB Config Utility Tests are in tests/unit/cli/utils/falkordb-config.test.ts
 // to avoid vi.mock() pollution from graph-populate-all-command.test.ts
