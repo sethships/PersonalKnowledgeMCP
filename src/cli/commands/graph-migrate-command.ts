@@ -30,6 +30,7 @@ import {
   type GraphStorageConfig,
 } from "../../graph/adapters/index.js";
 import { MigrationRunner, registerAllMigrations } from "../../graph/migration/index.js";
+import { initializeLogger, type LogLevel } from "../../logging/index.js";
 import type { ValidatedGraphMigrateOptions } from "../utils/validation.js";
 import {
   getAdapterConfig,
@@ -44,6 +45,12 @@ import {
  * @param options - Command options
  */
 export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions): Promise<void> {
+  // Initialize logger for CLI (commands that don't use initializeDependencies)
+  initializeLogger({
+    level: (Bun.env["LOG_LEVEL"] as LogLevel) || "warn",
+    format: (Bun.env["LOG_FORMAT"] as "json" | "pretty") || "pretty",
+  });
+
   const { adapter, dryRun = false, force = false, status = false, json = false } = options;
   const adapterDisplayName = getAdapterDisplayName(adapter);
 

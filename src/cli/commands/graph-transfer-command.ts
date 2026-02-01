@@ -30,6 +30,7 @@ import ora from "ora";
 import type { ValidatedGraphTransferOptions } from "../utils/validation.js";
 import { createMigrationService, type MigrationProgress } from "../../migration/index.js";
 import type { GraphStorageConfig, GraphAdapterType } from "../../graph/adapters/types.js";
+import { initializeLogger, type LogLevel } from "../../logging/index.js";
 import { getGraphConfig } from "../utils/neo4j-config.js";
 import { getFalkorDBConfig } from "../utils/falkordb-config.js";
 
@@ -67,6 +68,12 @@ function getAdapterConfig(adapterType: GraphAdapterType): GraphStorageConfig {
  * @param options - Command options
  */
 export async function graphTransferCommand(options: ValidatedGraphTransferOptions): Promise<void> {
+  // Initialize logger for CLI (commands that don't use initializeDependencies)
+  initializeLogger({
+    level: (Bun.env["LOG_LEVEL"] as LogLevel) || "warn",
+    format: (Bun.env["LOG_FORMAT"] as "json" | "pretty") || "pretty",
+  });
+
   const {
     source = "neo4j",
     target = "falkordb",
