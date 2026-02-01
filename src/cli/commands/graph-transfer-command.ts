@@ -29,10 +29,9 @@ import chalk from "chalk";
 import ora from "ora";
 import type { ValidatedGraphTransferOptions } from "../utils/validation.js";
 import { createMigrationService, type MigrationProgress } from "../../migration/index.js";
-import type { GraphStorageConfig, GraphAdapterType } from "../../graph/adapters/types.js";
+import type { GraphStorageConfig } from "../../graph/adapters/types.js";
 import { initializeLogger, type LogLevel } from "../../logging/index.js";
-import { getGraphConfig } from "../utils/neo4j-config.js";
-import { getFalkorDBConfig } from "../utils/falkordb-config.js";
+import { getAdapterConfig } from "../utils/graph-config.js";
 
 /**
  * Format bytes into human-readable string
@@ -41,23 +40,6 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
-}
-
-/**
- * Get configuration for the specified adapter type
- */
-function getAdapterConfig(adapterType: GraphAdapterType): GraphStorageConfig {
-  switch (adapterType) {
-    case "neo4j":
-      return getGraphConfig();
-    case "falkordb":
-      return getFalkorDBConfig();
-    default: {
-      // TypeScript exhaustiveness check
-      const _exhaustiveCheck: never = adapterType;
-      throw new Error(`Unsupported adapter type: ${String(_exhaustiveCheck)}`);
-    }
-  }
 }
 
 /**

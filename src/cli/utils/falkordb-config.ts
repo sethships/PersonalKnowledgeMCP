@@ -12,7 +12,7 @@ import type { GraphStorageConfig } from "../../graph/adapters/types.js";
  *
  * Reads FalkorDB connection settings from environment variables:
  * - FALKORDB_HOST: FalkorDB host (default: localhost)
- * - FALKORDB_PORT: Connection port (default: 6379)
+ * - FALKORDB_PORT: Connection port (default: 6380, avoids Redis conflicts)
  * - FALKORDB_USER: Username (default: default)
  * - FALKORDB_PASSWORD: Password (optional, empty string if not set)
  * - FALKORDB_GRAPH_NAME: Graph name (default: knowledge_graph)
@@ -35,7 +35,7 @@ import type { GraphStorageConfig } from "../../graph/adapters/types.js";
  */
 export function getFalkorDBConfig(): GraphStorageConfig {
   const host = process.env["FALKORDB_HOST"] || "localhost";
-  const portEnv = process.env["FALKORDB_PORT"] || "6379";
+  const portEnv = process.env["FALKORDB_PORT"] || "6380";
   const username = process.env["FALKORDB_USER"] || "default";
   const password = process.env["FALKORDB_PASSWORD"] || "";
   const database = process.env["FALKORDB_GRAPH_NAME"] || "knowledge_graph";

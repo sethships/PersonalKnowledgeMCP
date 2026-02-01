@@ -301,6 +301,8 @@ export async function initializeDependencies(
     const adapterDisplayName = getAdapterDisplayName(adapterType);
 
     // Check if the selected adapter has configuration available
+    // Note: FalkorDB allows empty password (passwordless mode), so we check !== undefined
+    // Neo4j requires a password, so we use truthy check
     const falkordbPassword = Bun.env["FALKORDB_PASSWORD"];
     const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
     const hasAdapterConfig =
