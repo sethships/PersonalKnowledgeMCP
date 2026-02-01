@@ -40,7 +40,7 @@ describe("getFalkorDBConfig", () => {
     const config = getFalkorDBConfig();
 
     expect(config.host).toBe("localhost");
-    expect(config.port).toBe(6379);
+    expect(config.port).toBe(6380);
     expect(config.username).toBe("default");
     expect(config.password).toBe("");
     expect(config.database).toBe("knowledge_graph");
