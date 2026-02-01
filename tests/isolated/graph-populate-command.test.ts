@@ -183,12 +183,12 @@ describe("Graph Populate Command", () => {
     });
   });
 
-  // Note: getNeo4jConfig unit tests are in tests/unit/cli/neo4j-config.test.ts
+  // Note: getFalkorDBConfig unit tests are in tests/unit/cli/utils/falkordb-config.test.ts
   // They were moved to avoid vi.mock() pollution from graph-populate-all-command.test.ts
 
   describe("Environment variable validation", () => {
-    it("should fail without NEO4J_PASSWORD", async () => {
-      delete process.env["NEO4J_PASSWORD"];
+    it("should fail without FALKORDB_PASSWORD", async () => {
+      delete process.env["FALKORDB_PASSWORD"];
 
       const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
@@ -206,8 +206,8 @@ describe("Graph Populate Command", () => {
       }
     });
 
-    it("should fail with invalid NEO4J_BOLT_PORT", async () => {
-      process.env["NEO4J_BOLT_PORT"] = "not-a-number";
+    it("should fail with invalid FALKORDB_PORT", async () => {
+      process.env["FALKORDB_PORT"] = "not-a-number";
 
       const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
@@ -435,8 +435,8 @@ describe("Graph Populate Command", () => {
       }
     });
 
-    it("should output JSON when NEO4J_PASSWORD is missing", async () => {
-      delete process.env["NEO4J_PASSWORD"];
+    it("should output JSON when FALKORDB_PASSWORD is missing", async () => {
+      delete process.env["FALKORDB_PASSWORD"];
 
       const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
@@ -452,7 +452,7 @@ describe("Graph Populate Command", () => {
         const jsonOutput = consoleLogSpy.mock.calls[0]?.[0] as string;
         const parsed = JSON.parse(jsonOutput);
         expect(parsed.success).toBe(false);
-        expect(parsed.error).toContain("NEO4J_PASSWORD");
+        expect(parsed.error).toContain("FALKORDB_PASSWORD");
       } finally {
         mockExit.mockRestore();
       }
