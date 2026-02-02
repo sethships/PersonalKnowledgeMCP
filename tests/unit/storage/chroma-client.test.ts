@@ -1011,6 +1011,23 @@ describe("ChromaStorageClientImpl", () => {
         expect(collection).toBeDefined();
         expect(collection?.name).toBe(collectionName);
       });
+
+      test(
+        "should throw error after exhausting all retries",
+        async () => {
+          const collectionName = "repo_retry_exhaust_test";
+          // Configure more failures than max retries (default 3)
+          mockChromaClient.setListCollectionsTransientFailures(10);
+
+          // Clear cache to force API call
+          // @ts-expect-error - Accessing private property for testing
+          client.collections.clear();
+
+          // eslint-disable-next-line @typescript-eslint/await-thenable
+          await expect(client.getCollectionIfExists(collectionName)).rejects.toThrow();
+        },
+        { timeout: 15000 }
+      ); // Increased timeout for retry exhaustion (3 retries with exponential backoff)
     });
 
     describe("getOrCreateCollection with retry", () => {
@@ -1069,6 +1086,53 @@ describe("ChromaStorageClientImpl", () => {
 
         const collections = await mockChromaClient.listCollections();
         expect(collections.includes(collectionName)).toBe(false);
+      });
+    });
+
+    describe("getCollectionEmbeddingMetadata with retry", () => {
+      test("should return metadata on first successful call", async () => {
+        const collectionName = "repo_with_metadata";
+        // Create collection with embedding metadata
+        await client.getOrCreateCollection(collectionName, {
+          "app:embedding_provider": "openai",
+          "app:embedding_model": "text-embedding-3-small",
+          "app:embedding_dimensions": 1536,
+        });
+
+        const metadata = await client.getCollectionEmbeddingMetadata(collectionName);
+        expect(metadata).toBeDefined();
+        expect(metadata?.provider).toBe("openai");
+        expect(metadata?.model).toBe("text-embedding-3-small");
+        expect(metadata?.dimensions).toBe(1536);
+      });
+
+      test("should succeed after transient failure with retry", async () => {
+        const collectionName = "repo_with_metadata";
+        // Create collection with embedding metadata directly in mock
+        await mockChromaClient.getOrCreateCollection({
+          name: collectionName,
+          metadata: {
+            "hnsw:space": "cosine",
+            "app:embedding_provider": "openai",
+            "app:embedding_model": "text-embedding-3-small",
+            "app:embedding_dimensions": 1536,
+          },
+        });
+
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setListCollectionsTransientFailures(1);
+
+        const metadata = await client.getCollectionEmbeddingMetadata(collectionName);
+        expect(metadata).toBeDefined();
+        expect(metadata?.provider).toBe("openai");
+      });
+
+      test("should return null for non-existent collection after retry", async () => {
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setListCollectionsTransientFailures(1);
+
+        const metadata = await client.getCollectionEmbeddingMetadata("non_existent_collection");
+        expect(metadata).toBeNull();
       });
     });
   });
