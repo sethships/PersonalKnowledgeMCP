@@ -273,7 +273,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     try {
       // Check if collection exists by listing all collections
-      const collections = await this.client!.listCollectionsAndMetadata();
+      // Use retry wrapper for transient network failures
+      const collections = await this.withRetryWrapper(
+        () => this.client!.listCollectionsAndMetadata(),
+        "ChromaDB list collections"
+      );
       const exists = collections.some((col) => col.name === name);
 
       if (!exists) {
@@ -342,10 +346,15 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       }
 
       // Get or create collection with cosine similarity metric and embedding metadata
-      const collection = await this.client!.getOrCreateCollection({
-        name,
-        metadata,
-      });
+      // Use retry wrapper for transient network failures
+      const collection = await this.withRetryWrapper(
+        () =>
+          this.client!.getOrCreateCollection({
+            name,
+            metadata,
+          }),
+        "ChromaDB get or create collection"
+      );
 
       // Cache the collection handle
       this.collections.set(name, collection);
@@ -375,7 +384,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
     this.ensureConnected();
 
     try {
-      await this.client!.deleteCollection({ name });
+      // Use retry wrapper for transient network failures
+      await this.withRetryWrapper(
+        () => this.client!.deleteCollection({ name }),
+        "ChromaDB delete collection"
+      );
 
       // Remove from cache
       this.collections.delete(name);
@@ -401,7 +414,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     try {
       // Use listCollectionsAndMetadata() to get name, id, and metadata
-      const collections = await this.client!.listCollectionsAndMetadata();
+      // Use retry wrapper for transient network failures
+      const collections = await this.withRetryWrapper(
+        () => this.client!.listCollectionsAndMetadata(),
+        "ChromaDB list collections"
+      );
 
       return collections.map((collection) => {
         return {
@@ -1228,7 +1245,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     try {
       // List all collections to check if the target exists and get its metadata
-      const collections = await this.client!.listCollectionsAndMetadata();
+      // Use retry wrapper for transient network failures
+      const collections = await this.withRetryWrapper(
+        () => this.client!.listCollectionsAndMetadata(),
+        "ChromaDB list collections for metadata"
+      );
       const collectionInfo = collections.find((col) => col.name === name);
 
       if (!collectionInfo) {
