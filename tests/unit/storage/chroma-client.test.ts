@@ -957,4 +957,119 @@ describe("ChromaStorageClientImpl", () => {
       expect(error.message).toBe("Search failed");
     });
   });
+
+  describe("Retry Behavior", () => {
+    afterEach(() => {
+      resetLogger();
+    });
+
+    describe("getCollectionIfExists with retry", () => {
+      test("should return collection on first successful call", async () => {
+        const collectionName = "repo_test";
+        // Create collection first
+        await client.getOrCreateCollection(collectionName);
+
+        // Now get it via getCollectionIfExists
+        const collection = await client.getCollectionIfExists(collectionName);
+        expect(collection).toBeDefined();
+        expect(collection?.name).toBe(collectionName);
+      });
+
+      test("should return collection from cache without API call", async () => {
+        const collectionName = "repo_test";
+        // Create and cache collection
+        await client.getOrCreateCollection(collectionName);
+
+        // Configure mock to fail list operations (simulating network issue)
+        // If cache is used, this shouldn't affect the result
+        mockChromaClient.setListCollectionsTransientFailures(10);
+
+        // Should return from cache without hitting the API
+        const collection = await client.getCollectionIfExists(collectionName);
+        expect(collection).toBeDefined();
+        expect(collection?.name).toBe(collectionName);
+      });
+
+      test("should return null when collection does not exist", async () => {
+        const result = await client.getCollectionIfExists("non_existent_collection");
+        expect(result).toBeNull();
+      });
+
+      test("should succeed after transient failure with retry", async () => {
+        const collectionName = "repo_test";
+        // Create collection directly in mock (bypass cache)
+        await mockChromaClient.getOrCreateCollection({ name: collectionName });
+
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setListCollectionsTransientFailures(1);
+
+        // Clear cache to force API call
+        // @ts-expect-error - Accessing private property for testing
+        client.collections.clear();
+
+        const collection = await client.getCollectionIfExists(collectionName);
+        expect(collection).toBeDefined();
+        expect(collection?.name).toBe(collectionName);
+      });
+    });
+
+    describe("getOrCreateCollection with retry", () => {
+      test("should succeed after transient failure with retry", async () => {
+        const collectionName = "repo_retry_test";
+
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setGetOrCreateCollectionTransientFailures(1);
+
+        const collection = await client.getOrCreateCollection(collectionName);
+        expect(collection).toBeDefined();
+        expect(collection.name).toBe(collectionName);
+      });
+    });
+
+    describe("listCollections with retry", () => {
+      test("should return collections on first successful call", async () => {
+        await client.getOrCreateCollection("repo_test1");
+        await client.getOrCreateCollection("repo_test2");
+
+        const collections = await client.listCollections();
+        expect(collections.length).toBe(2);
+      });
+
+      test("should succeed after transient failure with retry", async () => {
+        await mockChromaClient.getOrCreateCollection({ name: "repo_test" });
+
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setListCollectionsTransientFailures(1);
+
+        const collections = await client.listCollections();
+        expect(collections.length).toBe(1);
+        expect(collections[0]?.name).toBe("repo_test");
+      });
+    });
+
+    describe("deleteCollection with retry", () => {
+      test("should delete collection on first successful call", async () => {
+        const collectionName = "repo_to_delete";
+        await client.getOrCreateCollection(collectionName);
+
+        await client.deleteCollection(collectionName);
+
+        const collections = await mockChromaClient.listCollections();
+        expect(collections.includes(collectionName)).toBe(false);
+      });
+
+      test("should succeed after transient failure with retry", async () => {
+        const collectionName = "repo_to_delete";
+        await client.getOrCreateCollection(collectionName);
+
+        // Configure 1 transient failure - should succeed on retry
+        mockChromaClient.setDeleteCollectionTransientFailures(1);
+
+        await client.deleteCollection(collectionName);
+
+        const collections = await mockChromaClient.listCollections();
+        expect(collections.includes(collectionName)).toBe(false);
+      });
+    });
+  });
 });

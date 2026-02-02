@@ -293,12 +293,39 @@ export class MockCollection {
 export class MockChromaClient {
   private collections: Map<string, MockCollection> = new Map();
   private shouldFailHeartbeat: boolean = false;
+  private listCollectionsFailuresRemaining: number = 0;
+  private getOrCreateCollectionFailuresRemaining: number = 0;
+  private deleteCollectionFailuresRemaining: number = 0;
 
   /**
    * Configure the mock to fail health checks
    */
   setShouldFailHeartbeat(shouldFail: boolean): void {
     this.shouldFailHeartbeat = shouldFail;
+  }
+
+  /**
+   * Configure the mock to fail listCollectionsAndMetadata N times before succeeding.
+   * Useful for testing retry logic.
+   */
+  setListCollectionsTransientFailures(failureCount: number): void {
+    this.listCollectionsFailuresRemaining = failureCount;
+  }
+
+  /**
+   * Configure the mock to fail getOrCreateCollection N times before succeeding.
+   * Useful for testing retry logic.
+   */
+  setGetOrCreateCollectionTransientFailures(failureCount: number): void {
+    this.getOrCreateCollectionFailuresRemaining = failureCount;
+  }
+
+  /**
+   * Configure the mock to fail deleteCollection N times before succeeding.
+   * Useful for testing retry logic.
+   */
+  setDeleteCollectionTransientFailures(failureCount: number): void {
+    this.deleteCollectionFailuresRemaining = failureCount;
   }
 
   async heartbeat(): Promise<number> {
@@ -312,6 +339,12 @@ export class MockChromaClient {
     name: string;
     metadata?: Record<string, unknown>;
   }): Promise<MockCollection> {
+    // Simulate transient failure if configured
+    if (this.getOrCreateCollectionFailuresRemaining > 0) {
+      this.getOrCreateCollectionFailuresRemaining--;
+      throw new Error("Transient network error: connection reset");
+    }
+
     if (!this.collections.has(params.name)) {
       this.collections.set(params.name, new MockCollection(params.name, params.metadata || {}));
     }
@@ -319,6 +352,12 @@ export class MockChromaClient {
   }
 
   async deleteCollection(params: { name: string }): Promise<void> {
+    // Simulate transient failure if configured
+    if (this.deleteCollectionFailuresRemaining > 0) {
+      this.deleteCollectionFailuresRemaining--;
+      throw new Error("Transient network error: connection reset");
+    }
+
     this.collections.delete(params.name);
   }
 
@@ -333,6 +372,12 @@ export class MockChromaClient {
   async listCollectionsAndMetadata(): Promise<
     Array<{ name: string; id: string; metadata?: Record<string, unknown> }>
   > {
+    // Simulate transient failure if configured
+    if (this.listCollectionsFailuresRemaining > 0) {
+      this.listCollectionsFailuresRemaining--;
+      throw new Error("Transient network error: connection reset");
+    }
+
     return Array.from(this.collections.values()).map((collection) => ({
       name: collection.name,
       id: collection.name, // Mock uses name as id
