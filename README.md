@@ -659,11 +659,11 @@ Check the status of an async incremental update job.
 ```json
 {
   "success": true,
-  "id": "update-abc123-1706789012345",
+  "job_id": "update-abc123-1706789012345",
   "repository": "my-project",
   "status": "completed",
-  "created_at": "2024-02-01T12:30:12.345Z",
-  "completed_at": "2024-02-01T12:30:45.678Z",
+  "started_at": "2026-02-01T12:30:12.345Z",
+  "completed_at": "2026-02-01T12:30:45.678Z",
   "result": {
     "files_added": 2,
     "files_modified": 5,
@@ -679,7 +679,7 @@ Check the status of an async incremental update job.
 - `running` - Update in progress
 - `completed` - Update finished successfully
 - `failed` - Update failed (includes `error` message)
-- `timed_out` - Update exceeded 10-minute timeout
+- `timeout` - Update exceeded 10-minute timeout
 
 **Note**: Jobs are automatically cleaned up after 1 hour.
 
