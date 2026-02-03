@@ -76,7 +76,7 @@ export class IncrementalUpdatePipeline {
    * @param embeddingProvider - Service for generating embeddings
    * @param storageClient - ChromaDB client for vector storage
    * @param logger - Logger instance
-   * @param graphIngestionService - Optional graph ingestion service for Neo4j updates
+   * @param graphIngestionService - Optional graph ingestion service for graph database updates
    */
   constructor(
     private readonly fileChunker: FileChunker,

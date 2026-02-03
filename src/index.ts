@@ -154,7 +154,7 @@ async function main(): Promise<void> {
         graphAdapter = createGraphAdapter("falkordb", {
           host: Bun.env["FALKORDB_HOST"] || "localhost",
           port: parseInt(Bun.env["FALKORDB_PORT"] || "6380", 10),
-          username: "default", // Redis/FalkorDB uses "default" username
+          username: Bun.env["FALKORDB_USER"] || "default",
           password: falkordbPassword,
           database: Bun.env["FALKORDB_DATABASE"] || "knowledge_graph",
         });
