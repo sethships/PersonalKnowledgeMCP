@@ -407,7 +407,54 @@ See [docs/client-configuration.md](docs/client-configuration.md) for detailed cl
 
 ### Incremental Update Workflow
 
-After merging a PR to an indexed repository, update your index to include the latest changes:
+After merging a PR to an indexed repository, update your index to include the latest changes. You can trigger updates directly from Claude Code using MCP tools (recommended) or via CLI.
+
+#### MCP Tools (Recommended for AI Workflows)
+
+The easiest way to keep your index current is to use the MCP tools directly from Claude Code:
+
+**Quick Update (Synchronous)**:
+```
+Use the trigger_incremental_update tool with repository "my-project"
+```
+
+Claude Code will wait for the update to complete and report results including files changed, chunks updated, and the latest commit.
+
+**Background Update (Asynchronous)**:
+```
+Use the trigger_incremental_update tool with repository "my-project" and async true
+```
+
+This returns immediately with a `job_id`. Check progress with:
+```
+Use the get_update_status tool with job_id "<job-id-from-above>"
+```
+
+**Requirements**:
+- `GITHUB_PAT` environment variable must be set in your MCP configuration
+- Repository must already be indexed (use `list_indexed_repositories` to check)
+- Rate limited to 1 update per repository per 5 minutes
+
+**Example Response (Synchronous)**:
+```json
+{
+  "success": true,
+  "repository": "my-project",
+  "status": "updated",
+  "files_added": 2,
+  "files_modified": 5,
+  "files_deleted": 1,
+  "chunks_upserted": 42,
+  "chunks_deleted": 8,
+  "duration_ms": 3250,
+  "commit_sha": "abc1234",
+  "commit_message": "feat: add new authentication flow"
+}
+```
+
+#### CLI Commands (For Automation/Scripts)
+
+For automated workflows or shell scripts, use the CLI:
 
 **Typical Post-PR Workflow:**
 ```bash
@@ -558,6 +605,83 @@ Find the shortest path between two code entities in the dependency graph.
 **Returns**: Path of entities connecting source to target.
 
 > **Note**: Graph tools require FalkorDB and AST-parsed repository data. See [Graph Tools Documentation](docs/graph-tools.md) for detailed setup and usage examples.
+
+### trigger_incremental_update
+
+Trigger an incremental index update for an already-indexed repository. Use this to refresh the knowledge base after merging PRs or making code changes.
+
+**Parameters**:
+- `repository` (string, required): Repository name (must already be indexed)
+- `async` (boolean, optional): If `true`, return immediately with a job ID for background processing. Default: `false`
+
+**Synchronous Response** (`async=false`):
+```json
+{
+  "success": true,
+  "repository": "my-project",
+  "status": "updated",
+  "files_added": 2,
+  "files_modified": 5,
+  "files_deleted": 1,
+  "chunks_upserted": 42,
+  "chunks_deleted": 8,
+  "duration_ms": 3250,
+  "commit_sha": "abc1234",
+  "commit_message": "feat: add new feature"
+}
+```
+
+**Asynchronous Response** (`async=true`):
+```json
+{
+  "success": true,
+  "async": true,
+  "job_id": "update-abc123-1706789012345",
+  "repository": "my-project",
+  "message": "Update started. Use get_update_status tool with this job_id to check progress."
+}
+```
+
+**Rate Limiting**: Limited to 1 update per repository per 5 minutes. If rate limited, the response includes `retry_after_seconds`.
+
+**Requirements**:
+- `GITHUB_PAT` environment variable must be set
+- Repository must already be indexed
+
+### get_update_status
+
+Check the status of an async incremental update job.
+
+**Parameters**:
+- `job_id` (string, required): Job ID returned from `trigger_incremental_update` when `async=true`
+
+**Response**:
+```json
+{
+  "success": true,
+  "job_id": "update-abc123-1706789012345",
+  "repository": "my-project",
+  "status": "completed",
+  "started_at": "2026-02-01T12:30:12.345Z",
+  "completed_at": "2026-02-01T12:30:45.678Z",
+  "result": {
+    "files_added": 2,
+    "files_modified": 5,
+    "files_deleted": 1,
+    "chunks_upserted": 42,
+    "chunks_deleted": 8
+  }
+}
+```
+
+**Status Values**:
+- `pending` - Job created, waiting to start
+- `running` - Update in progress
+- `completed` - Update finished successfully
+- `failed` - Update failed (includes `error` message)
+- `timeout` - Update exceeded 10-minute timeout
+
+**Note**: Jobs are automatically cleaned up after 1 hour.
 
 ## Embedding Providers
 
