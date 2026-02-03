@@ -34,6 +34,17 @@ import { createInstanceRouter } from "./mcp/instance-router.js";
 import { GraphServiceImpl } from "./services/graph-service.js";
 import type { GraphService } from "./services/graph-service-types.js";
 
+// Incremental update dependencies
+import { FileChunker } from "./ingestion/file-chunker.js";
+import { GitHubClientImpl } from "./services/github-client.js";
+import { IncrementalUpdatePipeline } from "./services/incremental-update-pipeline.js";
+import { IncrementalUpdateCoordinator } from "./services/incremental-update-coordinator.js";
+import { MCPRateLimiter } from "./mcp/rate-limiter.js";
+import { JobTracker } from "./mcp/job-tracker.js";
+import { GraphIngestionService } from "./graph/ingestion/GraphIngestionService.js";
+import { EntityExtractor } from "./graph/extraction/EntityExtractor.js";
+import { RelationshipExtractor } from "./graph/extraction/RelationshipExtractor.js";
+
 // Initialize logger at application startup
 initializeLogger({
   level: (Bun.env["LOG_LEVEL"] as LogLevel) || "info",
@@ -136,15 +147,16 @@ async function main(): Promise<void> {
 
     // Step 3b: Initialize graph adapter (optional - only if configured)
     let graphAdapter: GraphStorageAdapter | undefined;
-    const neo4jPassword = Bun.env["NEO4J_PASSWORD"];
-    if (neo4jPassword) {
+    const falkordbPassword = Bun.env["FALKORDB_PASSWORD"];
+    if (falkordbPassword) {
       try {
-        logger.info("Initializing graph adapter");
-        graphAdapter = createGraphAdapter("neo4j", {
-          host: Bun.env["NEO4J_HOST"] || "localhost",
-          port: parseInt(Bun.env["NEO4J_BOLT_PORT"] || "7687", 10),
-          username: Bun.env["NEO4J_USER"] || "neo4j",
-          password: neo4jPassword,
+        logger.info("Initializing graph adapter (FalkorDB)");
+        graphAdapter = createGraphAdapter("falkordb", {
+          host: Bun.env["FALKORDB_HOST"] || "localhost",
+          port: parseInt(Bun.env["FALKORDB_PORT"] || "6380", 10),
+          username: "default", // Redis/FalkorDB uses "default" username
+          password: falkordbPassword,
+          database: Bun.env["FALKORDB_DATABASE"] || "knowledge_graph",
         });
         await graphAdapter.connect();
         const graphHealthy = await graphAdapter.healthCheck();
@@ -162,7 +174,7 @@ async function main(): Promise<void> {
         graphAdapter = undefined;
       }
     } else {
-      logger.debug("NEO4J_PASSWORD not set - Graph database features disabled");
+      logger.debug("FALKORDB_PASSWORD not set - Graph database features disabled");
     }
 
     // Step 3c: Initialize graph service (if adapter available)
@@ -224,6 +236,72 @@ async function main(): Promise<void> {
     );
     logger.info("Search service initialized");
 
+    // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
+    let updateCoordinator: IncrementalUpdateCoordinator | undefined;
+    let rateLimiter: MCPRateLimiter | undefined;
+    let jobTracker: JobTracker | undefined;
+
+    const githubPat = Bun.env["GITHUB_PAT"];
+    if (githubPat) {
+      try {
+        logger.info("Initializing incremental update dependencies");
+
+        // Create GitHub client
+        const githubClient = new GitHubClientImpl({ token: githubPat });
+
+        // Create file chunker with default config
+        const fileChunker = new FileChunker();
+
+        // Create graph ingestion service if graph adapter is available
+        let graphIngestionService: GraphIngestionService | undefined;
+        if (graphAdapter) {
+          const entityExtractor = new EntityExtractor();
+          const relationshipExtractor = new RelationshipExtractor();
+          graphIngestionService = new GraphIngestionService(
+            graphAdapter,
+            entityExtractor,
+            relationshipExtractor
+          );
+          logger.debug("Graph ingestion service initialized for incremental updates");
+        }
+
+        // Create incremental update pipeline
+        const updatePipeline = new IncrementalUpdatePipeline(
+          fileChunker,
+          embeddingProvider,
+          chromaClient,
+          getComponentLogger("services:incremental-update-pipeline"),
+          graphIngestionService
+        );
+
+        // Create coordinator
+        updateCoordinator = new IncrementalUpdateCoordinator(
+          githubClient,
+          repositoryService,
+          updatePipeline
+        );
+
+        // Create rate limiter (5-minute cooldown by default)
+        rateLimiter = new MCPRateLimiter();
+
+        // Create job tracker (1-hour retention, 100 max jobs by default)
+        jobTracker = new JobTracker();
+
+        logger.info("Incremental update dependencies initialized - MCP update tools enabled");
+      } catch (error) {
+        // Incremental updates are optional - log warning but don't fail server startup
+        logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Incremental update initialization failed - MCP update tools will be unavailable"
+        );
+        updateCoordinator = undefined;
+        rateLimiter = undefined;
+        jobTracker = undefined;
+      }
+    } else {
+      logger.debug("GITHUB_PAT not set - MCP incremental update tools disabled");
+    }
+
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
     const mcpServer = new PersonalKnowledgeMCPServer(
@@ -236,7 +314,12 @@ async function main(): Promise<void> {
           tools: true,
         },
       },
-      { graphService }
+      {
+        graphService,
+        updateCoordinator,
+        rateLimiter,
+        jobTracker,
+      }
     );
 
     // Register instance router shutdown hook
