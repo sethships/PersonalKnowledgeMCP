@@ -410,6 +410,16 @@ export class IncrementalUpdateCoordinator {
         durationMs: pipelineResult.stats.durationMs,
         errorCount: pipelineResult.errors.length,
         status: historyStatus,
+        // Include graph stats if graph service was configured
+        ...(pipelineResult.stats.graph && {
+          graphNodesCreated: pipelineResult.stats.graph.graphNodesCreated,
+          graphNodesDeleted: pipelineResult.stats.graph.graphNodesDeleted,
+          graphRelationshipsCreated: pipelineResult.stats.graph.graphRelationshipsCreated,
+          graphRelationshipsDeleted: pipelineResult.stats.graph.graphRelationshipsDeleted,
+          graphFilesProcessed: pipelineResult.stats.graph.graphFilesProcessed,
+          graphFilesSkipped: pipelineResult.stats.graph.graphFilesSkipped,
+          graphErrorCount: pipelineResult.stats.graph.graphErrors.length,
+        }),
       };
 
       // Add to history with rotation

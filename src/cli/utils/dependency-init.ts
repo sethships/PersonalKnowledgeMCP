@@ -31,6 +31,9 @@ import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
 import { createGraphAdapter } from "../../graph/adapters/index.js";
 import { getDefaultAdapterType, getAdapterConfig, getAdapterDisplayName } from "./graph-config.js";
+import { GraphIngestionService } from "../../graph/ingestion/GraphIngestionService.js";
+import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
+import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -88,6 +91,8 @@ export interface CliDependencies {
   tokenService: TokenService;
   /** Optional graph adapter for graph database operations (only if configured) */
   graphAdapter?: GraphStorageAdapter;
+  /** Optional graph ingestion service for incremental graph updates (only if graph adapter is configured) */
+  graphIngestionService?: GraphIngestionService;
   logger: Logger;
 }
 
@@ -262,41 +267,15 @@ export async function initializeDependencies(
     });
     logger.debug("GitHub client initialized");
 
-    // Step 10: Initialize incremental update pipeline
-    const updatePipeline = new IncrementalUpdatePipeline(
-      fileChunker,
-      embeddingProvider,
-      chromaClient,
-      getComponentLogger("services:incremental-update-pipeline")
-    );
-    logger.debug("Incremental update pipeline initialized");
-
-    // Step 11: Initialize incremental update coordinator
-    const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
-    const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
-
-    const updateCoordinator = new IncrementalUpdateCoordinator(
-      githubClient,
-      repositoryService,
-      updatePipeline,
-      {
-        changeFileThreshold,
-        updateHistoryLimit,
-      }
-    );
-    logger.debug(
-      { changeFileThreshold, updateHistoryLimit },
-      "Incremental update coordinator initialized"
-    );
-
-    // Step 12: Initialize token service for authentication
+    // Step 10: Initialize token service for authentication
     const tokenStore = TokenStoreImpl.getInstance(config.data.path);
     const tokenService = new TokenServiceImpl(tokenStore);
     logger.debug("Token service initialized");
 
-    // Step 13: Initialize graph adapter (optional - only if configured)
-    // Uses default adapter type from environment or FalkorDB as default
+    // Step 11: Initialize graph adapter (optional - only if configured)
+    // Must be initialized before IncrementalUpdatePipeline so GraphIngestionService can be passed
     let graphAdapter: GraphStorageAdapter | undefined;
+    let graphIngestionService: GraphIngestionService | undefined;
     const adapterType = getDefaultAdapterType();
     const adapterDisplayName = getAdapterDisplayName(adapterType);
 
@@ -320,6 +299,16 @@ export async function initializeDependencies(
             { adapter: adapterType },
             `${adapterDisplayName} adapter initialized and healthy`
           );
+
+          // Create graph ingestion service for incremental updates
+          const entityExtractor = new EntityExtractor();
+          const relationshipExtractor = new RelationshipExtractor();
+          graphIngestionService = new GraphIngestionService(
+            graphAdapter,
+            entityExtractor,
+            relationshipExtractor
+          );
+          logger.debug("Graph ingestion service initialized");
         } else {
           logger.warn(
             { adapter: adapterType },
@@ -342,6 +331,37 @@ export async function initializeDependencies(
       );
     }
 
+    // Step 12: Initialize incremental update pipeline (with optional graph ingestion service)
+    const updatePipeline = new IncrementalUpdatePipeline(
+      fileChunker,
+      embeddingProvider,
+      chromaClient,
+      getComponentLogger("services:incremental-update-pipeline"),
+      graphIngestionService
+    );
+    logger.debug(
+      { graphEnabled: !!graphIngestionService },
+      "Incremental update pipeline initialized"
+    );
+
+    // Step 13: Initialize incremental update coordinator
+    const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
+    const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
+
+    const updateCoordinator = new IncrementalUpdateCoordinator(
+      githubClient,
+      repositoryService,
+      updatePipeline,
+      {
+        changeFileThreshold,
+        updateHistoryLimit,
+      }
+    );
+    logger.debug(
+      { changeFileThreshold, updateHistoryLimit },
+      "Incremental update coordinator initialized"
+    );
+
     return {
       embeddingProvider,
       chromaClient,
@@ -353,6 +373,7 @@ export async function initializeDependencies(
       updateCoordinator,
       tokenService,
       graphAdapter,
+      graphIngestionService,
       logger,
     };
   } catch (error) {

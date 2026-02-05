@@ -57,6 +57,14 @@ export interface JobResponse {
     chunks_deleted: number;
     duration_ms: number;
     error_count: number;
+    // Graph database statistics (present when graph service is configured)
+    graph_nodes_created?: number;
+    graph_nodes_deleted?: number;
+    graph_relationships_created?: number;
+    graph_relationships_deleted?: number;
+    graph_files_processed?: number;
+    graph_files_skipped?: number;
+    graph_error_count?: number;
   };
   error?: string;
 }
@@ -295,6 +303,19 @@ export class JobTracker {
         duration_ms: job.result.stats.durationMs,
         error_count: job.result.errors.length,
       };
+
+      // Include graph statistics if available
+      if (job.result.stats.graph) {
+        response.result.graph_nodes_created = job.result.stats.graph.graphNodesCreated;
+        response.result.graph_nodes_deleted = job.result.stats.graph.graphNodesDeleted;
+        response.result.graph_relationships_created =
+          job.result.stats.graph.graphRelationshipsCreated;
+        response.result.graph_relationships_deleted =
+          job.result.stats.graph.graphRelationshipsDeleted;
+        response.result.graph_files_processed = job.result.stats.graph.graphFilesProcessed;
+        response.result.graph_files_skipped = job.result.stats.graph.graphFilesSkipped;
+        response.result.graph_error_count = job.result.stats.graph.graphErrors.length;
+      }
     }
 
     if (job.error) {
@@ -363,10 +384,12 @@ export class JobTracker {
     // If still over max, delete oldest completed jobs
     if (this.jobs.size > this.maxJobs) {
       const completedJobs = Array.from(this.jobs.entries())
-        .filter(([, job]) => job.completedAt)
+        .filter(
+          (entry): entry is [string, UpdateJob & { completedAt: string }] => !!entry[1].completedAt
+        )
         .sort(([, a], [, b]) => {
-          const timeA = new Date(a.completedAt!).getTime();
-          const timeB = new Date(b.completedAt!).getTime();
+          const timeA = new Date(a.completedAt).getTime();
+          const timeB = new Date(b.completedAt).getTime();
           return timeA - timeB;
         });
 

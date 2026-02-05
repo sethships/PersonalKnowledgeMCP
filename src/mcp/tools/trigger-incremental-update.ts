@@ -74,6 +74,14 @@ interface SyncSuccessResponse {
   duration_ms: number;
   commit_sha?: string;
   commit_message?: string;
+  // Graph database statistics (present when graph service is configured)
+  graph_nodes_created?: number;
+  graph_nodes_deleted?: number;
+  graph_relationships_created?: number;
+  graph_relationships_deleted?: number;
+  graph_files_processed?: number;
+  graph_files_skipped?: number;
+  graph_error_count?: number;
 }
 
 /**
@@ -193,6 +201,17 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   }
   if (result.commitMessage) {
     response.commit_message = result.commitMessage;
+  }
+
+  // Include graph statistics if available
+  if (result.stats.graph) {
+    response.graph_nodes_created = result.stats.graph.graphNodesCreated;
+    response.graph_nodes_deleted = result.stats.graph.graphNodesDeleted;
+    response.graph_relationships_created = result.stats.graph.graphRelationshipsCreated;
+    response.graph_relationships_deleted = result.stats.graph.graphRelationshipsDeleted;
+    response.graph_files_processed = result.stats.graph.graphFilesProcessed;
+    response.graph_files_skipped = result.stats.graph.graphFilesSkipped;
+    response.graph_error_count = result.stats.graph.graphErrors.length;
   }
 
   return {
