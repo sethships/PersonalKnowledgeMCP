@@ -55,7 +55,7 @@ import type { SchemaMigration } from "./types.js";
 /**
  * All available migrations in version order (legacy - Neo4j syntax)
  *
- * @deprecated Use registerAllMigrations(runner, adapter) for adapter-aware migrations
+ * @deprecated Since v1.0.0 - Use registerAllMigrations(runner, adapter) for adapter-aware migrations
  */
 export const ALL_MIGRATIONS = [migration0001] as const;
 

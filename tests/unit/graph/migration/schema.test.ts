@@ -294,9 +294,9 @@ describe("Adapter-Aware Schema Functions", () => {
   describe("getSchemaForAdapter", () => {
     test("should return Neo4j schema for neo4j adapter", () => {
       const schema = getSchemaForAdapter("neo4j");
-      expect(schema.constraints.length).toBeGreaterThan(0);
-      expect(schema.indexes.length).toBeGreaterThan(0);
-      expect(schema.fulltextIndexes.length).toBeGreaterThan(0);
+      expect(schema.constraints.length).toBe(4); // repo_name, file_path, chunk_id, concept_name
+      expect(schema.indexes.length).toBe(4); // file_extension, function_name, class_name, module_name
+      expect(schema.fulltextIndexes.length).toBe(1); // entity_names
 
       // Neo4j uses REQUIRE syntax
       for (const constraint of schema.constraints) {
@@ -307,8 +307,8 @@ describe("Adapter-Aware Schema Functions", () => {
 
     test("should return FalkorDB schema for falkordb adapter", () => {
       const schema = getSchemaForAdapter("falkordb");
-      expect(schema.constraints.length).toBeGreaterThan(0);
-      expect(schema.indexes.length).toBeGreaterThan(0);
+      expect(schema.constraints.length).toBe(4); // repo_name, file_id, chunk_id, concept_name
+      expect(schema.indexes.length).toBe(7); // file_extension, function_name, class_name, module_name + 3 repository indexes
 
       // FalkorDB uses ASSERT syntax (OpenCypher)
       for (const constraint of schema.constraints) {

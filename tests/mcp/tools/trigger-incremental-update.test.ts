@@ -39,6 +39,14 @@ interface SyncSuccessResponse {
   duration_ms: number;
   commit_sha?: string;
   commit_message?: string;
+  // Graph statistics (present when graph service is configured)
+  graph_nodes_created?: number;
+  graph_nodes_deleted?: number;
+  graph_relationships_created?: number;
+  graph_relationships_deleted?: number;
+  graph_files_processed?: number;
+  graph_files_skipped?: number;
+  graph_error_count?: number;
 }
 
 interface AsyncSuccessResponse {
@@ -109,6 +117,37 @@ function createMockResult(overrides?: Partial<CoordinatorResult>): CoordinatorRe
       chunksUpserted: 20,
       chunksDeleted: 5,
       durationMs: 1500,
+    },
+    errors: [],
+    durationMs: 1500,
+    ...overrides,
+  };
+}
+
+/**
+ * Create mock CoordinatorResult with graph statistics
+ */
+function createMockResultWithGraphStats(overrides?: Partial<CoordinatorResult>): CoordinatorResult {
+  return {
+    status: "updated",
+    commitSha: "abc1234567890",
+    commitMessage: "feat: test commit with graph",
+    stats: {
+      filesAdded: 5,
+      filesModified: 3,
+      filesDeleted: 1,
+      chunksUpserted: 20,
+      chunksDeleted: 5,
+      durationMs: 1500,
+      graph: {
+        graphNodesCreated: 50,
+        graphNodesDeleted: 10,
+        graphRelationshipsCreated: 75,
+        graphRelationshipsDeleted: 5,
+        graphFilesProcessed: 8,
+        graphFilesSkipped: 2,
+        graphErrors: [],
+      },
     },
     errors: [],
     durationMs: 1500,
@@ -317,6 +356,36 @@ describe("createTriggerUpdateHandler", () => {
       expect(result.isError).toBe(true);
       const response = JSON.parse(getTextContent(result.content)) as ErrorResponse;
       expect(response.error).toBe("rate_limited");
+    });
+
+    it("should include graph statistics when graph service is configured", async () => {
+      mockUpdateCoordinator.updateRepository = mock(() =>
+        Promise.resolve(createMockResultWithGraphStats())
+      );
+
+      const result = await handler({ repository: "test-repo" });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.success).toBe(true);
+      expect(response.graph_nodes_created).toBe(50);
+      expect(response.graph_nodes_deleted).toBe(10);
+      expect(response.graph_relationships_created).toBe(75);
+      expect(response.graph_relationships_deleted).toBe(5);
+      expect(response.graph_files_processed).toBe(8);
+      expect(response.graph_files_skipped).toBe(2);
+      expect(response.graph_error_count).toBe(0);
+    });
+
+    it("should not include graph statistics when graph service is not configured", async () => {
+      // Default mock has no graph stats
+      const result = await handler({ repository: "test-repo" });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.success).toBe(true);
+      expect(response.graph_nodes_created).toBeUndefined();
+      expect(response.graph_relationships_created).toBeUndefined();
     });
   });
 

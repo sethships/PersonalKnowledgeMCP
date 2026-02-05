@@ -37,7 +37,7 @@ export const CONSTRAINTS: readonly SchemaElement[] = [
     name: "repo_name",
     type: "constraint",
     description: "Ensure repository names are unique",
-    cypher: "CREATE CONSTRAINT ON (r:Repository) ASSERT r.name IS UNIQUE",
+    cypher: "CREATE CONSTRAINT repo_name ON (r:Repository) ASSERT r.name IS UNIQUE",
   },
   // Note: FalkorDB does not support NODE KEY (composite constraints)
   // File uniqueness is enforced via the `id` property: "File:{repository}:{path}"
@@ -45,19 +45,19 @@ export const CONSTRAINTS: readonly SchemaElement[] = [
     name: "file_id",
     type: "constraint",
     description: "Ensure file IDs are unique (composite key workaround)",
-    cypher: "CREATE CONSTRAINT ON (f:File) ASSERT f.id IS UNIQUE",
+    cypher: "CREATE CONSTRAINT file_id ON (f:File) ASSERT f.id IS UNIQUE",
   },
   {
     name: "chunk_id",
     type: "constraint",
     description: "Ensure chunk ChromaDB IDs are unique",
-    cypher: "CREATE CONSTRAINT ON (c:Chunk) ASSERT c.chromaId IS UNIQUE",
+    cypher: "CREATE CONSTRAINT chunk_id ON (c:Chunk) ASSERT c.chromaId IS UNIQUE",
   },
   {
     name: "concept_name",
     type: "constraint",
     description: "Ensure concept names are unique",
-    cypher: "CREATE CONSTRAINT ON (co:Concept) ASSERT co.name IS UNIQUE",
+    cypher: "CREATE CONSTRAINT concept_name ON (co:Concept) ASSERT co.name IS UNIQUE",
   },
 ] as const;
 
@@ -76,44 +76,44 @@ export const INDEXES: readonly SchemaElement[] = [
     name: "file_extension",
     type: "index",
     description: "Index for filtering files by extension",
-    cypher: "CREATE INDEX FOR (f:File) ON (f.extension)",
+    cypher: "CREATE INDEX file_extension FOR (f:File) ON (f.extension)",
   },
   {
     name: "function_name",
     type: "index",
     description: "Index for looking up functions by name",
-    cypher: "CREATE INDEX FOR (fn:Function) ON (fn.name)",
+    cypher: "CREATE INDEX function_name FOR (fn:Function) ON (fn.name)",
   },
   {
     name: "class_name",
     type: "index",
     description: "Index for looking up classes by name",
-    cypher: "CREATE INDEX FOR (c:Class) ON (c.name)",
+    cypher: "CREATE INDEX class_name FOR (c:Class) ON (c.name)",
   },
   {
     name: "module_name",
     type: "index",
     description: "Index for looking up modules by name",
-    cypher: "CREATE INDEX FOR (m:Module) ON (m.name)",
+    cypher: "CREATE INDEX module_name FOR (m:Module) ON (m.name)",
   },
   // Additional indexes to compensate for lack of fulltext search
   {
     name: "file_repository",
     type: "index",
     description: "Index for filtering files by repository",
-    cypher: "CREATE INDEX FOR (f:File) ON (f.repository)",
+    cypher: "CREATE INDEX file_repository FOR (f:File) ON (f.repository)",
   },
   {
     name: "function_repository",
     type: "index",
     description: "Index for filtering functions by repository",
-    cypher: "CREATE INDEX FOR (fn:Function) ON (fn.repository)",
+    cypher: "CREATE INDEX function_repository FOR (fn:Function) ON (fn.repository)",
   },
   {
     name: "class_repository",
     type: "index",
     description: "Index for filtering classes by repository",
-    cypher: "CREATE INDEX FOR (c:Class) ON (c.repository)",
+    cypher: "CREATE INDEX class_repository FOR (c:Class) ON (c.repository)",
   },
 ] as const;
 

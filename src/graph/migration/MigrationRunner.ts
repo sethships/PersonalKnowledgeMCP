@@ -278,6 +278,9 @@ export class MigrationRunner {
    * transactions. Each migration should be idempotent using IF NOT EXISTS patterns
    * to handle partial failures safely.
    *
+   * For FalkorDB and other graph databases that don't support IF NOT EXISTS,
+   * "already exists" errors are caught and logged as warnings rather than failures.
+   *
    * @param migration - Migration to apply
    */
   private async applyMigration(migration: SchemaMigration): Promise<void> {
@@ -294,8 +297,24 @@ export class MigrationRunner {
       try {
         await this.client.runQuery(statement);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Handle idempotency: ignore "already exists" errors for constraints/indexes
+        // This is necessary for FalkorDB which doesn't support IF NOT EXISTS syntax
+        if (this.isAlreadyExistsError(errorMessage)) {
+          log.warn(
+            {
+              version: migration.version,
+              statementIndex: i,
+              statement: statement.substring(0, 100),
+            },
+            "Schema element already exists, skipping (idempotent behavior)"
+          );
+          continue;
+        }
+
         throw new GraphSchemaError(
-          `Failed to execute migration ${migration.version} statement ${i + 1}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to execute migration ${migration.version} statement ${i + 1}: ${errorMessage}`,
           migration.version,
           error instanceof Error ? error : undefined
         );
@@ -304,6 +323,27 @@ export class MigrationRunner {
 
     // Record the migration as applied
     await this.recordMigration(migration);
+  }
+
+  /**
+   * Check if an error indicates a schema element already exists
+   *
+   * This enables idempotent migration behavior for databases that don't
+   * support IF NOT EXISTS syntax (e.g., FalkorDB).
+   *
+   * @param errorMessage - Error message to check
+   * @returns true if the error indicates the element already exists
+   */
+  private isAlreadyExistsError(errorMessage: string): boolean {
+    const alreadyExistsPatterns = [
+      /already exists/i,
+      /constraint .* already exists/i,
+      /index .* already exists/i,
+      /duplicate/i,
+      /equivalent .* already exists/i,
+    ];
+
+    return alreadyExistsPatterns.some((pattern) => pattern.test(errorMessage));
   }
 
   /**
