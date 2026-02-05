@@ -94,9 +94,9 @@ export async function graphMigrateCommand(options: ValidatedGraphMigrateOptions)
       spinner.succeed(`Connected to ${adapterDisplayName}`);
     }
 
-    // Create migration runner and register migrations
+    // Create migration runner and register migrations with adapter-appropriate syntax
     const runner = new MigrationRunner(graphAdapter);
-    registerAllMigrations(runner);
+    registerAllMigrations(runner, adapter);
 
     // Status-only mode
     if (status) {

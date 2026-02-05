@@ -12,6 +12,8 @@ import {
   FULLTEXT_INDEXES,
   ALL_SCHEMA_ELEMENTS,
   getAllSchemaStatements,
+  getSchemaForAdapter,
+  getAllSchemaElements,
   type SchemaElement,
 } from "../../../../src/graph/schema.js";
 
@@ -285,6 +287,117 @@ describe("Schema Cypher Syntax", () => {
       expect(index.cypher).toMatch(/CREATE FULLTEXT INDEX \w+ IF NOT EXISTS FOR \(/);
       expect(index.cypher).toContain("ON EACH [");
     }
+  });
+});
+
+describe("Adapter-Aware Schema Functions", () => {
+  describe("getSchemaForAdapter", () => {
+    test("should return Neo4j schema for neo4j adapter", () => {
+      const schema = getSchemaForAdapter("neo4j");
+      expect(schema.constraints.length).toBeGreaterThan(0);
+      expect(schema.indexes.length).toBeGreaterThan(0);
+      expect(schema.fulltextIndexes.length).toBeGreaterThan(0);
+
+      // Neo4j uses REQUIRE syntax
+      for (const constraint of schema.constraints) {
+        expect(constraint.cypher).toContain("REQUIRE");
+        expect(constraint.cypher).not.toContain("ASSERT");
+      }
+    });
+
+    test("should return FalkorDB schema for falkordb adapter", () => {
+      const schema = getSchemaForAdapter("falkordb");
+      expect(schema.constraints.length).toBeGreaterThan(0);
+      expect(schema.indexes.length).toBeGreaterThan(0);
+
+      // FalkorDB uses ASSERT syntax (OpenCypher)
+      for (const constraint of schema.constraints) {
+        expect(constraint.cypher).toContain("ASSERT");
+        expect(constraint.cypher).not.toContain("REQUIRE");
+      }
+
+      // FalkorDB doesn't support fulltext indexes
+      expect(schema.fulltextIndexes.length).toBe(0);
+    });
+
+    test("FalkorDB should not have NODE KEY constraint", () => {
+      const schema = getSchemaForAdapter("falkordb");
+
+      // FalkorDB uses file_id instead of file_path NODE KEY
+      const fileConstraint = schema.constraints.find((c) => c.name === "file_id");
+      expect(fileConstraint).toBeDefined();
+      expect(fileConstraint?.cypher).not.toContain("IS NODE KEY");
+
+      // Verify no NODE KEY constraints exist
+      for (const constraint of schema.constraints) {
+        expect(constraint.cypher).not.toContain("IS NODE KEY");
+      }
+    });
+
+    test("Neo4j should have NODE KEY constraint for files", () => {
+      const schema = getSchemaForAdapter("neo4j");
+
+      const fileConstraint = schema.constraints.find((c) => c.name === "file_path");
+      expect(fileConstraint).toBeDefined();
+      expect(fileConstraint?.cypher).toContain("IS NODE KEY");
+    });
+  });
+
+  describe("getAllSchemaElements", () => {
+    test("should return all schema elements for neo4j adapter", () => {
+      const elements = getAllSchemaElements("neo4j");
+
+      // Should include fulltext indexes (Neo4j feature)
+      const fulltextElements = elements.filter((e) => e.type === "fulltext_index");
+      expect(fulltextElements.length).toBeGreaterThan(0);
+
+      // Should have constraints, indexes, and fulltext indexes
+      const constraints = elements.filter((e) => e.type === "constraint");
+      const indexes = elements.filter((e) => e.type === "index");
+      expect(constraints.length).toBeGreaterThan(0);
+      expect(indexes.length).toBeGreaterThan(0);
+    });
+
+    test("should return Neo4j schema elements for neo4j adapter", () => {
+      const elements = getAllSchemaElements("neo4j");
+
+      // Should have constraints with REQUIRE syntax
+      const constraints = elements.filter((e) => e.type === "constraint");
+      for (const constraint of constraints) {
+        expect(constraint.cypher).toContain("REQUIRE");
+      }
+    });
+
+    test("should return FalkorDB schema elements for falkordb adapter", () => {
+      const elements = getAllSchemaElements("falkordb");
+
+      // Should have constraints with ASSERT syntax
+      const constraints = elements.filter((e) => e.type === "constraint");
+      for (const constraint of constraints) {
+        expect(constraint.cypher).toContain("ASSERT");
+      }
+
+      // Should not have fulltext indexes
+      const fulltextElements = elements.filter((e) => e.type === "fulltext_index");
+      expect(fulltextElements.length).toBe(0);
+    });
+  });
+
+  describe("getAllSchemaStatements", () => {
+    test("should return FalkorDB-compatible Cypher when adapter is falkordb", () => {
+      const statements = getAllSchemaStatements("falkordb");
+
+      // All statements should use ASSERT (OpenCypher) not REQUIRE (Neo4j)
+      const constraintStatements = statements.filter((s) => s.startsWith("CREATE CONSTRAINT"));
+      for (const statement of constraintStatements) {
+        expect(statement).toContain("ASSERT");
+        expect(statement).not.toContain("REQUIRE");
+      }
+
+      // Should not have fulltext index statements
+      const fulltextStatements = statements.filter((s) => s.includes("FULLTEXT INDEX"));
+      expect(fulltextStatements.length).toBe(0);
+    });
   });
 });
 

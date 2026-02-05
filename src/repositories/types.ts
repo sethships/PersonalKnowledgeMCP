@@ -399,6 +399,59 @@ export interface UpdateHistoryEntry {
    * - `failed`: All files failed or critical failure occurred
    */
   status: "success" | "partial" | "failed";
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Optional Graph Statistics (present when graph service is configured)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Number of graph nodes created (File, Function, Class, Module, Chunk).
+   *
+   * @example 15
+   */
+  graphNodesCreated?: number;
+
+  /**
+   * Number of graph nodes deleted.
+   *
+   * @example 3
+   */
+  graphNodesDeleted?: number;
+
+  /**
+   * Number of graph relationships created (CONTAINS, DEFINES, IMPORTS, HAS_CHUNK).
+   *
+   * @example 22
+   */
+  graphRelationshipsCreated?: number;
+
+  /**
+   * Number of graph relationships deleted.
+   *
+   * @example 5
+   */
+  graphRelationshipsDeleted?: number;
+
+  /**
+   * Number of files that had graph data successfully processed.
+   *
+   * @example 4
+   */
+  graphFilesProcessed?: number;
+
+  /**
+   * Number of files skipped for graph processing (unsupported language).
+   *
+   * @example 2
+   */
+  graphFilesSkipped?: number;
+
+  /**
+   * Number of errors encountered during graph processing.
+   *
+   * @example 0
+   */
+  graphErrorCount?: number;
 }
 
 /**
