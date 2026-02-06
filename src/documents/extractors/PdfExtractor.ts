@@ -431,7 +431,11 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
   /**
    * Parse PDF date string to Date object.
    *
-   * PDF dates are in format: D:YYYYMMDDHHmmSS+HH'mm' or D:YYYYMMDDHHmmSS
+   * PDF dates follow the format: D:YYYYMMDDHHmmSS[Z|+HH'mm'|-HH'mm']
+   *
+   * When a timezone offset (Z, +HH'mm', -HH'mm') is present, the returned Date
+   * is constructed in UTC. When no timezone info is present, the date is treated
+   * as local time to preserve backwards compatibility.
    *
    * @param dateStr - PDF date string
    * @returns Parsed date or undefined
@@ -457,6 +461,29 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
         return undefined;
       }
 
+      // Parse timezone offset from position 14 onward (after seconds)
+      // PDF spec format: Z | +HH'mm' | -HH'mm' (apostrophes optional)
+      const tzPortion = cleaned.substring(14);
+      const tzMatch = tzPortion.match(/^([+-])(\d{2})'?(\d{2})?'?$|^Z$/);
+
+      if (tzMatch) {
+        // Has explicit timezone — construct UTC date with offset applied
+        const utcMs = Date.UTC(year, month, day, hour, minute, second);
+
+        if (tzPortion.startsWith("Z")) {
+          return new Date(utcMs);
+        }
+
+        const sign = tzMatch[1] === "+" ? 1 : -1;
+        const offsetHours = parseInt(tzMatch[2] ?? "0", 10);
+        const offsetMinutes = parseInt(tzMatch[3] ?? "0", 10);
+        const offsetMs = sign * (offsetHours * 60 + offsetMinutes) * 60_000;
+
+        // Subtract offset to convert local-with-offset to UTC
+        return new Date(utcMs - offsetMs);
+      }
+
+      // No timezone info — treat as local time (preserve existing behavior)
       return new Date(year, month, day, hour, minute, second);
     } catch {
       return undefined;
