@@ -230,6 +230,107 @@ describe("PdfExtractor", () => {
       });
     });
   });
+
+  describe("parsePdfDate", () => {
+    const extractor = new PdfExtractor();
+    // Access private method for testing via type cast
+    const parsePdfDate = (input: string | undefined): Date | undefined =>
+      (
+        extractor as unknown as { parsePdfDate: (s: string | undefined) => Date | undefined }
+      ).parsePdfDate(input);
+
+    test("returns undefined for undefined input", () => {
+      expect(parsePdfDate(undefined)).toBeUndefined();
+    });
+
+    test("returns undefined for empty string", () => {
+      expect(parsePdfDate("")).toBeUndefined();
+    });
+
+    test("returns undefined for invalid date string", () => {
+      expect(parsePdfDate("D:notadate")).toBeUndefined();
+    });
+
+    test("parses date without timezone as local time", () => {
+      const result = parsePdfDate("D:20240115103000");
+      expect(result).toBeInstanceOf(Date);
+      // Local time: year/month/day/hour/minute/second should match
+      expect(result!.getFullYear()).toBe(2024);
+      expect(result!.getMonth()).toBe(0); // January = 0
+      expect(result!.getDate()).toBe(15);
+      expect(result!.getHours()).toBe(10);
+      expect(result!.getMinutes()).toBe(30);
+      expect(result!.getSeconds()).toBe(0);
+    });
+
+    test("parses date with Z suffix as UTC", () => {
+      const result = parsePdfDate("D:20240115103000Z");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(0);
+      expect(result!.getUTCDate()).toBe(15);
+      expect(result!.getUTCHours()).toBe(10);
+      expect(result!.getUTCMinutes()).toBe(30);
+      expect(result!.getUTCSeconds()).toBe(0);
+    });
+
+    test("parses date with positive offset (+05'30')", () => {
+      // D:20240115103000+05'30' means 10:30 in UTC+5:30, so UTC is 05:00
+      const result = parsePdfDate("D:20240115103000+05'30'");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(0);
+      expect(result!.getUTCDate()).toBe(15);
+      expect(result!.getUTCHours()).toBe(5);
+      expect(result!.getUTCMinutes()).toBe(0);
+      expect(result!.getUTCSeconds()).toBe(0);
+    });
+
+    test("parses date with negative offset (-08'00')", () => {
+      // D:20240115103000-08'00' means 10:30 in UTC-8, so UTC is 18:30
+      const result = parsePdfDate("D:20240115103000-08'00'");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(0);
+      expect(result!.getUTCDate()).toBe(15);
+      expect(result!.getUTCHours()).toBe(18);
+      expect(result!.getUTCMinutes()).toBe(30);
+      expect(result!.getUTCSeconds()).toBe(0);
+    });
+
+    test("parses date with offset without apostrophes (+0530)", () => {
+      const result = parsePdfDate("D:20240115103000+0530");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCHours()).toBe(5);
+      expect(result!.getUTCMinutes()).toBe(0);
+    });
+
+    test("parses date without D: prefix", () => {
+      const result = parsePdfDate("20240115103000Z");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCHours()).toBe(10);
+    });
+
+    test("parses minimal date (year/month/day only)", () => {
+      const result = parsePdfDate("D:20240115");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getFullYear()).toBe(2024);
+      expect(result!.getMonth()).toBe(0);
+      expect(result!.getDate()).toBe(15);
+    });
+
+    test("handles negative offset that crosses day boundary", () => {
+      // D:20240115230000-05'00' means 23:00 in UTC-5, so UTC is 04:00 on Jan 16
+      const result = parsePdfDate("D:20240115230000-05'00'");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(0);
+      expect(result!.getUTCDate()).toBe(16);
+      expect(result!.getUTCHours()).toBe(4);
+      expect(result!.getUTCMinutes()).toBe(0);
+    });
+  });
 });
 
 describe("DocxExtractor", () => {
