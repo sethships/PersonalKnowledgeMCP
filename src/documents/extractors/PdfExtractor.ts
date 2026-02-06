@@ -431,7 +431,11 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
   /**
    * Parse PDF date string to Date object.
    *
-   * PDF dates are in format: D:YYYYMMDDHHmmSS+HH'mm' or D:YYYYMMDDHHmmSS
+   * PDF dates follow the format: D:YYYYMMDDHHmmSS[Z|+HH'mm'|-HH'mm']
+   *
+   * When a timezone offset (Z, +HH'mm', -HH'mm') is present, the returned Date
+   * is constructed in UTC. When no timezone info is present, the date is treated
+   * as local time to preserve backwards compatibility.
    *
    * @param dateStr - PDF date string
    * @returns Parsed date or undefined

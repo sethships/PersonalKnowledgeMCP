@@ -330,6 +330,33 @@ describe("PdfExtractor", () => {
       expect(result!.getUTCHours()).toBe(4);
       expect(result!.getUTCMinutes()).toBe(0);
     });
+
+    test("parses date with hours-only offset (+05)", () => {
+      // +05 without minutes — minutes default to 0
+      const result = parsePdfDate("D:20240115103000+05");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCHours()).toBe(5);
+      expect(result!.getUTCMinutes()).toBe(30);
+    });
+
+    test("parses date with zero offset as UTC", () => {
+      // +00'00' should be equivalent to Z
+      const result = parsePdfDate("D:20240115103000+00'00'");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCHours()).toBe(10);
+      expect(result!.getUTCMinutes()).toBe(30);
+    });
+
+    test("handles positive offset that crosses day boundary backwards", () => {
+      // D:20240116010000+05'00' means 01:00 in UTC+5, so UTC is 20:00 on Jan 15
+      const result = parsePdfDate("D:20240116010000+05'00'");
+      expect(result).toBeInstanceOf(Date);
+      expect(result!.getUTCFullYear()).toBe(2024);
+      expect(result!.getUTCMonth()).toBe(0);
+      expect(result!.getUTCDate()).toBe(15);
+      expect(result!.getUTCHours()).toBe(20);
+      expect(result!.getUTCMinutes()).toBe(0);
+    });
   });
 });
 
