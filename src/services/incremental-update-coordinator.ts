@@ -271,6 +271,11 @@ export class IncrementalUpdateCoordinator {
           "No changes detected - repository is up-to-date"
         );
 
+        logger.debug(
+          { repository: repositoryName, localPath: repo.localPath },
+          "Skipping git pull - no changes detected. Local clone was not updated."
+        );
+
         // Note: inProgressFlagSet remains true, so the finally block will clear the
         // updateInProgress flag. This ensures consistent cleanup even for early returns.
         return {

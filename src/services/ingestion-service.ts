@@ -21,6 +21,7 @@ import type {
 } from "../storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
 import { getComponentLogger } from "../logging/index.js";
+import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
 import type {
   IndexOptions,
   IndexProgress,
@@ -892,7 +893,9 @@ export class IngestionService {
       indexDurationMs: params.stats.durationMs,
       status: params.stats.filesFailed > 0 ? "error" : "ready",
       errorMessage: params.errorMessage,
-      includeExtensions: params.options.includeExtensions || [],
+      includeExtensions: params.options.includeExtensions?.length
+        ? params.options.includeExtensions
+        : [...DEFAULT_EXTENSIONS],
       excludePatterns: params.options.excludePatterns || [],
       // Embedding provider metadata
       embeddingProvider: this.embeddingProvider.providerId,
