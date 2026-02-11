@@ -516,6 +516,29 @@ describe("IncrementalUpdateCoordinator", () => {
     });
   });
 
+  describe("empty includeExtensions handling", () => {
+    it("should pass empty includeExtensions to pipeline (pipeline handles fallback)", async () => {
+      // Simulate a repository with empty includeExtensions (the bug scenario)
+      const repoWithEmptyExtensions: RepositoryInfo = {
+        ...testRepo,
+        includeExtensions: [],
+      };
+      mockRepositoryService.getRepository = mock(async () => repoWithEmptyExtensions);
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+
+      // Verify pipeline was called with the empty array (pipeline handles fallback internally)
+      expect(mockUpdatePipeline.processChanges).toHaveBeenCalledWith(
+        comparison.files,
+        expect.objectContaining({
+          includeExtensions: [],
+        })
+      );
+    });
+  });
+
   describe("error handling", () => {
     it("should re-throw GitHub API errors", async () => {
       const apiError = new Error("GitHub API error");

@@ -402,6 +402,82 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats).toHaveProperty("durationMs");
       expect(Array.isArray(result.errors)).toBe(true);
     });
+
+    it("should fall back to DEFAULT_EXTENSIONS when includeExtensions is empty", async () => {
+      // Create test files with default-supported extensions
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/app.ts"), "export const x = 1;");
+      await writeFile(join(testDir, "src/util.py"), "x = 1");
+
+      const changes: FileChange[] = [
+        { path: "src/app.ts", status: "added" },
+        { path: "src/util.py", status: "added" },
+      ];
+
+      // Empty includeExtensions simulates the bug: repositories store [] in metadata
+      const options: UpdateOptions = {
+        ...baseOptions,
+        localPath: testDir,
+        includeExtensions: [],
+      };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // Both .ts and .py are in DEFAULT_EXTENSIONS, so both should be processed
+      expect(result.stats.filesAdded).toBe(2);
+      expect(result.errors).toHaveLength(0);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+    });
+
+    it("should filter non-default extensions even when falling back to defaults", async () => {
+      // Create test files - one with default extension, one without
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await mkdir(join(testDir, "assets"), { recursive: true });
+      await writeFile(join(testDir, "src/app.ts"), "export const x = 1;");
+      await writeFile(join(testDir, "assets/image.svg"), "<svg></svg>");
+
+      const changes: FileChange[] = [
+        { path: "src/app.ts", status: "added" },
+        { path: "assets/image.svg", status: "added" },
+      ];
+
+      const options: UpdateOptions = {
+        ...baseOptions,
+        localPath: testDir,
+        includeExtensions: [], // Empty - triggers fallback
+      };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // .ts is in defaults but .svg is not - only .ts should be processed
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should use explicit includeExtensions when provided (not empty)", async () => {
+      // Create test files
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/app.ts"), "export const x = 1;");
+      await writeFile(join(testDir, "src/util.py"), "x = 1");
+
+      const changes: FileChange[] = [
+        { path: "src/app.ts", status: "added" },
+        { path: "src/util.py", status: "added" },
+      ];
+
+      // Explicit extensions: only .ts, NOT .py
+      const options: UpdateOptions = {
+        ...baseOptions,
+        localPath: testDir,
+        includeExtensions: [".ts"],
+      };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // Only .ts should be processed
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.errors).toHaveLength(0);
+    });
   });
 
   describe("partial failure handling", () => {

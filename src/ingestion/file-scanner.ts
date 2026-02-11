@@ -16,6 +16,7 @@ import type pino from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { ScanOptions, FileInfo, FileScannerConfig } from "./types.js";
 import { ValidationError, FileScanError } from "./errors.js";
+import { DEFAULT_EXTENSIONS } from "./default-extensions.js";
 
 /**
  * Scans repository directories to identify files for indexing.
@@ -52,40 +53,6 @@ import { ValidationError, FileScanError } from "./errors.js";
 export class FileScanner {
   private readonly logger: pino.Logger;
   private readonly config: Required<FileScannerConfig>;
-
-  /**
-   * Default file extensions to include in scans.
-   *
-   * Covers common source code, documentation, and configuration files.
-   */
-  private readonly DEFAULT_EXTENSIONS = [
-    // JavaScript/TypeScript
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    // C#
-    ".cs",
-    // Python
-    ".py",
-    // Other languages
-    ".java",
-    ".go",
-    ".rs",
-    // C/C++
-    ".cpp",
-    ".c",
-    ".h",
-    // Documentation
-    ".md",
-    ".txt",
-    ".rst",
-    // Configuration
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-  ] as const;
 
   /**
    * Default patterns to exclude from scans.
@@ -177,7 +144,7 @@ export class FileScanner {
       const gitignore = await this.loadGitignore(normalizedRepoPath);
 
       // 3. Determine extensions and exclusions
-      const extensions = options.includeExtensions ?? [...this.DEFAULT_EXTENSIONS];
+      const extensions = options.includeExtensions ?? [...DEFAULT_EXTENSIONS];
       const exclusions = [...this.DEFAULT_EXCLUSIONS, ...(options.excludePatterns ?? [])];
 
       // 4. Execute glob scan

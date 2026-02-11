@@ -26,6 +26,7 @@ import type {
 } from "./incremental-update-types.js";
 import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
+import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
 
 /**
  * Pipeline service for processing incremental repository updates.
@@ -192,6 +193,19 @@ export class IncrementalUpdatePipeline {
     // Create ignorer instance once for all files in this batch
     const ig = ignore().add(options.excludePatterns);
 
+    // Warn if falling back to default extensions (indicates stale metadata)
+    if (options.includeExtensions.length === 0) {
+      logger.warn(
+        {
+          operation: "pipeline_filter_changes",
+          repository: options.repository,
+          defaultExtensionCount: DEFAULT_EXTENSIONS.length,
+        },
+        "Repository has empty includeExtensions - falling back to DEFAULT_EXTENSIONS. " +
+          "Consider re-indexing to persist extension metadata."
+      );
+    }
+
     // Filter changes by extension and exclusion patterns
     const filteredChanges = changes.filter((change) =>
       this.shouldProcessFile(change.path, options.includeExtensions, ig)
@@ -316,8 +330,12 @@ export class IncrementalUpdatePipeline {
   /**
    * Check if a file should be processed based on extension and exclusion patterns.
    *
+   * When includeExtensions is empty (common for repositories indexed before
+   * extension metadata was persisted), falls back to DEFAULT_EXTENSIONS to
+   * ensure files are not incorrectly filtered out.
+   *
    * @param filePath - File path to check
-   * @param includeExtensions - Extensions to include
+   * @param includeExtensions - Extensions to include (empty array falls back to defaults)
    * @param ig - Pre-configured ignore instance for exclusion pattern matching
    * @returns True if file should be processed
    */
@@ -326,9 +344,15 @@ export class IncrementalUpdatePipeline {
     includeExtensions: string[],
     ig: ReturnType<typeof ignore>
   ): boolean {
+    // Fall back to DEFAULT_EXTENSIONS when includeExtensions is empty.
+    // This occurs when repositories store includeExtensions: [] in metadata,
+    // which would cause [].includes(anything) to always return false.
+    const effectiveExtensions =
+      includeExtensions.length > 0 ? includeExtensions : [...DEFAULT_EXTENSIONS];
+
     // Check extension
     const extension = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
-    if (!includeExtensions.includes(extension)) {
+    if (!effectiveExtensions.includes(extension)) {
       return false;
     }
 
