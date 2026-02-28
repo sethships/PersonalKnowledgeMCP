@@ -78,7 +78,7 @@ async function main(): Promise<void> {
         authToken: Bun.env["CHROMADB_AUTH_TOKEN"],
       },
       embedding: {
-        provider: "openai",
+        provider: Bun.env["EMBEDDING_PROVIDER"] || embeddingProviderFactory.getDefaultProvider(),
         model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
         dimensions: parseInt(Bun.env["EMBEDDING_DIMENSIONS"] || "1536", 10),
         batchSize: parseInt(Bun.env["EMBEDDING_BATCH_SIZE"] || "100", 10),
