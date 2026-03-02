@@ -8,7 +8,7 @@
  * Features:
  * - Automatic retry with exponential backoff for transient failures
  * - Connection management and health checking
- * - Collection caching for performance
+ * - Collection handle caching (write-through, always refreshed from ChromaDB)
  * - Comprehensive error handling
  *
  * @module storage/chroma-client
@@ -53,7 +53,7 @@ import {
  *
  * Provides a high-level abstraction over the ChromaDB JavaScript client with:
  * - Connection management and health checking
- * - Collection caching for performance
+ * - Collection handle caching (write-through, always refreshed from ChromaDB)
  * - Automatic distance-to-similarity conversion
  * - Comprehensive error handling
  * - Type-safe operations
@@ -255,7 +255,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   /**
    * Get existing collection without creating it if it doesn't exist
    *
-   * Checks cache first, then verifies collection exists in ChromaDB.
+   * Always fetches a fresh collection reference from ChromaDB to avoid stale handles.
    * Returns null if collection doesn't exist rather than creating it.
    * Useful for search operations where we don't want side effects.
    *

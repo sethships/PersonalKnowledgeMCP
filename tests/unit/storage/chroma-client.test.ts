@@ -194,14 +194,13 @@ describe("ChromaStorageClientImpl", () => {
       expect(collection.metadata).toMatchObject({ "hnsw:space": "cosine" });
     });
 
-    test("should always fetch fresh collection reference from ChromaDB", async () => {
+    test("should return valid collection on repeated calls", async () => {
       const collectionName = "repo_test";
 
       const collection1 = await client.getOrCreateCollection(collectionName);
       const collection2 = await client.getOrCreateCollection(collectionName);
 
-      // Both calls return valid collections (mock returns same object for same name,
-      // but the key behavior is that both calls hit ChromaDB rather than serving from cache)
+      // Both calls return valid collections with correct names
       expect(collection1).toBeDefined();
       expect(collection2).toBeDefined();
       expect(collection1.name).toBe(collectionName);
