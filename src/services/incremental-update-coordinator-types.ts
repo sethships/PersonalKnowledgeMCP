@@ -5,6 +5,7 @@
  */
 
 import type { UpdateStats, FileProcessingError } from "./incremental-update-types.js";
+import type { CompletenessCheckResult } from "./index-completeness-types.js";
 
 /**
  * Configuration options for the incremental update coordinator.
@@ -38,6 +39,26 @@ export interface CoordinatorConfig {
    * @default 20
    */
   updateHistoryLimit?: number;
+
+  /**
+   * Maximum acceptable percentage of missing files before flagging as incomplete.
+   *
+   * Used by the optional completeness checker to determine whether the index
+   * divergence from eligible files on disk is significant.
+   *
+   * @default 20
+   */
+  completenessThresholdPercent?: number;
+
+  /**
+   * Maximum acceptable absolute count of missing files before flagging as incomplete.
+   *
+   * Used by the optional completeness checker to determine whether the index
+   * divergence from eligible files on disk is significant.
+   *
+   * @default 50
+   */
+  completenessThresholdAbsolute?: number;
 }
 
 /**
@@ -123,6 +144,14 @@ export interface CoordinatorResult {
    * git pull, pipeline processing, and metadata update.
    */
   durationMs: number;
+
+  /**
+   * Optional result of post-update index completeness check.
+   *
+   * Present only when an `IndexCompletenessChecker` is configured on the coordinator.
+   * Compares stored file count against actual eligible files on disk.
+   */
+  completenessCheck?: CompletenessCheckResult;
 }
 
 /**

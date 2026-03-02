@@ -577,3 +577,23 @@ export const MigrateExtensionsCommandOptionsSchema = z.object({
 export type ValidatedMigrateExtensionsOptions = z.infer<
   typeof MigrateExtensionsCommandOptionsSchema
 >;
+
+// ============================================================================
+// Check Completeness Command Validation Schema
+// ============================================================================
+
+/**
+ * Schema for check-completeness command options
+ *
+ * Validates options for checking index completeness against eligible files on disk.
+ */
+export const CheckCompletenessCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for check-completeness command
+ */
+export type ValidatedCheckCompletenessOptions = z.infer<
+  typeof CheckCompletenessCommandOptionsSchema
+>;

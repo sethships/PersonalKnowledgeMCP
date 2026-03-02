@@ -26,6 +26,7 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { GitHubClientImpl } from "../../services/github-client.js";
 import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import { IndexCompletenessChecker } from "../../services/index-completeness-checker.js";
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "../../logging/index.js";
@@ -344,7 +345,10 @@ export async function initializeDependencies(
       "Incremental update pipeline initialized"
     );
 
-    // Step 13: Initialize incremental update coordinator
+    // Step 13: Initialize completeness checker (uses existing FileScanner)
+    const completenessChecker = new IndexCompletenessChecker(fileScanner);
+
+    // Step 14: Initialize incremental update coordinator
     const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
     const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
 
@@ -355,6 +359,7 @@ export async function initializeDependencies(
       {
         changeFileThreshold,
         updateHistoryLimit,
+        completenessChecker,
       }
     );
     logger.debug(
