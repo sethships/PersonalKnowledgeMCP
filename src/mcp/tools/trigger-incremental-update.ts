@@ -190,6 +190,8 @@ function formatErrorResponse(
  * Format sync success response as TextContent
  */
 function formatSyncSuccessResponse(repository: string, result: CoordinatorResult): TextContent {
+  // Note: "failed" status is handled by early return in executeSyncUpdate
+  // before this function is called, so it never reaches the statusMap.
   const statusMap: Record<string, SyncSuccessResponse["status"]> = {
     no_changes: "no_changes",
     incomplete: "incomplete",

@@ -224,6 +224,9 @@ export class IncrementalUpdatePipeline {
     // "should" be indexable regardless of the repo's includeExtensions setting
     const defaultExtSet = new Set<string>(DEFAULT_EXTENSIONS);
     const eligibleChanges = changes.filter((change) => {
+      // Note: files without a dot (e.g., Makefile, LICENSE) return the full
+      // filename from substring(-1), which won't match DEFAULT_EXTENSIONS.
+      // This is consistent with shouldProcessFile() behavior.
       const ext = change.path.substring(change.path.lastIndexOf(".")).toLowerCase();
       if (!defaultExtSet.has(ext)) {
         return false;
