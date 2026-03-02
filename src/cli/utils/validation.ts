@@ -555,3 +555,25 @@ export const GraphTransferCommandOptionsSchema = z.object({
  * Inferred TypeScript type for graph transfer command
  */
 export type ValidatedGraphTransferOptions = z.infer<typeof GraphTransferCommandOptionsSchema>;
+
+// ============================================================================
+// Migrate Extensions Command Validation Schema
+// ============================================================================
+
+/**
+ * Schema for migrate-extensions command options
+ *
+ * Validates options for backfilling empty includeExtensions metadata
+ * with DEFAULT_EXTENSIONS values.
+ */
+export const MigrateExtensionsCommandOptionsSchema = z.object({
+  dryRun: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for migrate-extensions command
+ */
+export type ValidatedMigrateExtensionsOptions = z.infer<
+  typeof MigrateExtensionsCommandOptionsSchema
+>;

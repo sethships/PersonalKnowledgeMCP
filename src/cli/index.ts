@@ -10,6 +10,7 @@
  * - update: Update a repository with latest changes
  * - update-all: Update all repositories
  * - reset-update: Reset stuck update state
+ * - migrate-extensions: Backfill empty includeExtensions metadata
  * - health: Health check
  * - token: Manage authentication tokens (create, list, revoke, rotate)
  * - graph: Manage knowledge graph (migrate, populate, transfer)
@@ -36,6 +37,7 @@ import {
   tokenRevokeCommand,
   tokenRotateCommand,
 } from "./commands/token-command.js";
+import { migrateExtensionsCommand } from "./commands/migrate-extensions-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import { graphPopulateAllCommand } from "./commands/graph-populate-all-command.js";
@@ -66,6 +68,7 @@ import {
   GraphPopulateCommandOptionsSchema,
   GraphPopulateAllCommandOptionsSchema,
   GraphTransferCommandOptionsSchema,
+  MigrateExtensionsCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
   ModelsListCommandOptionsSchema,
@@ -231,6 +234,21 @@ program
       const validatedOptions = ResetUpdateCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await resetUpdateCommand(repository, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Migrate-extensions command
+program
+  .command("migrate-extensions")
+  .description("Backfill empty includeExtensions metadata with default values")
+  .option("--dry-run", "Preview changes without modifying data")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = MigrateExtensionsCommandOptionsSchema.parse(options);
+      await migrateExtensionsCommand(validatedOptions);
     } catch (error) {
       handleCommandError(error);
     }
