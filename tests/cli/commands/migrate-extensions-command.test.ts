@@ -160,6 +160,50 @@ describe("Migrate Extensions Command", () => {
     });
   });
 
+  describe("error handling", () => {
+    it("should continue processing remaining repos when updateRepository fails", async () => {
+      const repos = [
+        createMockRepo({ name: "repo-ok", includeExtensions: [] }),
+        createMockRepo({ name: "repo-fail", includeExtensions: [] }),
+      ];
+      const service = createMockService(repos);
+
+      // First call succeeds, second call rejects
+      (service.updateRepository as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("Disk full"));
+
+      // Command should complete without throwing
+      await migrateExtensionsCommand({ dryRun: false, json: true }, service);
+
+      // Both repos should have been attempted
+      expect(service.updateRepository).toHaveBeenCalledTimes(2);
+
+      // Parse JSON output and verify counts
+      const jsonOutput = consoleLogs.join("");
+      const parsed = JSON.parse(jsonOutput) as {
+        totalRepositories: number;
+        migratedCount: number;
+        failedCount: number;
+        skippedCount: number;
+        repositories: Array<{ name: string; action: string; reason?: string }>;
+      };
+
+      expect(parsed.totalRepositories).toBe(2);
+      expect(parsed.migratedCount).toBe(1);
+      expect(parsed.failedCount).toBe(1);
+      expect(parsed.skippedCount).toBe(0);
+
+      // Verify per-repo results
+      const migrated = parsed.repositories.find((r) => r.name === "repo-ok");
+      expect(migrated?.action).toBe("migrated");
+
+      const failed = parsed.repositories.find((r) => r.name === "repo-fail");
+      expect(failed?.action).toBe("failed");
+      expect(failed?.reason).toBe("Disk full");
+    });
+  });
+
   describe("--dry-run flag", () => {
     it("should report changes without modifying data", async () => {
       const repos = [

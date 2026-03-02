@@ -33,9 +33,9 @@ import type { ValidatedMigrateExtensionsOptions } from "../utils/validation.js";
 interface MigrationRepoResult {
   /** Repository name */
   name: string;
-  /** Whether the repository was migrated or skipped */
-  action: "migrated" | "skipped";
-  /** Reason for skipping (if applicable) */
+  /** Whether the repository was migrated, skipped, or failed */
+  action: "migrated" | "skipped" | "failed";
+  /** Reason for skipping or failure (if applicable) */
   reason?: string;
 }
 
@@ -49,6 +49,8 @@ interface MigrationResult {
   migratedCount: number;
   /** Count of repositories that were skipped */
   skippedCount: number;
+  /** Count of repositories that failed during migration */
+  failedCount: number;
   /** Per-repository results */
   repositories: MigrationRepoResult[];
   /** Whether this was a dry run */
@@ -85,6 +87,7 @@ export async function migrateExtensionsCommand(
     totalRepositories: repos.length,
     migratedCount: 0,
     skippedCount: 0,
+    failedCount: 0,
     repositories: [],
     dryRun,
   };
@@ -103,8 +106,6 @@ export async function migrateExtensionsCommand(
   } else if (!json && dryRun) {
     console.log(chalk.bold("\nMigrate Extensions (dry run)\n"));
   }
-
-  const extensionsToSet = [...DEFAULT_EXTENSIONS];
 
   for (const repo of repos) {
     if (repo.includeExtensions && repo.includeExtensions.length > 0) {
@@ -125,10 +126,25 @@ export async function migrateExtensionsCommand(
 
     // Repository needs migration
     if (!dryRun) {
-      await service.updateRepository({
-        ...repo,
-        includeExtensions: extensionsToSet,
-      });
+      try {
+        await service.updateRepository({
+          ...repo,
+          includeExtensions: [...DEFAULT_EXTENSIONS],
+        });
+      } catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : String(error);
+        result.failedCount++;
+        result.repositories.push({
+          name: repo.name,
+          action: "failed",
+          reason,
+        });
+
+        if (!json) {
+          console.log(`  ${chalk.red("✗")}  failed   ${repo.name} ${chalk.red(`— ${reason}`)}`);
+        }
+        continue;
+      }
     }
 
     result.migratedCount++;
@@ -140,7 +156,7 @@ export async function migrateExtensionsCommand(
     if (!json) {
       const verb = dryRun ? "would migrate" : "migrated";
       console.log(
-        `  ${chalk.green("✓")}  ${verb}  ${repo.name} ${chalk.gray(`→ ${extensionsToSet.length} extensions`)}`
+        `  ${chalk.green("✓")}  ${verb}  ${repo.name} ${chalk.gray(`→ ${DEFAULT_EXTENSIONS.length} extensions`)}`
       );
     }
   }
@@ -158,6 +174,10 @@ export async function migrateExtensionsCommand(
       console.log(`  Migrated:           ${chalk.green(result.migratedCount.toString())}`);
     }
     console.log(`  Skipped:            ${chalk.gray(result.skippedCount.toString())}`);
+
+    if (result.failedCount > 0) {
+      console.log(`  Failed:             ${chalk.red(result.failedCount.toString())}`);
+    }
 
     if (dryRun && result.migratedCount > 0) {
       console.log(chalk.yellow("\n  (Dry run — no changes made)"));
