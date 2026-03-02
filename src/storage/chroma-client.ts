@@ -266,30 +266,40 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   async getCollectionIfExists(name: string): Promise<ChromaCollection | null> {
     this.ensureConnected();
 
-    // Check cache first
-    if (this.collections.has(name)) {
-      return this.collections.get(name)!;
-    }
-
     try {
-      // Check if collection exists by listing all collections
-      // Use retry wrapper for transient network failures
-      const collections = await this.withRetryWrapper(
-        () => this.client!.listCollectionsAndMetadata(),
-        "ChromaDB list collections"
+      // Always fetch a fresh collection reference for correctness.
+      // This prevents stale cache issues when external processes (e.g., CLI --force re-index)
+      // delete and recreate collections while the MCP server is running.
+      // The overhead of getCollection() is negligible compared to embedding generation.
+      const collection = await this.withRetryWrapper(
+        // @ts-expect-error - ChromaDB types require embeddingFunction but we provide embeddings directly
+        () => this.client!.getCollection({ name }),
+        "ChromaDB get collection"
       );
-      const exists = collections.some((col) => col.name === name);
 
-      if (!exists) {
+      // Update cache with fresh reference (benefits other callers like getOrCreateCollection)
+      this.collections.set(name, collection);
+      return collection;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // ChromaDB throws errors containing "not found" for missing collections.
+      // Only treat those as "collection doesn't exist" — re-throw infrastructure errors.
+      if (errorMessage.toLowerCase().includes("not found")) {
+        // Collection doesn't exist - clean up stale cache entry if present
+        if (this.collections.has(name)) {
+          this.logger.info(
+            { collection: name },
+            "Cached collection no longer exists, evicting from cache"
+          );
+          this.collections.delete(name);
+        }
         return null;
       }
 
-      // Collection exists, get it (will add to cache)
-      return await this.getOrCreateCollection(name);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Infrastructure error (network, timeout, etc.) — propagate for visibility
       throw new StorageError(
-        `Failed to check collection existence '${name}': ${errorMessage}`,
+        `Failed to get collection '${name}': ${errorMessage}`,
         "COLLECTION_OPERATION_ERROR",
         error instanceof Error ? error : undefined
       );

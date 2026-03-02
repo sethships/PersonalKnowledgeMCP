@@ -128,6 +128,13 @@ describe("Update Operations Logging Integration", () => {
         }),
       }
     );
+
+    // Force eager logger initialization while the capture stream is active.
+    // The coordinator uses a lazy logger getter — if we don't trigger it now,
+    // another test file running in parallel could overwrite the logger singleton
+    // before updateRepository() first accesses the logger.
+    // @ts-expect-error - Accessing private getter to force initialization
+    void coordinator.logger;
   });
 
   afterEach(() => {

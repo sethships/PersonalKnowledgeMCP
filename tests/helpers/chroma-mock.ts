@@ -14,6 +14,7 @@
  */
 export class MockCollection {
   public name: string;
+  public id: string;
   public metadata: Record<string, unknown>;
   private documents: Map<
     string,
@@ -30,6 +31,7 @@ export class MockCollection {
 
   constructor(name: string, metadata: Record<string, unknown> = {}) {
     this.name = name;
+    this.id = crypto.randomUUID();
     this.metadata = metadata;
   }
 
@@ -294,6 +296,7 @@ export class MockChromaClient {
   private collections: Map<string, MockCollection> = new Map();
   private shouldFailHeartbeat: boolean = false;
   private listCollectionsFailuresRemaining: number = 0;
+  private getCollectionFailuresRemaining: number = 0;
   private getOrCreateCollectionFailuresRemaining: number = 0;
   private deleteCollectionFailuresRemaining: number = 0;
 
@@ -310,6 +313,14 @@ export class MockChromaClient {
    */
   setListCollectionsTransientFailures(failureCount: number): void {
     this.listCollectionsFailuresRemaining = failureCount;
+  }
+
+  /**
+   * Configure the mock to fail getCollection N times before succeeding.
+   * Useful for testing retry logic on getCollectionIfExists.
+   */
+  setGetCollectionTransientFailures(failureCount: number): void {
+    this.getCollectionFailuresRemaining = failureCount;
   }
 
   /**
@@ -380,7 +391,7 @@ export class MockChromaClient {
 
     return Array.from(this.collections.values()).map((collection) => ({
       name: collection.name,
-      id: collection.name, // Mock uses name as id
+      id: collection.id,
       metadata: collection.metadata,
     }));
   }
@@ -389,6 +400,12 @@ export class MockChromaClient {
    * Get an existing collection (matching ChromaDB API)
    */
   async getCollection(params: { name: string }): Promise<MockCollection> {
+    // Simulate transient failure if configured
+    if (this.getCollectionFailuresRemaining > 0) {
+      this.getCollectionFailuresRemaining--;
+      throw new Error("Transient network error: connection reset");
+    }
+
     const collection = this.collections.get(params.name);
     if (!collection) {
       throw new Error(`Collection ${params.name} not found`);
