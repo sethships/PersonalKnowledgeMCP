@@ -194,14 +194,17 @@ describe("ChromaStorageClientImpl", () => {
       expect(collection.metadata).toMatchObject({ "hnsw:space": "cosine" });
     });
 
-    test("should return cached collection on subsequent calls", async () => {
+    test("should return valid collection on repeated calls", async () => {
       const collectionName = "repo_test";
 
       const collection1 = await client.getOrCreateCollection(collectionName);
       const collection2 = await client.getOrCreateCollection(collectionName);
 
-      // Should be the same instance from cache
-      expect(collection1).toBe(collection2);
+      // Both calls return valid collections with correct names
+      expect(collection1).toBeDefined();
+      expect(collection2).toBeDefined();
+      expect(collection1.name).toBe(collectionName);
+      expect(collection2.name).toBe(collectionName);
     });
 
     test("should throw InvalidParametersError for empty name", async () => {
@@ -1229,6 +1232,29 @@ describe("ChromaStorageClientImpl", () => {
       const freshResults = await client.similaritySearch(searchQuery);
       expect(freshResults.length).toBe(1);
       expect(freshResults[0]!.id).toBe("doc2");
+    });
+
+    test("should return fresh collection from getOrCreateCollection after external delete and recreate", async () => {
+      // Step 1: Create and cache a collection via getOrCreateCollection
+      const originalCollection = await client.getOrCreateCollection(collectionName);
+      const originalId = (originalCollection as unknown as { id: string }).id;
+      expect(originalId).toBeDefined();
+
+      // Step 2: Simulate external re-index: delete from mock + create new one (different UUID)
+      await mockChromaClient.deleteCollection({ name: collectionName });
+      const recreatedMockCollection = await mockChromaClient.getOrCreateCollection({
+        name: collectionName,
+      });
+      const recreatedId = recreatedMockCollection.id;
+
+      // Verify the recreated collection has a different UUID
+      expect(recreatedId).not.toBe(originalId);
+
+      // Step 3: Call getOrCreateCollection again - should return the NEW collection, not stale cached one
+      const freshCollection = await client.getOrCreateCollection(collectionName);
+      const freshId = (freshCollection as unknown as { id: string }).id;
+      expect(freshId).toBe(recreatedId);
+      expect(freshId).not.toBe(originalId);
     });
   });
 });

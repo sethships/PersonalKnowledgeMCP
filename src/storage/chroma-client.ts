@@ -8,7 +8,7 @@
  * Features:
  * - Automatic retry with exponential backoff for transient failures
  * - Connection management and health checking
- * - Collection caching for performance
+ * - Collection handle caching (write-through, always refreshed from ChromaDB)
  * - Comprehensive error handling
  *
  * @module storage/chroma-client
@@ -53,7 +53,7 @@ import {
  *
  * Provides a high-level abstraction over the ChromaDB JavaScript client with:
  * - Connection management and health checking
- * - Collection caching for performance
+ * - Collection handle caching (write-through, always refreshed from ChromaDB)
  * - Automatic distance-to-similarity conversion
  * - Comprehensive error handling
  * - Type-safe operations
@@ -255,7 +255,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   /**
    * Get existing collection without creating it if it doesn't exist
    *
-   * Checks cache first, then verifies collection exists in ChromaDB.
+   * Always fetches a fresh collection reference from ChromaDB to avoid stale handles.
    * Returns null if collection doesn't exist rather than creating it.
    * Useful for search operations where we don't want side effects.
    *
@@ -310,7 +310,8 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * Get existing collection or create if it doesn't exist
    *
    * Collections use cosine similarity metric for vector search.
-   * Collection handles are cached in-memory to avoid repeated API calls.
+   * Always fetches a fresh collection reference from ChromaDB to avoid stale handles
+   * (e.g., if a collection was externally deleted and recreated by another process).
    *
    * When creating a new collection, embedding metadata should be provided
    * to enable provider-aware query embedding during search operations.
@@ -329,11 +330,6 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     if (!name || name.trim() === "") {
       throw new InvalidParametersError("Collection name cannot be empty", "name");
-    }
-
-    // Check cache first
-    if (this.collections.has(name)) {
-      return this.collections.get(name)!;
     }
 
     try {
@@ -355,7 +351,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         }
       }
 
-      // Get or create collection with cosine similarity metric and embedding metadata
+      // Always fetch fresh from ChromaDB to avoid stale handles; cache update benefits downstream callers
       // Use retry wrapper for transient network failures
       const collection = await this.withRetryWrapper(
         () =>
@@ -366,7 +362,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         "ChromaDB get or create collection"
       );
 
-      // Cache the collection handle
+      // Update cache so downstream callers (addDocuments, etc.) benefit from fresh handle
       this.collections.set(name, collection);
 
       return collection;
