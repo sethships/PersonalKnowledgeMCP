@@ -25,6 +25,8 @@ import type {
   CoordinatorResult,
   GitHubRepoInfo,
 } from "./incremental-update-coordinator-types.js";
+import type { IndexCompletenessChecker } from "./index-completeness-checker.js";
+import type { CompletenessCheckResult } from "./index-completeness-types.js";
 import {
   RepositoryNotFoundError,
   ForcePushDetectedError,
@@ -103,6 +105,11 @@ export class IncrementalUpdateCoordinator {
   private readonly customGitPull?: (localPath: string, branch: string) => Promise<void>;
 
   /**
+   * Optional completeness checker for post-update index validation.
+   */
+  private readonly completenessChecker?: IndexCompletenessChecker;
+
+  /**
    * Create an incremental update coordinator.
    *
    * @param githubClient - GitHub API client for commit detection
@@ -116,11 +123,13 @@ export class IncrementalUpdateCoordinator {
     private readonly updatePipeline: IncrementalUpdatePipeline,
     config: CoordinatorConfig & {
       customGitPull?: (localPath: string, branch: string) => Promise<void>;
+      completenessChecker?: IndexCompletenessChecker;
     } = {}
   ) {
     this.changeFileThreshold = config.changeFileThreshold ?? 500;
     this.updateHistoryLimit = config.updateHistoryLimit ?? 20;
     this.customGitPull = config.customGitPull;
+    this.completenessChecker = config.completenessChecker;
   }
 
   /**
@@ -276,6 +285,9 @@ export class IncrementalUpdateCoordinator {
           "Skipping git pull - no changes detected. Local clone was not updated."
         );
 
+        // Run completeness check even when no changes (catches pre-existing drift)
+        const noChangesCompletenessCheck = await this.runCompletenessCheck(repositoryName, logger);
+
         // Note: inProgressFlagSet remains true, so the finally block will clear the
         // updateInProgress flag. This ensures consistent cleanup even for early returns.
         return {
@@ -292,6 +304,7 @@ export class IncrementalUpdateCoordinator {
           },
           errors: [],
           durationMs,
+          completenessCheck: noChangesCompletenessCheck,
         };
       }
 
@@ -466,7 +479,13 @@ export class IncrementalUpdateCoordinator {
         "Repository metadata updated"
       );
 
-      // Step 10: Return result
+      // Step 10: Run completeness check after update (skip on failed pipeline)
+      const shouldRunCompleteness = pipelineResult.errors.length === 0;
+      const updatedCompletenessCheck = shouldRunCompleteness
+        ? await this.runCompletenessCheck(repositoryName, logger)
+        : undefined;
+
+      // Step 11: Return result
       const durationMs = Date.now() - startTime;
       const status = pipelineResult.errors.length > 0 ? "failed" : "updated";
 
@@ -487,6 +506,7 @@ export class IncrementalUpdateCoordinator {
         stats: pipelineResult.stats,
         errors: pipelineResult.errors,
         durationMs,
+        completenessCheck: updatedCompletenessCheck,
       };
     } catch (error) {
       // Log error and re-throw (let caller handle specific error types)
@@ -530,6 +550,63 @@ export class IncrementalUpdateCoordinator {
           );
         }
       }
+    }
+  }
+
+  /**
+   * Run post-update completeness check if checker is configured.
+   *
+   * Non-blocking: errors are logged as warnings and the method returns undefined
+   * rather than propagating errors to the caller.
+   *
+   * @param repositoryName - Name of the repository to check
+   * @param logger - Correlation-aware logger for the current operation
+   * @returns Completeness check result, or undefined if checker is not configured or check fails
+   */
+  private async runCompletenessCheck(
+    repositoryName: string,
+    logger: Logger
+  ): Promise<CompletenessCheckResult | undefined> {
+    if (!this.completenessChecker) {
+      return undefined;
+    }
+
+    try {
+      // Re-fetch repo metadata to get the most recent fileCount
+      const repo = await this.repositoryService.getRepository(repositoryName);
+      if (!repo) {
+        logger.warn(
+          { repository: repositoryName },
+          "Cannot run completeness check - repository not found after update"
+        );
+        return undefined;
+      }
+
+      const result = await this.completenessChecker.checkCompleteness(repo);
+
+      if (result.status === "incomplete") {
+        logger.warn(
+          {
+            repository: repositoryName,
+            indexedFileCount: result.indexedFileCount,
+            eligibleFileCount: result.eligibleFileCount,
+            missingFileCount: result.missingFileCount,
+            divergencePercent: result.divergencePercent,
+          },
+          "Index completeness check detected incomplete index"
+        );
+      }
+
+      return result;
+    } catch (error) {
+      logger.warn(
+        {
+          repository: repositoryName,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Completeness check failed (non-blocking)"
+      );
+      return undefined;
     }
   }
 

@@ -38,6 +38,7 @@ import {
   tokenRotateCommand,
 } from "./commands/token-command.js";
 import { migrateExtensionsCommand } from "./commands/migrate-extensions-command.js";
+import { checkCompletenessCommand } from "./commands/check-completeness-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import { graphPopulateAllCommand } from "./commands/graph-populate-all-command.js";
@@ -69,6 +70,7 @@ import {
   GraphPopulateAllCommandOptionsSchema,
   GraphTransferCommandOptionsSchema,
   MigrateExtensionsCommandOptionsSchema,
+  CheckCompletenessCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
   ModelsListCommandOptionsSchema,
@@ -249,6 +251,24 @@ program
     try {
       const validatedOptions = MigrateExtensionsCommandOptionsSchema.parse(options);
       await migrateExtensionsCommand(validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Check-completeness command
+program
+  .command("check-completeness")
+  .description(
+    "Check index completeness by comparing stored file counts against eligible files on disk"
+  )
+  .argument("[repository]", "Repository name (checks all if omitted)")
+  .option("-j, --json", "Output as JSON")
+  .action(async (repository: string | undefined, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = CheckCompletenessCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await checkCompletenessCommand(repository, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

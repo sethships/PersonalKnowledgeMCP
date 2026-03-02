@@ -5,6 +5,7 @@
  */
 
 import type { UpdateStats, FileProcessingError } from "./incremental-update-types.js";
+import type { CompletenessCheckResult } from "./index-completeness-types.js";
 
 /**
  * Configuration options for the incremental update coordinator.
@@ -123,6 +124,14 @@ export interface CoordinatorResult {
    * git pull, pipeline processing, and metadata update.
    */
   durationMs: number;
+
+  /**
+   * Optional result of post-update index completeness check.
+   *
+   * Present only when an `IndexCompletenessChecker` is configured on the coordinator.
+   * Compares stored file count against actual eligible files on disk.
+   */
+  completenessCheck?: CompletenessCheckResult;
 }
 
 /**

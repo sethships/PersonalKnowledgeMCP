@@ -102,6 +102,17 @@ export {
   ConcurrentUpdateError,
 } from "./incremental-update-coordinator-errors.js";
 
+// IndexCompletenessChecker exports
+export {
+  IndexCompletenessChecker,
+  DEFAULT_COMPLETENESS_THRESHOLDS,
+} from "./index-completeness-checker.js";
+export type {
+  CompletenessCheckResult,
+  CompletenessStatus,
+  CompletenessThresholds,
+} from "./index-completeness-types.js";
+
 // Metrics exports
 export type { AggregateMetrics, TrendMetrics, RepositoryMetrics } from "./metrics-types.js";
 export {

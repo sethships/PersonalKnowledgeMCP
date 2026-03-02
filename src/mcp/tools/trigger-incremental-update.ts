@@ -82,6 +82,12 @@ interface SyncSuccessResponse {
   graph_files_processed?: number;
   graph_files_skipped?: number;
   graph_error_count?: number;
+  // Index completeness check (present when completeness checker is configured)
+  completeness_status?: "complete" | "incomplete" | "error";
+  completeness_indexed_files?: number;
+  completeness_eligible_files?: number;
+  completeness_missing_files?: number;
+  completeness_divergence_percent?: number;
 }
 
 /**
@@ -212,6 +218,15 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
     response.graph_files_processed = result.stats.graph.graphFilesProcessed;
     response.graph_files_skipped = result.stats.graph.graphFilesSkipped;
     response.graph_error_count = result.stats.graph.graphErrors.length;
+  }
+
+  // Include completeness check results if available
+  if (result.completenessCheck) {
+    response.completeness_status = result.completenessCheck.status;
+    response.completeness_indexed_files = result.completenessCheck.indexedFileCount;
+    response.completeness_eligible_files = result.completenessCheck.eligibleFileCount;
+    response.completeness_missing_files = result.completenessCheck.missingFileCount;
+    response.completeness_divergence_percent = result.completenessCheck.divergencePercent;
   }
 
   return {

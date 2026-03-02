@@ -36,9 +36,11 @@ import type { GraphService } from "./services/graph-service-types.js";
 
 // Incremental update dependencies
 import { FileChunker } from "./ingestion/file-chunker.js";
+import { FileScanner } from "./ingestion/file-scanner.js";
 import { GitHubClientImpl } from "./services/github-client.js";
 import { IncrementalUpdatePipeline } from "./services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "./services/incremental-update-coordinator.js";
+import { IndexCompletenessChecker } from "./services/index-completeness-checker.js";
 import { MCPRateLimiter } from "./mcp/rate-limiter.js";
 import { JobTracker } from "./mcp/job-tracker.js";
 import { GraphIngestionService } from "./graph/ingestion/GraphIngestionService.js";
@@ -275,11 +277,16 @@ async function main(): Promise<void> {
           graphIngestionService
         );
 
+        // Create completeness checker
+        const fileScanner = new FileScanner();
+        const completenessChecker = new IndexCompletenessChecker(fileScanner);
+
         // Create coordinator
         updateCoordinator = new IncrementalUpdateCoordinator(
           githubClient,
           repositoryService,
-          updatePipeline
+          updatePipeline,
+          { completenessChecker }
         );
 
         // Create rate limiter (5-minute cooldown by default)
