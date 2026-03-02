@@ -87,13 +87,12 @@ function escapeXml(text: string): string {
 /**
  * Create a minimal DOCX file as a Buffer.
  *
- * Uses the built-in Blob API to create ZIP archives. DOCX is a ZIP-based format
- * with XML content files.
+ * Creates a ZIP archive containing OOXML content files.
  *
  * @param documentXml - The document.xml content
  * @returns DOCX file as a Buffer
  */
-async function createDocxBuffer(documentXml: string): Promise<Buffer> {
+function createDocxBuffer(documentXml: string): Buffer {
   // Use a simple ZIP creation approach
   // DOCX requires specific files in a ZIP archive
   const files: Array<{ name: string; content: string }> = [
@@ -111,6 +110,11 @@ async function createDocxBuffer(documentXml: string): Promise<Buffer> {
  *
  * Implements the ZIP format (PK headers) with stored (uncompressed) entries
  * for simplicity. This is sufficient for DOCX test fixtures.
+ *
+ * **Limitation**: CRC-32 checksums are set to 0. These fixtures are valid for
+ * existence/structure tests only. Real DOCX parsers (e.g., mammoth) will likely
+ * reject them. When DocxExtractor.extract() is implemented (#359), these fixtures
+ * should be regenerated with proper CRC-32 values or use a ZIP library.
  *
  * @param entries - Array of file entries to include
  * @returns ZIP archive as a Buffer
@@ -197,7 +201,7 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "This is a simple test document." },
     { text: "It contains two paragraphs of plain text." },
   ]);
-  const simpleDocx = await createDocxBuffer(simpleXml);
+  const simpleDocx = createDocxBuffer(simpleXml);
   await fs.writeFile(path.join(docxDir, "simple.docx"), simpleDocx);
 
   // DOCX with headings
@@ -209,7 +213,7 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "Second Section", style: "Heading2" },
     { text: "Content under the second section heading." },
   ]);
-  const headingsDocx = await createDocxBuffer(headingsXml);
+  const headingsDocx = createDocxBuffer(headingsXml);
   await fs.writeFile(path.join(docxDir, "with-headings.docx"), headingsDocx);
 
   // DOCX with lists
@@ -220,7 +224,7 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "Oranges", style: "ListParagraph" },
     { text: "These are the items we need." },
   ]);
-  const listsDocx = await createDocxBuffer(listsXml);
+  const listsDocx = createDocxBuffer(listsXml);
   await fs.writeFile(path.join(docxDir, "with-lists.docx"), listsDocx);
 
   // Invalid DOCX (not a valid ZIP)

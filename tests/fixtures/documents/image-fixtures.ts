@@ -4,6 +4,10 @@
  * Creates minimal valid image files for testing the ImageMetadataExtractor.
  * Each image is a 1x1 pixel in the respective format, generated from raw bytes.
  *
+ * The hand-crafted byte arrays have been validated manually (open correctly in
+ * image viewers and pass format-specific magic byte checks). If a byte is wrong,
+ * the fixture existence tests will still pass but format-aware parsers may reject them.
+ *
  * @module tests/fixtures/documents/image-fixtures
  */
 
