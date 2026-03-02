@@ -65,7 +65,7 @@ interface TriggerUpdateArgs {
 interface SyncSuccessResponse {
   success: true;
   repository: string;
-  status: "updated" | "no_changes";
+  status: "updated" | "no_changes" | "incomplete";
   files_added: number;
   files_modified: number;
   files_deleted: number;
@@ -190,10 +190,14 @@ function formatErrorResponse(
  * Format sync success response as TextContent
  */
 function formatSyncSuccessResponse(repository: string, result: CoordinatorResult): TextContent {
+  const statusMap: Record<string, SyncSuccessResponse["status"]> = {
+    no_changes: "no_changes",
+    incomplete: "incomplete",
+  };
   const response: SyncSuccessResponse = {
     success: true,
     repository,
-    status: result.status === "no_changes" ? "no_changes" : "updated",
+    status: statusMap[result.status] ?? "updated",
     files_added: result.stats.filesAdded,
     files_modified: result.stats.filesModified,
     files_deleted: result.stats.filesDeleted,
@@ -507,7 +511,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
           "Synchronous update completed"
         );
 
-        // Check if update failed
+        // Check if update failed (only "failed" is an error; "incomplete" is a success with warning)
         if (result.status === "failed") {
           return {
             content: [

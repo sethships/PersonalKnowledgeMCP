@@ -46,10 +46,11 @@ export interface CoordinatorConfig {
  *
  * Indicates the outcome of the update attempt:
  * - `no_changes`: HEAD commit matches last indexed commit, no action taken
- * - `updated`: Incremental update completed successfully
- * - `failed`: Update failed with errors (partial or complete failure)
+ * - `updated`: Incremental update completed successfully (includes partial success)
+ * - `failed`: Update failed with errors (all files failed)
+ * - `incomplete`: Eligible files existed but all were filtered out; SHA not advanced
  */
-export type CoordinatorStatus = "no_changes" | "updated" | "failed";
+export type CoordinatorStatus = "no_changes" | "updated" | "failed" | "incomplete";
 
 /**
  * Complete result of an incremental update operation.

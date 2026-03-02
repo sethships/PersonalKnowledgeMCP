@@ -230,6 +230,55 @@ export interface GraphUpdateStats {
 }
 
 // =============================================================================
+// Filter Statistics
+// =============================================================================
+
+/**
+ * Statistics about how file changes were filtered during incremental processing.
+ *
+ * Tracks the filtering pipeline: totalChanges -> eligibleChanges -> filteredChanges,
+ * providing visibility into why files were skipped. Critical for detecting
+ * misconfiguration where eligible files are unexpectedly filtered out.
+ *
+ * @example
+ * ```typescript
+ * const filterStats: FilterStats = {
+ *   totalChanges: 30,      // 30 files in the git diff
+ *   eligibleChanges: 25,   // 25 had indexable extensions (not in excludePatterns)
+ *   filteredChanges: 20,   // 20 passed all filters and were processed
+ *   skippedChanges: 10,    // 10 were skipped (30 - 20)
+ * };
+ * ```
+ */
+export interface FilterStats {
+  /**
+   * Total files received from the git diff.
+   */
+  totalChanges: number;
+
+  /**
+   * Files matching DEFAULT_EXTENSIONS and not matching excludePatterns.
+   *
+   * Represents files that "should" be processed based on their extension
+   * and path, before any other filtering.
+   */
+  eligibleChanges: number;
+
+  /**
+   * Files that passed all filters (extension + exclusion patterns).
+   *
+   * Same as eligibleChanges in most cases; may differ if additional
+   * filtering steps are added in the future.
+   */
+  filteredChanges: number;
+
+  /**
+   * Files that were skipped: totalChanges - filteredChanges.
+   */
+  skippedChanges: number;
+}
+
+// =============================================================================
 // Core Update Types
 // =============================================================================
 
@@ -376,4 +425,12 @@ export interface UpdateResult {
    * Non-empty indicates partial success with some file failures.
    */
   errors: FileProcessingError[];
+
+  /**
+   * Statistics about how file changes were filtered.
+   *
+   * Provides visibility into how many files were skipped and why,
+   * enabling detection of filtering misconfiguration.
+   */
+  filterStats: FilterStats;
 }

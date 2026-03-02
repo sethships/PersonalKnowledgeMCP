@@ -102,6 +102,12 @@ describe("IncrementalUpdateCoordinator", () => {
         durationMs: 1500,
       },
       errors: [],
+      filterStats: {
+        totalChanges: 3,
+        eligibleChanges: 3,
+        filteredChanges: 3,
+        skippedChanges: 0,
+      },
     };
     mockUpdatePipeline = {
       processChanges: mock(async (_changes, _options) => mockPipelineResult),
@@ -339,7 +345,7 @@ describe("IncrementalUpdateCoordinator", () => {
       }
     });
 
-    it("should handle pipeline errors gracefully (partial success)", async () => {
+    it("should handle pipeline errors gracefully (all files failed)", async () => {
       const pipelineResultWithErrors: UpdateResult = {
         stats: {
           filesAdded: 1,
@@ -353,6 +359,12 @@ describe("IncrementalUpdateCoordinator", () => {
           { path: "src/broken.ts", error: "Failed to read file" },
           { path: "src/invalid.ts", error: "Invalid syntax" },
         ],
+        filterStats: {
+          totalChanges: 3,
+          eligibleChanges: 3,
+          filteredChanges: 3,
+          skippedChanges: 0,
+        },
       };
       mockUpdatePipeline.processChanges = mock(async () => pipelineResultWithErrors);
 
@@ -679,6 +691,12 @@ describe("IncrementalUpdateCoordinator", () => {
             error: "Parse error",
           },
         ],
+        filterStats: {
+          totalChanges: 5,
+          eligibleChanges: 5,
+          filteredChanges: 5,
+          skippedChanges: 0,
+        },
       }));
 
       await coordinator.updateRepository("test-repo");
@@ -710,6 +728,12 @@ describe("IncrementalUpdateCoordinator", () => {
           { path: "file1.ts", error: "Error 1" },
           { path: "file2.ts", error: "Error 2" },
         ],
+        filterStats: {
+          totalChanges: 3,
+          eligibleChanges: 3,
+          filteredChanges: 3,
+          skippedChanges: 0,
+        },
       }));
 
       await coordinator.updateRepository("test-repo");
@@ -957,6 +981,12 @@ describe("IncrementalUpdateCoordinator", () => {
           durationMs: 1000,
         },
         errors: [{ path: "file.ts", error: "Parse error" }],
+        filterStats: {
+          totalChanges: 2,
+          eligibleChanges: 2,
+          filteredChanges: 2,
+          skippedChanges: 0,
+        },
       }));
 
       await coordinator.updateRepository("test-repo");
@@ -1154,6 +1184,206 @@ describe("IncrementalUpdateCoordinator", () => {
       const updateStartedAt = firstUpdate!.updateStartedAt as string;
       const date = new Date(updateStartedAt);
       expect(date.toISOString()).toBe(updateStartedAt);
+    });
+  });
+
+  describe("SHA advancement guard", () => {
+    it("should NOT advance SHA when eligible files were filtered out", async () => {
+      // Pipeline returns 0 processed, 0 errors, but filterStats shows eligible > 0
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 100,
+        },
+        errors: [],
+        filterStats: {
+          totalChanges: 10,
+          eligibleChanges: 8,
+          filteredChanges: 0,
+          skippedChanges: 10,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      // SHA should NOT be advanced
+      expect(result.status).toBe("incomplete");
+
+      // Verify metadata was NOT updated with new commit SHA
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (updatedRepo) {
+        // SHA should remain at the old value
+        expect(updatedRepo.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+        // Status should be "ready" (index is fine, just stale)
+        expect(updatedRepo.status).toBe("ready");
+      }
+    });
+
+    it("should advance SHA when no eligible files exist in diff", async () => {
+      // Diff has only non-indexable files (e.g., .svg, .bmp), eligible = 0, processed = 0
+      // SHA should advance normally since there's nothing to index
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 50,
+        },
+        errors: [],
+        filterStats: {
+          totalChanges: 5,
+          eligibleChanges: 0,
+          filteredChanges: 0,
+          skippedChanges: 5,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      // SHA should be advanced (no eligible files = nothing was lost)
+      expect(result.status).toBe("updated");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (updatedRepo) {
+        expect(updatedRepo.lastIndexedCommitSha).toBe(headCommit.sha);
+      }
+    });
+
+    it("should advance SHA on partial success (some files processed with errors)", async () => {
+      // Some files processed successfully with some errors = partial success
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 3,
+          filesModified: 1,
+          filesDeleted: 0,
+          chunksUpserted: 20,
+          chunksDeleted: 0,
+          durationMs: 500,
+        },
+        errors: [{ path: "file1.ts", error: "Parse error" }],
+        filterStats: {
+          totalChanges: 6,
+          eligibleChanges: 5,
+          filteredChanges: 5,
+          skippedChanges: 1,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      // SHA should advance (partial success is still progress)
+      expect(result.status).toBe("updated");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (updatedRepo) {
+        expect(updatedRepo.lastIndexedCommitSha).toBe(headCommit.sha);
+        // Partial success = "ready" (still usable for search)
+        expect(updatedRepo.status).toBe("ready");
+      }
+    });
+
+    it("should set repo status 'ready' on partial success (not 'error')", async () => {
+      // This test verifies the status fix: partial success should NOT mark repo as "error"
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 5,
+          filesModified: 2,
+          filesDeleted: 1,
+          chunksUpserted: 40,
+          chunksDeleted: 5,
+          durationMs: 1000,
+        },
+        errors: [
+          { path: "file1.ts", error: "Parse error" },
+          { path: "file2.ts", error: "Read error" },
+        ],
+        filterStats: {
+          totalChanges: 10,
+          eligibleChanges: 10,
+          filteredChanges: 10,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      // Result should be "updated" (not "failed") since some files succeeded
+      expect(result.status).toBe("updated");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (updatedRepo) {
+        // Repo status should be "ready" (not "error") for partial success
+        expect(updatedRepo.status).toBe("ready");
+      }
+    });
+
+    it("should record 'incomplete' history status when guard triggers", async () => {
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 80,
+        },
+        errors: [],
+        filterStats: {
+          totalChanges: 15,
+          eligibleChanges: 12,
+          filteredChanges: 0,
+          skippedChanges: 15,
+        },
+      }));
+
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      const historyEntry = updatedRepo?.updateHistory?.[0];
+      expect(historyEntry).toBeDefined();
+      if (historyEntry) {
+        expect(historyEntry.status).toBe("incomplete");
+        // newCommit should be same as previousCommit (SHA not advanced)
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        expect(historyEntry.newCommit).toBe(testRepo.lastIndexedCommitSha!);
+        expect(historyEntry.eligibleFileCount).toBe(12);
+        expect(historyEntry.skippedFileCount).toBe(15);
+      }
+    });
+
+    it("should include skippedFileCount and eligibleFileCount in history entry", async () => {
+      // Normal successful update with some filtered files
+      await coordinator.updateRepository("test-repo");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      const historyEntry = updatedRepo?.updateHistory?.[0];
+      expect(historyEntry).toBeDefined();
+      if (historyEntry) {
+        expect(historyEntry.skippedFileCount).toBe(0);
+        expect(historyEntry.eligibleFileCount).toBe(3);
+      }
     });
   });
 });

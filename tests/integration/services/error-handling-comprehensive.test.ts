@@ -131,6 +131,12 @@ describe("Comprehensive Error Handling Integration Tests", () => {
           durationMs: 0,
         },
         errors: [],
+        filterStats: {
+          totalChanges: 0,
+          eligibleChanges: 0,
+          filteredChanges: 0,
+          skippedChanges: 0,
+        },
       };
 
       const mockPipeline = {
@@ -207,6 +213,12 @@ describe("Comprehensive Error Handling Integration Tests", () => {
             durationMs: 0,
           },
           errors: [],
+          filterStats: {
+            totalChanges: 0,
+            eligibleChanges: 0,
+            filteredChanges: 0,
+            skippedChanges: 0,
+          },
         })),
       } as unknown as IncrementalUpdatePipeline;
 
@@ -283,6 +295,12 @@ describe("Comprehensive Error Handling Integration Tests", () => {
             durationMs: 0,
           },
           errors: [],
+          filterStats: {
+            totalChanges: 0,
+            eligibleChanges: 0,
+            filteredChanges: 0,
+            skippedChanges: 0,
+          },
         })),
       } as unknown as IncrementalUpdatePipeline;
 
@@ -396,6 +414,12 @@ describe("Comprehensive Error Handling Integration Tests", () => {
             durationMs: 5000,
           },
           errors: [],
+          filterStats: {
+            totalChanges: 500,
+            eligibleChanges: 500,
+            filteredChanges: 500,
+            skippedChanges: 0,
+          },
         })),
       } as unknown as IncrementalUpdatePipeline;
 
@@ -470,6 +494,12 @@ describe("Comprehensive Error Handling Integration Tests", () => {
             durationMs: 0,
           },
           errors: [],
+          filterStats: {
+            totalChanges: 0,
+            eligibleChanges: 0,
+            filteredChanges: 0,
+            skippedChanges: 0,
+          },
         })),
       } as unknown as IncrementalUpdatePipeline;
 
