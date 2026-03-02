@@ -51,7 +51,7 @@ describe("003-phase6-documents: Up Migration", () => {
     const content = readMigrationFile(UP_MIGRATION_PATH);
     const requiredColumns = [
       "id UUID PRIMARY KEY",
-      "source_id VARCHAR(255) NOT NULL",
+      "source_id UUID NOT NULL",
       "file_path VARCHAR(1024) NOT NULL",
       "absolute_path VARCHAR(2048)",
       "document_type VARCHAR(50) NOT NULL",
@@ -67,7 +67,7 @@ describe("003-phase6-documents: Up Migration", () => {
       "exif_data JSONB",
       "content_description TEXT",
       "file_size_bytes BIGINT NOT NULL",
-      "content_hash VARCHAR(64) NOT NULL",
+      "content_hash VARCHAR(128) NOT NULL",
       "processing_status VARCHAR(50) NOT NULL",
       "processing_error TEXT",
       "chunk_count INTEGER",
@@ -110,7 +110,7 @@ describe("003-phase6-documents: Up Migration", () => {
   test("documents table has CHECK constraint on document_type", () => {
     const content = readMigrationFile(UP_MIGRATION_PATH);
     expect(content).toMatch(
-      /CHECK\s*\(\s*document_type\s+IN\s*\(\s*'pdf'\s*,\s*'docx'\s*,\s*'markdown'\s*,\s*'image'\s*\)\s*\)/
+      /CHECK\s*\(\s*document_type\s+IN\s*\(\s*'pdf'\s*,\s*'docx'\s*,\s*'markdown'\s*,\s*'image'\s*,\s*'txt'\s*\)\s*\)/
     );
   });
 
@@ -186,6 +186,30 @@ describe("003-phase6-documents: Up Migration", () => {
     const matches = content.match(/gen_random_uuid\(\)/g);
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("documents has FK reference to watched_folders on source_id", () => {
+    const content = readMigrationFile(UP_MIGRATION_PATH);
+    expect(content).toMatch(
+      /source_id UUID NOT NULL REFERENCES watched_folders\s*\(\s*id\s*\)\s+ON\s+DELETE\s+CASCADE/
+    );
+  });
+
+  test("indexed_at has DEFAULT CURRENT_TIMESTAMP", () => {
+    const content = readMigrationFile(UP_MIGRATION_PATH);
+    expect(content).toContain(
+      "indexed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    );
+  });
+
+  test("file_modified_at is NOT NULL", () => {
+    const content = readMigrationFile(UP_MIGRATION_PATH);
+    expect(content).toContain("file_modified_at TIMESTAMP WITH TIME ZONE NOT NULL");
+  });
+
+  test("document_chunks has CHECK constraint on chunk_index", () => {
+    const content = readMigrationFile(UP_MIGRATION_PATH);
+    expect(content).toContain("CHECK (chunk_index >= 0)");
   });
 });
 
@@ -292,20 +316,15 @@ describe("003-phase6-documents: SQL Syntax Validation", () => {
 
   test("down migration statements end with semicolons", () => {
     const content = readMigrationFile(DOWN_MIGRATION_PATH);
-    const lines = content.split("\n");
-    const statementEnds: string[] = [];
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("--") || trimmed === "") continue;
+    // Verify DROP statements
+    const dropStatements = content.match(/DROP TABLE IF EXISTS \w+;/g);
+    expect(dropStatements).not.toBeNull();
+    expect(dropStatements!.length).toBe(2);
 
-      if ((trimmed.startsWith("DROP") || trimmed.startsWith("DELETE")) && trimmed.endsWith(";")) {
-        statementEnds.push(trimmed);
-      }
-    }
-
-    // Should have: 2 DROPs + 1 DELETE = 3 statements
-    expect(statementEnds.length).toBe(3);
+    // Verify DO block for schema version cleanup
+    expect(content).toContain("DO $$");
+    expect(content).toContain("END $$;");
   });
 
   test("no bare TIMESTAMP without time zone in up migration", () => {

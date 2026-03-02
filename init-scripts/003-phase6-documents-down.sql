@@ -11,8 +11,10 @@
 -- ============================================================================
 
 -- Drop document_chunks first (has FK reference to documents)
+-- Note: Associated indexes (idx_chunks_document, idx_chunks_chromadb) are automatically dropped with the table.
 DROP TABLE IF EXISTS document_chunks;
 
+-- Note: Associated indexes (idx_documents_source, idx_documents_type, idx_documents_hash, idx_documents_status, idx_documents_source_status) are automatically dropped with the table.
 -- Drop documents table
 DROP TABLE IF EXISTS documents;
 
@@ -20,4 +22,9 @@ DROP TABLE IF EXISTS documents;
 -- Remove Schema Version Entry
 -- ============================================================================
 
-DELETE FROM _schema_info WHERE schema_version = '0.6.1-documents';
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '_schema_info') THEN
+        DELETE FROM _schema_info WHERE schema_version = '0.6.1-documents';
+    END IF;
+END $$;

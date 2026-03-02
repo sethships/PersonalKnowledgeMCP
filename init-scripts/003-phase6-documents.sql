@@ -18,8 +18,9 @@ CREATE TABLE IF NOT EXISTS documents (
     -- Primary identifier (UUID for distributed-safe IDs)
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    -- Watched folder identifier linking to the source of this document
-    source_id VARCHAR(255) NOT NULL,
+    -- Watched folder identifier — FK to watched_folders table
+    -- Documents are always associated with a watched folder source
+    source_id UUID NOT NULL REFERENCES watched_folders(id) ON DELETE CASCADE,
 
     -- Relative path to the source file within the watched folder
     file_path VARCHAR(1024) NOT NULL,
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS documents (
     absolute_path VARCHAR(2048),
 
     -- Document type classifier (pdf, docx, markdown, image)
-    document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('pdf', 'docx', 'markdown', 'image')),
+    document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('pdf', 'docx', 'markdown', 'image', 'txt')),
 
     -- Title extracted from document metadata or content
     title VARCHAR(512),
@@ -36,8 +37,10 @@ CREATE TABLE IF NOT EXISTS documents (
     -- Author extracted from document metadata
     author VARCHAR(255),
 
-    -- Document creation date from file/document metadata
-    created_at TIMESTAMP WITH TIME ZONE,
+    -- Document creation/authoring date extracted from file or document metadata
+    -- Note: This is the DOCUMENT's creation date (from PDF metadata, EXIF, etc.),
+    -- not the database row creation time. Row insertion time is tracked by indexed_at.
+    document_date TIMESTAMP WITH TIME ZONE,
 
     -- Number of pages (multi-page documents like PDFs)
     page_count INTEGER CHECK (page_count IS NULL OR page_count >= 0),
@@ -69,8 +72,9 @@ CREATE TABLE IF NOT EXISTS documents (
     -- File size in bytes for change detection
     file_size_bytes BIGINT NOT NULL CHECK (file_size_bytes >= 0),
 
-    -- SHA-256 hash of file content for deduplication and change detection
-    content_hash VARCHAR(64) NOT NULL,
+    -- Hash of file content for deduplication and change detection
+    -- VARCHAR(128) accommodates SHA-256 (64 chars), SHA-512, or prefixed hashes (e.g., sha256:abc...)
+    content_hash VARCHAR(128) NOT NULL,
 
     -- Last modified timestamp of the file on disk
     file_modified_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -95,7 +99,9 @@ CREATE TABLE IF NOT EXISTS documents (
     ocr_confidence NUMERIC(5,2) CHECK (ocr_confidence IS NULL OR (ocr_confidence >= 0 AND ocr_confidence <= 100)),
 
     -- Timestamp when this record was last modified
-    -- Updated by application code on any metadata or status change
+    -- WARNING: No database trigger maintains this column. Application code MUST
+    -- explicitly set updated_at = CURRENT_TIMESTAMP on every UPDATE statement.
+    -- Failure to do so will leave this field stale.
     updated_at TIMESTAMP WITH TIME ZONE,
 
     -- No duplicate file tracking within the same source
