@@ -1010,19 +1010,21 @@ describe("ChromaStorageClientImpl", () => {
       });
 
       test(
-        "should return null after exhausting all retries",
+        "should throw StorageError after exhausting all retries on infrastructure errors",
         async () => {
           const collectionName = "repo_retry_exhaust_test";
           // Configure more failures than max retries (default 3)
-          // getCollectionIfExists catches errors and returns null
+          // Infrastructure errors (not "not found") are re-thrown as StorageError
           mockChromaClient.setGetCollectionTransientFailures(10);
 
           // Clear cache to force API call
           // @ts-expect-error - Accessing private property for testing
           client.collections.clear();
 
-          const result = await client.getCollectionIfExists(collectionName);
-          expect(result).toBeNull();
+          // eslint-disable-next-line @typescript-eslint/await-thenable
+          await expect(client.getCollectionIfExists(collectionName)).rejects.toThrow(
+            /Failed to get collection/
+          );
         },
         { timeout: 15000 }
       ); // Increased timeout for retry exhaustion (3 retries with exponential backoff)

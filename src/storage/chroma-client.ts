@@ -271,29 +271,38 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       // This prevents stale cache issues when external processes (e.g., CLI --force re-index)
       // delete and recreate collections while the MCP server is running.
       // The overhead of getCollection() is negligible compared to embedding generation.
-      // Cast required because ChromaDB types mandate embeddingFunction for getCollection,
-      // but this project provides embeddings directly and never uses ChromaDB embedding functions.
-      const getCollectionParams = { name } as Parameters<
-        InstanceType<typeof ChromaClient>["getCollection"]
-      >[0];
       const collection = await this.withRetryWrapper(
-        () => this.client!.getCollection(getCollectionParams),
+        // @ts-expect-error - ChromaDB types require embeddingFunction but we provide embeddings directly
+        () => this.client!.getCollection({ name }),
         "ChromaDB get collection"
       );
 
       // Update cache with fresh reference (benefits other callers like getOrCreateCollection)
       this.collections.set(name, collection);
       return collection;
-    } catch {
-      // Collection doesn't exist - clean up stale cache entry if present
-      if (this.collections.has(name)) {
-        this.logger.info(
-          { collection: name },
-          "Cached collection no longer exists, evicting from cache"
-        );
-        this.collections.delete(name);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // ChromaDB throws errors containing "not found" for missing collections.
+      // Only treat those as "collection doesn't exist" — re-throw infrastructure errors.
+      if (errorMessage.toLowerCase().includes("not found")) {
+        // Collection doesn't exist - clean up stale cache entry if present
+        if (this.collections.has(name)) {
+          this.logger.info(
+            { collection: name },
+            "Cached collection no longer exists, evicting from cache"
+          );
+          this.collections.delete(name);
+        }
+        return null;
       }
-      return null;
+
+      // Infrastructure error (network, timeout, etc.) — propagate for visibility
+      throw new StorageError(
+        `Failed to get collection '${name}': ${errorMessage}`,
+        "COLLECTION_OPERATION_ERROR",
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
