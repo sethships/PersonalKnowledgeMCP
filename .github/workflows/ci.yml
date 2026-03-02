@@ -86,11 +86,17 @@ jobs:
         run: bun test --coverage --coverage-reporter=lcov --timeout 30000 tests/example.test.ts tests/integration tests/mcp tests/services tests/unit tests/cli tests/helpers tests/fixtures
 
       - name: Run isolated tests
-        # Run isolated tests separately to prevent vi.mock from leaking to other test files
-        # These tests mock modules that would affect other tests if run together
+        # Run each isolated test file in its own bun process to prevent vi.mock leakage.
+        # Bun's vi.mock() hoists to module level and pollutes the global module cache,
+        # so files that mock the same module (e.g., fs/promises, Neo4jClient) with
+        # different implementations will interfere when run in the same process.
         # Timeout: 3 minutes (isolated tests are few and fast)
         timeout-minutes: 3
-        run: bun test --timeout 30000 tests/isolated
+        run: |
+          for f in tests/isolated/*.test.ts; do
+            echo "--- Running: $f ---"
+            bun test --timeout 30000 "$f"
+          done
 
       - name: Build project
         run: bun run build
