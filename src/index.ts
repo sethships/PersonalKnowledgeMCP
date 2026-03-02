@@ -58,7 +58,7 @@ const logger = getComponentLogger("main");
  *
  * Initialization order:
  * 1. Configuration loading (environment variables)
- * 2. Embedding provider (OpenAI)
+ * 2. Embedding provider (resolved from env/factory default)
  * 3. Storage client (ChromaDB) with connection
  * 4. Repository metadata service (singleton)
  * 5. Search service (wires provider + storage + metadata)
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
         authToken: Bun.env["CHROMADB_AUTH_TOKEN"],
       },
       embedding: {
-        provider: "openai",
+        provider: Bun.env["EMBEDDING_PROVIDER"] || embeddingProviderFactory.getDefaultProvider(),
         model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
         dimensions: parseInt(Bun.env["EMBEDDING_DIMENSIONS"] || "1536", 10),
         batchSize: parseInt(Bun.env["EMBEDDING_BATCH_SIZE"] || "100", 10),
@@ -99,6 +99,7 @@ async function main(): Promise<void> {
       {
         chromadb: { host: config.chromadb.host, port: config.chromadb.port },
         embedding: {
+          provider: config.embedding.provider,
           model: config.embedding.model,
           dimensions: config.embedding.dimensions,
         },
@@ -112,7 +113,7 @@ async function main(): Promise<void> {
       "Configuration loaded"
     );
 
-    // Step 2: Initialize embedding provider (OpenAI)
+    // Step 2: Initialize embedding provider
     logger.info("Initializing embedding provider");
     const embeddingProvider = createEmbeddingProvider(config.embedding);
     logger.info(
