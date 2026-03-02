@@ -75,6 +75,10 @@ describe("Update Operations Logging Integration", () => {
     // Create log capture
     logCapture = createLogCapture();
 
+    // Reset logger first to ensure our custom stream is attached,
+    // even if another test in the same process already initialized it
+    resetLogger();
+
     // Initialize logger with custom stream for log capture
     initializeLogger({
       level: "debug",
