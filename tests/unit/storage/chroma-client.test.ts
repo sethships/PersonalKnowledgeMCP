@@ -33,7 +33,9 @@ describe("ChromaStorageClientImpl", () => {
   };
 
   beforeEach(() => {
-    // Initialize logger before creating client
+    // Reset logger first to prevent cross-file singleton interference,
+    // then initialize with minimal config for storage client testing
+    resetLogger();
     initializeLogger({
       level: "info",
       format: "json",
