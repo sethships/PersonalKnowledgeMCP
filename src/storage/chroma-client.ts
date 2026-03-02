@@ -310,7 +310,8 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * Get existing collection or create if it doesn't exist
    *
    * Collections use cosine similarity metric for vector search.
-   * Collection handles are cached in-memory to avoid repeated API calls.
+   * Always fetches a fresh collection reference from ChromaDB to avoid stale handles
+   * (e.g., if a collection was externally deleted and recreated by another process).
    *
    * When creating a new collection, embedding metadata should be provided
    * to enable provider-aware query embedding during search operations.
@@ -329,11 +330,6 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
     if (!name || name.trim() === "") {
       throw new InvalidParametersError("Collection name cannot be empty", "name");
-    }
-
-    // Check cache first
-    if (this.collections.has(name)) {
-      return this.collections.get(name)!;
     }
 
     try {
@@ -355,7 +351,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         }
       }
 
-      // Get or create collection with cosine similarity metric and embedding metadata
+      // Always fetch fresh from ChromaDB to avoid stale handles; cache update benefits downstream callers
       // Use retry wrapper for transient network failures
       const collection = await this.withRetryWrapper(
         () =>
@@ -366,7 +362,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
         "ChromaDB get or create collection"
       );
 
-      // Cache the collection handle
+      // Update cache so downstream callers (addDocuments, etc.) benefit from fresh handle
       this.collections.set(name, collection);
 
       return collection;
