@@ -98,14 +98,17 @@ interface PdfInfo {
 /** Lazily-initialized logger for PDF extractor operations */
 let logger: ReturnType<typeof getComponentLogger> | null = null;
 
+/** Shared no-op function for the silent logger */
+const noop = (): void => {};
+
 /** No-op logger for when logging system is not initialized */
 const noopLogger = {
-  warn: () => {},
-  info: () => {},
-  error: () => {},
-  debug: () => {},
-  trace: () => {},
-  fatal: () => {},
+  warn: noop,
+  info: noop,
+  error: noop,
+  debug: noop,
+  trace: noop,
+  fatal: noop,
   level: "silent" as const,
   silent: true,
 } as unknown as ReturnType<typeof getComponentLogger>;
