@@ -975,16 +975,13 @@ describe("ChromaStorageClientImpl", () => {
         expect(collection?.name).toBe(collectionName);
       });
 
-      test("should return collection from cache without API call", async () => {
+      test("should always fetch fresh collection reference even when cached", async () => {
         const collectionName = "repo_test";
         // Create and cache collection
         await client.getOrCreateCollection(collectionName);
 
-        // Configure mock to fail list operations (simulating network issue)
-        // If cache is used, this shouldn't affect the result
-        mockChromaClient.setListCollectionsTransientFailures(10);
-
-        // Should return from cache without hitting the API
+        // getCollectionIfExists always fetches fresh from ChromaDB
+        // to prevent stale cache issues after external re-index
         const collection = await client.getCollectionIfExists(collectionName);
         expect(collection).toBeDefined();
         expect(collection?.name).toBe(collectionName);
@@ -1000,8 +997,8 @@ describe("ChromaStorageClientImpl", () => {
         // Create collection directly in mock (bypass cache)
         await mockChromaClient.getOrCreateCollection({ name: collectionName });
 
-        // Configure 1 transient failure - should succeed on retry
-        mockChromaClient.setListCollectionsTransientFailures(1);
+        // Configure 1 transient failure on getCollection - should succeed on retry
+        mockChromaClient.setGetCollectionTransientFailures(1);
 
         // Clear cache to force API call
         // @ts-expect-error - Accessing private property for testing
@@ -1013,18 +1010,19 @@ describe("ChromaStorageClientImpl", () => {
       });
 
       test(
-        "should throw error after exhausting all retries",
+        "should return null after exhausting all retries",
         async () => {
           const collectionName = "repo_retry_exhaust_test";
           // Configure more failures than max retries (default 3)
-          mockChromaClient.setListCollectionsTransientFailures(10);
+          // getCollectionIfExists catches errors and returns null
+          mockChromaClient.setGetCollectionTransientFailures(10);
 
           // Clear cache to force API call
           // @ts-expect-error - Accessing private property for testing
           client.collections.clear();
 
-          // eslint-disable-next-line @typescript-eslint/await-thenable
-          await expect(client.getCollectionIfExists(collectionName)).rejects.toThrow();
+          const result = await client.getCollectionIfExists(collectionName);
+          expect(result).toBeNull();
         },
         { timeout: 15000 }
       ); // Increased timeout for retry exhaustion (3 retries with exponential backoff)
@@ -1134,6 +1132,99 @@ describe("ChromaStorageClientImpl", () => {
         const metadata = await client.getCollectionEmbeddingMetadata("non_existent_collection");
         expect(metadata).toBeNull();
       });
+    });
+  });
+
+  describe("Stale collection cache detection", () => {
+    const collectionName = "repo_stale_test";
+
+    test("should return fresh collection when cached collection was externally deleted and recreated", async () => {
+      // Step 1: Create and cache a collection via getOrCreateCollection
+      const originalCollection = await client.getOrCreateCollection(collectionName);
+      const originalId = (originalCollection as unknown as { id: string }).id;
+      expect(originalId).toBeDefined();
+
+      // Step 2: Simulate external re-index: delete from mock + create new one (different UUID)
+      await mockChromaClient.deleteCollection({ name: collectionName });
+      const recreatedMockCollection = await mockChromaClient.getOrCreateCollection({
+        name: collectionName,
+      });
+      const recreatedId = recreatedMockCollection.id;
+
+      // Verify the recreated collection has a different UUID
+      expect(recreatedId).not.toBe(originalId);
+
+      // Step 3: Call getCollectionIfExists - should return the NEW collection, not stale cached one
+      const freshCollection = await client.getCollectionIfExists(collectionName);
+      expect(freshCollection).not.toBeNull();
+      const freshId = (freshCollection as unknown as { id: string }).id;
+      expect(freshId).toBe(recreatedId);
+      expect(freshId).not.toBe(originalId);
+    });
+
+    test("should return null when cached collection was externally deleted", async () => {
+      // Step 1: Create and cache a collection
+      await client.getOrCreateCollection(collectionName);
+
+      // Step 2: Delete collection from mock (simulating external deletion without cache invalidation)
+      await mockChromaClient.deleteCollection({ name: collectionName });
+
+      // Step 3: getCollectionIfExists should return null (collection no longer exists)
+      const result = await client.getCollectionIfExists(collectionName);
+      expect(result).toBeNull();
+
+      // Step 4: Verify cache entry was evicted by checking a second call also returns null
+      const secondResult = await client.getCollectionIfExists(collectionName);
+      expect(secondResult).toBeNull();
+    });
+
+    test("should search correctly after collection is externally recreated", async () => {
+      // Step 1: Create collection and add documents
+      await client.getOrCreateCollection(collectionName);
+      const authEmbedding = sampleDocuments[0]!.embedding;
+      const originalDocs: DocumentInput[] = [
+        {
+          id: "doc1",
+          content: "Original document about authentication",
+          metadata: createTestMetadata({ file_path: "src/auth.ts" }),
+          embedding: authEmbedding,
+        },
+      ];
+      await client.addDocuments(collectionName, originalDocs);
+
+      // Verify original search works
+      const searchQuery: SimilarityQuery = {
+        embedding: queryEmbeddingSimilarToAuth,
+        collections: [collectionName],
+        limit: 5,
+        threshold: similarityThresholds.low,
+      };
+      const originalResults = await client.similaritySearch(searchQuery);
+      expect(originalResults.length).toBe(1);
+      expect(originalResults[0]!.id).toBe("doc1");
+
+      // Step 2: Simulate external re-index: delete + recreate with new documents
+      await mockChromaClient.deleteCollection({ name: collectionName });
+      const newMockCollection = await mockChromaClient.getOrCreateCollection({
+        name: collectionName,
+      });
+      // Add new documents directly to the mock collection
+      await newMockCollection.add({
+        ids: ["doc2"],
+        embeddings: [authEmbedding],
+        metadatas: [
+          createTestMetadata({ file_path: "src/new-auth.ts" }) as unknown as Record<
+            string,
+            unknown
+          >,
+        ],
+        documents: ["New authentication module after re-index"],
+      });
+
+      // Step 3: Search should return new results, not empty or stale results
+      const freshResults = await client.similaritySearch(searchQuery);
+      expect(freshResults.length).toBe(1);
+      expect(freshResults[0]!.id).toBe("doc2");
     });
   });
 });
