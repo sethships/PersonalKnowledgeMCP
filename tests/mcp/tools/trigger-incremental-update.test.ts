@@ -30,7 +30,7 @@ interface ErrorResponse {
 interface SyncSuccessResponse {
   success: true;
   repository: string;
-  status: "updated" | "no_changes";
+  status: "updated" | "no_changes" | "incomplete";
   files_added: number;
   files_modified: number;
   files_deleted: number;
@@ -338,6 +338,33 @@ describe("createTriggerUpdateHandler", () => {
       expect(result.isError).toBe(true);
       const response = JSON.parse(getTextContent(result.content)) as ErrorResponse;
       expect(response.error).toBe("update_failed");
+    });
+
+    it("should handle incomplete status as success (not error)", async () => {
+      mockUpdateCoordinator.updateRepository = mock(() =>
+        Promise.resolve(
+          createMockResult({
+            status: "incomplete",
+            stats: {
+              filesAdded: 0,
+              filesModified: 0,
+              filesDeleted: 0,
+              chunksUpserted: 0,
+              chunksDeleted: 0,
+              durationMs: 100,
+            },
+            errors: [],
+          })
+        )
+      );
+
+      const result = await handler({ repository: "test-repo" });
+
+      // Incomplete is NOT an error - it's a success with a warning
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.success).toBe(true);
+      expect(response.status).toBe("incomplete");
     });
 
     it("should truncate commit SHA", async () => {

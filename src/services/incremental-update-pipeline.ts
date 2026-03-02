@@ -23,6 +23,7 @@ import type {
   UpdateStats,
   FileProcessingError,
   GraphUpdateStats,
+  FilterStats,
 } from "./incremental-update-types.js";
 import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
@@ -187,6 +188,12 @@ export class IncrementalUpdatePipeline {
       return {
         stats: { ...stats, durationMs: Date.now() - startTime },
         errors,
+        filterStats: {
+          totalChanges: 0,
+          eligibleChanges: 0,
+          filteredChanges: 0,
+          skippedChanges: 0,
+        },
       };
     }
 
@@ -211,11 +218,35 @@ export class IncrementalUpdatePipeline {
       this.shouldProcessFile(change.path, options.includeExtensions, ig)
     );
 
+    // Calculate filter statistics for observability
+    // eligibleChanges: files matching DEFAULT_EXTENSIONS AND not matching excludePatterns
+    // This uses DEFAULT_EXTENSIONS (not effectiveExtensions) to detect files that
+    // "should" be indexable regardless of the repo's includeExtensions setting
+    const defaultExtSet = new Set<string>(DEFAULT_EXTENSIONS);
+    const eligibleChanges = changes.filter((change) => {
+      // Note: files without a dot (e.g., Makefile, LICENSE) return the full
+      // filename from substring(-1), which won't match DEFAULT_EXTENSIONS.
+      // This is consistent with shouldProcessFile() behavior.
+      const ext = change.path.substring(change.path.lastIndexOf(".")).toLowerCase();
+      if (!defaultExtSet.has(ext)) {
+        return false;
+      }
+      return !ig.ignores(change.path);
+    }).length;
+
+    const filterStats: FilterStats = {
+      totalChanges: changes.length,
+      eligibleChanges,
+      filteredChanges: filteredChanges.length,
+      skippedChanges: changes.length - filteredChanges.length,
+    };
+
     logger.debug(
       {
         operation: "pipeline_filter_changes",
         totalChanges: changes.length,
         filteredChanges: filteredChanges.length,
+        eligibleChanges,
         skipped: changes.length - filteredChanges.length,
       },
       "Filtered changes by extension and exclusion patterns"
@@ -324,7 +355,7 @@ export class IncrementalUpdatePipeline {
       "Incremental update completed"
     );
 
-    return { stats, errors };
+    return { stats, errors, filterStats };
   }
 
   /**

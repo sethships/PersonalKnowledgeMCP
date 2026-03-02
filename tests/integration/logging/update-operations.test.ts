@@ -112,6 +112,12 @@ describe("Update Operations Logging Integration", () => {
         durationMs: 1500,
       },
       errors: [],
+      filterStats: {
+        totalChanges: 3,
+        eligibleChanges: 3,
+        filteredChanges: 3,
+        skippedChanges: 0,
+      },
     };
     mockUpdatePipeline = {
       processChanges: mock(async (_changes, _options) => mockPipelineResult),

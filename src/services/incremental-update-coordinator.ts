@@ -397,18 +397,39 @@ export class IncrementalUpdateCoordinator {
 
       // Step 9: Update repository metadata with new commit SHA
       // Determine history entry status based on error count
-      const totalFilesChanged =
+      const totalFilesProcessed =
         pipelineResult.stats.filesAdded +
         pipelineResult.stats.filesModified +
         pipelineResult.stats.filesDeleted;
 
-      let historyStatus: "success" | "partial" | "failed";
-      if (pipelineResult.errors.length === 0) {
+      // Guard: If eligible files existed in diff but 0 were processed and 0 errors,
+      // this indicates a filtering misconfiguration. Don't advance SHA.
+      const allEligibleFiltered =
+        pipelineResult.filterStats.eligibleChanges > 0 &&
+        totalFilesProcessed === 0 &&
+        pipelineResult.errors.length === 0;
+
+      let historyStatus: "success" | "partial" | "failed" | "incomplete";
+      if (allEligibleFiltered) {
+        historyStatus = "incomplete";
+        logger.warn(
+          {
+            operation: "coordinator_sha_guard",
+            repository: repositoryName,
+            eligibleChanges: pipelineResult.filterStats.eligibleChanges,
+            totalChanges: pipelineResult.filterStats.totalChanges,
+            filteredChanges: pipelineResult.filterStats.filteredChanges,
+          },
+          "SHA advancement blocked: eligible files existed but none were processed. " +
+            "This likely indicates a filtering misconfiguration. " +
+            "Index remains at previous commit to prevent data loss."
+        );
+      } else if (pipelineResult.errors.length === 0) {
         historyStatus = "success";
-      } else if (totalFilesChanged === 0) {
+      } else if (totalFilesProcessed === 0) {
         // Errors occurred but no files were tracked as changed - treat as failed
         historyStatus = "failed";
-      } else if (pipelineResult.errors.length >= totalFilesChanged) {
+      } else if (pipelineResult.errors.length >= totalFilesProcessed) {
         historyStatus = "failed";
       } else {
         historyStatus = "partial";
@@ -419,7 +440,8 @@ export class IncrementalUpdateCoordinator {
         timestamp: new Date().toISOString(),
         // Validated above - throws MissingCommitShaError if undefined
         previousCommit: repo.lastIndexedCommitSha,
-        newCommit: headCommit.sha,
+        // If guard triggered, don't record HEAD as newCommit (SHA not advanced)
+        newCommit: allEligibleFiltered ? repo.lastIndexedCommitSha : headCommit.sha,
         filesAdded: pipelineResult.stats.filesAdded,
         filesModified: pipelineResult.stats.filesModified,
         filesDeleted: pipelineResult.stats.filesDeleted,
@@ -428,6 +450,8 @@ export class IncrementalUpdateCoordinator {
         durationMs: pipelineResult.stats.durationMs,
         errorCount: pipelineResult.errors.length,
         status: historyStatus,
+        skippedFileCount: pipelineResult.filterStats.skippedChanges,
+        eligibleFileCount: pipelineResult.filterStats.eligibleChanges,
         // Include graph stats if graph service was configured
         ...(pipelineResult.stats.graph && {
           graphNodesCreated: pipelineResult.stats.graph.graphNodesCreated,
@@ -450,7 +474,8 @@ export class IncrementalUpdateCoordinator {
       const updatedMetadata: RepositoryInfo = {
         ...repo,
         updateHistory: updatedHistory,
-        lastIndexedCommitSha: headCommit.sha,
+        // Only advance SHA when files were actually processed (or no eligible files existed)
+        lastIndexedCommitSha: allEligibleFiltered ? repo.lastIndexedCommitSha : headCommit.sha,
         lastIncrementalUpdateAt: new Date().toISOString(),
         incrementalUpdateCount: (repo.incrementalUpdateCount || 0) + 1,
         // Update file and chunk counts based on pipeline results
@@ -460,12 +485,15 @@ export class IncrementalUpdateCoordinator {
           repo.chunkCount +
           pipelineResult.stats.chunksUpserted -
           pipelineResult.stats.chunksDeleted,
-        // Update status based on whether errors occurred
-        status: pipelineResult.errors.length > 0 ? "error" : "ready",
+        // Only set "error" when ALL files failed (historyStatus === "failed")
+        // Partial success is still usable for search
+        status: historyStatus === "failed" ? "error" : "ready",
         errorMessage:
-          pipelineResult.errors.length > 0
+          historyStatus === "failed"
             ? `Incremental update completed with ${pipelineResult.errors.length} error(s)`
-            : undefined,
+            : allEligibleFiltered
+              ? `Incremental update incomplete: ${pipelineResult.filterStats.eligibleChanges} eligible file(s) were filtered out`
+              : undefined,
         // Clear the in-progress flag (update completed successfully or with partial errors)
         updateInProgress: false,
         updateStartedAt: undefined,
@@ -475,7 +503,10 @@ export class IncrementalUpdateCoordinator {
       inProgressFlagSet = false; // Flag cleared in metadata
 
       logger.info(
-        { repository: repositoryName, newCommitSha: headCommit.sha.substring(0, 7) },
+        {
+          repository: repositoryName,
+          newCommitSha: updatedMetadata.lastIndexedCommitSha?.substring(0, 7),
+        },
         "Repository metadata updated"
       );
 
@@ -487,20 +518,28 @@ export class IncrementalUpdateCoordinator {
 
       // Step 11: Return result
       const durationMs = Date.now() - startTime;
-      const status = pipelineResult.errors.length > 0 ? "failed" : "updated";
+
+      let resultStatus: CoordinatorResult["status"];
+      if (allEligibleFiltered) {
+        resultStatus = "incomplete";
+      } else if (historyStatus === "failed") {
+        resultStatus = "failed";
+      } else {
+        resultStatus = "updated"; // includes partial success
+      }
 
       logger.info(
         {
           metric: "incremental_update_duration_ms",
           value: durationMs,
           repository: repositoryName,
-          status,
+          status: resultStatus,
         },
         "Incremental update completed"
       );
 
       return {
-        status,
+        status: resultStatus,
         commitSha: headCommit.sha,
         commitMessage: headCommit.message,
         stats: pipelineResult.stats,

@@ -397,8 +397,29 @@ export interface UpdateHistoryEntry {
    * - `success`: No errors, all files processed successfully
    * - `partial`: Some files failed, but some succeeded
    * - `failed`: All files failed or critical failure occurred
+   * - `incomplete`: Eligible files existed but all were filtered out; SHA not advanced
    */
-  status: "success" | "partial" | "failed";
+  status: "success" | "partial" | "failed" | "incomplete";
+
+  /**
+   * Number of files skipped during processing (filtered by extension or exclusion).
+   *
+   * Provides visibility into why an update may have processed fewer files
+   * than expected from the git diff.
+   *
+   * @example 10
+   */
+  skippedFileCount?: number;
+
+  /**
+   * Number of files in the diff matching DEFAULT_EXTENSIONS (excluding repo's excludePatterns).
+   *
+   * Used to detect when eligible files exist but weren't processed,
+   * which indicates a filtering misconfiguration.
+   *
+   * @example 25
+   */
+  eligibleFileCount?: number;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Optional Graph Statistics (present when graph service is configured)

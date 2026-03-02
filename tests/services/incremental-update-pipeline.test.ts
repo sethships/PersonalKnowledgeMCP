@@ -103,6 +103,13 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats.chunksDeleted).toBe(0);
       expect(result.errors).toHaveLength(0);
       expect(result.stats.durationMs).toBeGreaterThanOrEqual(0);
+
+      // FilterStats should be all zeros for empty changes
+      expect(result.filterStats).toBeDefined();
+      expect(result.filterStats.totalChanges).toBe(0);
+      expect(result.filterStats.eligibleChanges).toBe(0);
+      expect(result.filterStats.filteredChanges).toBe(0);
+      expect(result.filterStats.skippedChanges).toBe(0);
     });
 
     it("should process added files", async () => {
@@ -125,6 +132,12 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats.filesDeleted).toBe(0);
       expect(result.stats.chunksUpserted).toBeGreaterThan(0);
       expect(result.errors).toHaveLength(0);
+
+      // FilterStats: 1 total, 1 eligible (.ts), 1 filtered, 0 skipped
+      expect(result.filterStats.totalChanges).toBe(1);
+      expect(result.filterStats.eligibleChanges).toBe(1);
+      expect(result.filterStats.filteredChanges).toBe(1);
+      expect(result.filterStats.skippedChanges).toBe(0);
 
       // Verify embedding provider was called
       expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalled();
@@ -244,10 +257,16 @@ describe("IncrementalUpdatePipeline", () => {
 
       const result = await pipeline.processChanges(changes, options);
 
-      // Only .ts file should be processed
+      // Only .ts file should be processed (includeExtensions is [".ts", ".js", ".md"])
       expect(result.stats.filesAdded).toBe(1);
       expect(result.stats.chunksUpserted).toBeGreaterThan(0);
       expect(result.errors).toHaveLength(0);
+
+      // FilterStats: .py is in DEFAULT_EXTENSIONS so eligible=2, but filtered=1 due to includeExtensions
+      expect(result.filterStats.totalChanges).toBe(2);
+      expect(result.filterStats.eligibleChanges).toBe(2); // Both .ts and .py are in DEFAULT_EXTENSIONS
+      expect(result.filterStats.filteredChanges).toBe(1); // Only .ts passes includeExtensions
+      expect(result.filterStats.skippedChanges).toBe(1);
     });
 
     it("should filter files by exclusion patterns", async () => {
@@ -284,6 +303,13 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats.chunksUpserted).toBe(0);
       expect(result.stats.chunksDeleted).toBe(0);
       expect(result.errors).toHaveLength(0);
+
+      // FilterStats: node_modules/package.py excluded by pattern, dist/bundle.ts excluded by pattern
+      // Both are in DEFAULT_EXTENSIONS but excluded by patterns
+      expect(result.filterStats.totalChanges).toBe(2);
+      expect(result.filterStats.eligibleChanges).toBe(0); // Both excluded by patterns
+      expect(result.filterStats.filteredChanges).toBe(0);
+      expect(result.filterStats.skippedChanges).toBe(2);
     });
 
     it("should batch embeddings correctly", async () => {
@@ -394,6 +420,7 @@ describe("IncrementalUpdatePipeline", () => {
       // Verify result structure
       expect(result).toHaveProperty("stats");
       expect(result).toHaveProperty("errors");
+      expect(result).toHaveProperty("filterStats");
       expect(result.stats).toHaveProperty("filesAdded");
       expect(result.stats).toHaveProperty("filesModified");
       expect(result.stats).toHaveProperty("filesDeleted");
@@ -401,6 +428,10 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.stats).toHaveProperty("chunksDeleted");
       expect(result.stats).toHaveProperty("durationMs");
       expect(Array.isArray(result.errors)).toBe(true);
+      expect(result.filterStats).toHaveProperty("totalChanges");
+      expect(result.filterStats).toHaveProperty("eligibleChanges");
+      expect(result.filterStats).toHaveProperty("filteredChanges");
+      expect(result.filterStats).toHaveProperty("skippedChanges");
     });
 
     it("should fall back to DEFAULT_EXTENSIONS when includeExtensions is empty", async () => {
@@ -477,6 +508,47 @@ describe("IncrementalUpdatePipeline", () => {
       // Only .ts should be processed
       expect(result.stats.filesAdded).toBe(1);
       expect(result.errors).toHaveLength(0);
+    });
+
+    it("should count eligible files using DEFAULT_EXTENSIONS (not repo extensions)", async () => {
+      // Mix of DEFAULT_EXTENSIONS files and non-default extension files
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await mkdir(join(testDir, "assets"), { recursive: true });
+      await writeFile(join(testDir, "src/app.ts"), "export const x = 1;");
+      await writeFile(join(testDir, "src/util.py"), "x = 1");
+      await writeFile(join(testDir, "assets/logo.svg"), "<svg></svg>");
+
+      const changes: FileChange[] = [
+        { path: "src/app.ts", status: "added" },
+        { path: "src/util.py", status: "added" },
+        { path: "assets/logo.svg", status: "added" }, // .svg not in DEFAULT_EXTENSIONS
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // eligibleChanges uses DEFAULT_EXTENSIONS: .ts and .py are eligible, .svg is not
+      expect(result.filterStats.totalChanges).toBe(3);
+      expect(result.filterStats.eligibleChanges).toBe(2); // .ts and .py
+      // filteredChanges uses includeExtensions [".ts", ".js", ".md"]: only .ts
+      expect(result.filterStats.filteredChanges).toBe(1);
+      expect(result.filterStats.skippedChanges).toBe(2);
+    });
+
+    it("should report eligibleChanges=0 for non-indexable files only", async () => {
+      // All files have extensions NOT in DEFAULT_EXTENSIONS
+      const changes: FileChange[] = [
+        { path: "assets/logo.svg", status: "added" },
+        { path: "assets/photo.bmp", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      expect(result.filterStats.totalChanges).toBe(2);
+      expect(result.filterStats.eligibleChanges).toBe(0);
+      expect(result.filterStats.filteredChanges).toBe(0);
+      expect(result.filterStats.skippedChanges).toBe(2);
     });
   });
 

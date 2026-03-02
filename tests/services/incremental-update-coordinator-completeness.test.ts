@@ -118,6 +118,12 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
         durationMs: 500,
       },
       errors: [],
+      filterStats: {
+        totalChanges: 1,
+        eligibleChanges: 1,
+        filteredChanges: 1,
+        skippedChanges: 0,
+      },
     };
     mockUpdatePipeline = {
       processChanges: mock(async () => mockPipelineResult),
@@ -190,6 +196,12 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
             error: "Parse error",
           },
         ],
+        filterStats: {
+          totalChanges: 1,
+          eligibleChanges: 1,
+          filteredChanges: 1,
+          skippedChanges: 0,
+        },
       };
       const failedPipeline = {
         processChanges: mock(async () => failedPipelineResult),

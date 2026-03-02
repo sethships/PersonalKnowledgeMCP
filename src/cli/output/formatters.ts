@@ -251,7 +251,7 @@ function formatChunkChanges(upserted: number, deleted: number): string {
  * @returns Colored status string
  */
 function getUpdateStatusIndicator(
-  status: "success" | "partial" | "failed",
+  status: "success" | "partial" | "failed" | "incomplete",
   errorCount: number
 ): string {
   switch (status) {
@@ -261,6 +261,8 @@ function getUpdateStatusIndicator(
       return chalk.yellow(`⚠ partial (${errorCount} errors)`);
     case "failed":
       return chalk.red(`✗ failed (${errorCount} errors)`);
+    case "incomplete":
+      return chalk.yellow("⚠ incomplete (filtered)");
     default:
       return status;
   }
