@@ -479,8 +479,11 @@ export class IncrementalUpdateCoordinator {
         "Repository metadata updated"
       );
 
-      // Step 10: Run completeness check after update
-      const updatedCompletenessCheck = await this.runCompletenessCheck(repositoryName, logger);
+      // Step 10: Run completeness check after update (skip on failed pipeline)
+      const shouldRunCompleteness = pipelineResult.errors.length === 0;
+      const updatedCompletenessCheck = shouldRunCompleteness
+        ? await this.runCompletenessCheck(repositoryName, logger)
+        : undefined;
 
       // Step 11: Return result
       const durationMs = Date.now() - startTime;

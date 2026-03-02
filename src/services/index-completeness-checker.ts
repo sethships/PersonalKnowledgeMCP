@@ -65,6 +65,13 @@ export class IndexCompletenessChecker {
       ...DEFAULT_COMPLETENESS_THRESHOLDS,
       ...thresholds,
     };
+
+    if (this.thresholds.completenessThresholdPercent < 0) {
+      throw new Error("completenessThresholdPercent must be non-negative");
+    }
+    if (this.thresholds.completenessThresholdAbsolute < 0) {
+      throw new Error("completenessThresholdAbsolute must be non-negative");
+    }
   }
 
   /** Get logger instance (lazy initialization). */

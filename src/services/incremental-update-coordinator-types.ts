@@ -39,26 +39,6 @@ export interface CoordinatorConfig {
    * @default 20
    */
   updateHistoryLimit?: number;
-
-  /**
-   * Maximum acceptable percentage of missing files before flagging as incomplete.
-   *
-   * Used by the optional completeness checker to determine whether the index
-   * divergence from eligible files on disk is significant.
-   *
-   * @default 20
-   */
-  completenessThresholdPercent?: number;
-
-  /**
-   * Maximum acceptable absolute count of missing files before flagging as incomplete.
-   *
-   * Used by the optional completeness checker to determine whether the index
-   * divergence from eligible files on disk is significant.
-   *
-   * @default 50
-   */
-  completenessThresholdAbsolute?: number;
 }
 
 /**

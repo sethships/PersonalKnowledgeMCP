@@ -173,6 +173,47 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
     });
   });
 
+  describe("failed status path", () => {
+    it("should not run completeness check when pipeline returns errors", async () => {
+      const failedPipelineResult: UpdateResult = {
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 200,
+        },
+        errors: [
+          {
+            path: "src/broken.ts",
+            error: "Parse error",
+          },
+        ],
+      };
+      const failedPipeline = {
+        processChanges: mock(async () => failedPipelineResult),
+      } as unknown as IncrementalUpdatePipeline;
+
+      const coordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        failedPipeline,
+        {
+          customGitPull: mock(async () => {}),
+          completenessChecker: mockCompletenessChecker,
+        }
+      );
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("failed");
+      expect(result.completenessCheck).toBeUndefined();
+      // Verify completeness checker was never called
+      expect(mockCompletenessChecker.checkCompleteness).not.toHaveBeenCalled();
+    });
+  });
+
   describe("no_changes status path", () => {
     it("should attach completeness result on no_changes", async () => {
       // Return same HEAD commit to trigger no_changes path

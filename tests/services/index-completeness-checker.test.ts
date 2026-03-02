@@ -7,7 +7,7 @@
  * @module tests/services/index-completeness-checker
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
 import {
   IndexCompletenessChecker,
   DEFAULT_COMPLETENESS_THRESHOLDS,
@@ -79,7 +79,15 @@ describe("IndexCompletenessChecker", () => {
 
   describe("checkCompleteness", () => {
     it("should return complete when counts match exactly", async () => {
-      const scanner = createMockFileScanner(100);
+      const files: FileInfo[] = Array.from({ length: 100 }, (_, i) => ({
+        relativePath: `src/file-${i}.ts`,
+        absolutePath: `/repos/test-repo/src/file-${i}.ts`,
+        extension: ".ts",
+        sizeBytes: 1024,
+        modifiedAt: new Date("2024-12-01T00:00:00.000Z"),
+      }));
+      const scanFilesMock = mock(async () => files);
+      const scanner = { scanFiles: scanFilesMock } as unknown as FileScanner;
       const checker = new IndexCompletenessChecker(scanner);
       const repo = createTestRepo(100);
 
@@ -92,6 +100,13 @@ describe("IndexCompletenessChecker", () => {
       expect(result.divergencePercent).toBe(0);
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
       expect(result.errorMessage).toBeUndefined();
+
+      // Verify scanFiles was called with the correct arguments
+      expect(scanFilesMock).toHaveBeenCalledTimes(1);
+      expect(scanFilesMock).toHaveBeenCalledWith(repo.localPath, {
+        includeExtensions: repo.includeExtensions,
+        excludePatterns: repo.excludePatterns,
+      });
     });
 
     it("should return complete when below both thresholds", async () => {
