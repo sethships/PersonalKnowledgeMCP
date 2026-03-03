@@ -857,20 +857,283 @@ describe("MarkdownParser", () => {
   });
 
   describe("extract", () => {
-    test("throws NotImplementedError with real fixture path", async () => {
-      expect.assertions(3);
-      const parser = new MarkdownParser();
-      const filePath = path.join(MARKDOWN_DIR, "simple.md");
+    describe("successful extraction", () => {
+      test("extracts text content from simple markdown", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
 
-      try {
-        await parser.extract(filePath);
-      } catch (error) {
-        expect(error).toBeInstanceOf(NotImplementedError);
-        if (error instanceof NotImplementedError) {
-          expect(error.methodName).toBe("MarkdownParser.extract");
-          expect(error.filePath).toBe(filePath);
+        const result = await parser.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+        expect(result.content).toContain("Simple Document");
+        expect(result.content).toContain("simple markdown document for testing");
+        expect(result.metadata).toBeDefined();
+        expect(result.metadata.documentType).toBe("markdown");
+      });
+
+      test("preserves heading hierarchy", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        // Verify sections were extracted from headings
+        expect(result.sections).toBeDefined();
+        expect(result.sections!.length).toBeGreaterThanOrEqual(2);
+
+        // Verify h1 comes before h2s
+        const h1 = result.sections!.find((s) => s.level === 1);
+        const h2s = result.sections!.filter((s) => s.level === 2);
+        expect(h1).toBeDefined();
+        expect(h1!.title).toBe("Simple Document");
+        expect(h2s.length).toBe(2);
+        expect(h2s[0]!.title).toBe("Section One");
+        expect(h2s[1]!.title).toBe("Section Two");
+      });
+
+      test("extracts frontmatter metadata", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "with-frontmatter.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.frontmatter).toBeDefined();
+        expect(result.frontmatter!.title).toBe("Frontmatter Test Document");
+        expect(result.frontmatter!.author).toBe("Test Author");
+        expect(result.frontmatter!.date).toBe("2024-06-15");
+        expect(result.frontmatter!.tags).toEqual(["testing", "fixtures", "markdown"]);
+
+        // Frontmatter should be stripped from content
+        expect(result.content).not.toContain("---");
+        expect(result.content).toContain("Frontmatter Test");
+      });
+
+      test("preserves code blocks with language annotation", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "with-code.md");
+
+        const result = await parser.extract(filePath);
+
+        // Code blocks with language annotations should be preserved in content
+        expect(result.content).toContain("```typescript");
+        expect(result.content).toContain("```python");
+        expect(result.content).toContain("interface User");
+        expect(result.content).toContain("def fibonacci");
+        expect(result.content).toContain("`inline code`");
+      });
+
+      test("handles GFM features - tables, task lists, strikethrough", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "gfm.md");
+
+        const result = await parser.extract(filePath);
+
+        // Task lists
+        expect(result.content).toContain("[x] Completed task");
+        expect(result.content).toContain("[ ] Pending task");
+
+        // Tables
+        expect(result.content).toContain("TypeScript");
+        expect(result.content).toContain("Python");
+        expect(result.content).toContain("Rust");
+
+        // Strikethrough
+        expect(result.content).toContain("~~deprecated~~");
+      });
+
+      test("returns sections with correct SectionInfo structure", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.sections).toBeDefined();
+        for (const section of result.sections!) {
+          expect(section.title).toBeDefined();
+          expect(section.title.length).toBeGreaterThan(0);
+          expect(section.level).toBeGreaterThanOrEqual(1);
+          expect(section.level).toBeLessThanOrEqual(6);
+          expect(typeof section.startOffset).toBe("number");
+          expect(typeof section.endOffset).toBe("number");
+          expect(section.endOffset).toBeGreaterThanOrEqual(section.startOffset);
         }
-      }
+      });
+
+      test("computes correct word count", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.metadata.wordCount).toBeGreaterThan(0);
+      });
+
+      test("computes content hash (SHA-256)", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.metadata.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      });
+
+      test("same file produces same hash on re-extraction", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result1 = await parser.extract(filePath);
+        const result2 = await parser.extract(filePath);
+
+        expect(result2.metadata.contentHash).toBe(result1.metadata.contentHash);
+      });
+
+      test("includes correct file metadata", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+        const stats = await fs.stat(filePath);
+
+        const result = await parser.extract(filePath);
+
+        expect(result.metadata.filePath).toBe(filePath);
+        expect(result.metadata.fileSizeBytes).toBe(stats.size);
+        expect(result.metadata.fileModifiedAt.getTime()).toBe(stats.mtime.getTime());
+      });
+
+      test("sets documentType to markdown", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.metadata.documentType).toBe("markdown");
+      });
+
+      test("returns frontmatter title as metadata title", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "with-frontmatter.md");
+
+        const result = await parser.extract(filePath);
+
+        // Frontmatter title takes priority over h1
+        expect(result.metadata.title).toBe("Frontmatter Test Document");
+      });
+
+      test("returns frontmatter author as metadata author", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "with-frontmatter.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.metadata.author).toBe("Test Author");
+      });
+
+      test("uses first h1 as title when no frontmatter title", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        // simple.md has no frontmatter, so title comes from first h1
+        expect(result.metadata.title).toBe("Simple Document");
+      });
+
+      test("completes extraction in under 100ms", async () => {
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const start = performance.now();
+        await parser.extract(filePath);
+        const elapsed = performance.now() - start;
+
+        expect(elapsed).toBeLessThan(100);
+      });
+    });
+
+    describe("configuration options", () => {
+      test("skips frontmatter when parseFrontmatter is false", async () => {
+        const parser = new MarkdownParser({ parseFrontmatter: false });
+        const filePath = path.join(MARKDOWN_DIR, "with-frontmatter.md");
+
+        const result = await parser.extract(filePath);
+
+        // Frontmatter should not be parsed
+        expect(result.frontmatter).toBeUndefined();
+        // Raw frontmatter delimiters remain in content
+        expect(result.content).toContain("---");
+      });
+
+      test("skips sections when extractSections is false", async () => {
+        const parser = new MarkdownParser({ extractSections: false });
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        const result = await parser.extract(filePath);
+
+        expect(result.sections).toBeUndefined();
+        // Content is still extracted
+        expect(result.content).toContain("Simple Document");
+      });
+    });
+
+    describe("error handling", () => {
+      test("throws FileAccessError for non-existent file", async () => {
+        expect.assertions(5);
+        const parser = new MarkdownParser();
+        const filePath = path.join(MARKDOWN_DIR, "non-existent.md");
+
+        try {
+          await parser.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileAccessError);
+          expect(isDocumentError(error)).toBe(true);
+          if (error instanceof FileAccessError) {
+            expect(error.code).toBe("FILE_ACCESS_ERROR");
+            expect(error.filePath).toBe(filePath);
+            expect(error.message).toContain("not found");
+          }
+        }
+      });
+
+      test("throws FileTooLargeError for oversized file", async () => {
+        expect.assertions(5);
+        const parser = new MarkdownParser({ maxFileSizeBytes: 10 }); // Very small limit
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        try {
+          await parser.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileTooLargeError);
+          if (error instanceof FileTooLargeError) {
+            expect(error.code).toBe("FILE_TOO_LARGE");
+            expect(error.maxSizeBytes).toBe(10);
+            expect(error.actualSizeBytes).toBeGreaterThan(10);
+            expect(error.retryable).toBe(false);
+          }
+        }
+      });
+
+      test("handles timeout or fast completion gracefully with 1ms timeout", async () => {
+        // Uses a very short timeout (1ms) to exercise the timeout path.
+        // Due to JS event loop mechanics (Promise microtasks beat setTimeout macrotasks),
+        // Markdown parsing is synchronous and typically completes before the timeout fires.
+        // This test validates that both outcomes are handled correctly.
+        const parser = new MarkdownParser({ timeoutMs: 1 });
+        const filePath = path.join(MARKDOWN_DIR, "simple.md");
+
+        try {
+          await parser.extract(filePath);
+          // Fast completion is valid - parsing beat the timeout
+        } catch (error) {
+          expect(error instanceof ExtractionTimeoutError || error instanceof ExtractionError).toBe(
+            true
+          );
+          if (error instanceof ExtractionTimeoutError) {
+            expect(error.code).toBe("EXTRACTION_TIMEOUT");
+            expect(error.timeoutMs).toBe(1);
+            expect(error.retryable).toBe(true);
+          }
+        }
+      });
     });
   });
 });
