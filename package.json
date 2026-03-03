@@ -66,6 +66,8 @@
     "falkordb": "^6.6.0",
     "glob": "^10.3.10",
     "ignore": "^5.3.1",
+    "jszip": "3.10.1",
+    "mammoth": "1.11.0",
     "neo4j-driver": "6.0.1",
     "openai": "6.10.0",
     "openid-client": "6.8.1",

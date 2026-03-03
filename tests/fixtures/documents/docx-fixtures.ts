@@ -3,13 +3,14 @@
  *
  * Creates minimal valid DOCX files for testing the DocxExtractor.
  * DOCX files are ZIP archives containing XML files following the
- * Office Open XML (OOXML) format.
+ * Office Open XML (OOXML) format. Uses JSZip for proper CRC-32 checksums.
  *
  * @module tests/fixtures/documents/docx-fixtures
  */
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import JSZip from "jszip";
 
 /**
  * Minimal DOCX content types XML.
@@ -22,11 +23,31 @@ const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
 </Types>`;
 
 /**
+ * Content types XML that includes docProps/core.xml override.
+ */
+const CONTENT_TYPES_WITH_CORE_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+</Types>`;
+
+/**
  * Minimal DOCX relationships XML.
  */
 const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+/**
+ * Relationships XML that includes docProps/core.xml reference.
+ */
+const RELS_WITH_CORE_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
 </Relationships>`;
 
 /**
@@ -73,6 +94,36 @@ function createDocumentXml(
 }
 
 /**
+ * Create Dublin Core metadata XML for docProps/core.xml.
+ *
+ * @param metadata - Document metadata
+ * @returns XML string for core.xml
+ */
+function createCoreXml(metadata: {
+  title?: string;
+  creator?: string;
+  created?: string;
+}): string {
+  const titleXml = metadata.title ? `  <dc:title>${escapeXml(metadata.title)}</dc:title>` : "";
+  const creatorXml = metadata.creator
+    ? `  <dc:creator>${escapeXml(metadata.creator)}</dc:creator>`
+    : "";
+  const createdXml = metadata.created
+    ? `  <dcterms:created xsi:type="dcterms:W3CDTF">${metadata.created}</dcterms:created>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+                   xmlns:dc="http://purl.org/dc/elements/1.1/"
+                   xmlns:dcterms="http://purl.org/dc/terms/"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+${titleXml}
+${creatorXml}
+${createdXml}
+</cp:coreProperties>`;
+}
+
+/**
  * Escape XML special characters.
  */
 function escapeXml(text: string): string {
@@ -85,106 +136,38 @@ function escapeXml(text: string): string {
 }
 
 /**
- * Create a minimal DOCX file as a Buffer.
+ * Create a minimal DOCX file as a Buffer using JSZip.
  *
- * Creates a ZIP archive containing OOXML content files.
+ * Creates a ZIP archive containing OOXML content files with proper CRC-32 checksums.
  *
  * @param documentXml - The document.xml content
+ * @param options - Optional additional files to include
  * @returns DOCX file as a Buffer
  */
-function createDocxBuffer(documentXml: string): Buffer {
-  // Use a simple ZIP creation approach
-  // DOCX requires specific files in a ZIP archive
-  const files: Array<{ name: string; content: string }> = [
-    { name: "[Content_Types].xml", content: CONTENT_TYPES_XML },
-    { name: "_rels/.rels", content: RELS_XML },
-    { name: "word/_rels/document.xml.rels", content: WORD_RELS_XML },
-    { name: "word/document.xml", content: documentXml },
-  ];
+async function createDocxBuffer(
+  documentXml: string,
+  options?: {
+    coreXml?: string;
+  }
+): Promise<Buffer> {
+  const zip = new JSZip();
 
-  return createZipBuffer(files);
-}
+  // Add required OOXML files
+  const contentTypes = options?.coreXml ? CONTENT_TYPES_WITH_CORE_XML : CONTENT_TYPES_XML;
+  const rels = options?.coreXml ? RELS_WITH_CORE_XML : RELS_XML;
 
-/**
- * Create a minimal ZIP file from the given entries.
- *
- * Implements the ZIP format (PK headers) with stored (uncompressed) entries
- * for simplicity. This is sufficient for DOCX test fixtures.
- *
- * **Limitation**: CRC-32 checksums are set to 0. These fixtures are valid for
- * existence/structure tests only. Real DOCX parsers (e.g., mammoth) will likely
- * reject them. When DocxExtractor.extract() is implemented (#359), these fixtures
- * should be regenerated with proper CRC-32 values or use a ZIP library.
- *
- * @param entries - Array of file entries to include
- * @returns ZIP archive as a Buffer
- */
-function createZipBuffer(entries: Array<{ name: string; content: string }>): Buffer {
-  const localHeaders: Buffer[] = [];
-  const centralHeaders: Buffer[] = [];
-  let offset = 0;
+  zip.file("[Content_Types].xml", contentTypes);
+  zip.file("_rels/.rels", rels);
+  zip.file("word/_rels/document.xml.rels", WORD_RELS_XML);
+  zip.file("word/document.xml", documentXml);
 
-  for (const entry of entries) {
-    const nameBuffer = Buffer.from(entry.name, "utf8");
-    const dataBuffer = Buffer.from(entry.content, "utf8");
-
-    // Local file header (30 bytes + name + data)
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0); // Local file header signature
-    localHeader.writeUInt16LE(20, 4); // Version needed (2.0)
-    localHeader.writeUInt16LE(0, 6); // General purpose bit flag
-    localHeader.writeUInt16LE(0, 8); // Compression method (stored)
-    localHeader.writeUInt16LE(0, 10); // Last mod file time
-    localHeader.writeUInt16LE(0, 12); // Last mod file date
-    localHeader.writeUInt32LE(0, 14); // CRC-32 (skip for simplicity)
-    localHeader.writeUInt32LE(dataBuffer.length, 18); // Compressed size
-    localHeader.writeUInt32LE(dataBuffer.length, 22); // Uncompressed size
-    localHeader.writeUInt16LE(nameBuffer.length, 26); // File name length
-    localHeader.writeUInt16LE(0, 28); // Extra field length
-
-    const localRecord = Buffer.concat([localHeader, nameBuffer, dataBuffer]);
-    localHeaders.push(localRecord);
-
-    // Central directory header (46 bytes + name)
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0); // Central directory signature
-    centralHeader.writeUInt16LE(20, 4); // Version made by
-    centralHeader.writeUInt16LE(20, 6); // Version needed
-    centralHeader.writeUInt16LE(0, 8); // General purpose bit flag
-    centralHeader.writeUInt16LE(0, 10); // Compression method
-    centralHeader.writeUInt16LE(0, 12); // Last mod file time
-    centralHeader.writeUInt16LE(0, 14); // Last mod file date
-    centralHeader.writeUInt32LE(0, 16); // CRC-32
-    centralHeader.writeUInt32LE(dataBuffer.length, 20); // Compressed size
-    centralHeader.writeUInt32LE(dataBuffer.length, 24); // Uncompressed size
-    centralHeader.writeUInt16LE(nameBuffer.length, 28); // File name length
-    centralHeader.writeUInt16LE(0, 30); // Extra field length
-    centralHeader.writeUInt16LE(0, 32); // File comment length
-    centralHeader.writeUInt16LE(0, 34); // Disk number start
-    centralHeader.writeUInt16LE(0, 36); // Internal file attributes
-    centralHeader.writeUInt32LE(0, 38); // External file attributes
-    centralHeader.writeUInt32LE(offset, 42); // Relative offset of local header
-
-    centralHeaders.push(Buffer.concat([centralHeader, nameBuffer]));
-    offset += localRecord.length;
+  // Add optional metadata
+  if (options?.coreXml) {
+    zip.file("docProps/core.xml", options.coreXml);
   }
 
-  const centralDirOffset = offset;
-  const centralDir = Buffer.concat(centralHeaders);
-  const centralDirSize = centralDir.length;
-
-  // End of central directory record (22 bytes)
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0); // End of central directory signature
-  eocd.writeUInt16LE(0, 4); // Disk number
-  eocd.writeUInt16LE(0, 6); // Disk with central directory
-  eocd.writeUInt16LE(entries.length, 8); // Number of entries on this disk
-  eocd.writeUInt16LE(entries.length, 10); // Total entries
-  eocd.writeUInt32LE(centralDirSize, 12); // Size of central directory
-  eocd.writeUInt32LE(centralDirOffset, 16); // Offset of central directory
-  eocd.writeUInt16LE(0, 20); // Comment length
-
-  return Buffer.concat([...localHeaders, centralDir, eocd]);
+  const arrayBuffer = await zip.generateAsync({ type: "arraybuffer" });
+  return Buffer.from(arrayBuffer);
 }
 
 /**
@@ -201,7 +184,7 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "This is a simple test document." },
     { text: "It contains two paragraphs of plain text." },
   ]);
-  const simpleDocx = createDocxBuffer(simpleXml);
+  const simpleDocx = await createDocxBuffer(simpleXml);
   await fs.writeFile(path.join(docxDir, "simple.docx"), simpleDocx);
 
   // DOCX with headings
@@ -213,7 +196,7 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "Second Section", style: "Heading2" },
     { text: "Content under the second section heading." },
   ]);
-  const headingsDocx = createDocxBuffer(headingsXml);
+  const headingsDocx = await createDocxBuffer(headingsXml);
   await fs.writeFile(path.join(docxDir, "with-headings.docx"), headingsDocx);
 
   // DOCX with lists
@@ -224,8 +207,21 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
     { text: "Oranges", style: "ListParagraph" },
     { text: "These are the items we need." },
   ]);
-  const listsDocx = createDocxBuffer(listsXml);
+  const listsDocx = await createDocxBuffer(listsXml);
   await fs.writeFile(path.join(docxDir, "with-lists.docx"), listsDocx);
+
+  // DOCX with metadata (title, author, creation date)
+  const metadataXml = createDocumentXml([
+    { text: "Metadata Test Document", style: "Heading1" },
+    { text: "This document has Dublin Core metadata in docProps/core.xml." },
+  ]);
+  const coreXml = createCoreXml({
+    title: "Test Document Title",
+    creator: "Test Author",
+    created: "2024-06-15T10:30:00Z",
+  });
+  const metadataDocx = await createDocxBuffer(metadataXml, { coreXml });
+  await fs.writeFile(path.join(docxDir, "with-metadata.docx"), metadataDocx);
 
   // Invalid DOCX (not a valid ZIP)
   const invalidDocx = Buffer.from("This is not a valid DOCX file");

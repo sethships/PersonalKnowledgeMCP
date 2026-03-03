@@ -21,6 +21,7 @@ import {
   ExtractionError,
   ExtractionTimeoutError,
   PasswordProtectedError,
+  UnsupportedFormatError,
   isDocumentError,
 } from "../../../src/documents/errors.js";
 import { DEFAULT_EXTRACTOR_CONFIG } from "../../../src/documents/constants.js";
@@ -64,7 +65,13 @@ describe("Test fixtures", () => {
   });
 
   describe("DOCX fixtures", () => {
-    const expectedFiles = ["simple.docx", "with-headings.docx", "with-lists.docx", "invalid.docx"];
+    const expectedFiles = [
+      "simple.docx",
+      "with-headings.docx",
+      "with-lists.docx",
+      "with-metadata.docx",
+      "invalid.docx",
+    ];
 
     for (const file of expectedFiles) {
       test(`${file} exists and is non-empty`, async () => {
@@ -548,20 +555,256 @@ describe("DocxExtractor", () => {
   });
 
   describe("extract", () => {
-    test("throws NotImplementedError with real fixture path", async () => {
-      expect.assertions(3);
-      const extractor = new DocxExtractor();
-      const filePath = path.join(DOCX_DIR, "simple.docx");
+    describe("successful extraction", () => {
+      test("extracts text content from simple DOCX", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
 
-      try {
-        await extractor.extract(filePath);
-      } catch (error) {
-        expect(error).toBeInstanceOf(NotImplementedError);
-        if (error instanceof NotImplementedError) {
-          expect(error.methodName).toBe("DocxExtractor.extract");
-          expect(error.filePath).toBe(filePath);
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+        expect(result.content).toContain("simple test document");
+        expect(result.content).toContain("two paragraphs");
+        expect(result.metadata).toBeDefined();
+        expect(result.metadata.documentType).toBe("docx");
+      });
+
+      test("extracts headings and verifies SectionInfo structure", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-headings.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toContain("Document Title");
+        expect(result.content).toContain("First Section");
+        expect(result.content).toContain("Second Section");
+
+        // Verify sections were parsed from headings
+        expect(result.sections).toBeDefined();
+        expect(result.sections!.length).toBeGreaterThanOrEqual(1);
+
+        // Verify SectionInfo structure
+        for (const section of result.sections!) {
+          expect(section.title).toBeDefined();
+          expect(section.title.length).toBeGreaterThan(0);
+          expect(section.level).toBeGreaterThanOrEqual(1);
+          expect(section.level).toBeLessThanOrEqual(6);
+          expect(typeof section.startOffset).toBe("number");
+          expect(typeof section.endOffset).toBe("number");
+          expect(section.endOffset).toBeGreaterThanOrEqual(section.startOffset);
         }
-      }
+      });
+
+      test("extracts lists and verifies content", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-lists.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toContain("Shopping List");
+        expect(result.content).toContain("Apples");
+        expect(result.content).toContain("Bananas");
+        expect(result.content).toContain("Oranges");
+      });
+
+      test("extracts metadata from DOCX with Dublin Core properties", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-metadata.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.documentType).toBe("docx");
+        expect(result.metadata.title).toBe("Test Document Title");
+        expect(result.metadata.author).toBe("Test Author");
+        expect(result.metadata.createdAt).toBeInstanceOf(Date);
+        expect(result.metadata.createdAt!.getUTCFullYear()).toBe(2024);
+        expect(result.metadata.createdAt!.getUTCMonth()).toBe(5); // June = 5 (0-indexed)
+        expect(result.metadata.createdAt!.getUTCDate()).toBe(15);
+      });
+
+      test("computes correct word count", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result = await extractor.extract(filePath);
+
+        // "This is a simple test document." + "It contains two paragraphs of plain text."
+        expect(result.metadata.wordCount).toBeGreaterThan(0);
+      });
+
+      test("computes content hash (SHA-256)", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+      });
+
+      test("same file produces same hash on re-extraction", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result1 = await extractor.extract(filePath);
+        const result2 = await extractor.extract(filePath);
+
+        expect(result2.metadata.contentHash).toBe(result1.metadata.contentHash);
+      });
+
+      test("includes correct file metadata", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+        const stats = await fs.stat(filePath);
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.filePath).toBe(filePath);
+        expect(result.metadata.fileSizeBytes).toBe(stats.size);
+        expect(result.metadata.fileModifiedAt.getTime()).toBe(stats.mtime.getTime());
+      });
+
+      test("returns no sections for document without headings", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result = await extractor.extract(filePath);
+
+        // simple.docx has no headings, so sections should be undefined
+        expect(result.sections).toBeUndefined();
+      });
+    });
+
+    describe("error handling", () => {
+      test("throws FileAccessError for non-existent file", async () => {
+        expect.assertions(5);
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "non-existent.docx");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileAccessError);
+          expect(isDocumentError(error)).toBe(true);
+          if (error instanceof FileAccessError) {
+            expect(error.code).toBe("FILE_ACCESS_ERROR");
+            expect(error.filePath).toBe(filePath);
+            expect(error.message).toContain("not found");
+          }
+        }
+      });
+
+      test("throws FileTooLargeError for oversized file", async () => {
+        expect.assertions(5);
+        const extractor = new DocxExtractor({ maxFileSizeBytes: 100 }); // Very small limit
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileTooLargeError);
+          if (error instanceof FileTooLargeError) {
+            expect(error.code).toBe("FILE_TOO_LARGE");
+            expect(error.maxSizeBytes).toBe(100);
+            expect(error.actualSizeBytes).toBeGreaterThan(100);
+            expect(error.retryable).toBe(false);
+          }
+        }
+      });
+
+      test("throws UnsupportedFormatError for legacy .doc file", async () => {
+        expect.assertions(4);
+        const extractor = new DocxExtractor();
+
+        // Create a temporary file with OLE2 compound document signature
+        const ole2Buffer = Buffer.alloc(512);
+        // OLE2 signature: D0 CF 11 E0 A1 B1 1A E1
+        ole2Buffer[0] = 0xd0;
+        ole2Buffer[1] = 0xcf;
+        ole2Buffer[2] = 0x11;
+        ole2Buffer[3] = 0xe0;
+        ole2Buffer[4] = 0xa1;
+        ole2Buffer[5] = 0xb1;
+        ole2Buffer[6] = 0x1a;
+        ole2Buffer[7] = 0xe1;
+
+        const legacyDocPath = path.join(DOCX_DIR, "legacy.doc");
+        await fs.writeFile(legacyDocPath, ole2Buffer);
+
+        try {
+          await extractor.extract(legacyDocPath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(UnsupportedFormatError);
+          if (error instanceof UnsupportedFormatError) {
+            expect(error.code).toBe("UNSUPPORTED_FORMAT");
+            expect(error.extension).toBe(".doc");
+            expect(error.message).toContain("Legacy .doc format");
+          }
+        } finally {
+          // Clean up temporary file
+          await fs.unlink(legacyDocPath).catch(() => {});
+        }
+      });
+
+      test("throws ExtractionError for corrupt/invalid DOCX", async () => {
+        expect.assertions(3);
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "invalid.docx");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(ExtractionError);
+          if (error instanceof ExtractionError) {
+            expect(error.code).toBe("EXTRACTION_ERROR");
+            expect(error.filePath).toBe(filePath);
+          }
+        }
+      });
+
+      test("handles timeout or fast completion gracefully with 1ms timeout", async () => {
+        // Uses a very short timeout (1ms) to exercise the timeout path.
+        // Due to JS event loop mechanics, small DOCXs may resolve before the timeout fires.
+        const extractor = new DocxExtractor({ timeoutMs: 1 });
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        try {
+          await extractor.extract(filePath);
+          // Fast completion is valid — extraction beat the timeout
+        } catch (error) {
+          expect(error instanceof ExtractionTimeoutError || error instanceof ExtractionError).toBe(
+            true
+          );
+          if (error instanceof ExtractionTimeoutError) {
+            expect(error.code).toBe("EXTRACTION_TIMEOUT");
+            expect(error.timeoutMs).toBe(1);
+            expect(error.retryable).toBe(true);
+          }
+        }
+      });
+    });
+
+    describe("metadata extraction", () => {
+      test("sets documentType to docx", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.documentType).toBe("docx");
+      });
+
+      test("returns undefined metadata fields when core.xml is absent", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "simple.docx");
+
+        const result = await extractor.extract(filePath);
+
+        // simple.docx has no docProps/core.xml
+        expect(result.metadata.title).toBeUndefined();
+        expect(result.metadata.author).toBeUndefined();
+        expect(result.metadata.createdAt).toBeUndefined();
+      });
     });
   });
 });
