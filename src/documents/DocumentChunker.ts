@@ -8,13 +8,14 @@
  * @module documents/DocumentChunker
  */
 
-import crypto from "crypto";
+import * as path from "node:path";
 import type pino from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import { FileChunker } from "../ingestion/file-chunker.js";
 import type { FileInfo, FileChunk } from "../ingestion/types.js";
 import { ChunkingError, ValidationError } from "../ingestion/errors.js";
 import { detectLanguage } from "../ingestion/language-detector.js";
+import { estimateTokens, computeContentHash, createChunkId } from "../ingestion/chunk-utils.js";
 import type {
   ExtractionResult,
   SectionInfo,
@@ -22,40 +23,6 @@ import type {
   DocumentChunkMetadata,
   DocumentChunkerConfig,
 } from "./types.js";
-
-/**
- * Estimate token count using the same 4:1 character-to-token heuristic
- * as FileChunker for consistency.
- *
- * @param text - Text to estimate tokens for
- * @returns Estimated token count
- */
-function estimateTokens(text: string): number {
-  const charCount = [...text].length;
-  return Math.ceil(charCount / 4);
-}
-
-/**
- * Compute SHA-256 hash of content for deduplication.
- *
- * @param content - Content to hash
- * @returns Hex-encoded SHA-256 hash
- */
-function computeContentHash(content: string): string {
-  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-/**
- * Create unique chunk identifier.
- *
- * @param source - Repository or source name
- * @param filePath - File path
- * @param chunkIndex - Zero-based chunk index
- * @returns Unique chunk ID
- */
-function createChunkId(source: string, filePath: string, chunkIndex: number): string {
-  return `${source}:${filePath}:${chunkIndex}`;
-}
 
 /**
  * Internal representation of a paragraph block with position tracking.
@@ -69,6 +36,20 @@ interface ParagraphBlock {
   endLine: number;
   /** Character offset in the original content */
   charOffset: number;
+}
+
+/**
+ * Position data associated with each chunk for metadata enrichment.
+ *
+ * Provides a type-safe side channel for passing page numbers and
+ * character offsets from chunking strategies to the conversion step,
+ * avoiding ad-hoc properties on FileChunk objects.
+ */
+interface ChunkPositionData {
+  /** Page number (1-based) for page-boundary chunks */
+  pageNumber?: number;
+  /** Character offset in the full document content */
+  charOffset?: number;
 }
 
 /**
@@ -105,6 +86,9 @@ export class DocumentChunker extends FileChunker {
   /**
    * Create a new DocumentChunker instance.
    *
+   * Configuration priority: defaults -> constructor params -> environment variables.
+   * The CHUNK_MAX_TOKENS env var is respected for consistency with FileChunker.
+   *
    * @param config - Document chunker configuration
    */
   constructor(config?: DocumentChunkerConfig) {
@@ -114,7 +98,13 @@ export class DocumentChunker extends FileChunker {
     });
 
     this.docLogger = getComponentLogger("documents:chunker");
-    this.maxTokens = config?.maxChunkTokens ?? 500;
+
+    // Apply CHUNK_MAX_TOKENS env var override, matching FileChunker behavior
+    const envMaxTokens = process.env["CHUNK_MAX_TOKENS"];
+    const parsedEnv = envMaxTokens ? parseInt(envMaxTokens, 10) : NaN;
+    this.maxTokens =
+      !isNaN(parsedEnv) && parsedEnv > 0 ? parsedEnv : (config?.maxChunkTokens ?? 500);
+
     this.respectParagraphs = config?.respectParagraphs ?? true;
     this.includeSectionContext = config?.includeSectionContext ?? true;
     this.respectPageBoundaries = config?.respectPageBoundaries ?? true;
@@ -142,6 +132,7 @@ export class DocumentChunker extends FileChunker {
    * @param filePath - Relative file path for the document
    * @param source - Repository or source name
    * @returns Array of document chunks ready for embedding
+   * @throws {ValidationError} If source or filePath is invalid
    * @throws {ChunkingError} If chunking fails
    */
   chunkDocument(
@@ -157,6 +148,11 @@ export class DocumentChunker extends FileChunker {
         `Source name cannot be empty or contain ':' character, got: "${source}"`,
         "source"
       );
+    }
+
+    // Validate file path
+    if (!filePath || filePath.trim().length === 0) {
+      throw new ValidationError("File path cannot be empty", "filePath");
     }
 
     try {
@@ -178,6 +174,7 @@ export class DocumentChunker extends FileChunker {
       }
 
       let fileChunks: FileChunk[];
+      let positions: ChunkPositionData[] | undefined;
 
       // Strategy 1: Page-boundary chunking for multi-page documents
       if (
@@ -185,16 +182,20 @@ export class DocumentChunker extends FileChunker {
         extractionResult.pages &&
         extractionResult.pages.length > 0
       ) {
-        fileChunks = this.chunkByPages(extractionResult, filePath, source);
+        const result = this.chunkByPages(extractionResult, filePath, source);
+        fileChunks = result.chunks;
+        positions = result.positions;
       }
       // Strategy 2: Paragraph-boundary chunking
       else if (this.respectParagraphs) {
-        fileChunks = this.chunkByParagraphs(
+        const result = this.chunkByParagraphs(
           extractionResult.content,
           filePath,
           source,
           extractionResult
         );
+        fileChunks = result.chunks;
+        positions = result.positions;
       }
       // Strategy 3: Fallback to line-level chunking
       else {
@@ -207,7 +208,8 @@ export class DocumentChunker extends FileChunker {
         fileChunks,
         extractionResult,
         filePath,
-        source
+        source,
+        positions
       );
 
       const duration = Date.now() - startTime;
@@ -237,7 +239,7 @@ export class DocumentChunker extends FileChunker {
         "Document chunking failed"
       );
 
-      if (error instanceof ChunkingError) {
+      if (error instanceof ChunkingError || error instanceof ValidationError) {
         throw error;
       }
 
@@ -256,49 +258,57 @@ export class DocumentChunker extends FileChunker {
    *
    * Each page is chunked independently using FileChunker, with chunk
    * indices adjusted to form a continuous sequence across all pages.
+   * Page numbers and character offsets are tracked via a parallel
+   * positions array for type-safe metadata enrichment.
    *
    * @param extractionResult - Extraction result with pages
    * @param filePath - File path
    * @param source - Source name
-   * @returns Combined FileChunks from all pages with page metadata
+   * @returns Chunks and their position data
    */
   private chunkByPages(
     extractionResult: ExtractionResult,
     filePath: string,
     source: string
-  ): FileChunk[] {
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
     const pages = extractionResult.pages!;
     const allChunks: FileChunk[] = [];
+    const positions: ChunkPositionData[] = [];
     let globalChunkIndex = 0;
+
+    // Find each page's position in the full document for section heading lookup
+    const fullContent = extractionResult.content.replace(/\r\n?/g, "\n");
+    let pageSearchOffset = 0;
 
     for (const page of pages) {
       if (!page.content || page.content.trim().length === 0) {
         continue;
       }
 
+      // Find this page's position in the full document
+      const normalizedPageContent = page.content.replace(/\r\n?/g, "\n").trim();
+      const pageStart = fullContent.indexOf(normalizedPageContent, pageSearchOffset);
+      const pageOffset = pageStart !== -1 ? pageStart : pageSearchOffset;
+
       const fileInfo = this.createDocumentFileInfo(extractionResult, filePath);
       const pageChunks = this.chunkFile(page.content, fileInfo, source);
 
-      // Adjust chunk indices and add page number to metadata
       for (const chunk of pageChunks) {
         allChunks.push({
           ...chunk,
           id: createChunkId(source, filePath, globalChunkIndex),
           chunkIndex: globalChunkIndex,
-          metadata: {
-            ...chunk.metadata,
-            // Store page number as a custom property via type assertion
-            // This will be picked up during DocumentChunk conversion
-          },
         });
-        // Tag the chunk with page number for later conversion
-        (chunk as FileChunk & { _pageNumber?: number })._pageNumber = page.pageNumber;
-        allChunks[allChunks.length - 1] = {
-          ...allChunks[allChunks.length - 1]!,
-        };
-        (allChunks[allChunks.length - 1] as FileChunk & { _pageNumber?: number })._pageNumber =
-          page.pageNumber;
+        positions.push({
+          pageNumber: page.pageNumber,
+          charOffset: pageOffset,
+        });
         globalChunkIndex++;
+      }
+
+      // Advance search offset past this page
+      if (pageStart !== -1) {
+        pageSearchOffset = pageStart + normalizedPageContent.length;
       }
     }
 
@@ -311,7 +321,7 @@ export class DocumentChunker extends FileChunker {
       };
     }
 
-    return allChunks;
+    return { chunks: allChunks, positions };
   }
 
   /**
@@ -320,27 +330,29 @@ export class DocumentChunker extends FileChunker {
    * Splits content at double-newline boundaries and groups paragraphs
    * into chunks respecting the token limit. Falls back to line-level
    * splitting for individual paragraphs that exceed the token limit.
+   * Character offsets are tracked for section heading lookup.
    *
    * @param content - Full document content
    * @param filePath - File path
    * @param source - Source name
    * @param extractionResult - Full extraction result for fallback FileInfo
-   * @returns FileChunks grouped by paragraph boundaries
+   * @returns Chunks and their position data
    */
   private chunkByParagraphs(
     content: string,
     filePath: string,
     source: string,
     extractionResult: ExtractionResult
-  ): FileChunk[] {
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
     const normalizedContent = content.replace(/\r\n?/g, "\n");
     const paragraphs = this.splitIntoParagraphs(normalizedContent);
 
     if (paragraphs.length === 0) {
-      return [];
+      return { chunks: [], positions: [] };
     }
 
     const allChunks: FileChunk[] = [];
+    const positions: ChunkPositionData[] = [];
     let currentParagraphs: ParagraphBlock[] = [];
     let currentTokens = 0;
     const fileInfo = this.createDocumentFileInfo(extractionResult, filePath);
@@ -357,6 +369,7 @@ export class DocumentChunker extends FileChunker {
             startLine: paragraph.startLine + chunk.startLine - 1,
             endLine: paragraph.startLine + chunk.endLine - 1,
           });
+          positions.push({ charOffset: paragraph.charOffset });
         }
         continue;
       }
@@ -366,6 +379,7 @@ export class DocumentChunker extends FileChunker {
         allChunks.push(
           this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo)
         );
+        positions.push({ charOffset: currentParagraphs[0]!.charOffset });
         currentParagraphs = [];
         currentTokens = 0;
       }
@@ -377,6 +391,7 @@ export class DocumentChunker extends FileChunker {
     // Flush remaining paragraphs
     if (currentParagraphs.length > 0) {
       allChunks.push(this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo));
+      positions.push({ charOffset: currentParagraphs[0]!.charOffset });
     }
 
     // Fix chunk indices and totalChunks
@@ -390,13 +405,14 @@ export class DocumentChunker extends FileChunker {
       };
     }
 
-    return allChunks;
+    return { chunks: allChunks, positions };
   }
 
   /**
    * Split content into paragraph blocks, tracking line numbers and offsets.
    *
-   * Paragraphs are delimited by one or more blank lines (double newlines).
+   * Uses a delimiter-capturing split to accurately track line numbers
+   * even when paragraphs are separated by 3+ consecutive newlines.
    * Empty paragraphs (whitespace-only) are skipped.
    *
    * @param content - Normalized content (LF line endings)
@@ -404,18 +420,31 @@ export class DocumentChunker extends FileChunker {
    */
   private splitIntoParagraphs(content: string): ParagraphBlock[] {
     const paragraphs: ParagraphBlock[] = [];
-    const rawParagraphs = content.split(/\n\n+/);
+
+    // Split with delimiter capture: parts alternate [content, delimiter, content, ...]
+    const parts = content.split(/(\n\n+)/);
 
     let charOffset = 0;
     let lineNumber = 1;
 
-    for (const rawParagraph of rawParagraphs) {
-      const trimmed = rawParagraph.trim();
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+
+      if (i % 2 === 1) {
+        // Delimiter part - count actual newlines for accurate line tracking
+        const newlineCount = part.split("\n").length - 1;
+        lineNumber += newlineCount;
+        charOffset += part.length;
+        continue;
+      }
+
+      // Content part
+      const trimmed = part.trim();
       if (trimmed.length === 0) {
-        // Track the blank lines we're skipping
-        const blankLines = rawParagraph.split("\n").length;
-        charOffset += rawParagraph.length + 2; // +2 for the \n\n delimiter
-        lineNumber += blankLines;
+        // Whitespace-only content - count any internal newlines
+        const newlineCount = part.split("\n").length - 1;
+        lineNumber += newlineCount;
+        charOffset += part.length;
         continue;
       }
 
@@ -430,10 +459,10 @@ export class DocumentChunker extends FileChunker {
         charOffset,
       });
 
-      // Advance past this paragraph + delimiter
-      const rawLines = rawParagraph.split("\n");
-      lineNumber += rawLines.length + 1; // +1 for one of the delimiter newlines
-      charOffset += rawParagraph.length + 2;
+      // Advance past this content part's lines
+      const partNewlineCount = part.split("\n").length - 1;
+      lineNumber += partNewlineCount;
+      charOffset += part.length;
     }
 
     return paragraphs;
@@ -481,23 +510,27 @@ export class DocumentChunker extends FileChunker {
    * Convert FileChunks to DocumentChunks with document-specific metadata.
    *
    * Adds document type, title, author, page numbers, and section headings.
+   * Uses the optional positions array for type-safe page number and
+   * character offset lookup instead of ad-hoc properties.
    *
    * @param fileChunks - Source FileChunks
    * @param extractionResult - Extraction result for document metadata
    * @param filePath - File path
    * @param source - Source name
+   * @param positions - Optional parallel array of position data per chunk
    * @returns DocumentChunks with enriched metadata
    */
   private convertToDocumentChunks(
     fileChunks: FileChunk[],
     extractionResult: ExtractionResult,
     filePath: string,
-    source: string
+    source: string,
+    positions?: ChunkPositionData[]
   ): DocumentChunk[] {
     const normalizedContent = extractionResult.content.replace(/\r\n?/g, "\n");
 
     return fileChunks.map((chunk, index) => {
-      const pageNumber = (chunk as FileChunk & { _pageNumber?: number })._pageNumber;
+      const posData = positions?.[index];
 
       // Find section heading context
       let sectionHeading: string | undefined;
@@ -505,7 +538,8 @@ export class DocumentChunker extends FileChunker {
         sectionHeading = this.findSectionHeading(
           extractionResult.sections,
           chunk.content,
-          normalizedContent
+          normalizedContent,
+          posData?.charOffset
         );
       }
 
@@ -516,7 +550,7 @@ export class DocumentChunker extends FileChunker {
         contentHash: chunk.metadata.contentHash,
         fileModifiedAt: chunk.metadata.fileModifiedAt,
         documentType: extractionResult.metadata.documentType,
-        pageNumber,
+        pageNumber: posData?.pageNumber,
         sectionHeading,
         documentTitle: extractionResult.metadata.title,
         documentAuthor: extractionResult.metadata.author,
@@ -539,25 +573,32 @@ export class DocumentChunker extends FileChunker {
   /**
    * Find the nearest preceding section heading for a chunk's content.
    *
-   * Searches for the chunk content's position in the full document,
-   * then finds the section whose start offset is closest to (but not after)
-   * that position.
+   * Prefers using the provided character offset for accurate lookup.
+   * Falls back to searching for the chunk content in the full document
+   * when no offset is available (e.g., line-level fallback chunks).
    *
    * @param sections - Document sections with offsets
    * @param chunkContent - Content of the chunk to find heading for
    * @param fullContent - Full normalized document content
+   * @param charOffset - Optional character offset for direct lookup
    * @returns Section heading title, or undefined if none found
    */
   private findSectionHeading(
     sections: SectionInfo[],
     chunkContent: string,
-    fullContent: string
+    fullContent: string,
+    charOffset?: number
   ): string | undefined {
     if (sections.length === 0) {
       return undefined;
     }
 
-    // Find approximate position of chunk content in full document
+    // Use character offset when available (more reliable than content search)
+    if (charOffset !== undefined) {
+      return this.findNearestSection(sections, charOffset);
+    }
+
+    // Fall back to content search for line-level fallback chunks
     const chunkStart = fullContent.indexOf(
       chunkContent.substring(0, Math.min(100, chunkContent.length))
     );
@@ -603,7 +644,7 @@ export class DocumentChunker extends FileChunker {
    * @returns FileInfo compatible with FileChunker.chunkFile()
    */
   private createDocumentFileInfo(extractionResult: ExtractionResult, filePath: string): FileInfo {
-    const ext = filePath.includes(".") ? `.${filePath.split(".").pop()!.toLowerCase()}` : "";
+    const ext = path.extname(filePath).toLowerCase();
 
     return {
       relativePath: filePath,

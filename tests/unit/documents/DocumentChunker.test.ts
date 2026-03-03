@@ -603,6 +603,59 @@ describe("DocumentChunker", () => {
 
       expect(chunks.length).toBeGreaterThanOrEqual(1);
     });
+
+    test("tracks line numbers correctly with multi-newline delimiters", () => {
+      // Use token limit of 8 so each ~5-token paragraph gets its own chunk
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // 4 newlines between paragraphs: lines 1, 2(blank), 3(blank), 4(blank), 5
+      const content = "First paragraph.\n\n\n\nSecond paragraph.";
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(2);
+      // First paragraph at line 1
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(1);
+      // Second paragraph at line 5 (after 4 newlines)
+      expect(chunks[1]!.startLine).toBe(5);
+      expect(chunks[1]!.endLine).toBe(5);
+    });
+
+    test("tracks line numbers correctly with standard double-newline delimiters", () => {
+      // Use token limit of 8 so each ~5-token paragraph gets its own chunk
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Standard \n\n between paragraphs: lines 1, 2(blank), 3
+      const content = "First paragraph.\n\nSecond paragraph.";
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(2);
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(1);
+      // Second paragraph at line 3 (after 2 newlines)
+      expect(chunks[1]!.startLine).toBe(3);
+      expect(chunks[1]!.endLine).toBe(3);
+    });
+
+    test("throws on empty filePath", () => {
+      const chunker = createChunker();
+      const result = createMockExtractionResult();
+
+      expect(() => chunker.chunkDocument(result, "", TEST_SOURCE)).toThrow();
+      expect(() => chunker.chunkDocument(result, "   ", TEST_SOURCE)).toThrow();
+    });
   });
 
   describe("FileChunker inheritance", () => {
