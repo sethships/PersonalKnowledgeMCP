@@ -122,16 +122,58 @@ function formatPdfDate(date: Date): string {
 }
 
 /**
+ * Create a minimal PDF that simulates a password-protected/encrypted PDF.
+ *
+ * This creates a valid PDF structure with an Encrypt dictionary entry,
+ * which causes pdf-parse to throw an error containing "encrypted" keyword.
+ *
+ * @returns PDF file as a Buffer
+ */
+export function createEncryptedPdf(): Buffer {
+  // Create a PDF with /Encrypt entry in the trailer
+  // This makes pdf-parse throw an error about encryption
+  const header = "%PDF-1.4\n%\xFF\xFF\xFF\xFF\n";
+
+  const obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+  const obj2 = "2 0 obj\n<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>\nendobj\n";
+  const obj3 =
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>\nendobj\n";
+  const contentStream = "BT /F1 12 Tf 72 720 Td (Encrypted content) Tj ET";
+  const obj4 = `4 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream\nendobj\n`;
+  // Encrypt dictionary that triggers pdf-parse encryption detection
+  const obj5 =
+    "5 0 obj\n<< /Filter /Standard /V 2 /R 3 /O (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) /U (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) /P -3904 /Length 128 >>\nendobj\n";
+
+  const body = obj1 + obj2 + obj3 + obj4 + obj5;
+  const xrefOffset = header.length + body.length;
+
+  let xref = "xref\n0 6\n0000000000 65535 f \n";
+  let offset = header.length;
+  for (const obj of [obj1, obj2, obj3, obj4, obj5]) {
+    xref += `${offset.toString().padStart(10, "0")} 00000 n \n`;
+    offset += obj.length;
+  }
+
+  // Trailer with /Encrypt reference — this is the key that triggers encryption detection
+  const trailer = `trailer\n<< /Size 6 /Root 1 0 R /Encrypt 5 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(header + body + xref + trailer, "binary");
+}
+
+/**
  * Create test PDF files in the fixtures directory.
+ *
+ * Writes PDF files into a `pdf/` subdirectory under the given fixtures dir.
  */
 export async function createTestPdfFiles(fixturesDir: string): Promise<void> {
-  await fs.mkdir(fixturesDir, { recursive: true });
+  const pdfDir = path.join(fixturesDir, "pdf");
+  await fs.mkdir(pdfDir, { recursive: true });
 
   // Simple 1-page PDF
   const simplePdf = createMinimalPdf({
     pages: ["This is a simple test PDF document with one page of content."],
   });
-  await fs.writeFile(path.join(fixturesDir, "simple.pdf"), simplePdf);
+  await fs.writeFile(path.join(pdfDir, "simple.pdf"), simplePdf);
 
   // Multi-page PDF
   const multiPagePdf = createMinimalPdf({
@@ -141,7 +183,7 @@ export async function createTestPdfFiles(fixturesDir: string): Promise<void> {
       "Page 3: Conclusion and summary.",
     ],
   });
-  await fs.writeFile(path.join(fixturesDir, "multi-page.pdf"), multiPagePdf);
+  await fs.writeFile(path.join(pdfDir, "multi-page.pdf"), multiPagePdf);
 
   // PDF with metadata
   const withMetadataPdf = createMinimalPdf({
@@ -150,11 +192,15 @@ export async function createTestPdfFiles(fixturesDir: string): Promise<void> {
     author: "Test Author Name",
     creationDate: new Date(2024, 0, 15, 10, 30, 0), // Jan 15, 2024 10:30:00
   });
-  await fs.writeFile(path.join(fixturesDir, "with-metadata.pdf"), withMetadataPdf);
+  await fs.writeFile(path.join(pdfDir, "with-metadata.pdf"), withMetadataPdf);
 
   // Create corrupt PDF (just random bytes)
   const corruptPdf = Buffer.from("This is not a valid PDF file content");
-  await fs.writeFile(path.join(fixturesDir, "corrupt.pdf"), corruptPdf);
+  await fs.writeFile(path.join(pdfDir, "corrupt.pdf"), corruptPdf);
+
+  // Password-protected / encrypted PDF
+  const passwordPdf = createEncryptedPdf();
+  await fs.writeFile(path.join(pdfDir, "password.pdf"), passwordPdf);
 }
 
 /**
@@ -167,6 +213,6 @@ export function getFixturesDir(): string {
 // Run if executed directly
 if (require.main === module) {
   createTestPdfFiles(getFixturesDir())
-    .then(() => console.log("Test PDF files created successfully"))
+    .then(() => console.log("Test PDF files created successfully in pdf/ subdirectory"))
     .catch((err) => console.error("Failed to create test PDF files:", err));
 }
