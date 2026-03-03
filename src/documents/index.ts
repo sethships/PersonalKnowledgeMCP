@@ -53,6 +53,9 @@ export type {
   ExtractorConfig,
   MarkdownFrontmatter,
   MarkdownExtractionResult,
+  DocumentChunk,
+  DocumentChunkMetadata,
+  DocumentChunkerConfig,
 } from "./types.js";
 
 // Constants
@@ -94,6 +97,9 @@ export type {
   MarkdownParserConfig,
   ImageMetadataExtractorConfig,
 } from "./extractors/index.js";
+
+// Document chunker
+export { DocumentChunker } from "./DocumentChunker.js";
 
 // Type detector
 export { DocumentTypeDetector } from "./DocumentTypeDetector.js";

@@ -8,12 +8,12 @@
  * @module ingestion/file-chunker
  */
 
-import crypto from "crypto";
 import type pino from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { FileInfo, FileChunk, ChunkerConfig } from "./types.js";
 import { ValidationError, ChunkingError } from "./errors.js";
 import { detectLanguage } from "./language-detector.js";
+import { estimateTokens, computeContentHash, createChunkId } from "./chunk-utils.js";
 
 /**
  * Internal representation of chunk boundaries within a file.
@@ -25,51 +25,6 @@ interface ChunkBoundary {
   startLine: number;
   /** Ending line number (1-based, inclusive) */
   endLine: number;
-}
-
-/**
- * Estimate token count for text using character-based heuristic.
- *
- * Uses conservative 4:1 character-to-token ratio, which slightly
- * overestimates to prevent embedding API limit violations.
- * This is adequate for Phase 1; can be replaced with tiktoken later.
- *
- * Note: Uses spread operator to count actual Unicode code points,
- * correctly handling surrogate pairs (emojis, some CJK characters).
- *
- * @param text - Text to estimate tokens for
- * @returns Estimated token count
- */
-function estimateTokens(text: string): number {
-  // Use spread operator to count actual Unicode code points
-  // This handles surrogate pairs (emojis, some CJK) correctly
-  const charCount = [...text].length;
-  return Math.ceil(charCount / 4);
-}
-
-/**
- * Compute SHA-256 hash of chunk content for deduplication.
- *
- * @param content - Chunk content to hash
- * @returns Hex-encoded SHA-256 hash
- */
-function computeContentHash(content: string): string {
-  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-/**
- * Create unique chunk identifier.
- *
- * Format: {repository}:{filePath}:{chunkIndex}
- *
- * @param repository - Repository name
- * @param filePath - Relative file path
- * @param chunkIndex - Zero-based chunk index
- * @returns Unique chunk ID
- * @example "my-api:src/auth/middleware.ts:0"
- */
-function createChunkId(repository: string, filePath: string, chunkIndex: number): string {
-  return `${repository}:${filePath}:${chunkIndex}`;
 }
 
 /**
