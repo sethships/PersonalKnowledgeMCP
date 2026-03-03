@@ -338,14 +338,27 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
   /**
    * Generate query embedding using appropriate provider
    *
-   * Uses the default embedding provider. In future, could support
-   * per-repository provider selection similar to SearchServiceImpl.
+   * Uses the first target repository's embedding provider if configured,
+   * otherwise falls back to the default provider. When searching across
+   * multiple folders with different embedding providers, only the first
+   * repository's provider is used, which may produce inconsistent
+   * similarity scores across folders with different providers.
    */
   private async getQueryEmbedding(
     queryText: string,
     targetRepos: RepositoryInfo[]
   ): Promise<number[]> {
     try {
+      // Warn if target repos use different embedding providers
+      const providers = new Set(targetRepos.map((r) => r.embeddingProvider ?? "default"));
+      if (providers.size > 1) {
+        this.logger.warn(
+          { providers: [...providers] },
+          "Multiple embedding providers detected across target folders. " +
+            "Results may have inconsistent similarity scores."
+        );
+      }
+
       // Use the repository's embedding provider if available, otherwise default
       const repo = targetRepos[0];
       const provider = this.getProviderForRepository(repo);
@@ -432,13 +445,15 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
 
       return {
         content: result.content,
-        documentPath: (meta["file_path"] as string) ?? "unknown",
-        documentTitle: meta["document_title"] as string | undefined,
-        documentType: (meta["document_type"] as string) ?? "unknown",
-        pageNumber: meta["page_number"] as number | undefined,
-        sectionHeading: meta["section_heading"] as string | undefined,
+        documentPath: typeof meta["file_path"] === "string" ? meta["file_path"] : "unknown",
+        documentTitle:
+          typeof meta["document_title"] === "string" ? meta["document_title"] : undefined,
+        documentType: typeof meta["document_type"] === "string" ? meta["document_type"] : "unknown",
+        pageNumber: typeof meta["page_number"] === "number" ? meta["page_number"] : undefined,
+        sectionHeading:
+          typeof meta["section_heading"] === "string" ? meta["section_heading"] : undefined,
         similarity: result.similarity,
-        folder: (meta["repository"] as string) ?? "unknown",
+        folder: typeof meta["repository"] === "string" ? meta["repository"] : "unknown",
       };
     });
   }

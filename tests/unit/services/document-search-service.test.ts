@@ -37,6 +37,7 @@ import {
   SearchValidationError,
   NoRepositoriesAvailableError,
   SearchOperationError,
+  ProviderUnavailableError,
 } from "../../../src/services/errors.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
@@ -71,8 +72,29 @@ class MockEmbeddingProvider implements EmbeddingProvider {
 
 /** Mock EmbeddingProviderFactory */
 class MockEmbeddingProviderFactory {
+  /** Count of createProvider invocations for caching verification */
+  createProviderCallCount = 0;
+
+  /** When set, createProvider will throw this error */
+  private errorToThrow: Error | null = null;
+
   createProvider(_config: EmbeddingProviderConfig): EmbeddingProvider {
+    this.createProviderCallCount++;
+    if (this.errorToThrow) {
+      throw this.errorToThrow;
+    }
     return new MockEmbeddingProvider();
+  }
+
+  /** Configure factory to throw on next createProvider call */
+  setShouldThrow(error: Error): void {
+    this.errorToThrow = error;
+  }
+
+  /** Reset the factory to default behavior */
+  reset(): void {
+    this.createProviderCallCount = 0;
+    this.errorToThrow = null;
   }
 }
 
@@ -572,6 +594,64 @@ describe("DocumentSearchServiceImpl", () => {
 
       expect(mockStorage.lastQuery?.limit).toBe(20);
       expect(mockStorage.lastQuery?.threshold).toBe(0.8);
+    });
+  });
+
+  describe("embedding provider selection", () => {
+    it("should use factory to create provider when repo has custom embeddingProvider", async () => {
+      mockRepoService.setRepositories([
+        createMockRepo({
+          name: "custom-provider-folder",
+          embeddingProvider: "ollama",
+          embeddingModel: "nomic-embed-text",
+          embeddingDimensions: 768,
+        }),
+      ]);
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({ query: "test custom provider" });
+
+      // Factory should have been called once to create the custom provider
+      expect(mockFactory.createProviderCallCount).toBe(1);
+    });
+
+    it("should cache provider and not call factory again for same config", async () => {
+      mockRepoService.setRepositories([
+        createMockRepo({
+          name: "cached-provider-folder",
+          embeddingProvider: "ollama",
+          embeddingModel: "nomic-embed-text",
+          embeddingDimensions: 768,
+        }),
+      ]);
+      mockStorage.setMockResults([]);
+
+      // First search creates the provider
+      await service.searchDocuments({ query: "first search" });
+      expect(mockFactory.createProviderCallCount).toBe(1);
+
+      // Second search should use cached provider (factory not called again)
+      await service.searchDocuments({ query: "second search" });
+      expect(mockFactory.createProviderCallCount).toBe(1);
+    });
+
+    it("should propagate factory errors as ProviderUnavailableError", async () => {
+      mockRepoService.setRepositories([
+        createMockRepo({
+          name: "failing-provider-folder",
+          embeddingProvider: "unavailable-provider",
+          embeddingModel: "some-model",
+          embeddingDimensions: 512,
+        }),
+      ]);
+      mockStorage.setMockResults([]);
+
+      // Configure factory to throw
+      mockFactory.setShouldThrow(new Error("Provider not installed"));
+
+      await expect(service.searchDocuments({ query: "test failing provider" })).rejects.toThrow(
+        ProviderUnavailableError
+      );
     });
   });
 });

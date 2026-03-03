@@ -8,6 +8,7 @@
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
 import type { GraphService } from "../services/graph-service-types.js";
+import type { DocumentSearchService } from "../services/document-search-types.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -133,6 +134,9 @@ export interface MCPServerOptionalDeps {
 
   /** GraphService for graph-based dependency queries */
   graphService?: GraphService;
+
+  /** DocumentSearchService for document semantic search */
+  documentSearchService?: DocumentSearchService;
 }
 
 /**
