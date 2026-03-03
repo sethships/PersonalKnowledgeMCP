@@ -15,10 +15,7 @@ import type { GraphService } from "../../services/graph-service-types.js";
 import type { DocumentSearchService } from "../../services/document-search-types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
-import {
-  searchDocumentsToolDefinition,
-  createSearchDocumentsHandler,
-} from "./search-documents.js";
+import { searchDocumentsToolDefinition, createSearchDocumentsHandler } from "./search-documents.js";
 import {
   listIndexedRepositoriesToolDefinition,
   createListRepositoriesHandler,

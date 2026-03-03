@@ -406,10 +406,7 @@ describe("search_documents Tool", () => {
       });
 
       it("should handle SearchService errors", async () => {
-        mockService.setShouldFail(
-          true,
-          new SearchOperationError("Document search failed")
-        );
+        mockService.setShouldFail(true, new SearchOperationError("Document search failed"));
         const handler = createSearchDocumentsHandler(mockService);
 
         const result = await handler({
@@ -538,12 +535,7 @@ describe("search_documents Tool", () => {
           document_types: ["pdf", "docx", "markdown", "txt"],
         });
 
-        expect(mockService.lastQuery?.document_types).toEqual([
-          "pdf",
-          "docx",
-          "markdown",
-          "txt",
-        ]);
+        expect(mockService.lastQuery?.document_types).toEqual(["pdf", "docx", "markdown", "txt"]);
       });
 
       it("should accept 'all' document type", async () => {

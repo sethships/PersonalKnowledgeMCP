@@ -6,6 +6,11 @@
  * ChromaStorageClient and RepositoryMetadataService.
  */
 
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+// Note: await-thenable disable needed for `await expect(...).rejects.toThrow()` patterns
+// which return Promises but ESLint's type inference doesn't recognize this properly
+/* eslint-disable @typescript-eslint/await-thenable */
+
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type {
   EmbeddingProvider,
@@ -26,10 +31,7 @@ import type {
   CollectionEmbeddingMetadata,
   ParsedEmbeddingMetadata,
 } from "../../../src/storage/types.js";
-import type {
-  RepositoryMetadataService,
-  RepositoryInfo,
-} from "../../../src/repositories/types.js";
+import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/repositories/types.js";
 import { DocumentSearchServiceImpl } from "../../../src/services/document-search-service.js";
 import {
   SearchValidationError,
@@ -142,9 +144,7 @@ class MockChromaStorageClient implements ChromaStorageClient {
   ): Promise<number> {
     return 0;
   }
-  async getCollectionEmbeddingMetadata(
-    _name: string
-  ): Promise<ParsedEmbeddingMetadata | null> {
+  async getCollectionEmbeddingMetadata(_name: string): Promise<ParsedEmbeddingMetadata | null> {
     return null;
   }
 }
@@ -247,34 +247,32 @@ describe("DocumentSearchServiceImpl", () => {
 
   describe("query validation", () => {
     it("should reject empty query", async () => {
-      await expect(
-        service.searchDocuments({ query: "" })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: "" })).rejects.toThrow(SearchValidationError);
     });
 
     it("should reject query exceeding 1000 characters", async () => {
       const longQuery = "a".repeat(1001);
-      await expect(
-        service.searchDocuments({ query: longQuery })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: longQuery })).rejects.toThrow(
+        SearchValidationError
+      );
     });
 
     it("should reject invalid limit", async () => {
-      await expect(
-        service.searchDocuments({ query: "test", limit: 100 })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: "test", limit: 100 })).rejects.toThrow(
+        SearchValidationError
+      );
     });
 
     it("should reject negative limit", async () => {
-      await expect(
-        service.searchDocuments({ query: "test", limit: -1 })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: "test", limit: -1 })).rejects.toThrow(
+        SearchValidationError
+      );
     });
 
     it("should reject threshold out of range", async () => {
-      await expect(
-        service.searchDocuments({ query: "test", threshold: 1.5 })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: "test", threshold: 1.5 })).rejects.toThrow(
+        SearchValidationError
+      );
     });
 
     it("should accept valid query with defaults", async () => {
@@ -294,10 +292,7 @@ describe("DocumentSearchServiceImpl", () => {
 
       await service.searchDocuments({ query: "test" });
 
-      expect(mockStorage.lastQuery?.collections).toEqual([
-        "repo_folder1",
-        "repo_folder2",
-      ]);
+      expect(mockStorage.lastQuery?.collections).toEqual(["repo_folder1", "repo_folder2"]);
     });
 
     it("should filter to specific folder when specified", async () => {
@@ -331,19 +326,17 @@ describe("DocumentSearchServiceImpl", () => {
     it("should throw NoRepositoriesAvailableError when no repos available", async () => {
       mockRepoService.setRepositories([]);
 
-      await expect(
-        service.searchDocuments({ query: "test" })
-      ).rejects.toThrow(NoRepositoriesAvailableError);
+      await expect(service.searchDocuments({ query: "test" })).rejects.toThrow(
+        NoRepositoriesAvailableError
+      );
     });
 
     it("should throw NoRepositoriesAvailableError when no repos are ready", async () => {
-      mockRepoService.setRepositories([
-        createMockRepo({ name: "indexing", status: "indexing" }),
-      ]);
+      mockRepoService.setRepositories([createMockRepo({ name: "indexing", status: "indexing" })]);
 
-      await expect(
-        service.searchDocuments({ query: "test" })
-      ).rejects.toThrow(NoRepositoriesAvailableError);
+      await expect(service.searchDocuments({ query: "test" })).rejects.toThrow(
+        NoRepositoriesAvailableError
+      );
     });
 
     it("should include searched folders in metadata", async () => {
@@ -520,10 +513,7 @@ describe("DocumentSearchServiceImpl", () => {
     });
 
     it("should include total result count", async () => {
-      mockStorage.setMockResults([
-        createDocumentResult(),
-        createDocumentResult({ id: "id2" }),
-      ]);
+      mockStorage.setMockResults([createDocumentResult(), createDocumentResult({ id: "id2" })]);
 
       const response = await service.searchDocuments({ query: "test" });
 
@@ -533,17 +523,15 @@ describe("DocumentSearchServiceImpl", () => {
 
   describe("error handling", () => {
     it("should propagate SearchValidationError", async () => {
-      await expect(
-        service.searchDocuments({ query: "" })
-      ).rejects.toThrow(SearchValidationError);
+      await expect(service.searchDocuments({ query: "" })).rejects.toThrow(SearchValidationError);
     });
 
     it("should propagate NoRepositoriesAvailableError", async () => {
       mockRepoService.setRepositories([]);
 
-      await expect(
-        service.searchDocuments({ query: "test" })
-      ).rejects.toThrow(NoRepositoriesAvailableError);
+      await expect(service.searchDocuments({ query: "test" })).rejects.toThrow(
+        NoRepositoriesAvailableError
+      );
     });
 
     it("should wrap unexpected errors in SearchOperationError", async () => {
@@ -553,9 +541,9 @@ describe("DocumentSearchServiceImpl", () => {
         throw new Error("Unexpected ChromaDB error");
       };
 
-      await expect(
-        service.searchDocuments({ query: "test" })
-      ).rejects.toThrow(SearchOperationError);
+      await expect(service.searchDocuments({ query: "test" })).rejects.toThrow(
+        SearchOperationError
+      );
 
       // Restore
       mockStorage.similaritySearch = originalSearch;
