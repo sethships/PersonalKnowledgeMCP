@@ -2,7 +2,8 @@
  * Image test fixture generator.
  *
  * Creates minimal valid image files for testing the ImageMetadataExtractor.
- * Each image is a 1x1 pixel in the respective format, generated from raw bytes.
+ * Each image is a 1x1 pixel in the respective format, generated from raw bytes
+ * or via sharp for formats that require complex encoding (TIFF, EXIF JPEG).
  *
  * The hand-crafted byte arrays have been validated manually (open correctly in
  * image viewers and pass format-specific magic byte checks). If a byte is wrong,
@@ -13,6 +14,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import sharp from "sharp";
 
 /**
  * Create a minimal 1x1 JPEG image.
@@ -104,30 +106,82 @@ function createMinimalGif(): Buffer {
 }
 
 /**
- * Create a minimal 1x1 WebP image (white pixel, lossy).
+ * Create a minimal 1x1 WebP image using sharp.
  *
- * @returns WebP file as a Buffer
+ * Hand-crafted VP8 bitstreams are fragile across sharp versions,
+ * so we use sharp to generate a valid WebP instead.
+ *
+ * @returns Promise resolving to WebP file as a Buffer
  */
-function createMinimalWebp(): Buffer {
-  // A minimal lossy WebP is complex to hand-craft, so we use the simplest
-  // valid VP8 bitstream for a 1x1 white pixel
-  const vp8Data = Buffer.from([
-    // VP8 bitstream header (frame tag for keyframe, 1x1)
-    0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x01, 0x40, 0x25, 0xa4, 0x00,
-    0x03, 0x70, 0x00, 0xfe, 0xfb, 0x94, 0x00, 0x00,
+async function createMinimalWebp(): Promise<Buffer> {
+  return await sharp({
+    create: {
+      width: 1,
+      height: 1,
+      channels: 3,
+      background: { r: 255, g: 255, b: 255 },
+    },
+  })
+    .webp()
+    .toBuffer();
+}
+
+/**
+ * Create a minimal 1x1 TIFF image using sharp.
+ *
+ * @returns Promise resolving to TIFF file as a Buffer
+ */
+async function createMinimalTiff(): Promise<Buffer> {
+  return await sharp({
+    create: {
+      width: 1,
+      height: 1,
+      channels: 3,
+      background: { r: 255, g: 255, b: 255 },
+    },
+  })
+    .tiff()
+    .toBuffer();
+}
+
+/**
+ * Create a JPEG image with EXIF metadata using sharp.
+ *
+ * Injects known EXIF tags (Make, Model, Orientation) for verifiable
+ * extraction in tests.
+ *
+ * @returns Promise resolving to JPEG file with EXIF as a Buffer
+ */
+async function createJpegWithExif(): Promise<Buffer> {
+  return await sharp({
+    create: {
+      width: 2,
+      height: 2,
+      channels: 3,
+      background: { r: 128, g: 128, b: 128 },
+    },
+  })
+    .withExif({
+      IFD0: {
+        Make: "TestCamera",
+        Model: "ModelX",
+        Orientation: "6",
+      },
+    })
+    .jpeg()
+    .toBuffer();
+}
+
+/**
+ * Create a corrupt JPEG file (valid SOI marker followed by garbage data).
+ *
+ * @returns Buffer with corrupt JPEG data
+ */
+function createCorruptJpeg(): Buffer {
+  // JPEG SOI marker followed by garbage data
+  return Buffer.from([
+    0xff, 0xd8, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0xff, 0xd9,
   ]);
-
-  const riffSize = 4 + 8 + vp8Data.length; // "WEBP" + chunk header + data
-  const header = Buffer.alloc(12);
-  header.write("RIFF", 0, 4, "ascii");
-  header.writeUInt32LE(riffSize, 4);
-  header.write("WEBP", 8, 4, "ascii");
-
-  const chunkHeader = Buffer.alloc(8);
-  chunkHeader.write("VP8 ", 0, 4, "ascii");
-  chunkHeader.writeUInt32LE(vp8Data.length, 4);
-
-  return Buffer.concat([header, chunkHeader, vp8Data]);
 }
 
 /**
@@ -139,8 +193,19 @@ export async function createTestImageFiles(fixturesDir: string): Promise<void> {
   const imagesDir = path.join(fixturesDir, "images");
   await fs.mkdir(imagesDir, { recursive: true });
 
-  await fs.writeFile(path.join(imagesDir, "photo.jpg"), createMinimalJpeg());
-  await fs.writeFile(path.join(imagesDir, "screenshot.png"), createMinimalPng());
-  await fs.writeFile(path.join(imagesDir, "animated.gif"), createMinimalGif());
-  await fs.writeFile(path.join(imagesDir, "diagram.webp"), createMinimalWebp());
+  const [tiffBuffer, exifJpegBuffer, webpBuffer] = await Promise.all([
+    createMinimalTiff(),
+    createJpegWithExif(),
+    createMinimalWebp(),
+  ]);
+
+  await Promise.all([
+    fs.writeFile(path.join(imagesDir, "photo.jpg"), createMinimalJpeg()),
+    fs.writeFile(path.join(imagesDir, "screenshot.png"), createMinimalPng()),
+    fs.writeFile(path.join(imagesDir, "animated.gif"), createMinimalGif()),
+    fs.writeFile(path.join(imagesDir, "diagram.webp"), webpBuffer),
+    fs.writeFile(path.join(imagesDir, "test.tiff"), tiffBuffer),
+    fs.writeFile(path.join(imagesDir, "photo-with-exif.jpg"), exifJpegBuffer),
+    fs.writeFile(path.join(imagesDir, "corrupt.jpg"), createCorruptJpeg()),
+  ]);
 }
