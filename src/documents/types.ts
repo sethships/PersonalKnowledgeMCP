@@ -488,3 +488,239 @@ export interface MarkdownExtractionResult extends ExtractionResult {
    */
   frontmatter?: MarkdownFrontmatter;
 }
+
+/**
+ * Extended metadata for document chunks.
+ *
+ * Includes all FileChunk metadata fields plus document-specific
+ * properties for page tracking, section context, and document identification.
+ *
+ * @example
+ * ```typescript
+ * const metadata: DocumentChunkMetadata = {
+ *   extension: ".pdf",
+ *   language: "unknown",
+ *   fileSizeBytes: 1048576,
+ *   contentHash: "sha256:abc123...",
+ *   fileModifiedAt: new Date(),
+ *   documentType: "pdf",
+ *   pageNumber: 3,
+ *   sectionHeading: "Chapter 2: Architecture",
+ *   documentTitle: "System Design Guide",
+ *   documentAuthor: "Engineering Team"
+ * };
+ * ```
+ */
+export interface DocumentChunkMetadata {
+  /**
+   * File extension (lowercase, with leading dot).
+   *
+   * @example ".pdf", ".docx", ".md"
+   */
+  extension: string;
+
+  /**
+   * Programming language detected from file extension.
+   *
+   * Typically "unknown" for documents, but preserved for
+   * compatibility with the embedding pipeline.
+   */
+  language: string;
+
+  /**
+   * Original file size in bytes.
+   */
+  fileSizeBytes: number;
+
+  /**
+   * SHA-256 hash of chunk content for deduplication.
+   */
+  contentHash: string;
+
+  /**
+   * File modification timestamp.
+   */
+  fileModifiedAt: Date;
+
+  /**
+   * Type of source document.
+   */
+  documentType: DocumentType;
+
+  /**
+   * Page number for multi-page documents (1-based).
+   *
+   * Present when the chunk originates from a specific page (e.g., PDF).
+   *
+   * @default undefined
+   */
+  pageNumber?: number;
+
+  /**
+   * Nearest preceding section heading for this chunk.
+   *
+   * Provides structural context for the chunk's content within the document.
+   *
+   * @default undefined
+   */
+  sectionHeading?: string;
+
+  /**
+   * Document title from extraction metadata.
+   *
+   * @default undefined
+   */
+  documentTitle?: string;
+
+  /**
+   * Document author from extraction metadata.
+   *
+   * @default undefined
+   */
+  documentAuthor?: string;
+}
+
+/**
+ * Document chunk with document-specific metadata.
+ *
+ * Extends the FileChunk concept with document-aware metadata fields
+ * for page tracking, section headings, and document identification.
+ * Compatible with the existing embedding pipeline.
+ *
+ * @example
+ * ```typescript
+ * const chunk: DocumentChunk = {
+ *   id: "my-docs:reports/design.pdf:0",
+ *   repository: "my-docs",
+ *   filePath: "reports/design.pdf",
+ *   content: "Chapter 1: Introduction...",
+ *   chunkIndex: 0,
+ *   totalChunks: 15,
+ *   startLine: 1,
+ *   endLine: 42,
+ *   metadata: {
+ *     extension: ".pdf",
+ *     language: "unknown",
+ *     fileSizeBytes: 524288,
+ *     contentHash: "a1b2c3...",
+ *     fileModifiedAt: new Date(),
+ *     documentType: "pdf",
+ *     pageNumber: 1,
+ *     sectionHeading: "Introduction",
+ *     documentTitle: "Design Guide"
+ *   }
+ * };
+ * ```
+ */
+export interface DocumentChunk {
+  /**
+   * Unique chunk identifier.
+   *
+   * Format: {source}:{filePath}:{chunkIndex}
+   */
+  id: string;
+
+  /**
+   * Repository or source name.
+   */
+  repository: string;
+
+  /**
+   * File path relative to repository root.
+   */
+  filePath: string;
+
+  /**
+   * Chunk text content.
+   */
+  content: string;
+
+  /**
+   * Zero-based chunk index within the document.
+   */
+  chunkIndex: number;
+
+  /**
+   * Total number of chunks for this document.
+   */
+  totalChunks: number;
+
+  /**
+   * Starting line number in content (1-based).
+   */
+  startLine: number;
+
+  /**
+   * Ending line number in content (1-based, inclusive).
+   */
+  endLine: number;
+
+  /**
+   * Document-specific chunk metadata.
+   */
+  metadata: DocumentChunkMetadata;
+}
+
+/**
+ * Configuration for DocumentChunker.
+ *
+ * Extends the base chunker config with document-aware options for
+ * paragraph boundaries, section context, and page boundaries.
+ *
+ * @example
+ * ```typescript
+ * const config: DocumentChunkerConfig = {
+ *   maxChunkTokens: 500,
+ *   overlapTokens: 50,
+ *   respectParagraphs: true,
+ *   includeSectionContext: true,
+ *   respectPageBoundaries: true
+ * };
+ * ```
+ */
+export interface DocumentChunkerConfig {
+  /**
+   * Maximum tokens per chunk.
+   *
+   * @default 500
+   */
+  maxChunkTokens?: number;
+
+  /**
+   * Overlap tokens between consecutive chunks.
+   *
+   * @default 50
+   */
+  overlapTokens?: number;
+
+  /**
+   * Respect paragraph boundaries when splitting content.
+   *
+   * When true, avoids splitting within paragraphs (double-newline delimited).
+   * Falls back to line-level splitting for paragraphs exceeding token limit.
+   *
+   * @default true
+   */
+  respectParagraphs?: boolean;
+
+  /**
+   * Include nearest section heading in chunk metadata.
+   *
+   * When true, finds the nearest preceding section heading from the
+   * ExtractionResult's sections array and attaches it to chunk metadata.
+   *
+   * @default true
+   */
+  includeSectionContext?: boolean;
+
+  /**
+   * Respect page boundaries for multi-page documents.
+   *
+   * When true (and pages are available), chunks each page independently
+   * to prevent cross-page content mixing. Each chunk's metadata includes
+   * the page number.
+   *
+   * @default true
+   */
+  respectPageBoundaries?: boolean;
+}
