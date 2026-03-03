@@ -10,6 +10,7 @@ import { z } from "zod";
 import { createValidationError } from "./errors.js";
 import type {
   SemanticSearchArgs,
+  SearchDocumentsArgs,
   GetDependenciesArgs,
   GetDependentsArgs,
   GetArchitectureArgs,
@@ -106,6 +107,99 @@ export function validateSemanticSearchArgs(args: unknown): SemanticSearchArgs {
       .join("; ");
 
     throw createValidationError(`Invalid semantic_search arguments: ${errorMessage}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Valid document type strings for search_documents
+ */
+export const SEARCH_DOCUMENT_TYPES = ["pdf", "docx", "markdown", "txt", "all"] as const;
+
+/**
+ * Zod schema for search_documents tool arguments
+ *
+ * This schema:
+ * - Enforces MCP tool contract from Phase 6 PRD Section 7
+ * - Validates document_types enum values
+ * - Provides default values for optional parameters
+ *
+ * Aligns with the inputSchema in search_documents tool definition.
+ */
+export const SearchDocumentsArgsSchema = z
+  .object({
+    query: z
+      .string()
+      .trim()
+      .min(1, "Query cannot be empty")
+      .max(1000, "Query exceeds maximum length of 1000 characters"),
+
+    document_types: z
+      .array(
+        z.enum(SEARCH_DOCUMENT_TYPES, {
+          message: `document_types must be one of: ${SEARCH_DOCUMENT_TYPES.join(", ")}`,
+        })
+      )
+      .optional()
+      .default(["all"]),
+
+    folder: z.string().trim().min(1, "Folder name cannot be empty").optional(),
+
+    limit: z
+      .number()
+      .int("Limit must be an integer")
+      .min(1, "Limit must be at least 1")
+      .max(50, "Limit cannot exceed 50")
+      .optional()
+      .default(10),
+
+    threshold: z
+      .number()
+      .min(0.0, "Threshold must be between 0.0 and 1.0")
+      .max(1.0, "Threshold must be between 0.0 and 1.0")
+      .optional()
+      .default(0.7),
+  })
+  .strict();
+
+/**
+ * Validates and parses search_documents tool arguments
+ *
+ * This function:
+ * - Validates arguments against SearchDocumentsArgsSchema
+ * - Applies default values for optional parameters
+ * - Throws MCP InvalidParams error if validation fails
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @returns Validated and normalized arguments with defaults applied
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ *
+ * @example
+ * ```typescript
+ * const args = validateSearchDocumentsArgs({
+ *   query: "machine learning algorithms",
+ *   document_types: ["pdf"],
+ *   limit: 20
+ * });
+ * // args.limit === 20
+ * // args.threshold === 0.7 (default)
+ * // args.document_types === ["pdf"]
+ * ```
+ */
+export function validateSearchDocumentsArgs(args: unknown): SearchDocumentsArgs {
+  const result = SearchDocumentsArgsSchema.safeParse(args);
+
+  if (!result.success) {
+    // Format Zod errors into human-readable message
+    const errorMessage = result.error.issues
+      .map((e) => {
+        const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
+        return `${path}${e.message}`;
+      })
+      .join("; ");
+
+    throw createValidationError(`Invalid search_documents arguments: ${errorMessage}`);
   }
 
   return result.data;

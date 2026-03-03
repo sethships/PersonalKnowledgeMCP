@@ -18,6 +18,15 @@ export {
   SearchOperationError,
 } from "./errors.js";
 
+// DocumentSearchService exports
+export type {
+  DocumentSearchService,
+  DocumentSearchQuery,
+  DocumentSearchResult,
+  DocumentSearchResponse,
+} from "./document-search-types.js";
+export { DocumentSearchServiceImpl } from "./document-search-service.js";
+
 // IngestionService exports
 export { IngestionService } from "./ingestion-service.js";
 export type {

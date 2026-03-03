@@ -96,6 +96,7 @@ export class PersonalKnowledgeMCPServer {
         rateLimiter: optionalDeps.rateLimiter,
         jobTracker: optionalDeps.jobTracker,
         graphService: optionalDeps.graphService,
+        documentSearchService: optionalDeps.documentSearchService,
       });
     } else {
       // Legacy path - only core tools

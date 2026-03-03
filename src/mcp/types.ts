@@ -8,6 +8,7 @@
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
 import type { GraphService } from "../services/graph-service-types.js";
+import type { DocumentSearchService } from "../services/document-search-types.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -133,6 +134,32 @@ export interface MCPServerOptionalDeps {
 
   /** GraphService for graph-based dependency queries */
   graphService?: GraphService;
+
+  /** DocumentSearchService for document semantic search */
+  documentSearchService?: DocumentSearchService;
+}
+
+/**
+ * Validated search_documents tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults.
+ */
+export interface SearchDocumentsArgs {
+  /** Natural language search query (1-1000 characters) */
+  query: string;
+
+  /** Document types to filter by (default: ["all"]) */
+  document_types: ("pdf" | "docx" | "markdown" | "txt" | "all")[];
+
+  /** Optional folder name to limit search scope */
+  folder?: string;
+
+  /** Maximum number of results to return (1-50) */
+  limit: number;
+
+  /** Minimum similarity score threshold (0.0-1.0) */
+  threshold: number;
 }
 
 /**

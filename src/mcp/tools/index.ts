@@ -12,8 +12,10 @@ import type { IncrementalUpdateCoordinator } from "../../services/incremental-up
 import type { MCPRateLimiter } from "../rate-limiter.js";
 import type { JobTracker } from "../job-tracker.js";
 import type { GraphService } from "../../services/graph-service-types.js";
+import type { DocumentSearchService } from "../../services/document-search-types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
+import { searchDocumentsToolDefinition, createSearchDocumentsHandler } from "./search-documents.js";
 import {
   listIndexedRepositoriesToolDefinition,
   createListRepositoriesHandler,
@@ -54,6 +56,8 @@ export interface ToolRegistryDependencies {
   jobTracker?: JobTracker;
   /** Optional: GraphService for graph-based dependency queries */
   graphService?: GraphService;
+  /** Optional: DocumentSearchService for document semantic search */
+  documentSearchService?: DocumentSearchService;
 }
 
 /**
@@ -163,6 +167,14 @@ export function createToolRegistry(
     registry["get_graph_metrics"] = {
       definition: getGraphMetricsToolDefinition,
       handler: createGetGraphMetricsHandler(),
+    };
+  }
+
+  // Conditionally add document search tool when DocumentSearchService is provided
+  if (deps.documentSearchService) {
+    registry["search_documents"] = {
+      definition: searchDocumentsToolDefinition,
+      handler: createSearchDocumentsHandler(deps.documentSearchService),
     };
   }
 
