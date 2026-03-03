@@ -136,6 +136,29 @@ export interface MCPServerOptionalDeps {
 }
 
 /**
+ * Validated search_documents tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults.
+ */
+export interface SearchDocumentsArgs {
+  /** Natural language search query (1-1000 characters) */
+  query: string;
+
+  /** Document types to filter by (default: ["all"]) */
+  document_types: ("pdf" | "docx" | "markdown" | "txt" | "all")[];
+
+  /** Optional folder name to limit search scope */
+  folder?: string;
+
+  /** Maximum number of results to return (1-50) */
+  limit: number;
+
+  /** Minimum similarity score threshold (0.0-1.0) */
+  threshold: number;
+}
+
+/**
  * Valid entity type for get_dependencies tool
  */
 export type DependencyEntityType = "file" | "function" | "class";
