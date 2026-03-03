@@ -765,6 +765,8 @@ describe("DocxExtractor", () => {
       test("handles timeout or fast completion gracefully with 1ms timeout", async () => {
         // Uses a very short timeout (1ms) to exercise the timeout path.
         // Due to JS event loop mechanics, small DOCXs may resolve before the timeout fires.
+        // TODO: Add deterministic timeout test using Bun mock to force the timeout path
+        // (consistent with PdfExtractor TODOs from PR #467)
         const extractor = new DocxExtractor({ timeoutMs: 1 });
         const filePath = path.join(DOCX_DIR, "simple.docx");
 

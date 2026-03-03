@@ -5,6 +5,11 @@
  * structure including headings, lists, and paragraphs. Extracts Dublin Core
  * metadata from docProps/core.xml when available.
  *
+ * NOTE: Several private methods (getFileStats, readFileBuffer, countWords,
+ * computeContentHash, lazy logger pattern) are duplicated from PdfExtractor.
+ * These should be extracted into a shared BaseExtractor or utility module
+ * in a follow-up refactoring.
+ *
  * @module documents/extractors/DocxExtractor
  */
 
@@ -44,6 +49,9 @@ import type {
 export interface DocxExtractorConfig extends ExtractorConfig {
   /**
    * Whether to preserve basic formatting (bold, italic) as markdown.
+   *
+   * NOTE: This option is accepted for forward compatibility but is not yet
+   * applied during extraction. Tracked for future implementation.
    *
    * @default false
    */
@@ -169,6 +177,10 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
     // 5. Extract content with timeout
     const { html, text } = await this.extractWithTimeout(buffer, filePath);
 
+    // NOTE: preserveFormatting config is not yet applied.
+    // Currently extraction always returns plain text from extractRawText.
+    // When implemented, this would use HTML output with markdown conversion.
+
     // 6. Parse sections from HTML
     const sections = this.parseSections(html, text);
 
@@ -287,6 +299,9 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
+        // NOTE: In-flight mammoth operations continue in background after timeout.
+        // Neither mammoth nor the JS runtime provides a cancellation mechanism.
+        // Consider worker threads for isolation if this becomes a production issue.
         reject(
           new ExtractionTimeoutError(
             `DOCX extraction timed out after ${this.config.timeoutMs}ms`,
@@ -298,7 +313,9 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
 
       const input = { buffer };
 
-      // Run both extractions in parallel
+      // NOTE: Both calls independently parse the DOCX ZIP. For large documents,
+      // this doubles CPU/memory usage. If profiling reveals this as a bottleneck,
+      // consider using only convertToHtml and stripping HTML tags for plain text.
       Promise.all([mammoth.convertToHtml(input), mammoth.extractRawText(input)])
         .then(([htmlResult, textResult]) => {
           clearTimeout(timeoutId);
@@ -350,7 +367,7 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
     const sections: SectionInfo[] = [];
 
     // Match heading tags (h1-h6) in the HTML
-    const headingRegex = /<h(\d)>(.*?)<\/h\d>/gi;
+    const headingRegex = /<h(\d)>(.*?)<\/h\1>/gis;
     let match: RegExpExecArray | null;
 
     while ((match = headingRegex.exec(html)) !== null) {
@@ -360,6 +377,8 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
 
       if (title.length === 0) continue;
 
+      // NOTE: indexOf may match body text with the same content as a heading.
+      // A more robust approach would walk mammoth's document AST directly.
       // Find the heading position in the plain text
       const searchStart = sections.length > 0 ? sections[sections.length - 1]!.startOffset : 0;
       const headingIndex = text.indexOf(title, searchStart);
@@ -423,6 +442,11 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
    */
   private parseCoreXml(xml: string): { title?: string; creator?: string; created?: Date } {
     const result: { title?: string; creator?: string; created?: Date } = {};
+
+    // NOTE: Regex-based XML parsing. Works for standard Word-generated DOCX files
+    // but may fail with non-standard namespace prefixes or CDATA sections.
+    // @xmldom/xmldom (already in dependency tree via mammoth) could provide more
+    // robust namespace-aware parsing. Tracked as follow-up improvement.
 
     // Extract dc:title
     const titleMatch = xml.match(/<dc:title>(.*?)<\/dc:title>/s);
