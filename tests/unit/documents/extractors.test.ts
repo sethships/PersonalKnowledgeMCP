@@ -1356,26 +1356,16 @@ describe("ImageMetadataExtractor", () => {
         }
       });
 
-      test("handles timeout or fast completion with 1ms timeout", async () => {
-        // Uses a very short timeout (1ms) to exercise the timeout path.
-        // Due to JS event loop mechanics, sharp may complete before the timeout fires.
-        // This test validates that both outcomes are handled correctly.
-        const extractor = new ImageMetadataExtractor({ timeoutMs: 1 });
+      test("completes successfully with reasonable timeout", async () => {
+        // Validates extraction succeeds when timeout is generous.
+        // Deterministic timeout testing is in tests/isolated/image-timeout.test.ts
+        // which uses mock.module("sharp") to inject artificial delay.
+        const extractor = new ImageMetadataExtractor({ timeoutMs: 5000 });
         const filePath = path.join(IMAGES_DIR, "photo.jpg");
-
-        try {
-          await extractor.extract(filePath);
-          // Fast completion is valid - sharp beat the timeout
-        } catch (error) {
-          expect(error instanceof ExtractionTimeoutError || error instanceof ExtractionError).toBe(
-            true
-          );
-          if (error instanceof ExtractionTimeoutError) {
-            expect(error.code).toBe("EXTRACTION_TIMEOUT");
-            expect(error.timeoutMs).toBe(1);
-            expect(error.retryable).toBe(true);
-          }
-        }
+        const result = await extractor.extract(filePath);
+        expect(result.format).toBe("jpeg");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
       });
     });
 
