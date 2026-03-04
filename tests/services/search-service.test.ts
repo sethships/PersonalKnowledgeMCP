@@ -387,7 +387,11 @@ describe("SearchServiceImpl", () => {
       expect(response.metadata.repositories_searched).toContain("error-repo");
       expect(response.metadata.repositories_searched).not.toContain("indexing-repo");
       expect(response.metadata.warnings).toBeDefined();
-      expect(response.metadata.warnings!.some((w) => w.type === "partial_index" && w.repository === "error-repo")).toBe(true);
+      expect(
+        response.metadata.warnings!.some(
+          (w) => w.type === "partial_index" && w.repository === "error-repo"
+        )
+      ).toBe(true);
     });
 
     it("should search error-only repos in multi-repo mode with warnings", async () => {
