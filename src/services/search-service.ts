@@ -346,9 +346,7 @@ export class SearchServiceImpl implements SearchService {
     } else {
       // Multi-repository mode - search all ready and error repos
       const allRepos = await this.repositoryService.listRepositories();
-      const searchableRepos = allRepos.filter(
-        (r) => r.status === "ready" || r.status === "error"
-      );
+      const searchableRepos = allRepos.filter((r) => r.status === "ready" || r.status === "error");
 
       // Add warnings for error repos
       for (const repo of searchableRepos) {

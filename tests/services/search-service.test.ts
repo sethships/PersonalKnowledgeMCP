@@ -391,9 +391,7 @@ describe("SearchServiceImpl", () => {
     });
 
     it("should search error-only repos in multi-repo mode with warnings", async () => {
-      mockRepoService.setMockRepositories([
-        createMockRepo("error-repo", "error"),
-      ]);
+      mockRepoService.setMockRepositories([createMockRepo("error-repo", "error")]);
       mockStorage.setMockResults([]);
 
       const response = await service.search({ query: "test" });

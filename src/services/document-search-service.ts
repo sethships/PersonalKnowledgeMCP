@@ -286,9 +286,7 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
     warnings?: SearchWarning[]
   ): Promise<RepositoryInfo[]> {
     const allRepos = await this.repositoryService.listRepositories();
-    const searchableRepos = allRepos.filter(
-      (r) => r.status === "ready" || r.status === "error"
-    );
+    const searchableRepos = allRepos.filter((r) => r.status === "ready" || r.status === "error");
 
     // Add warnings for error repos
     for (const repo of searchableRepos) {

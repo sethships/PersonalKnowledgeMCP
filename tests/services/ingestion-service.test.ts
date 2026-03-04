@@ -604,10 +604,7 @@ describe("IngestionService", () => {
     });
 
     it("should set repo status to 'error' when ALL files fail", async () => {
-      const mockFiles = [
-        createMockFile("src/file1.ts"),
-        createMockFile("src/file2.ts"),
-      ];
+      const mockFiles = [createMockFile("src/file1.ts"), createMockFile("src/file2.ts")];
       mockScanner.setMockFiles(mockFiles);
 
       // Mock file content - make ALL files fail
