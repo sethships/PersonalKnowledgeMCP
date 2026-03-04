@@ -186,7 +186,10 @@ export function loadInstanceConfig(): MultiInstanceConfig {
   const env = Bun.env;
 
   // Load default instance setting
-  const defaultInstanceRaw = env[ENV_KEYS.DEFAULT_INSTANCE] || "public";
+  // Default to "private" to align with CLI behavior (both use port 8000).
+  // Previously defaulted to "public" (port 8002), causing a mismatch where
+  // CLI indexed data to private instance but MCP searched public instance.
+  const defaultInstanceRaw = env[ENV_KEYS.DEFAULT_INSTANCE] || "private";
   const defaultInstanceResult = InstanceAccessSchema.safeParse(defaultInstanceRaw);
 
   if (!defaultInstanceResult.success) {
