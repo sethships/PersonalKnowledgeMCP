@@ -15,7 +15,6 @@ import {
   ImageMetadataExtractor,
 } from "../../../src/documents/extractors/index.js";
 import {
-  NotImplementedError,
   FileAccessError,
   FileTooLargeError,
   ExtractionError,
@@ -97,7 +96,15 @@ describe("Test fixtures", () => {
   });
 
   describe("Image fixtures", () => {
-    const expectedFiles = ["photo.jpg", "screenshot.png", "animated.gif", "diagram.webp"];
+    const expectedFiles = [
+      "photo.jpg",
+      "screenshot.png",
+      "animated.gif",
+      "diagram.webp",
+      "test.tiff",
+      "photo-with-exif.jpg",
+      "corrupt.jpg",
+    ];
 
     for (const file of expectedFiles) {
       test(`${file} exists and is non-empty`, async () => {
@@ -1187,20 +1194,202 @@ describe("ImageMetadataExtractor", () => {
   });
 
   describe("extract", () => {
-    test("throws NotImplementedError with real fixture path", async () => {
-      expect.assertions(3);
-      const extractor = new ImageMetadataExtractor();
-      const filePath = path.join(IMAGES_DIR, "photo.jpg");
+    describe("successful extraction", () => {
+      test("extracts JPEG metadata correctly", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
 
-      try {
-        await extractor.extract(filePath);
-      } catch (error) {
-        expect(error).toBeInstanceOf(NotImplementedError);
-        if (error instanceof NotImplementedError) {
-          expect(error.methodName).toBe("ImageMetadataExtractor.extract");
-          expect(error.filePath).toBe(filePath);
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("jpeg");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
+        expect(result.filePath).toBe(filePath);
+        expect(result.fileSizeBytes).toBeGreaterThan(0);
+        expect(result.fileModifiedAt).toBeInstanceOf(Date);
+      });
+
+      test("extracts PNG metadata correctly", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "screenshot.png");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("png");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
+        // PNG does not contain EXIF data
+        expect(result.exif).toBeUndefined();
+      });
+
+      test("extracts GIF metadata correctly", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "animated.gif");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("gif");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
+      });
+
+      test("extracts WebP metadata correctly", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "diagram.webp");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("webp");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
+      });
+
+      test("extracts TIFF metadata correctly", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "test.tiff");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("tiff");
+        expect(result.width).toBe(1);
+        expect(result.height).toBe(1);
+      });
+
+      test("extracts EXIF data from JPEG with EXIF tags", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "photo-with-exif.jpg");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("jpeg");
+        expect(result.width).toBe(2);
+        expect(result.height).toBe(2);
+        expect(result.exif).toBeDefined();
+        if (result.exif) {
+          // sharp withExif injects Make/Model; Orientation may be normalized
+          // to 1 by sharp's auto-rotation during JPEG encoding
+          expect(result.exif.camera).toContain("TestCamera");
+          expect(result.exif.camera).toContain("ModelX");
+          expect(typeof result.exif.orientation).toBe("number");
         }
-      }
+      });
+
+      test("returns undefined exif for JPEG without EXIF tags", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
+
+        const result = await extractor.extract(filePath);
+
+        // The hand-crafted minimal JPEG has no EXIF data
+        expect(result.exif).toBeUndefined();
+      });
+
+      test("returns undefined exif when extractExif is disabled", async () => {
+        const extractor = new ImageMetadataExtractor({ extractExif: false });
+        const filePath = path.join(IMAGES_DIR, "photo-with-exif.jpg");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.format).toBe("jpeg");
+        expect(result.exif).toBeUndefined();
+      });
+
+      test("file metadata matches fs.stat values", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
+
+        const [result, stats] = await Promise.all([extractor.extract(filePath), fs.stat(filePath)]);
+
+        expect(result.fileSizeBytes).toBe(stats.size);
+        expect(result.fileModifiedAt.getTime()).toBe(stats.mtime.getTime());
+      });
+    });
+
+    describe("error handling", () => {
+      test("throws FileAccessError for non-existent file", async () => {
+        expect.assertions(3);
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "does-not-exist.jpg");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileAccessError);
+          if (error instanceof FileAccessError) {
+            expect(error.code).toBe("FILE_ACCESS_ERROR");
+            expect(error.filePath).toBe(filePath);
+          }
+        }
+      });
+
+      test("throws FileTooLargeError when file exceeds maxFileSizeBytes", async () => {
+        expect.assertions(4);
+        const extractor = new ImageMetadataExtractor({ maxFileSizeBytes: 10 });
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileTooLargeError);
+          if (error instanceof FileTooLargeError) {
+            expect(error.code).toBe("FILE_TOO_LARGE");
+            expect(error.maxSizeBytes).toBe(10);
+            expect(error.retryable).toBe(false);
+          }
+        }
+      });
+
+      test("throws ExtractionError for corrupt image file", async () => {
+        expect.assertions(2);
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "corrupt.jpg");
+
+        try {
+          await extractor.extract(filePath);
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Corrupt images may throw ExtractionError or UnsupportedFormatError
+          // depending on how sharp handles the data
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+        }
+      });
+
+      test("handles timeout or fast completion with 1ms timeout", async () => {
+        // Uses a very short timeout (1ms) to exercise the timeout path.
+        // Due to JS event loop mechanics, sharp may complete before the timeout fires.
+        // This test validates that both outcomes are handled correctly.
+        const extractor = new ImageMetadataExtractor({ timeoutMs: 1 });
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
+
+        try {
+          await extractor.extract(filePath);
+          // Fast completion is valid - sharp beat the timeout
+        } catch (error) {
+          expect(error instanceof ExtractionTimeoutError || error instanceof ExtractionError).toBe(
+            true
+          );
+          if (error instanceof ExtractionTimeoutError) {
+            expect(error.code).toBe("EXTRACTION_TIMEOUT");
+            expect(error.timeoutMs).toBe(1);
+            expect(error.retryable).toBe(true);
+          }
+        }
+      });
+    });
+
+    describe("performance", () => {
+      test("extracts metadata within 200ms", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "photo.jpg");
+
+        const start = performance.now();
+        await extractor.extract(filePath);
+        const elapsed = performance.now() - start;
+
+        expect(elapsed).toBeLessThan(200);
+      });
     });
   });
 });
