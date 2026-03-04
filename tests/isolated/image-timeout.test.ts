@@ -8,7 +8,7 @@
  * @module tests/isolated/image-timeout
  */
 
-import { describe, test, expect, beforeAll, mock } from "bun:test";
+import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll, mock } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -16,13 +16,16 @@ import * as os from "node:os";
 /** Mutable delay controlling how long the mocked sharp().metadata() takes. */
 let metadataDelayMs = 0;
 
+/** Tracks the mock's pending setTimeout so it can be cleared after each test. */
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
 // Mock sharp BEFORE importing the extractor
 void mock.module("sharp", () => {
   return {
     default: (_input: unknown) => ({
       metadata: () =>
         new Promise((resolve) => {
-          setTimeout(() => {
+          pendingTimer = setTimeout(() => {
             resolve({
               format: "jpeg",
               width: 1,
@@ -80,6 +83,25 @@ beforeAll(async () => {
   await fs.mkdir(fixtureDir, { recursive: true });
   fixturePath = path.join(fixtureDir, "test.jpg");
   await fs.writeFile(fixturePath, createMinimalJpeg());
+});
+
+afterAll(async () => {
+  try {
+    await fs.rm(fixtureDir, { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+});
+
+beforeEach(() => {
+  metadataDelayMs = 0;
+});
+
+afterEach(() => {
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
+  }
 });
 
 describe("ImageMetadataExtractor timeout (isolated)", () => {
