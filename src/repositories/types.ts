@@ -13,7 +13,7 @@
  * Represents the current state of a repository in the knowledge base:
  * - `ready`: Repository is fully indexed and available for search
  * - `indexing`: Repository is currently being indexed
- * - `error`: Indexing failed with an error
+ * - `error`: Indexing encountered errors; may have partial data that is still searchable
  */
 export type RepositoryStatus = "ready" | "indexing" | "error";
 

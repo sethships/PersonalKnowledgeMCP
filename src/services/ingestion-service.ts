@@ -891,7 +891,9 @@ export class IngestionService {
       lastIndexedAt: new Date().toISOString(),
       lastIndexedCommitSha: params.cloneResult.commitSha,
       indexDurationMs: params.stats.durationMs,
-      status: params.stats.filesFailed > 0 ? "error" : "ready",
+      // Only set "error" when ALL files failed (filesProcessed === 0).
+      // Partial success and empty repos (no files matched) are set to "ready".
+      status: params.stats.filesProcessed === 0 && params.stats.filesFailed > 0 ? "error" : "ready",
       errorMessage: params.errorMessage,
       includeExtensions: params.options.includeExtensions?.length
         ? params.options.includeExtensions
