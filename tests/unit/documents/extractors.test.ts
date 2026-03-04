@@ -1360,6 +1360,8 @@ describe("ImageMetadataExtractor", () => {
         // Uses a very short timeout (1ms) to exercise the timeout path.
         // Due to JS event loop mechanics, sharp may complete before the timeout fires.
         // This test validates that both outcomes are handled correctly.
+        // NOTE: This test is non-deterministic. For reliable timeout coverage,
+        // a mock-based approach injecting a delayed sharp response is recommended.
         const extractor = new ImageMetadataExtractor({ timeoutMs: 1 });
         const filePath = path.join(IMAGES_DIR, "photo.jpg");
 
