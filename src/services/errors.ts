@@ -46,8 +46,8 @@ export class RepositoryNotFoundError extends SearchError {
 }
 
 /**
- * Thrown when specified repository is not in 'ready' status
- * Potentially retryable if status is 'indexing'
+ * Thrown when specified repository is currently indexing and not yet searchable
+ * Retryable - indexing should complete eventually
  */
 export class RepositoryNotReadyError extends SearchError {
   constructor(

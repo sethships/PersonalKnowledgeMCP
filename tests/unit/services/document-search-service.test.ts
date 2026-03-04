@@ -354,6 +354,28 @@ describe("DocumentSearchServiceImpl", () => {
       expect(response.metadata.warnings!.some((w) => w.type === "partial_index")).toBe(true);
     });
 
+    it("should not leak warnings from unrelated error repos when folder filter is applied", async () => {
+      mockRepoService.setRepositories([
+        createMockRepo({ name: "ready-folder", status: "ready" }),
+        createMockRepo({
+          name: "error-folder",
+          status: "error",
+          collectionName: "repo_error_folder",
+        }),
+      ]);
+      mockStorage.setMockResults([]);
+
+      const response = await service.searchDocuments({
+        query: "test",
+        folder: "ready-folder",
+      });
+
+      // Should only search the requested folder
+      expect(mockStorage.lastQuery?.collections).toEqual(["repo_test_folder"]);
+      // Should NOT have warnings about error-folder since it wasn't searched
+      expect(response.metadata.warnings).toBeUndefined();
+    });
+
     it("should throw NoRepositoriesAvailableError when no repos available", async () => {
       mockRepoService.setRepositories([]);
 

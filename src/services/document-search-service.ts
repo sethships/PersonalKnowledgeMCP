@@ -288,19 +288,19 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
     const allRepos = await this.repositoryService.listRepositories();
     const searchableRepos = allRepos.filter((r) => r.status === "ready" || r.status === "error");
 
-    // Add warnings for error repos
-    for (const repo of searchableRepos) {
-      if (repo.status === "error") {
-        warnings?.push({
-          type: "partial_index",
-          repository: repo.name,
-          message: `Folder '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
-        });
-      }
-    }
-
     if (folderFilter) {
       const filtered = searchableRepos.filter((r) => r.name === folderFilter);
+
+      // Add warnings only for repos that will actually be searched
+      for (const repo of filtered) {
+        if (repo.status === "error") {
+          warnings?.push({
+            type: "partial_index",
+            repository: repo.name,
+            message: `Folder '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+          });
+        }
+      }
 
       this.logger.debug("Filtered repositories for folder", {
         folder: folderFilter,
@@ -309,6 +309,17 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
       });
 
       return filtered;
+    }
+
+    // Add warnings for error repos in unfiltered mode
+    for (const repo of searchableRepos) {
+      if (repo.status === "error") {
+        warnings?.push({
+          type: "partial_index",
+          repository: repo.name,
+          message: `Folder '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+        });
+      }
     }
 
     this.logger.debug("Using all searchable repositories for document search", {

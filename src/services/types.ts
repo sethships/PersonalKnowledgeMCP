@@ -18,7 +18,7 @@ export interface SearchQuery {
   /** Minimum similarity threshold (0.0-1.0, default: 0.7) */
   threshold?: number;
 
-  /** Optional repository name filter. If omitted, searches all ready repositories */
+  /** Optional repository name filter. If omitted, searches all searchable repositories (ready or error) */
   repository?: string;
 
   /**
@@ -111,7 +111,7 @@ export interface SearchService {
    * @returns Search results with ranked chunks and performance metadata
    * @throws {SearchValidationError} Invalid query parameters
    * @throws {RepositoryNotFoundError} Specified repository doesn't exist
-   * @throws {RepositoryNotReadyError} Specified repository not in 'ready' status
+   * @throws {RepositoryNotReadyError} Specified repository is still indexing
    * @throws {NoRepositoriesAvailableError} No repositories available to search
    * @throws {SearchOperationError} Underlying search operation failed
    */
