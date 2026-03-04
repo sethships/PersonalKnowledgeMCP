@@ -213,6 +213,7 @@ function formatSearchResponse(response: SearchResponse): TextContent {
       embedding_time_ms: response.metadata.embedding_time_ms,
       search_time_ms: response.metadata.search_time_ms,
       repositories_searched: response.metadata.repositories_searched,
+      ...(response.metadata.warnings?.length && { warnings: response.metadata.warnings }),
     },
   };
 

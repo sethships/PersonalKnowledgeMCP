@@ -595,6 +595,40 @@ describe("IngestionService", () => {
       expect(result.stats.filesFailed).toBe(1); // 1 failed
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]!.type).toBe("file_error");
+
+      // Partial failure should set repo status to "ready" (not "error")
+      // so that the successfully indexed data remains searchable
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo).not.toBeNull();
+      expect(repoInfo?.status).toBe("ready");
+    });
+
+    it("should set repo status to 'error' when ALL files fail", async () => {
+      const mockFiles = [
+        createMockFile("src/file1.ts"),
+        createMockFile("src/file2.ts"),
+      ];
+      mockScanner.setMockFiles(mockFiles);
+
+      // Mock file content - make ALL files fail
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({
+        text: async () => {
+          throw new Error("File read error");
+        },
+      });
+
+      const result = await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      // Total failure should set repo status to "error"
+      expect(result.stats.filesProcessed).toBe(0);
+      expect(result.stats.filesFailed).toBe(2);
+
+      const repoInfo = await mockRepoService.getRepository(testRepoName);
+      expect(repoInfo).not.toBeNull();
+      expect(repoInfo?.status).toBe("error");
     });
 
     it("should handle batch processing correctly (50 files per batch)", async () => {

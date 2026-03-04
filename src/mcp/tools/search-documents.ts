@@ -208,6 +208,7 @@ function formatDocumentSearchResponse(response: DocumentSearchResponse): TextCon
       queryTimeMs: response.metadata.queryTimeMs,
       searchedFolders: response.metadata.searchedFolders,
       searchedDocumentTypes: response.metadata.searchedDocumentTypes,
+      ...(response.metadata.warnings?.length && { warnings: response.metadata.warnings }),
     },
   };
 

@@ -51,6 +51,7 @@ interface DocumentSearchResponseJSON {
     queryTimeMs: number;
     searchedFolders: string[];
     searchedDocumentTypes: string[];
+    warnings?: Array<{ type: string; repository: string; message: string }>;
   };
 }
 
@@ -356,6 +357,60 @@ describe("search_documents Tool", () => {
         expect(responseData.metadata.queryTimeMs).toBe(150);
         expect(responseData.metadata.searchedFolders).toEqual(["folder1", "folder2"]);
         expect(responseData.metadata.searchedDocumentTypes).toEqual(["pdf", "docx"]);
+      });
+
+      it("should include warnings in metadata when present", async () => {
+        const mockResponse: DocumentSearchResponse = {
+          results: [],
+          metadata: {
+            totalResults: 0,
+            queryTimeMs: 100,
+            searchedFolders: ["error-folder"],
+            searchedDocumentTypes: ["all"],
+            warnings: [
+              {
+                type: "partial_index",
+                repository: "error-folder",
+                message: "Folder 'error-folder' has status 'error' and may have incomplete data.",
+              },
+            ],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSearchDocumentsHandler(mockService);
+        const result = await handler({ query: "test" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as DocumentSearchResponseJSON;
+
+        expect(responseData.metadata.warnings).toBeDefined();
+        expect(responseData.metadata.warnings).toHaveLength(1);
+        expect(responseData.metadata.warnings![0]!.type).toBe("partial_index");
+        expect(responseData.metadata.warnings![0]!.repository).toBe("error-folder");
+      });
+
+      it("should omit warnings from metadata when none present", async () => {
+        const mockResponse: DocumentSearchResponse = {
+          results: [],
+          metadata: {
+            totalResults: 0,
+            queryTimeMs: 100,
+            searchedFolders: ["folder1"],
+            searchedDocumentTypes: ["all"],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSearchDocumentsHandler(mockService);
+        const result = await handler({ query: "test" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as DocumentSearchResponseJSON;
+
+        expect(responseData.metadata.warnings).toBeUndefined();
       });
 
       it("should handle results with optional fields undefined", async () => {

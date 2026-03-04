@@ -62,7 +62,7 @@ export interface SearchResult {
  */
 export interface SearchWarning {
   /** Type of warning encountered */
-  type: "provider_mismatch" | "dimension_mismatch" | "missing_metadata";
+  type: "provider_mismatch" | "dimension_mismatch" | "missing_metadata" | "partial_index";
 
   /** Repository that triggered the warning */
   repository: string;

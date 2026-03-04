@@ -48,6 +48,7 @@ interface SemanticSearchResponse {
     embedding_time_ms: number;
     search_time_ms: number;
     repositories_searched: string[];
+    warnings?: Array<{ type: string; repository: string; message: string }>;
   };
 }
 
@@ -341,6 +342,62 @@ describe("semantic_search Tool", () => {
         expect(responseData.metadata.embedding_time_ms).toBe(75);
         expect(responseData.metadata.search_time_ms).toBe(75);
         expect(responseData.metadata.repositories_searched).toEqual(["repo1", "repo2"]);
+      });
+
+      it("should include warnings in metadata when present", async () => {
+        const mockResponse: SearchResponse = {
+          results: [],
+          metadata: {
+            total_matches: 0,
+            query_time_ms: 100,
+            embedding_time_ms: 50,
+            search_time_ms: 50,
+            repositories_searched: ["error-repo"],
+            warnings: [
+              {
+                type: "partial_index",
+                repository: "error-repo",
+                message: "Repository 'error-repo' has status 'error' and may have incomplete data.",
+              },
+            ],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSemanticSearchHandler(mockService);
+        const result = await handler({ query: "test" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
+
+        expect(responseData.metadata.warnings).toBeDefined();
+        expect(responseData.metadata.warnings).toHaveLength(1);
+        expect(responseData.metadata.warnings![0]!.type).toBe("partial_index");
+        expect(responseData.metadata.warnings![0]!.repository).toBe("error-repo");
+      });
+
+      it("should omit warnings from metadata when none present", async () => {
+        const mockResponse: SearchResponse = {
+          results: [],
+          metadata: {
+            total_matches: 0,
+            query_time_ms: 100,
+            embedding_time_ms: 50,
+            search_time_ms: 50,
+            repositories_searched: ["repo1"],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSemanticSearchHandler(mockService);
+        const result = await handler({ query: "test" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as SemanticSearchResponse;
+
+        expect(responseData.metadata.warnings).toBeUndefined();
       });
     });
 

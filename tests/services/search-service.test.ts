@@ -355,24 +355,25 @@ describe("SearchServiceImpl", () => {
       );
     });
 
-    it("should throw RepositoryNotReadyError when repo status is 'error'", async () => {
+    it("should search error repo with partial_index warning in single-repo mode", async () => {
       mockRepoService.setMockRepositories([createMockRepo("test-repo", "error")]);
+      mockStorage.setMockResults([]);
 
-      await expect(service.search({ query: "test", repository: "test-repo" })).rejects.toThrow(
-        RepositoryNotReadyError
-      );
+      const response = await service.search({ query: "test", repository: "test-repo" });
+
+      expect(response.metadata.repositories_searched).toEqual(["test-repo"]);
+      expect(response.metadata.warnings).toBeDefined();
+      expect(response.metadata.warnings!.length).toBeGreaterThanOrEqual(1);
+      expect(response.metadata.warnings!.some((w) => w.type === "partial_index")).toBe(true);
     });
 
-    it("should throw NoRepositoriesAvailableError when no ready repos exist", async () => {
-      mockRepoService.setMockRepositories([
-        createMockRepo("repo1", "indexing"),
-        createMockRepo("repo2", "error"),
-      ]);
+    it("should throw NoRepositoriesAvailableError when only indexing repos exist", async () => {
+      mockRepoService.setMockRepositories([createMockRepo("repo1", "indexing")]);
 
       await expect(service.search({ query: "test" })).rejects.toThrow(NoRepositoriesAvailableError);
     });
 
-    it("should skip non-ready repos in multi-repo search", async () => {
+    it("should include error repos in multi-repo search with warnings", async () => {
       mockRepoService.setMockRepositories([
         createMockRepo("ready-repo", "ready"),
         createMockRepo("indexing-repo", "indexing"),
@@ -382,7 +383,24 @@ describe("SearchServiceImpl", () => {
 
       const response = await service.search({ query: "test" });
 
-      expect(response.metadata.repositories_searched).toEqual(["ready-repo"]);
+      expect(response.metadata.repositories_searched).toContain("ready-repo");
+      expect(response.metadata.repositories_searched).toContain("error-repo");
+      expect(response.metadata.repositories_searched).not.toContain("indexing-repo");
+      expect(response.metadata.warnings).toBeDefined();
+      expect(response.metadata.warnings!.some((w) => w.type === "partial_index" && w.repository === "error-repo")).toBe(true);
+    });
+
+    it("should search error-only repos in multi-repo mode with warnings", async () => {
+      mockRepoService.setMockRepositories([
+        createMockRepo("error-repo", "error"),
+      ]);
+      mockStorage.setMockResults([]);
+
+      const response = await service.search({ query: "test" });
+
+      expect(response.metadata.repositories_searched).toEqual(["error-repo"]);
+      expect(response.metadata.warnings).toBeDefined();
+      expect(response.metadata.warnings![0]!.type).toBe("partial_index");
     });
   });
 

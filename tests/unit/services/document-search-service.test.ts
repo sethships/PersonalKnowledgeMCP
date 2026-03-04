@@ -329,7 +329,7 @@ describe("DocumentSearchServiceImpl", () => {
       expect(mockStorage.lastQuery?.collections).toEqual(["repo_folder1"]);
     });
 
-    it("should skip repositories that are not ready", async () => {
+    it("should skip indexing repositories but include error repositories", async () => {
       mockRepoService.setRepositories([
         createMockRepo({ name: "ready-folder", status: "ready" }),
         createMockRepo({
@@ -337,12 +337,21 @@ describe("DocumentSearchServiceImpl", () => {
           status: "indexing",
           collectionName: "repo_indexing_folder",
         }),
+        createMockRepo({
+          name: "error-folder",
+          status: "error",
+          collectionName: "repo_error_folder",
+        }),
       ]);
       mockStorage.setMockResults([]);
 
-      await service.searchDocuments({ query: "test" });
+      const response = await service.searchDocuments({ query: "test" });
 
-      expect(mockStorage.lastQuery?.collections).toEqual(["repo_test_folder"]);
+      expect(mockStorage.lastQuery?.collections).toContain("repo_test_folder");
+      expect(mockStorage.lastQuery?.collections).toContain("repo_error_folder");
+      expect(mockStorage.lastQuery?.collections).not.toContain("repo_indexing_folder");
+      expect(response.metadata.warnings).toBeDefined();
+      expect(response.metadata.warnings!.some((w) => w.type === "partial_index")).toBe(true);
     });
 
     it("should throw NoRepositoriesAvailableError when no repos available", async () => {
@@ -353,7 +362,7 @@ describe("DocumentSearchServiceImpl", () => {
       );
     });
 
-    it("should throw NoRepositoriesAvailableError when no repos are ready", async () => {
+    it("should throw NoRepositoriesAvailableError when only indexing repos exist", async () => {
       mockRepoService.setRepositories([createMockRepo({ name: "indexing", status: "indexing" })]);
 
       await expect(service.searchDocuments({ query: "test" })).rejects.toThrow(
