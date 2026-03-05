@@ -269,7 +269,7 @@ The Personal Knowledge MCP supports multiple isolated instances for different se
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DEFAULT_INSTANCE` | No | `public` | Default instance for unauthenticated requests |
+| `DEFAULT_INSTANCE` | No | `private` | Default instance for unauthenticated requests |
 | `REQUIRE_AUTH_FOR_DEFAULT_INSTANCE` | No | `false` | Require authentication for default instance |
 
 ### Private Instance (Port 8000)
