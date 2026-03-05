@@ -803,6 +803,20 @@ describe("DocxExtractor", () => {
         expect(result.metadata.documentType).toBe("docx");
       });
 
+      test("extracts metadata from DOCX with alternative namespace prefixes", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-metadata-alt-ns.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.metadata.title).toBe("Alt NS Title");
+        expect(result.metadata.author).toBe("Alt NS Author");
+        expect(result.metadata.createdAt).toBeInstanceOf(Date);
+        expect(result.metadata.createdAt!.getUTCFullYear()).toBe(2025);
+        expect(result.metadata.createdAt!.getUTCMonth()).toBe(0); // January = 0
+        expect(result.metadata.createdAt!.getUTCDate()).toBe(20);
+      });
+
       test("returns undefined metadata fields when core.xml is absent", async () => {
         const extractor = new DocxExtractor();
         const filePath = path.join(DOCX_DIR, "simple.docx");
