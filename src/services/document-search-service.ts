@@ -21,6 +21,7 @@ import type {
   DocumentSearchResult,
 } from "./document-search-types.js";
 import type { DocumentType } from "../documents/types.js";
+import type { SearchWarning } from "./types.js";
 import {
   SearchValidationError,
   NoRepositoriesAvailableError,
@@ -144,13 +145,14 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
    */
   async searchDocuments(query: DocumentSearchQuery): Promise<DocumentSearchResponse> {
     const startTime = performance.now();
+    const warnings: SearchWarning[] = [];
 
     try {
       // 1. Validate input
       const validated = this.validateQuery(query);
 
       // 2. Determine target repositories (document folders are stored as repositories)
-      const targetRepos = await this.getTargetRepositories(validated.folder);
+      const targetRepos = await this.getTargetRepositories(validated.folder, warnings);
 
       if (targetRepos.length === 0) {
         throw new NoRepositoriesAvailableError();
@@ -210,6 +212,7 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
           queryTimeMs: Math.round(totalTime),
           searchedFolders: targetRepos.map((r) => r.name),
           searchedDocumentTypes: documentTypes.length > 0 ? documentTypes : ["all"],
+          warnings: warnings.length > 0 ? warnings : undefined,
         },
       };
 
@@ -276,29 +279,55 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
    *
    * Document folders are stored as repositories in the metadata service.
    * If folder is specified, filter to that specific repository name.
+   * Repositories with status 'error' are included with warnings.
    */
-  private async getTargetRepositories(folderFilter?: string): Promise<RepositoryInfo[]> {
+  private async getTargetRepositories(
+    folderFilter?: string,
+    warnings?: SearchWarning[]
+  ): Promise<RepositoryInfo[]> {
     const allRepos = await this.repositoryService.listRepositories();
-    const readyRepos = allRepos.filter((r) => r.status === "ready");
+    const searchableRepos = allRepos.filter((r) => r.status === "ready" || r.status === "error");
 
     if (folderFilter) {
-      const filtered = readyRepos.filter((r) => r.name === folderFilter);
+      const filtered = searchableRepos.filter((r) => r.name === folderFilter);
+
+      // Add warnings only for repos that will actually be searched
+      for (const repo of filtered) {
+        if (repo.status === "error") {
+          warnings?.push({
+            type: "partial_index",
+            repository: repo.name,
+            message: `Folder '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+          });
+        }
+      }
 
       this.logger.debug("Filtered repositories for folder", {
         folder: folderFilter,
-        total_ready: readyRepos.length,
+        total_searchable: searchableRepos.length,
         matched: filtered.length,
       });
 
       return filtered;
     }
 
-    this.logger.debug("Using all ready repositories for document search", {
+    // Add warnings for error repos in unfiltered mode
+    for (const repo of searchableRepos) {
+      if (repo.status === "error") {
+        warnings?.push({
+          type: "partial_index",
+          repository: repo.name,
+          message: `Folder '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+        });
+      }
+    }
+
+    this.logger.debug("Using all searchable repositories for document search", {
       total_repos: allRepos.length,
-      ready_repos: readyRepos.length,
+      searchable_repos: searchableRepos.length,
     });
 
-    return readyRepos;
+    return searchableRepos;
   }
 
   /**

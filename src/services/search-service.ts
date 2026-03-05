@@ -176,7 +176,7 @@ export class SearchServiceImpl implements SearchService {
       const validated = this.validateQuery(query);
 
       // 2. Determine target repositories
-      const targetRepos = await this.getTargetRepositories(validated.repository);
+      const targetRepos = await this.getTargetRepositories(validated.repository, warnings);
 
       if (targetRepos.length === 0) {
         throw new NoRepositoriesAvailableError();
@@ -314,10 +314,14 @@ export class SearchServiceImpl implements SearchService {
   /**
    * Get list of repositories to search based on query filter
    *
-   * - If repository specified: Validate it exists and is ready
-   * - If no repository specified: Return all repositories with status 'ready'
+   * - If repository specified: Validate it exists and is searchable (ready or error)
+   * - If no repository specified: Return all repositories with status 'ready' or 'error'
+   * - Repositories with status 'error' may have partial data and produce warnings
    */
-  private async getTargetRepositories(repositoryFilter?: string): Promise<RepositoryInfo[]> {
+  private async getTargetRepositories(
+    repositoryFilter?: string,
+    warnings?: SearchWarning[]
+  ): Promise<RepositoryInfo[]> {
     if (repositoryFilter) {
       // Single repository mode
       const repo = await this.repositoryService.getRepository(repositoryFilter);
@@ -326,19 +330,38 @@ export class SearchServiceImpl implements SearchService {
         throw new RepositoryNotFoundError(repositoryFilter);
       }
 
-      if (repo.status !== "ready") {
+      if (repo.status === "indexing") {
         throw new RepositoryNotReadyError(repositoryFilter, repo.status);
+      }
+
+      if (repo.status === "error") {
+        warnings?.push({
+          type: "partial_index",
+          repository: repo.name,
+          message: `Repository '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+        });
       }
 
       return [repo];
     } else {
-      // Multi-repository mode - search all ready repos
+      // Multi-repository mode - search all ready and error repos
       const allRepos = await this.repositoryService.listRepositories();
-      const readyRepos = allRepos.filter((r) => r.status === "ready");
+      const searchableRepos = allRepos.filter((r) => r.status === "ready" || r.status === "error");
+
+      // Add warnings for error repos
+      for (const repo of searchableRepos) {
+        if (repo.status === "error") {
+          warnings?.push({
+            type: "partial_index",
+            repository: repo.name,
+            message: `Repository '${repo.name}' has status 'error' and may have incomplete data. Results may be partial.`,
+          });
+        }
+      }
 
       this.logger.debug("Filtered repositories for search", {
         total_repos: allRepos.length,
-        ready_repos: readyRepos.length,
+        searchable_repos: searchableRepos.length,
         statuses: allRepos.reduce(
           (acc, r) => {
             acc[r.status] = (acc[r.status] || 0) + 1;
@@ -348,7 +371,7 @@ export class SearchServiceImpl implements SearchService {
         ),
       });
 
-      return readyRepos;
+      return searchableRepos;
     }
   }
 

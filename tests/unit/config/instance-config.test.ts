@@ -91,7 +91,7 @@ describe("Instance Configuration", () => {
       it("should load default configuration when no env vars are set", () => {
         const config = loadInstanceConfig();
 
-        expect(config.defaultInstance).toBe("public");
+        expect(config.defaultInstance).toBe("private");
         expect(config.requireAuthForDefaultInstance).toBe(false);
       });
 
@@ -265,6 +265,7 @@ describe("Instance Configuration", () => {
     it("should filter out disabled instances", () => {
       Bun.env["INSTANCE_PRIVATE_ENABLED"] = "false";
       Bun.env["INSTANCE_WORK_ENABLED"] = "false";
+      Bun.env["DEFAULT_INSTANCE"] = "public";
 
       const config = loadInstanceConfig();
       const enabled = getEnabledInstances(config);

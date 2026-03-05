@@ -9,6 +9,7 @@
  */
 
 import type { DocumentType } from "../documents/types.js";
+import type { SearchWarning } from "./types.js";
 
 /**
  * Input parameters for document search queries
@@ -79,6 +80,9 @@ export interface DocumentSearchResponse {
 
     /** List of document types that were searched */
     searchedDocumentTypes: string[];
+
+    /** Warnings generated during search (e.g., partial index) */
+    warnings?: SearchWarning[];
   };
 }
 

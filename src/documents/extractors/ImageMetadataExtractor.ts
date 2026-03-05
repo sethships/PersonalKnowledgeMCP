@@ -293,6 +293,10 @@ export class ImageMetadataExtractor implements DocumentExtractor<ImageMetadata> 
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
+        // NOTE: In-flight sharp operations continue in background after timeout.
+        // Neither sharp nor the JS runtime provides a cancellation mechanism for
+        // native image processing. Consider worker threads for isolation if this
+        // becomes a production issue.
         reject(
           new ExtractionTimeoutError(
             `Image extraction timed out after ${this.config.timeoutMs}ms`,
