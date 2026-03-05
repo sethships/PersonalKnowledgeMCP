@@ -159,6 +159,25 @@ ${createdXml}
 }
 
 /**
+ * Create Dublin Core metadata XML with valid structure but empty elements.
+ *
+ * Contains empty `<dc:title></dc:title>` and `<dc:creator></dc:creator>` elements
+ * to verify the extractor returns undefined (not empty strings) for empty fields.
+ *
+ * @returns XML string for core.xml with empty metadata elements
+ */
+function createCoreXmlWithEmptyElements(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+                   xmlns:dc="http://purl.org/dc/elements/1.1/"
+                   xmlns:dcterms="http://purl.org/dc/terms/"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title></dc:title>
+  <dc:creator></dc:creator>
+</cp:coreProperties>`;
+}
+
+/**
  * Escape XML special characters.
  */
 function escapeXml(text: string): string {
@@ -200,6 +219,34 @@ async function createDocxBuffer(
   if (options?.coreXml) {
     zip.file("docProps/core.xml", options.coreXml);
   }
+
+  const arrayBuffer = await zip.generateAsync({ type: "arraybuffer" });
+  return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Create a DOCX file with raw (arbitrary) content for docProps/core.xml.
+ *
+ * Unlike createDocxBuffer which expects valid XML, this function accepts any
+ * string for core.xml — including garbage text — for testing graceful degradation.
+ *
+ * @param documentXml - The document.xml content
+ * @param options - Options including raw core.xml content
+ * @returns DOCX file as a Buffer
+ */
+async function createDocxBufferRaw(
+  documentXml: string,
+  options: {
+    coreXmlRaw: string;
+  }
+): Promise<Buffer> {
+  const zip = new JSZip();
+
+  zip.file("[Content_Types].xml", CONTENT_TYPES_WITH_CORE_XML);
+  zip.file("_rels/.rels", RELS_WITH_CORE_XML);
+  zip.file("word/_rels/document.xml.rels", WORD_RELS_XML);
+  zip.file("word/document.xml", documentXml);
+  zip.file("docProps/core.xml", options.coreXmlRaw);
 
   const arrayBuffer = await zip.generateAsync({ type: "arraybuffer" });
   return Buffer.from(arrayBuffer);
@@ -270,6 +317,25 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
   });
   const altNsDocx = await createDocxBuffer(altNsXml, { coreXml: altNsCoreXml });
   await fs.writeFile(path.join(docxDir, "with-metadata-alt-ns.docx"), altNsDocx);
+
+  // DOCX with malformed/garbage core.xml (tests graceful degradation)
+  const malformedMetaXml = createDocumentXml([
+    { text: "Malformed Metadata Document", style: "Heading1" },
+    { text: "This document has garbage content in docProps/core.xml." },
+  ]);
+  const malformedMetaDocx = await createDocxBufferRaw(malformedMetaXml, {
+    coreXmlRaw: "this is not valid XML at all !@#$%^&*()",
+  });
+  await fs.writeFile(path.join(docxDir, "with-malformed-metadata.docx"), malformedMetaDocx);
+
+  // DOCX with empty metadata elements (valid XML but empty dc:title and dc:creator)
+  const emptyMetaXml = createDocumentXml([
+    { text: "Empty Metadata Document", style: "Heading1" },
+    { text: "This document has empty metadata elements in docProps/core.xml." },
+  ]);
+  const emptyMetaCoreXml = createCoreXmlWithEmptyElements();
+  const emptyMetaDocx = await createDocxBuffer(emptyMetaXml, { coreXml: emptyMetaCoreXml });
+  await fs.writeFile(path.join(docxDir, "with-empty-metadata.docx"), emptyMetaDocx);
 
   // Invalid DOCX (not a valid ZIP)
   const invalidDocx = Buffer.from("This is not a valid DOCX file");
