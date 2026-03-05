@@ -68,7 +68,7 @@ interface PdfInfo {
  * Uses pdf-parse library for text extraction. Handles multi-page documents
  * and extracts metadata such as title, author, and creation date when available.
  *
- * @implements {DocumentExtractor<ExtractionResult>}
+ * @extends {BaseExtractor<Required<PdfExtractorConfig>, ExtractionResult>}
  *
  * @example
  * ```typescript

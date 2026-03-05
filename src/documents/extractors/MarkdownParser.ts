@@ -57,7 +57,7 @@ export interface MarkdownParserConfig extends ExtractorConfig {
  * extraction and builds section hierarchy from headings. Handles both
  * CommonMark and GitHub Flavored Markdown (GFM).
  *
- * @implements {DocumentExtractor<MarkdownExtractionResult>}
+ * @extends {BaseExtractor<Required<MarkdownParserConfig>, MarkdownExtractionResult>}
  *
  * @example
  * ```typescript

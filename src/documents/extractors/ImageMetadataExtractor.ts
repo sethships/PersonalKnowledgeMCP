@@ -55,7 +55,7 @@ const SHARP_FORMAT_MAP: Readonly<Record<string, ImageFormat>> = {
  * for EXIF metadata extraction. Does not extract text content from images
  * (OCR not included in Phase 6 scope).
  *
- * @implements {DocumentExtractor<ImageMetadata>}
+ * @extends {BaseExtractor<Required<ImageMetadataExtractorConfig>, ImageMetadata>}
  *
  * @example
  * ```typescript

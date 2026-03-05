@@ -50,7 +50,7 @@ const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0x
  * plain text while optionally preserving basic formatting. Extracts
  * Dublin Core metadata from docProps/core.xml when present.
  *
- * @implements {DocumentExtractor<ExtractionResult>}
+ * @extends {BaseExtractor<Required<DocxExtractorConfig>, ExtractionResult>}
  *
  * @example
  * ```typescript

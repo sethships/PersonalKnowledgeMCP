@@ -41,9 +41,9 @@ const noopLogger = {
  *
  * @example
  * ```typescript
- * class MyExtractor extends BaseExtractor<MyConfig, MyResult> {
+ * class MyExtractor extends BaseExtractor<Required<MyConfig>, MyResult> {
  *   constructor(config?: MyConfig) {
- *     super("documents:my-extractor", {
+ *     super("documents:my-extractor", {  // Pass fully-resolved config
  *       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
  *       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
  *       customOption: config?.customOption ?? true,
@@ -187,6 +187,8 @@ export abstract class BaseExtractor<
    * @throws {FileTooLargeError} If file exceeds maximum size
    */
   protected validateFileSize(size: number, filePath: string): void {
+    // Safe cast: all concrete subclasses pass Required<TConfig>, so maxFileSizeBytes is always number.
+    // TypeScript cannot statically resolve Required<generic>.optionalField to non-optional.
     const maxSize = this.config.maxFileSizeBytes as number;
     if (size > maxSize) {
       throw new FileTooLargeError(
