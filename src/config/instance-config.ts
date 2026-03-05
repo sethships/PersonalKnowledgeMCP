@@ -172,7 +172,7 @@ function loadInstanceConfigFromEnv(
  * Load multi-instance configuration from environment variables
  *
  * Environment variables:
- * - DEFAULT_INSTANCE: Default instance for unauthenticated requests (default: "public")
+ * - DEFAULT_INSTANCE: Default instance for unauthenticated requests (default: "private")
  * - REQUIRE_AUTH_FOR_DEFAULT_INSTANCE: Require auth for default instance (default: false)
  * - INSTANCE_{NAME}_CHROMADB_HOST: ChromaDB host for instance
  * - INSTANCE_{NAME}_CHROMADB_PORT: ChromaDB port for instance
