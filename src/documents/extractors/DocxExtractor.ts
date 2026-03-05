@@ -364,7 +364,7 @@ export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, 
       return result;
     } catch (error) {
       // Graceful fallback for unparseable XML
-      getLogger().warn(
+      this.getLogger().warn(
         { error: error instanceof Error ? error.message : "unknown error" },
         "Failed to parse core.xml with DOMParser, returning empty metadata"
       );
