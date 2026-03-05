@@ -17,6 +17,7 @@ import * as fs from "node:fs/promises";
 import * as crypto from "node:crypto";
 import mammoth from "mammoth";
 import JSZip from "jszip";
+import { DOMParser } from "@xmldom/xmldom";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
 import {
   ExtractionError,
@@ -435,45 +436,63 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
   }
 
   /**
-   * Parse Dublin Core XML from docProps/core.xml.
+   * Parse Dublin Core XML from docProps/core.xml using namespace-aware DOM parsing.
+   *
+   * Uses @xmldom/xmldom (transitive dependency via mammoth) for proper namespace
+   * handling. Supports any namespace prefix for Dublin Core elements, not just
+   * the conventional dc:/dcterms: prefixes.
    *
    * @param xml - Core XML content
    * @returns Parsed metadata fields
    */
   private parseCoreXml(xml: string): { title?: string; creator?: string; created?: Date } {
-    const result: { title?: string; creator?: string; created?: Date } = {};
+    const DC_NS = "http://purl.org/dc/elements/1.1/";
+    const DCTERMS_NS = "http://purl.org/dc/terms/";
 
-    // NOTE: Regex-based XML parsing. Works for standard Word-generated DOCX files
-    // but may fail with non-standard namespace prefixes or CDATA sections.
-    // @xmldom/xmldom (already in dependency tree via mammoth) could provide more
-    // robust namespace-aware parsing. Tracked as follow-up improvement.
+    try {
+      const doc = new DOMParser().parseFromString(xml, "text/xml");
 
-    // Extract dc:title
-    const titleMatch = xml.match(/<dc:title>(.*?)<\/dc:title>/s);
-    if (titleMatch?.[1]?.trim()) {
-      result.title = titleMatch[1].trim();
-    }
+      const result: { title?: string; creator?: string; created?: Date } = {};
 
-    // Extract dc:creator
-    const creatorMatch = xml.match(/<dc:creator>(.*?)<\/dc:creator>/s);
-    if (creatorMatch?.[1]?.trim()) {
-      result.creator = creatorMatch[1].trim();
-    }
-
-    // Extract dcterms:created
-    const createdMatch = xml.match(/<dcterms:created[^>]*>(.*?)<\/dcterms:created>/s);
-    if (createdMatch?.[1]?.trim()) {
-      try {
-        const date = new Date(createdMatch[1].trim());
-        if (!isNaN(date.getTime())) {
-          result.created = date;
+      // Extract dc:title (namespace-aware, works with any prefix)
+      const titleElements = doc.getElementsByTagNameNS(DC_NS, "title");
+      if (titleElements.length > 0) {
+        const text = titleElements[0]!.textContent?.trim();
+        if (text) {
+          result.title = text;
         }
-      } catch {
-        // Ignore invalid dates
       }
-    }
 
-    return result;
+      // Extract dc:creator (namespace-aware, works with any prefix)
+      const creatorElements = doc.getElementsByTagNameNS(DC_NS, "creator");
+      if (creatorElements.length > 0) {
+        const text = creatorElements[0]!.textContent?.trim();
+        if (text) {
+          result.creator = text;
+        }
+      }
+
+      // Extract dcterms:created (namespace-aware, works with any prefix)
+      const createdElements = doc.getElementsByTagNameNS(DCTERMS_NS, "created");
+      if (createdElements.length > 0) {
+        const text = createdElements[0]!.textContent?.trim();
+        if (text) {
+          const date = new Date(text);
+          if (!isNaN(date.getTime())) {
+            result.created = date;
+          }
+        }
+      }
+
+      return result;
+    } catch (error) {
+      // Graceful fallback for unparseable XML
+      getLogger().warn(
+        { error: error instanceof Error ? error.message : "unknown error" },
+        "Failed to parse core.xml with DOMParser, returning empty metadata"
+      );
+      return {};
+    }
   }
 
   /**
