@@ -347,25 +347,34 @@ describe("PdfExtractor", () => {
       });
     });
 
-    describe("extractPages error handling", () => {
-      test("returns empty array when per-page extraction fails", async () => {
+    describe("extractPageInfo via public API", () => {
+      test("extraction succeeds with extractPageInfo enabled on multi-page PDF", async () => {
         const extractor = new PdfExtractor({ extractPageInfo: true });
-        // Access private extractPages method for testing via type cast
-        // (same pattern used for parsePdfDate tests below)
-        const extractPages = (buffer: Buffer, filePath: string): Promise<unknown[]> =>
-          (
-            extractor as unknown as {
-              extractPages: (buf: Buffer, path: string) => Promise<unknown[]>;
-            }
-          ).extractPages(buffer, filePath);
+        const filePath = path.join(PDF_DIR, "multi-page.pdf");
+        const result = await extractor.extract(filePath);
 
-        // Pass an invalid buffer that will cause pdf-parse to throw during
-        // per-page extraction, triggering the catch block and getLogger()
-        const invalidBuffer = Buffer.from("not a valid pdf");
-        const result = await extractPages(invalidBuffer, "/test/fake.pdf");
+        // Pages should be present and each should have required fields
+        expect(result.pages).toBeDefined();
+        expect(result.pages!.length).toBeGreaterThan(0);
+        for (const page of result.pages!) {
+          expect(page).toHaveProperty("pageNumber");
+          expect(page).toHaveProperty("content");
+          expect(page).toHaveProperty("wordCount");
+          expect(typeof page.pageNumber).toBe("number");
+          expect(typeof page.content).toBe("string");
+          expect(typeof page.wordCount).toBe("number");
+        }
+      });
 
-        // The catch block should return an empty array instead of throwing
-        expect(result).toEqual([]);
+      test("extraction succeeds with extractPageInfo disabled", async () => {
+        const extractor = new PdfExtractor({ extractPageInfo: false });
+        const filePath = path.join(PDF_DIR, "simple.pdf");
+        const result = await extractor.extract(filePath);
+
+        // Pages should not be present
+        expect(result.pages).toBeUndefined();
+        // Content should still be extracted
+        expect(result.content.length).toBeGreaterThan(0);
       });
     });
 
