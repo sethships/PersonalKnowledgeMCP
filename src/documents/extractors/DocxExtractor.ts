@@ -62,6 +62,12 @@ export interface DocxExtractorConfig extends ExtractorConfig {
 /** OLE2 Compound Document signature for legacy .doc files */
 const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
+/** Dublin Core Elements namespace URI */
+const DC_NS = "http://purl.org/dc/elements/1.1/";
+
+/** Dublin Core Terms namespace URI */
+const DCTERMS_NS = "http://purl.org/dc/terms/";
+
 /** Lazily-initialized logger for DOCX extractor operations */
 let logger: ReturnType<typeof getComponentLogger> | null = null;
 
@@ -446,9 +452,6 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
    * @returns Parsed metadata fields
    */
   private parseCoreXml(xml: string): { title?: string; creator?: string; created?: Date } {
-    const DC_NS = "http://purl.org/dc/elements/1.1/";
-    const DCTERMS_NS = "http://purl.org/dc/terms/";
-
     try {
       const doc = new DOMParser().parseFromString(xml, "text/xml");
 
@@ -486,7 +489,9 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
 
       return result;
     } catch (error) {
-      // Graceful fallback for unparseable XML
+      // Guard against unexpected runtime errors (e.g., null input).
+      // Note: @xmldom/xmldom does not throw on malformed XML — it returns
+      // a best-effort document. Parse errors result in empty element queries above.
       getLogger().warn(
         { error: error instanceof Error ? error.message : "unknown error" },
         "Failed to parse core.xml with DOMParser, returning empty metadata"
