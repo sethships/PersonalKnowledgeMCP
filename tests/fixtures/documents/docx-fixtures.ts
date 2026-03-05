@@ -124,6 +124,41 @@ ${createdXml}
 }
 
 /**
+ * Create Dublin Core metadata XML with alternative (non-standard) namespace prefixes.
+ *
+ * Uses "dublin:" instead of "dc:" and "dublinTerms:" instead of "dcterms:" to exercise
+ * namespace-aware parsing. The namespace URIs remain the same; only the prefixes differ.
+ *
+ * @param metadata - Document metadata
+ * @returns XML string for core.xml with alternative namespace prefixes
+ */
+function createCoreXmlAltNamespace(metadata: {
+  title?: string;
+  creator?: string;
+  created?: string;
+}): string {
+  const titleXml = metadata.title
+    ? `  <dublin:title>${escapeXml(metadata.title)}</dublin:title>`
+    : "";
+  const creatorXml = metadata.creator
+    ? `  <dublin:creator>${escapeXml(metadata.creator)}</dublin:creator>`
+    : "";
+  const createdXml = metadata.created
+    ? `  <dublinTerms:created xsi:type="dublinTerms:W3CDTF">${metadata.created}</dublinTerms:created>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+                   xmlns:dublin="http://purl.org/dc/elements/1.1/"
+                   xmlns:dublinTerms="http://purl.org/dc/terms/"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+${titleXml}
+${creatorXml}
+${createdXml}
+</cp:coreProperties>`;
+}
+
+/**
  * Escape XML special characters.
  */
 function escapeXml(text: string): string {
@@ -222,6 +257,19 @@ export async function createTestDocxFiles(fixturesDir: string): Promise<void> {
   });
   const metadataDocx = await createDocxBuffer(metadataXml, { coreXml });
   await fs.writeFile(path.join(docxDir, "with-metadata.docx"), metadataDocx);
+
+  // DOCX with alternative namespace prefixes in core.xml
+  const altNsXml = createDocumentXml([
+    { text: "Alt Namespace Document", style: "Heading1" },
+    { text: "This document uses non-standard namespace prefixes in core.xml." },
+  ]);
+  const altNsCoreXml = createCoreXmlAltNamespace({
+    title: "Alt NS Title",
+    creator: "Alt NS Author",
+    created: "2025-01-20T08:00:00Z",
+  });
+  const altNsDocx = await createDocxBuffer(altNsXml, { coreXml: altNsCoreXml });
+  await fs.writeFile(path.join(docxDir, "with-metadata-alt-ns.docx"), altNsDocx);
 
   // Invalid DOCX (not a valid ZIP)
   const invalidDocx = Buffer.from("This is not a valid DOCX file");
