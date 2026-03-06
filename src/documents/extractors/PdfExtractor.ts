@@ -266,6 +266,11 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     let settled = false;
     const pageContents: string[] = [];
 
+    // Note: graceful degradation for per-page failures relies on two layers:
+    // 1. Our per-page .catch() below (handles individual getTextContent rejections)
+    // 2. pdf-parse's internal catch around each pagerender call
+    // Unlike the previous two-pass design, a catastrophic pdfParse failure will
+    // now propagate to the caller rather than silently returning pages: [].
     const options: pdfParseTypes.Options = {};
     if (extractPageInfo) {
       options.pagerender = (pageData: PageData) => {
