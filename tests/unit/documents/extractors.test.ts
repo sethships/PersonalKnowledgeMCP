@@ -298,8 +298,7 @@ describe("PdfExtractor", () => {
         // small PDFs may resolve before the timeout fires. This test validates that both
         // outcomes are handled correctly: either ExtractionTimeoutError is thrown, or
         // extraction completes successfully.
-        // TODO: Add deterministic timeout test using Bun mock to force the timeout path
-        // (see code review on PR #467 — Issue #1)
+        // Deterministic timeout test: see tests/isolated/extractor-timeout.test.ts
         const extractor = new PdfExtractor({ timeoutMs: 1 });
         const filePath = path.join(PDF_DIR, "multi-page.pdf");
 
@@ -769,8 +768,7 @@ describe("DocxExtractor", () => {
       test("handles timeout or fast completion gracefully with 1ms timeout", async () => {
         // Uses a very short timeout (1ms) to exercise the timeout path.
         // Due to JS event loop mechanics, small DOCXs may resolve before the timeout fires.
-        // TODO: Add deterministic timeout test using Bun mock to force the timeout path
-        // (consistent with PdfExtractor TODOs from PR #467)
+        // Deterministic timeout test: see tests/isolated/extractor-timeout.test.ts
         const extractor = new DocxExtractor({ timeoutMs: 1 });
         const filePath = path.join(DOCX_DIR, "simple.docx");
 

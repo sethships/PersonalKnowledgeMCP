@@ -7,10 +7,17 @@
  * @module documents/extractors/PdfExtractor
  */
 
-// Import from lib directly to avoid debug mode in index.js
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require("pdf-parse/lib/pdf-parse.js") as typeof import("pdf-parse");
+// Import from lib directly to avoid debug mode in index.js.
+// Uses ESM default import for proper mockability with Bun's mock.module.
+// @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
+import pdfParseDefault from "pdf-parse/lib/pdf-parse.js";
 import type pdfParseTypes from "pdf-parse";
+
+/** Typed reference to pdf-parse function (the lib sub-path has no .d.ts). */
+const pdfParse = pdfParseDefault as (
+  buffer: Buffer,
+  options?: pdfParseTypes.Options
+) => Promise<pdfParseTypes.Result>;
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
 import { ExtractionError, ExtractionTimeoutError, PasswordProtectedError } from "../errors.js";
 import { BaseExtractor } from "./BaseExtractor.js";
