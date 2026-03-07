@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { DocumentChunker } from "../../../src/documents/DocumentChunker.js";
-import type { DocumentChunkerConfig } from "../../../src/documents/types.js";
+import type { DocumentChunkerConfig, SectionInfo } from "../../../src/documents/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 import {
   SMALL_DOCUMENT_CONTENT,
@@ -22,6 +22,28 @@ import {
 // Common test parameters
 const TEST_SOURCE = "test-docs";
 const TEST_FILE_PATH = "docs/test.pdf";
+
+/**
+ * Test subclass that exposes the protected findSectionHeading method.
+ *
+ * Allows direct testing of fallback code paths in findSectionHeading
+ * that are impossible to exercise through chunkDocument() alone because
+ * FileChunker always produces chunks whose content is a verbatim substring
+ * of the source text.
+ */
+class TestableDocumentChunker extends DocumentChunker {
+  /**
+   * Expose findSectionHeading for direct unit testing.
+   */
+  public exposedFindSectionHeading(
+    sections: SectionInfo[],
+    chunkContent: string,
+    fullContent: string,
+    charOffset?: number
+  ): string | undefined {
+    return this.findSectionHeading(sections, chunkContent, fullContent, charOffset);
+  }
+}
 
 /**
  * Helper to create a DocumentChunker with test-friendly defaults.
@@ -655,6 +677,271 @@ describe("DocumentChunker", () => {
 
       expect(() => chunker.chunkDocument(result, "", TEST_SOURCE)).toThrow();
       expect(() => chunker.chunkDocument(result, "   ", TEST_SOURCE)).toThrow();
+    });
+
+    test("section heading with duplicate content uses indexOf (first-occurrence bias)", () => {
+      // When charOffset is undefined (line-level fallback), findSectionHeading
+      // uses fullContent.indexOf(chunkContent.substring(0, 100)) which always
+      // finds the first occurrence. This test documents that behavior.
+      const sharedPrefix = "A".repeat(100);
+      const content =
+        `# Section One\n\n${sharedPrefix} unique-ending-one.\n\n` +
+        `# Section Two\n\n${sharedPrefix} unique-ending-two.`;
+
+      const sectionOneStart = 0;
+      const sectionTwoStart = content.indexOf("# Section Two");
+
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "Section One",
+            level: 1,
+            startOffset: sectionOneStart,
+            endOffset: sectionTwoStart,
+          },
+          {
+            title: "Section Two",
+            level: 1,
+            startOffset: sectionTwoStart,
+            endOffset: content.length,
+          },
+        ],
+      });
+
+      // Use line-level fallback (no paragraphs, no pages) so charOffset is undefined
+      const chunker = createChunker({
+        maxChunkTokens: 30,
+        overlapTokens: 0,
+        respectParagraphs: false,
+        respectPageBoundaries: false,
+        includeSectionContext: true,
+      });
+
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+      // Find a chunk whose content starts with the shared prefix and belongs to Section Two's text
+      const sectionTwoChunks = chunks.filter((c) => c.content.includes("unique-ending-two"));
+      expect(sectionTwoChunks.length).toBeGreaterThanOrEqual(1);
+
+      // Due to indexOf first-occurrence bias, the chunk containing Section Two's
+      // duplicate-prefix content may be assigned to Section One instead
+      for (const chunk of sectionTwoChunks) {
+        // Known limitation: indexOf matches the first occurrence of the shared
+        // 100-char prefix, which falls in Section One. This pins the current
+        // biased behavior as a behavioral contract.
+        // TODO: If indexOf bias is fixed (e.g., via lastIndexOf or smarter
+        // search), update this assertion to expect "Section Two" instead.
+        expect(chunk.metadata.sectionHeading).toBe("Section One");
+      }
+    });
+
+    test("findSectionHeading falls back to first-line search when 100-char substring not found", () => {
+      // This test directly exercises the first-line fallback at lines 671-678 of
+      // DocumentChunker.ts. The fallback triggers when:
+      //   1. charOffset is undefined (no positional data)
+      //   2. fullContent.indexOf(chunkContent.substring(0, 100)) returns -1
+      //   3. The chunk's first line IS found in fullContent
+      //
+      // This path is impossible to reach via chunkDocument() because FileChunker
+      // always produces chunks whose content is a verbatim substring of the source.
+      // We use a test subclass to call findSectionHeading directly with controlled
+      // inputs where the full 100-char prefix does NOT appear in fullContent but
+      // the first line does.
+      const chunker = new TestableDocumentChunker();
+
+      const fullContent =
+        "# Introduction\n\nThis is intro text.\n\n" +
+        "# Details\n\nThe actual details are here with some content.";
+
+      const detailsOffset = fullContent.indexOf("# Details");
+
+      const sections: SectionInfo[] = [
+        { title: "Introduction", level: 1, startOffset: 0, endOffset: detailsOffset },
+        { title: "Details", level: 1, startOffset: detailsOffset, endOffset: fullContent.length },
+      ];
+
+      // Construct a chunk whose first line ("The actual details are here with some content.")
+      // exists in fullContent within the "Details" section, but whose full content
+      // (>100 chars including a second line) does NOT appear anywhere in fullContent.
+      // This forces indexOf(chunkContent.substring(0, 100)) to return -1, triggering
+      // the first-line fallback at line 671.
+      const chunkContent =
+        "The actual details are here with some content.\n" +
+        "This second line was added by a hypothetical post-processing step and does not exist in the original document.";
+
+      // Verify preconditions:
+      // - The first 100 chars of chunkContent must NOT be found in fullContent
+      expect(fullContent.indexOf(chunkContent.substring(0, 100))).toBe(-1);
+      // - The first line of chunkContent MUST be found in fullContent
+      const firstLine = chunkContent.split("\n")[0]!;
+      expect(fullContent.indexOf(firstLine)).toBeGreaterThan(-1);
+
+      // Call findSectionHeading without charOffset to exercise the fallback
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined // no charOffset -- forces content search path
+      );
+
+      // The first line appears inside the "Details" section, so the fallback
+      // should resolve to "Details"
+      expect(heading).toBe("Details");
+    });
+
+    test("findSectionHeading returns undefined when neither 100-char nor first-line search matches", () => {
+      // Exercise the double-miss path at lines 675-676 of DocumentChunker.ts:
+      // both indexOf attempts return -1, so the method returns undefined.
+      const chunker = new TestableDocumentChunker();
+
+      const fullContent = "# Section A\n\nSome text in section A.";
+      const sections: SectionInfo[] = [
+        { title: "Section A", level: 1, startOffset: 0, endOffset: fullContent.length },
+      ];
+
+      // Chunk content that does not appear anywhere in fullContent
+      const chunkContent = "Completely unrelated content that appears nowhere in the document.";
+
+      // Verify preconditions: neither the 100-char prefix nor the first line is found
+      expect(
+        fullContent.indexOf(chunkContent.substring(0, Math.min(100, chunkContent.length)))
+      ).toBe(-1);
+      expect(fullContent.indexOf(chunkContent.split("\n")[0]!.substring(0, 80))).toBe(-1);
+
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined
+      );
+
+      expect(heading).toBeUndefined();
+    });
+
+    test("chunkByPages produces more than MAX_CHUNKS_PER_FILE (100) chunks for many-page documents", () => {
+      // MAX_CHUNKS_PER_FILE = 100 is enforced per-page call inside chunkFile(),
+      // but chunkByPages() has no document-level limit. A document with >100 pages
+      // each producing 1 chunk per page should yield >100 total chunks.
+      //
+      // Regression guard: if someone adds a document-level chunk cap to chunkByPages,
+      // this test will fail and force a deliberate decision about the desired behavior.
+      const pageCount = 105;
+      const pages = [];
+      const contentParts = [];
+
+      for (let i = 0; i < pageCount; i++) {
+        const pageContent = `Page ${i + 1} has some short content here.`;
+        pages.push({
+          pageNumber: i + 1,
+          content: pageContent,
+          wordCount: 7,
+        });
+        contentParts.push(pageContent);
+      }
+
+      const result = createMockExtractionResult({
+        content: contentParts.join("\n\n"),
+        pages,
+        metadataOverrides: {
+          pageCount,
+          wordCount: pageCount * 7,
+        },
+      });
+
+      const chunker = createChunker({
+        maxChunkTokens: 500,
+        overlapTokens: 0,
+        respectPageBoundaries: true,
+        respectParagraphs: false,
+      });
+
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Each page produces exactly 1 chunk, so total should equal pageCount
+      expect(chunks.length).toBe(pageCount);
+
+      // Verify page numbers are assigned correctly
+      for (let i = 0; i < pageCount; i++) {
+        expect(chunks[i]!.metadata.pageNumber).toBe(i + 1);
+      }
+    });
+
+    test("Windows CRLF line endings produce same paragraph split as LF equivalents", () => {
+      // Each paragraph is ~6-7 tokens; use limit of 6 to force separate chunks
+      const chunker = createChunker({
+        maxChunkTokens: 6,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      const lfContent =
+        "First paragraph content.\n\nSecond paragraph content.\n\nThird paragraph content.";
+      const crlfContent =
+        "First paragraph content.\r\n\r\nSecond paragraph content.\r\n\r\nThird paragraph content.";
+
+      const lfResult = createMockExtractionResult({ content: lfContent });
+      const crlfResult = createMockExtractionResult({ content: crlfContent });
+
+      const lfChunks = chunker.chunkDocument(lfResult, TEST_FILE_PATH, TEST_SOURCE);
+      const crlfChunks = chunker.chunkDocument(crlfResult, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Same number of chunks
+      expect(crlfChunks.length).toBe(lfChunks.length);
+      expect(crlfChunks.length).toBe(3);
+
+      // Same content in each chunk (CRLF normalized to LF)
+      for (let i = 0; i < lfChunks.length; i++) {
+        expect(crlfChunks[i]!.content).toBe(lfChunks[i]!.content);
+        expect(crlfChunks[i]!.content).not.toContain("\r");
+      }
+
+      // Same line tracking
+      for (let i = 0; i < lfChunks.length; i++) {
+        expect(crlfChunks[i]!.startLine).toBe(lfChunks[i]!.startLine);
+        expect(crlfChunks[i]!.endLine).toBe(lfChunks[i]!.endLine);
+      }
+    });
+
+    test("multi-line paragraphs track startLine and endLine correctly", () => {
+      // Para 1: ~17 tokens (3 lines), Para 2: ~6 tokens (1 line), Para 3: ~12 tokens (2 lines)
+      // Use limit of 17 so each paragraph gets its own chunk without line-level fallback
+      const chunker = createChunker({
+        maxChunkTokens: 17,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Paragraphs with internal newlines (multi-line paragraphs)
+      const content =
+        "Line one of para one.\nLine two of para one.\nLine three of para one." +
+        "\n\n" +
+        "Single line para two." +
+        "\n\n" +
+        "Line one of para three.\nLine two of para three.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(3);
+
+      // First paragraph: 3 lines starting at line 1
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(3);
+      expect(chunks[0]!.endLine - chunks[0]!.startLine + 1).toBe(3);
+
+      // Second paragraph: 1 line starting at line 5 (after line 4 = blank)
+      expect(chunks[1]!.startLine).toBe(5);
+      expect(chunks[1]!.endLine).toBe(5);
+      expect(chunks[1]!.endLine - chunks[1]!.startLine + 1).toBe(1);
+
+      // Third paragraph: 2 lines starting at line 7 (after line 6 = blank)
+      expect(chunks[2]!.startLine).toBe(7);
+      expect(chunks[2]!.endLine).toBe(8);
+      expect(chunks[2]!.endLine - chunks[2]!.startLine + 1).toBe(2);
     });
   });
 

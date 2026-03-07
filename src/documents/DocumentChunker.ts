@@ -649,7 +649,7 @@ export class DocumentChunker extends FileChunker {
    * @param charOffset - Optional character offset for direct lookup
    * @returns Section heading title, or undefined if none found
    */
-  private findSectionHeading(
+  protected findSectionHeading(
     sections: SectionInfo[],
     chunkContent: string,
     fullContent: string,
