@@ -16,8 +16,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 // Mock pdf-parse to return a never-resolving promise.
-// PdfExtractor uses `import pdfParseDefault from "pdf-parse/lib/pdf-parse.js"`,
-// so the ESM default export maps correctly to the mock's `default`.
+// PdfExtractor uses lazy `await import("pdf-parse/lib/pdf-parse.js")` with CJS/ESM
+// interop that picks `m.default` when it's a function, which matches our mock shape.
 void mock.module("pdf-parse/lib/pdf-parse.js", () => ({
   default: () => new Promise(() => {}),
 }));
