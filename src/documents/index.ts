@@ -97,12 +97,14 @@ export {
   DocxExtractor,
   MarkdownParser,
   ImageMetadataExtractor,
+  PdfTableExtractor,
 } from "./extractors/index.js";
 export type {
   PdfExtractorConfig,
   DocxExtractorConfig,
   MarkdownParserConfig,
   ImageMetadataExtractorConfig,
+  PdfTableExtractorConfig,
 } from "./extractors/index.js";
 
 // Document chunker
