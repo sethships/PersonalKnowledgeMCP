@@ -56,6 +56,13 @@ export type {
   DocumentChunk,
   DocumentChunkMetadata,
   DocumentChunkerConfig,
+  TableSourceType,
+  TableCell,
+  TableRow,
+  TableData,
+  TableExtractionResult,
+  TableExtractorConfig,
+  TableExtractor,
 } from "./types.js";
 
 // Constants
