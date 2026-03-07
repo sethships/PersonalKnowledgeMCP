@@ -150,6 +150,35 @@ describe("TableExtractionResult", () => {
     };
     expect(result.sourceType).toBe("docx");
   });
+
+  test("confidence at boundary values (0.0 and 1.0)", () => {
+    const low: TableExtractionResult = {
+      table: minimalTable,
+      filePath: "/test.pdf",
+      sourceType: "pdf",
+      tableIndex: 0,
+      confidence: 0.0,
+    };
+    const high: TableExtractionResult = {
+      table: minimalTable,
+      filePath: "/test.pdf",
+      sourceType: "pdf",
+      tableIndex: 0,
+      confidence: 1.0,
+    };
+    expect(low.confidence).toBe(0.0);
+    expect(high.confidence).toBe(1.0);
+  });
+
+  test("span fields at boundary values", () => {
+    const cell: TableCell = { content: "span-test", rowSpan: 1, colSpan: 1 };
+    expect(cell.rowSpan).toBe(1);
+    expect(cell.colSpan).toBe(1);
+
+    const largeSpan: TableCell = { content: "large", rowSpan: 100, colSpan: 50 };
+    expect(largeSpan.rowSpan).toBe(100);
+    expect(largeSpan.colSpan).toBe(50);
+  });
 });
 
 describe("TableExtractorConfig", () => {

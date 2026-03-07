@@ -727,8 +727,14 @@ export interface DocumentChunkerConfig {
 
 // ── Table Extraction Types ──────────────────────────────────────
 
-/** Source document type for table extraction. */
-export type TableSourceType = "pdf" | "docx";
+/**
+ * Source document type for table extraction.
+ *
+ * Derived from {@link DocumentType} to maintain a compile-time
+ * relationship — if "pdf" or "docx" are removed from DocumentType,
+ * the compiler will flag this type.
+ */
+export type TableSourceType = Extract<DocumentType, "pdf" | "docx">;
 
 /**
  * Individual cell in an extracted table.
