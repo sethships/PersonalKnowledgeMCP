@@ -2,8 +2,8 @@
  * Tests PdfExtractor per-page error resilience.
  *
  * Verifies that individual page failures in getTextContent() are caught by the
- * .catch() handler in the pagerender callback (PdfExtractor.ts:288-290), recording
- * empty content for failed pages without aborting the entire extraction.
+ * .catch() handler in the pagerender callback (inside parsePdfWithTimeout()),
+ * recording empty content for failed pages without aborting the entire extraction.
  *
  * Uses mock.module to intercept pdf-parse before PdfExtractor's dynamic import()
  * resolves, simulating per-page failures without needing a specially crafted PDF.
@@ -11,7 +11,7 @@
  * Placed in tests/isolated/ pattern (separate from extractors.test.ts) because
  * mock.module replaces pdf-parse globally for the process.
  *
- * @module tests/isolated/PdfExtractor.perpage-error
+ * @module tests/isolated/pdf-extractor-perpage-error
  */
 
 import { mock, describe, test, expect, beforeAll } from "bun:test";
@@ -19,6 +19,7 @@ import * as path from "node:path";
 
 // Mock pdf-parse BEFORE importing PdfExtractor so the dynamic import() is intercepted.
 // Simulates a 3-page PDF where page 2's getTextContent() rejects.
+// `void` satisfies ESLint no-floating-promises — mock.module returns a Promise we don't need to await.
 void mock.module("pdf-parse/lib/pdf-parse.js", () => ({
   default: async (
     _buffer: Buffer,
