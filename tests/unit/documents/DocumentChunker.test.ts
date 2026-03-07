@@ -737,4 +737,110 @@ describe("DocumentChunker", () => {
       }
     });
   });
+
+  describe("Paragraph overlap behavior", () => {
+    // Each paragraph from generateLargeDocumentContent has ~363 chars → ~91 tokens
+    // (estimateTokens uses ceil(charCount / 4))
+
+    test("consecutive paragraph chunks include overlap from previous chunk", () => {
+      // maxChunkTokens=120: fits one ~91-token paragraph, but not two (182 > 120)
+      // overlapTokens=100: enough to carry one ~91-token paragraph forward
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 100,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(5);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // For each consecutive pair, the last paragraph of chunk N should
+      // appear in chunk N+1 as overlap content
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("no overlap when overlapTokens is 0", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(5);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // No paragraph should appear in two consecutive chunks
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const nextParagraphs = chunks[i + 1]!.content.split("\n\n");
+
+        const currentSet = new Set(currentParagraphs);
+        for (const para of nextParagraphs) {
+          expect(currentSet.has(para)).toBe(false);
+        }
+      }
+    });
+
+    test("overlap respects overlapTokens budget", () => {
+      // Each paragraph ~91 tokens. With overlapTokens=50, the "at least one"
+      // rule still includes one paragraph. With maxChunkTokens=200, two fit
+      // (91+91=182 < 200) but three don't (273 > 200).
+      // After flushing a 2-paragraph group, overlap budget of 50 means
+      // one paragraph (91 tokens) is included via the "at least one" rule.
+      const chunker = createChunker({
+        maxChunkTokens: 200,
+        overlapTokens: 50,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(8);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(2);
+
+      // After the first chunk, each subsequent chunk should contain overlap
+      // (at least one paragraph from the previous chunk via "at least one" rule)
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("single-paragraph groups still produce overlap", () => {
+      // maxChunkTokens=120: fits one ~91-token paragraph but not two
+      // overlapTokens=100: enough to carry the single paragraph forward
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 100,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(4);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk after the first should contain the previous chunk's paragraph
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+  });
 });
