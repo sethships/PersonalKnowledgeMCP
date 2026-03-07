@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { DocumentChunker } from "../../../src/documents/DocumentChunker.js";
-import type { DocumentChunkerConfig } from "../../../src/documents/types.js";
+import type { DocumentChunkerConfig, SectionInfo } from "../../../src/documents/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 import {
   SMALL_DOCUMENT_CONTENT,
@@ -22,6 +22,28 @@ import {
 // Common test parameters
 const TEST_SOURCE = "test-docs";
 const TEST_FILE_PATH = "docs/test.pdf";
+
+/**
+ * Test subclass that exposes the protected findSectionHeading method.
+ *
+ * Allows direct testing of fallback code paths in findSectionHeading
+ * that are impossible to exercise through chunkDocument() alone because
+ * FileChunker always produces chunks whose content is a verbatim substring
+ * of the source text.
+ */
+class TestableDocumentChunker extends DocumentChunker {
+  /**
+   * Expose findSectionHeading for direct unit testing.
+   */
+  public exposedFindSectionHeading(
+    sections: SectionInfo[],
+    chunkContent: string,
+    fullContent: string,
+    charOffset?: number
+  ): string | undefined {
+    return this.findSectionHeading(sections, chunkContent, fullContent, charOffset);
+  }
+}
 
 /**
  * Helper to create a DocumentChunker with test-friendly defaults.
@@ -706,63 +728,105 @@ describe("DocumentChunker", () => {
       // Due to indexOf first-occurrence bias, the chunk containing Section Two's
       // duplicate-prefix content may be assigned to Section One instead
       for (const chunk of sectionTwoChunks) {
-        // Document current behavior: section heading is either correct or biased
-        expect(
-          chunk.metadata.sectionHeading === "Section One" ||
-            chunk.metadata.sectionHeading === "Section Two"
-        ).toBe(true);
+        // Known limitation: indexOf matches the first occurrence of the shared
+        // 100-char prefix, which falls in Section One. This pins the current
+        // biased behavior as a behavioral contract.
+        // TODO: If indexOf bias is fixed (e.g., via lastIndexOf or smarter
+        // search), update this assertion to expect "Section Two" instead.
+        expect(chunk.metadata.sectionHeading).toBe("Section One");
       }
     });
 
     test("findSectionHeading falls back to first-line search when 100-char substring not found", () => {
-      // When the first 100 chars of chunk content don't appear verbatim in fullContent
-      // (e.g., because FileChunker trimmed/modified the content), findSectionHeading
-      // falls back to searching for the first line of the chunk.
-      const firstLine = "This line appears in section two area";
-      // Build fullContent where the first line of the chunk appears within Section Two,
-      // but the full 100-char substring does NOT appear in fullContent.
-      const sectionOneText = "# Section One\n\nIntroduction content here.";
-      const sectionTwoText = `# Section Two\n\n${firstLine}\n\nMore content in section two.`;
-      const fullContent = `${sectionOneText}\n\n${sectionTwoText}`;
+      // This test directly exercises the first-line fallback at lines 671-678 of
+      // DocumentChunker.ts. The fallback triggers when:
+      //   1. charOffset is undefined (no positional data)
+      //   2. fullContent.indexOf(chunkContent.substring(0, 100)) returns -1
+      //   3. The chunk's first line IS found in fullContent
+      //
+      // This path is impossible to reach via chunkDocument() because FileChunker
+      // always produces chunks whose content is a verbatim substring of the source.
+      // We use a test subclass to call findSectionHeading directly with controlled
+      // inputs where the full 100-char prefix does NOT appear in fullContent but
+      // the first line does.
+      const chunker = new TestableDocumentChunker();
 
-      const sectionTwoStart = fullContent.indexOf("# Section Two");
+      const fullContent =
+        "# Introduction\n\nThis is intro text.\n\n" +
+        "# Details\n\nThe actual details are here with some content.";
 
-      const result = createMockExtractionResult({
-        content: fullContent,
-        sections: [
-          { title: "Section One", level: 1, startOffset: 0, endOffset: sectionTwoStart },
-          {
-            title: "Section Two",
-            level: 1,
-            startOffset: sectionTwoStart,
-            endOffset: fullContent.length,
-          },
-        ],
-      });
+      const detailsOffset = fullContent.indexOf("# Details");
 
-      // Use line-level fallback to trigger findSectionHeading without charOffset
-      const chunker = createChunker({
-        maxChunkTokens: 8,
-        overlapTokens: 0,
-        respectParagraphs: false,
-        respectPageBoundaries: false,
-        includeSectionContext: true,
-      });
+      const sections: SectionInfo[] = [
+        { title: "Introduction", level: 1, startOffset: 0, endOffset: detailsOffset },
+        { title: "Details", level: 1, startOffset: detailsOffset, endOffset: fullContent.length },
+      ];
 
-      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+      // Construct a chunk whose first line ("The actual details are here with some content.")
+      // exists in fullContent within the "Details" section, but whose full content
+      // (>100 chars including a second line) does NOT appear anywhere in fullContent.
+      // This forces indexOf(chunkContent.substring(0, 100)) to return -1, triggering
+      // the first-line fallback at line 671.
+      const chunkContent =
+        "The actual details are here with some content.\n" +
+        "This second line was added by a hypothetical post-processing step and does not exist in the original document.";
 
-      // Find a chunk that contains the first line from Section Two
-      const matchingChunks = chunks.filter((c) => c.content.includes(firstLine));
-      expect(matchingChunks.length).toBeGreaterThanOrEqual(1);
+      // Verify preconditions:
+      // - The first 100 chars of chunkContent must NOT be found in fullContent
+      expect(fullContent.indexOf(chunkContent.substring(0, 100))).toBe(-1);
+      // - The first line of chunkContent MUST be found in fullContent
+      const firstLine = chunkContent.split("\n")[0]!;
+      expect(fullContent.indexOf(firstLine)).toBeGreaterThan(-1);
 
-      // The first-line fallback should resolve to "Section Two"
-      expect(matchingChunks[0]!.metadata.sectionHeading).toBe("Section Two");
+      // Call findSectionHeading without charOffset to exercise the fallback
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined // no charOffset -- forces content search path
+      );
+
+      // The first line appears inside the "Details" section, so the fallback
+      // should resolve to "Details"
+      expect(heading).toBe("Details");
+    });
+
+    test("findSectionHeading returns undefined when neither 100-char nor first-line search matches", () => {
+      // Exercise the double-miss path at lines 675-676 of DocumentChunker.ts:
+      // both indexOf attempts return -1, so the method returns undefined.
+      const chunker = new TestableDocumentChunker();
+
+      const fullContent = "# Section A\n\nSome text in section A.";
+      const sections: SectionInfo[] = [
+        { title: "Section A", level: 1, startOffset: 0, endOffset: fullContent.length },
+      ];
+
+      // Chunk content that does not appear anywhere in fullContent
+      const chunkContent = "Completely unrelated content that appears nowhere in the document.";
+
+      // Verify preconditions: neither the 100-char prefix nor the first line is found
+      expect(
+        fullContent.indexOf(chunkContent.substring(0, Math.min(100, chunkContent.length)))
+      ).toBe(-1);
+      expect(fullContent.indexOf(chunkContent.split("\n")[0]!.substring(0, 80))).toBe(-1);
+
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined
+      );
+
+      expect(heading).toBeUndefined();
     });
 
     test("chunkByPages produces more than MAX_CHUNKS_PER_FILE (100) chunks for many-page documents", () => {
       // MAX_CHUNKS_PER_FILE = 100 is enforced per-page call inside chunkFile(),
       // but chunkByPages() has no document-level limit. A document with >100 pages
       // each producing 1 chunk per page should yield >100 total chunks.
+      //
+      // Regression guard: if someone adds a document-level chunk cap to chunkByPages,
+      // this test will fail and force a deliberate decision about the desired behavior.
       const pageCount = 105;
       const pages = [];
       const contentParts = [];
