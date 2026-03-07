@@ -724,3 +724,179 @@ export interface DocumentChunkerConfig {
    */
   respectPageBoundaries?: boolean;
 }
+
+// ── Table Extraction Types ──────────────────────────────────────
+
+/**
+ * Source document type for table extraction.
+ *
+ * Derived from {@link DocumentType} to maintain a compile-time
+ * relationship — if "pdf" or "docx" are removed from DocumentType,
+ * the compiler will flag this type.
+ */
+export type TableSourceType = Extract<DocumentType, "pdf" | "docx">;
+
+/**
+ * Individual cell in an extracted table.
+ *
+ * @example
+ * ```typescript
+ * const cell: TableCell = {
+ *   content: "Revenue",
+ *   rowSpan: 1,
+ *   colSpan: 2,
+ * };
+ * ```
+ */
+export interface TableCell {
+  /** Text content of the cell. */
+  content: string;
+
+  /**
+   * Number of rows this cell spans.
+   *
+   * @default 1
+   */
+  rowSpan?: number;
+
+  /**
+   * Number of columns this cell spans.
+   *
+   * @default 1
+   */
+  colSpan?: number;
+}
+
+/**
+ * A row in an extracted table.
+ *
+ * @example
+ * ```typescript
+ * const headerRow: TableRow = {
+ *   cells: [{ content: "Name" }, { content: "Value" }],
+ *   isHeader: true,
+ * };
+ * ```
+ */
+export interface TableRow {
+  /** Ordered cells in the row. */
+  cells: TableCell[];
+
+  /**
+   * Whether this row is a header row.
+   *
+   * @default false
+   */
+  isHeader?: boolean;
+}
+
+/**
+ * Structured table data extracted from a document.
+ *
+ * @example
+ * ```typescript
+ * const table: TableData = {
+ *   rows: [
+ *     { cells: [{ content: "Name" }, { content: "Age" }], isHeader: true },
+ *     { cells: [{ content: "Alice" }, { content: "30" }] },
+ *   ],
+ *   columnCount: 2,
+ *   caption: "User demographics",
+ * };
+ * ```
+ */
+export interface TableData {
+  /** All rows in the table, in document order. */
+  rows: TableRow[];
+
+  /** Number of columns in the table. */
+  columnCount: number;
+
+  /**
+   * Table caption, if present in the source document.
+   *
+   * @default undefined
+   */
+  caption?: string;
+}
+
+/**
+ * Result of extracting a single table from a document.
+ *
+ * One document may contain multiple tables, so extractors return
+ * an array of these results.
+ *
+ * @example
+ * ```typescript
+ * const result: TableExtractionResult = {
+ *   table: { rows: [...], columnCount: 3 },
+ *   filePath: "/docs/report.pdf",
+ *   sourceType: "pdf",
+ *   pageNumber: 4,
+ *   tableIndex: 0,
+ *   confidence: 0.95,
+ * };
+ * ```
+ */
+export interface TableExtractionResult {
+  /** The extracted table data. */
+  table: TableData;
+
+  /** Absolute path to the source file. */
+  filePath: string;
+
+  /** Document type that contained the table. */
+  sourceType: TableSourceType;
+
+  /**
+   * 1-based page number where the table was found (PDF only).
+   *
+   * @default undefined
+   */
+  pageNumber?: number;
+
+  /** 0-based index of this table within the document. */
+  tableIndex: number;
+
+  /**
+   * Extraction confidence score between 0.0 and 1.0.
+   *
+   * @default undefined
+   */
+  confidence?: number;
+}
+
+/**
+ * Configuration for table extractors.
+ *
+ * Extends {@link ExtractorConfig} so concrete extractors inherit
+ * `maxFileSizeBytes` and `timeoutMs` from {@link BaseExtractor}.
+ * Concrete implementations (#410, #411) will add their own options.
+ */
+export interface TableExtractorConfig extends ExtractorConfig {
+  // Intentionally empty — concrete extractors add their own options.
+}
+
+/**
+ * Interface for table extractors (PDF, DOCX).
+ *
+ * Extends {@link DocumentExtractor} with a result type of
+ * `TableExtractionResult[]` because a single document can contain
+ * multiple tables.
+ *
+ * @example
+ * ```typescript
+ * class PdfTableExtractor implements TableExtractor {
+ *   async extract(filePath: string): Promise<TableExtractionResult[]> {
+ *     // Extract tables from PDF
+ *   }
+ *   supports(extension: string): boolean {
+ *     return extension === ".pdf";
+ *   }
+ * }
+ * ```
+ */
+export interface TableExtractor extends DocumentExtractor<TableExtractionResult[]> {
+  // Inherits: extract(filePath: string): Promise<TableExtractionResult[]>
+  // Inherits: supports(extension: string): boolean
+}
