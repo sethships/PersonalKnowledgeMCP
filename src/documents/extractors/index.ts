@@ -22,6 +22,9 @@
  * ```
  */
 
+// Base extractor
+export { BaseExtractor } from "./BaseExtractor.js";
+
 // PDF extraction
 export { PdfExtractor } from "./PdfExtractor.js";
 export type { PdfExtractorConfig } from "./PdfExtractor.js";

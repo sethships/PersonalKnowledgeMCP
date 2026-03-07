@@ -7,27 +7,14 @@
  * @module documents/extractors/PdfExtractor
  */
 
-import * as fs from "node:fs/promises";
-import * as crypto from "node:crypto";
 // Import from lib directly to avoid debug mode in index.js
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse/lib/pdf-parse.js") as typeof import("pdf-parse");
 import type pdfParseTypes from "pdf-parse";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
-import {
-  ExtractionError,
-  ExtractionTimeoutError,
-  FileAccessError,
-  FileTooLargeError,
-  PasswordProtectedError,
-} from "../errors.js";
-import type {
-  DocumentExtractor,
-  DocumentMetadata,
-  ExtractionResult,
-  ExtractorConfig,
-  PageInfo,
-} from "../types.js";
+import { ExtractionError, ExtractionTimeoutError, PasswordProtectedError } from "../errors.js";
+import { BaseExtractor } from "./BaseExtractor.js";
+import type { DocumentMetadata, ExtractionResult, ExtractorConfig, PageInfo } from "../types.js";
 
 /**
  * PDF-specific extractor configuration.
@@ -81,7 +68,7 @@ interface PdfInfo {
  * Uses pdf-parse library for text extraction. Handles multi-page documents
  * and extracts metadata such as title, author, and creation date when available.
  *
- * @implements {DocumentExtractor<ExtractionResult>}
+ * @extends {BaseExtractor<Required<PdfExtractorConfig>, ExtractionResult>}
  *
  * @example
  * ```typescript
@@ -94,20 +81,18 @@ interface PdfInfo {
  * }
  * ```
  */
-export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
-  private readonly config: Required<PdfExtractorConfig>;
-
+export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, ExtractionResult> {
   /**
    * Creates a new PdfExtractor instance.
    *
    * @param config - Optional configuration overrides
    */
   constructor(config?: PdfExtractorConfig) {
-    this.config = {
+    super("documents:pdf-extractor", {
       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
       extractPageInfo: config?.extractPageInfo ?? true,
-    };
+    });
   }
 
   /**
@@ -133,14 +118,7 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     const stats = await this.getFileStats(filePath);
 
     // 2. Check file size
-    if (stats.size > this.config.maxFileSizeBytes) {
-      throw new FileTooLargeError(
-        `File exceeds maximum size of ${this.config.maxFileSizeBytes} bytes (actual: ${stats.size} bytes)`,
-        stats.size,
-        this.config.maxFileSizeBytes,
-        { filePath }
-      );
-    }
+    this.validateFileSize(stats.size, filePath);
 
     // 3. Read file buffer
     const buffer = await this.readFileBuffer(filePath);
@@ -179,68 +157,6 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     return DOCUMENT_EXTENSIONS.pdf.includes(
       normalizedExt as (typeof DOCUMENT_EXTENSIONS.pdf)[number]
     );
-  }
-
-  /**
-   * Get the current configuration.
-   *
-   * @returns The extractor configuration
-   */
-  getConfig(): Readonly<Required<PdfExtractorConfig>> {
-    return this.config;
-  }
-
-  /**
-   * Get file stats and handle errors.
-   *
-   * @param filePath - Path to the file
-   * @returns File stats
-   * @throws {FileAccessError} If file cannot be accessed
-   */
-  private async getFileStats(filePath: string): Promise<{ size: number; mtime: Date }> {
-    try {
-      const stats = await fs.stat(filePath);
-      return {
-        size: stats.size,
-        mtime: stats.mtime,
-      };
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        throw new FileAccessError(`File not found: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      if (nodeError.code === "EACCES") {
-        throw new FileAccessError(`Permission denied: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      throw new FileAccessError(`Cannot access file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Read file contents as buffer.
-   *
-   * @param filePath - Path to the file
-   * @returns File contents as buffer
-   * @throws {FileAccessError} If file cannot be read
-   */
-  private async readFileBuffer(filePath: string): Promise<Buffer> {
-    try {
-      return await fs.readFile(filePath);
-    } catch (error) {
-      throw new FileAccessError(`Cannot read file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
   }
 
   /**
@@ -451,31 +367,6 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     } catch {
       return undefined;
     }
-  }
-
-  /**
-   * Count words in text.
-   *
-   * @param text - Text to count words in
-   * @returns Word count
-   */
-  private countWords(text: string): number {
-    if (!text || text.trim().length === 0) {
-      return 0;
-    }
-    // Split on whitespace and filter empty strings
-    return text.split(/\s+/).filter((word) => word.length > 0).length;
-  }
-
-  /**
-   * Compute SHA-256 hash of content.
-   *
-   * @param buffer - Content buffer
-   * @returns Hex-encoded SHA-256 hash with sha256: prefix
-   */
-  private computeContentHash(buffer: Buffer): string {
-    const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-    return `sha256:${hash}`;
   }
 }
 
