@@ -342,7 +342,10 @@ export class DocumentChunker extends FileChunker {
    * Chunk document by paragraph boundaries.
    *
    * Splits content at double-newline boundaries and groups paragraphs
-   * into chunks respecting the token limit. Falls back to line-level
+   * into chunks respecting the token limit. When `overlapTokens > 0`,
+   * the last N whole paragraphs fitting within the overlap budget are
+   * carried from the flushed group into the next group for semantic
+   * continuity across chunk boundaries. Falls back to line-level
    * splitting for individual paragraphs that exceed the token limit.
    * Character offsets are tracked for section heading lookup.
    *
@@ -369,6 +372,7 @@ export class DocumentChunker extends FileChunker {
     const positions: ChunkPositionData[] = [];
     let currentParagraphs: ParagraphBlock[] = [];
     let currentTokens = 0;
+    let overlapCount = 0; // Track how many leading paragraphs are overlap from previous group
     const fileInfo = this.createDocumentFileInfo(extractionResult, filePath);
 
     for (const paragraph of paragraphs) {
@@ -385,6 +389,7 @@ export class DocumentChunker extends FileChunker {
           });
           positions.push({ charOffset: paragraph.charOffset });
         }
+        overlapCount = 0;
         continue;
       }
 
@@ -393,12 +398,16 @@ export class DocumentChunker extends FileChunker {
         allChunks.push(
           this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo)
         );
-        positions.push({ charOffset: currentParagraphs[0]!.charOffset });
+        // Use the first non-overlap paragraph's offset for section heading lookup,
+        // falling back to the first paragraph if the group is entirely overlap
+        const posIndex = Math.min(overlapCount, currentParagraphs.length - 1);
+        positions.push({ charOffset: currentParagraphs[posIndex]!.charOffset });
 
         // Seed next group with overlap paragraphs from the tail of the flushed group
         const overlapParas = this.getOverlapParagraphs(currentParagraphs, this.overlapTokens);
         currentParagraphs = [...overlapParas];
         currentTokens = overlapParas.reduce((sum, p) => sum + estimateTokens(p.content), 0);
+        overlapCount = overlapParas.length;
       }
 
       currentParagraphs.push(paragraph);
@@ -408,7 +417,8 @@ export class DocumentChunker extends FileChunker {
     // Flush remaining paragraphs
     if (currentParagraphs.length > 0) {
       allChunks.push(this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo));
-      positions.push({ charOffset: currentParagraphs[0]!.charOffset });
+      const posIndex = Math.min(overlapCount, currentParagraphs.length - 1);
+      positions.push({ charOffset: currentParagraphs[posIndex]!.charOffset });
     }
 
     // Fix chunk indices and totalChunks

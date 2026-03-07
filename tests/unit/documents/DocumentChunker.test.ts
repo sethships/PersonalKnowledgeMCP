@@ -792,7 +792,7 @@ describe("DocumentChunker", () => {
       }
     });
 
-    test("overlap respects overlapTokens budget", () => {
+    test("overlap includes at least one paragraph even when it exceeds budget", () => {
       // Each paragraph ~91 tokens. With overlapTokens=50, the "at least one"
       // rule still includes one paragraph. With maxChunkTokens=200, two fit
       // (91+91=182 < 200) but three don't (273 > 200).
@@ -820,6 +820,36 @@ describe("DocumentChunker", () => {
       }
     });
 
+    test("overlap budget constrains number of overlap paragraphs", () => {
+      // Use short paragraphs (~8 chars → ~2 tokens each) to test real budget
+      // constraints. With overlapTokens=5, two ~2-token paragraphs fit (4 ≤ 5)
+      // but three don't (6 > 5).
+      const shortParas = Array.from({ length: 10 }, (_, i) => `Para ${i + 1}.`);
+      const content = shortParas.join("\n\n");
+      // Each paragraph ~2 tokens, maxChunkTokens=8 fits ~4 paragraphs per chunk
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 5,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // With ~2 tokens per paragraph and overlap budget of 5, at most 2 paragraphs
+      // should be carried as overlap (2*2=4 ≤ 5, but 3*2=6 > 5)
+      for (let i = 1; i < chunks.length; i++) {
+        const paras = chunks[i]!.content.split("\n\n");
+        // Overlap paragraphs from the previous chunk
+        const prevParas = chunks[i - 1]!.content.split("\n\n");
+        const overlapParas = paras.filter((p) => prevParas.includes(p));
+        expect(overlapParas.length).toBeLessThanOrEqual(2);
+        expect(overlapParas.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+
     test("single-paragraph groups still produce overlap", () => {
       // maxChunkTokens=120: fits one ~91-token paragraph but not two
       // overlapTokens=100: enough to carry the single paragraph forward
@@ -836,6 +866,29 @@ describe("DocumentChunker", () => {
       expect(chunks.length).toBeGreaterThan(1);
 
       // Each chunk after the first should contain the previous chunk's paragraph
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("at least one overlap paragraph included even with tiny overlapTokens budget", () => {
+      // With overlapTokens=1 and paragraphs at ~91 tokens each,
+      // the "at least one" rule should still include one paragraph
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 1,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(4);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk after the first should still contain overlap
       for (let i = 0; i < chunks.length - 1; i++) {
         const currentParagraphs = chunks[i]!.content.split("\n\n");
         const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
