@@ -123,15 +123,14 @@ export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, Ex
     // 3. Read file buffer
     const buffer = await this.readFileBuffer(filePath);
 
-    // 4. Parse PDF with timeout
-    const pdfData = await this.parsePdfWithTimeout(buffer, filePath);
+    // 4. Parse PDF with timeout (single pass — extracts pages inline when configured)
+    const { pdfData, pages } = await this.parsePdfWithTimeout(
+      buffer,
+      filePath,
+      this.config.extractPageInfo
+    );
 
-    // 5. Extract pages if configured
-    const pages = this.config.extractPageInfo
-      ? await this.extractPages(buffer, filePath)
-      : undefined;
-
-    // 6. Build metadata
+    // 5. Build metadata
     const metadata = this.buildMetadata(pdfData, filePath, stats, buffer);
 
     return {
@@ -161,18 +160,50 @@ export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, Ex
   }
 
   /**
-   * Parse PDF with timeout protection.
+   * Parse PDF with timeout protection, optionally extracting per-page content in a single pass.
+   *
+   * When `extractPageInfo` is true, a `pagerender` callback captures per-page text
+   * during the same parse call, avoiding a second full parse of the buffer.
    *
    * @param buffer - PDF file buffer
    * @param filePath - Path to the file (for error context)
-   * @returns Parsed PDF data
+   * @param extractPageInfo - Whether to capture per-page content
+   * @returns Parsed PDF data and optional page info
    * @throws {ExtractionTimeoutError} If parsing times out
    * @throws {PasswordProtectedError} If PDF is encrypted
    * @throws {ExtractionError} If parsing fails
    */
-  private async parsePdfWithTimeout(buffer: Buffer, filePath: string): Promise<PdfParseResult> {
+  private async parsePdfWithTimeout(
+    buffer: Buffer,
+    filePath: string,
+    extractPageInfo: boolean
+  ): Promise<{ pdfData: PdfParseResult; pages?: PageInfo[] }> {
     // Use settled flag to prevent race condition between timeout and parse completion
     let settled = false;
+    const pageContents: string[] = [];
+
+    // Note: graceful degradation for per-page failures relies on two layers:
+    // 1. Our per-page .catch() below (handles individual getTextContent rejections)
+    // 2. pdf-parse's internal catch around each pagerender call
+    // Unlike the previous two-pass design, a catastrophic pdfParse failure will
+    // now propagate to the caller rather than silently returning pages: [].
+    const options: pdfParseTypes.Options = {};
+    if (extractPageInfo) {
+      options.pagerender = (pageData: PageData) => {
+        return pageData
+          .getTextContent()
+          .then((textContent: TextContent) => {
+            const pageText = textContent.items.map((item: TextItem) => item.str).join(" ");
+            pageContents.push(pageText);
+            return pageText;
+          })
+          .catch(() => {
+            // Individual page failure — record empty content but don't fail the whole parse
+            pageContents.push("");
+            return "";
+          });
+      };
+    }
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -187,7 +218,7 @@ export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, Ex
         );
       }, this.config.timeoutMs);
 
-      pdfParse(buffer)
+      pdfParse(buffer, options)
         .then((result: pdfParseTypes.Result) => {
           clearTimeout(timeoutId);
           if (settled) return;
@@ -204,7 +235,15 @@ export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, Ex
             return;
           }
 
-          resolve(result as PdfParseResult);
+          const pages = extractPageInfo
+            ? pageContents.map((content, index) => ({
+                pageNumber: index + 1,
+                content,
+                wordCount: this.countWords(content),
+              }))
+            : undefined;
+
+          resolve({ pdfData: result as PdfParseResult, pages });
         })
         .catch((error: Error) => {
           clearTimeout(timeoutId);
@@ -235,49 +274,6 @@ export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, Ex
           );
         });
     });
-  }
-
-  /**
-   * Extract per-page content from PDF.
-   *
-   * Uses pdf-parse pagerender callback to extract text from each page individually.
-   *
-   * @param buffer - PDF file buffer
-   * @param filePath - Path to the file (for error context)
-   * @returns Array of page information
-   */
-  private async extractPages(buffer: Buffer, filePath: string): Promise<PageInfo[]> {
-    const pageContents: string[] = [];
-
-    try {
-      // Use pagerender to extract content from each page
-      const options: pdfParseTypes.Options = {
-        pagerender: (pageData: PageData) => {
-          return pageData.getTextContent().then((textContent: TextContent) => {
-            const pageText = textContent.items.map((item: TextItem) => item.str).join(" ");
-            pageContents.push(pageText);
-            return pageText;
-          });
-        },
-      };
-
-      await pdfParse(buffer, options);
-
-      // Build PageInfo array
-      return pageContents.map((content, index) => ({
-        pageNumber: index + 1,
-        content,
-        wordCount: this.countWords(content),
-      }));
-    } catch (error) {
-      // If per-page extraction fails, return empty array
-      // The main text content is still available from the full parse
-      this.getLogger().warn(
-        { filePath, error: error instanceof Error ? error.message : "unknown error" },
-        "Per-page extraction failed, returning empty pages array"
-      );
-      return [];
-    }
   }
 
   /**

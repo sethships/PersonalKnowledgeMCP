@@ -347,25 +347,22 @@ describe("PdfExtractor", () => {
       });
     });
 
-    describe("extractPages error handling", () => {
-      test("returns empty array when per-page extraction fails", async () => {
+    describe("page content validation", () => {
+      test("each page has non-negative wordCount matching content", async () => {
         const extractor = new PdfExtractor({ extractPageInfo: true });
-        // Access private extractPages method for testing via type cast
-        // (same pattern used for parsePdfDate tests below)
-        const extractPages = (buffer: Buffer, filePath: string): Promise<unknown[]> =>
-          (
-            extractor as unknown as {
-              extractPages: (buf: Buffer, path: string) => Promise<unknown[]>;
-            }
-          ).extractPages(buffer, filePath);
+        const filePath = path.join(PDF_DIR, "multi-page.pdf");
+        const result = await extractor.extract(filePath);
 
-        // Pass an invalid buffer that will cause pdf-parse to throw during
-        // per-page extraction, triggering the catch block and getLogger()
-        const invalidBuffer = Buffer.from("not a valid pdf");
-        const result = await extractPages(invalidBuffer, "/test/fake.pdf");
-
-        // The catch block should return an empty array instead of throwing
-        expect(result).toEqual([]);
+        expect(result.pages).toBeDefined();
+        for (const page of result.pages!) {
+          expect(page.wordCount).toBeGreaterThanOrEqual(0);
+          // wordCount should be consistent with content
+          if (page.content.trim().length === 0) {
+            expect(page.wordCount).toBe(0);
+          } else {
+            expect(page.wordCount).toBeGreaterThan(0);
+          }
+        }
       });
     });
 
