@@ -9,10 +9,21 @@
 
 import * as fs from "node:fs/promises";
 import * as crypto from "node:crypto";
-// Import from lib directly to avoid debug mode in index.js
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require("pdf-parse/lib/pdf-parse.js") as typeof import("pdf-parse");
+// Import from lib directly to avoid debug mode in index.js.
+// Uses lazy dynamic import() so the binding is interceptable by Bun's mock.module in tests.
 import type pdfParseTypes from "pdf-parse";
+let pdfParse: typeof import("pdf-parse") | undefined;
+async function ensurePdfParse(): Promise<typeof import("pdf-parse")> {
+  if (!pdfParse) {
+    // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const m = await import("pdf-parse/lib/pdf-parse.js");
+    // Handle CJS/ESM interop: module may export function directly or as .default
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    pdfParse = (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+  }
+  return pdfParse;
+}
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
 import {
   ExtractionError,
@@ -262,6 +273,9 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     filePath: string,
     extractPageInfo: boolean
   ): Promise<{ pdfData: PdfParseResult; pages?: PageInfo[] }> {
+    // Ensure pdf-parse is loaded (lazy dynamic import resolves on first use)
+    const parseFn = await ensurePdfParse();
+
     // Use settled flag to prevent race condition between timeout and parse completion
     let settled = false;
     const pageContents: string[] = [];
@@ -302,7 +316,7 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
         );
       }, this.config.timeoutMs);
 
-      pdfParse(buffer, options)
+      parseFn(buffer, options)
         .then((result: pdfParseTypes.Result) => {
           clearTimeout(timeoutId);
           if (settled) return;
