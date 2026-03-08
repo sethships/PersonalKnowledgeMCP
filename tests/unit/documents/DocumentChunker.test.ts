@@ -19,6 +19,7 @@ import {
   createMockExtractionResult,
   createMultiPageExtractionResult,
   createSectionedExtractionResult,
+  createHierarchicalSectionedExtractionResult,
   createTypedExtractionResult,
   generateLargeDocumentContent,
 } from "../../fixtures/documents/document-chunk-fixtures.js";
@@ -515,7 +516,7 @@ describe("DocumentChunker", () => {
       }
     });
 
-    test("handles document with no sections", () => {
+    test("handles document with no sections but has title (falls back to title)", () => {
       const chunker = createChunker({
         includeSectionContext: true,
       });
@@ -526,7 +527,8 @@ describe("DocumentChunker", () => {
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
       expect(chunks.length).toBe(1);
-      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+      // No sections but document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
     });
 
     test("handles document with empty sections array", () => {
@@ -540,6 +542,174 @@ describe("DocumentChunker", () => {
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
       expect(chunks.length).toBe(1);
+      // Empty sections + document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
+    });
+
+    test("preserves heading hierarchy in H1 > H2 > H3 format", () => {
+      // Use small token limit so the Details 1.1.1 content gets its own chunk
+      // (paragraph "This subsection provides..." is ~33 tokens at ceil(131/4))
+      const chunker = createChunker({
+        maxChunkTokens: 35,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createHierarchicalSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/hierarchical.md", TEST_SOURCE);
+
+      // Find a chunk whose content is under "Details 1.1.1" (H3)
+      const detailsChunk = chunks.find((c) =>
+        c.content.includes("granular details about section 1.1")
+      );
+      expect(detailsChunk).toBeDefined();
+      expect(detailsChunk!.metadata.sectionHeading).toBe("Chapter 1 > Section 1.1 > Details 1.1.1");
+    });
+
+    test("single-level headings return just the heading without separator", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 200,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/design.md", TEST_SOURCE);
+
+      // All sections in SECTIONED_DOCUMENT_CONTENT are H1 - no hierarchy separator
+      const chunksWithHeadings = chunks.filter((c) => c.metadata.sectionHeading);
+      for (const chunk of chunksWithHeadings) {
+        expect(chunk.metadata.sectionHeading).not.toContain(" > ");
+      }
+    });
+
+    test("H2 heading under H1 shows two-level hierarchy", () => {
+      // Use small token limit so Section 2.1 content gets its own chunk
+      const chunker = createChunker({
+        maxChunkTokens: 35,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createHierarchicalSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/hierarchical.md", TEST_SOURCE);
+
+      // Find a chunk under "Section 2.1" (H2 under H1 "Chapter 2")
+      const section21Chunk = chunks.find((c) => c.content.includes("first topic in chapter 2"));
+      expect(section21Chunk).toBeDefined();
+      expect(section21Chunk!.metadata.sectionHeading).toBe("Chapter 2 > Section 2.1");
+    });
+
+    test("chunks before any heading fall back to document title", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 500,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Content that starts with text before any heading
+      const content = "This text comes before any heading.\n\n# First Section\n\nSection content.";
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "First Section",
+            level: 1,
+            startOffset: content.indexOf("# First Section"),
+            endOffset: content.length,
+          },
+        ],
+        metadataOverrides: {
+          title: "My Document Title",
+          documentType: "markdown",
+        },
+      });
+
+      const chunks = chunker.chunkDocument(result, "docs/test.md", TEST_SOURCE);
+
+      // The chunk containing pre-heading text should fall back to document title
+      const preHeadingChunk = chunks.find((c) => c.content.includes("before any heading"));
+      expect(preHeadingChunk).toBeDefined();
+      expect(preHeadingChunk!.metadata.sectionHeading).toBe("My Document Title");
+    });
+
+    test("chunks without headings AND without document title remain undefined", () => {
+      const chunker = createChunker({
+        includeSectionContext: true,
+      });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: undefined,
+        metadataOverrides: { title: undefined },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+    });
+
+    test("document title fallback used when sections array is empty and document has title", () => {
+      const chunker = createChunker({
+        includeSectionContext: true,
+      });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: [],
+        metadataOverrides: { title: "Fallback Title" },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Fallback Title");
+    });
+
+    test("handles non-contiguous heading levels (H1 directly to H3)", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = "# Chapter\n\nIntro.\n\n### Subsection\n\nDetails here.";
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "Chapter",
+            level: 1,
+            startOffset: 0,
+            endOffset: content.indexOf("### Subsection"),
+          },
+          {
+            title: "Subsection",
+            level: 3,
+            startOffset: content.indexOf("### Subsection"),
+            endOffset: content.length,
+          },
+        ],
+        metadataOverrides: { documentType: "markdown", title: undefined },
+      });
+      const chunks = chunker.chunkDocument(result, "docs/test.md", TEST_SOURCE);
+      const detailChunk = chunks.find((c) => c.content.includes("Details here"));
+      expect(detailChunk).toBeDefined();
+      // H3 under H1 with no H2 — should still show hierarchy
+      expect(detailChunk!.metadata.sectionHeading).toBe("Chapter > Subsection");
+    });
+
+    test("does not fall back to title when includeSectionContext=false", () => {
+      const chunker = createChunker({ includeSectionContext: false });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: undefined,
+        metadataOverrides: { title: "Should Not Appear" },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
       expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
     });
   });
@@ -692,7 +862,8 @@ describe("DocumentChunker", () => {
 
       expect(chunks.length).toBe(1);
       expect(chunks[0]!.metadata.pageNumber).toBeUndefined();
-      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+      // No sections but document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
     });
 
     test("handles document with empty pages array", () => {

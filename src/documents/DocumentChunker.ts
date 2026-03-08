@@ -822,6 +822,11 @@ export class DocumentChunker extends FileChunker {
         );
       }
 
+      // Fallback to document title when no section heading found
+      if (this.includeSectionContext && !sectionHeading && extractionResult.metadata.title) {
+        sectionHeading = extractionResult.metadata.title;
+      }
+
       const documentMetadata: DocumentChunkMetadata = {
         extension: chunk.metadata.extension,
         language: chunk.metadata.language,
@@ -895,24 +900,47 @@ export class DocumentChunker extends FileChunker {
   }
 
   /**
-   * Find the nearest section whose startOffset is at or before the given position.
+   * Find the nearest section whose startOffset is at or before the given position,
+   * returning the full heading hierarchy (e.g., "Chapter 1 > Section 1.1 > Details").
    *
-   * @param sections - Sorted sections
+   * Builds the hierarchy by finding the nearest preceding section at each heading
+   * level, walking from the leaf (nearest) up to the root (lowest level number).
+   *
+   * @param sections - Document sections with offsets and levels
    * @param position - Character position in content
-   * @returns Section title or undefined
+   * @returns Hierarchical section heading string joined with " > ", or undefined
    */
   private findNearestSection(sections: SectionInfo[], position: number): string | undefined {
-    let nearest: SectionInfo | undefined;
-
+    // Find the leaf: nearest preceding section (single pass, no allocation)
+    let leaf: SectionInfo | undefined;
     for (const section of sections) {
       if (section.startOffset <= position) {
-        if (!nearest || section.startOffset > nearest.startOffset) {
-          nearest = section;
+        if (!leaf || section.startOffset > leaf.startOffset) {
+          leaf = section;
         }
       }
     }
+    if (!leaf) return undefined;
 
-    return nearest?.title;
+    const hierarchy: string[] = [leaf.title];
+    let currentLevel = leaf.level;
+
+    // Walk preceding sections to build ancestor chain
+    while (currentLevel > 1) {
+      let bestAncestor: SectionInfo | undefined;
+      for (const section of sections) {
+        if (section.startOffset <= position && section.level < currentLevel) {
+          if (!bestAncestor || section.startOffset > bestAncestor.startOffset) {
+            bestAncestor = section;
+          }
+        }
+      }
+      if (!bestAncestor) break;
+      hierarchy.unshift(bestAncestor.title);
+      currentLevel = bestAncestor.level;
+    }
+
+    return hierarchy.join(" > ");
   }
 
   /**

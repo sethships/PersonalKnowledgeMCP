@@ -72,6 +72,36 @@ The architecture follows a layered approach with clear separation of concerns. E
 This is the conclusion section. It wraps up the discussion and provides actionable recommendations based on the analysis presented in the previous sections.`;
 
 /**
+ * Document content with hierarchical section headings (H1 > H2 > H3).
+ *
+ * Contains nested heading structure for testing heading hierarchy
+ * preservation in chunk metadata.
+ */
+export const HIERARCHICAL_SECTIONED_CONTENT = `# Chapter 1
+
+This is the introduction to chapter 1. It provides an overview of the topics covered.
+
+## Section 1.1
+
+This is section 1.1 content. It covers the basics of the topic with some detail.
+
+### Details 1.1.1
+
+This subsection provides granular details about section 1.1 topics. It includes specific examples and data points for illustration.
+
+## Section 1.2
+
+This is section 1.2 content. It covers a different aspect of the chapter topic.
+
+# Chapter 2
+
+This is the introduction to chapter 2. It shifts focus to a new topic area.
+
+## Section 2.1
+
+This is section 2.1 content. It explores the first topic in chapter 2.`;
+
+/**
  * Long prose paragraph with multiple sentences and no internal newlines.
  *
  * ~300 tokens (1200+ characters). Simulates dense prose from PDFs/DOCX
@@ -266,4 +296,65 @@ export function createTypedExtractionResult(
       filePath: filePathMap[documentType],
     },
   });
+}
+
+/**
+ * Create an ExtractionResult with hierarchical section headings (H1/H2/H3).
+ *
+ * Suitable for testing heading hierarchy preservation in chunk metadata.
+ *
+ * @returns ExtractionResult with nested sections array
+ */
+export function createHierarchicalSectionedExtractionResult(): ExtractionResult {
+  const content = HIERARCHICAL_SECTIONED_CONTENT;
+
+  const sections: SectionInfo[] = [
+    {
+      title: "Chapter 1",
+      level: 1,
+      startOffset: content.indexOf("# Chapter 1"),
+      endOffset: content.indexOf("## Section 1.1"),
+    },
+    {
+      title: "Section 1.1",
+      level: 2,
+      startOffset: content.indexOf("## Section 1.1"),
+      endOffset: content.indexOf("### Details 1.1.1"),
+    },
+    {
+      title: "Details 1.1.1",
+      level: 3,
+      startOffset: content.indexOf("### Details 1.1.1"),
+      endOffset: content.indexOf("## Section 1.2"),
+    },
+    {
+      title: "Section 1.2",
+      level: 2,
+      startOffset: content.indexOf("## Section 1.2"),
+      endOffset: content.indexOf("# Chapter 2"),
+    },
+    {
+      title: "Chapter 2",
+      level: 1,
+      startOffset: content.indexOf("# Chapter 2"),
+      endOffset: content.indexOf("## Section 2.1"),
+    },
+    {
+      title: "Section 2.1",
+      level: 2,
+      startOffset: content.indexOf("## Section 2.1"),
+      endOffset: content.length,
+    },
+  ];
+
+  return {
+    content,
+    metadata: {
+      ...DEFAULT_METADATA,
+      documentType: "markdown",
+      filePath: "/docs/hierarchical.md",
+      title: "Hierarchical Document",
+    },
+    sections,
+  };
 }

@@ -557,9 +557,13 @@ export interface DocumentChunkMetadata {
   pageNumber?: number;
 
   /**
-   * Nearest preceding section heading for this chunk.
+   * Nearest preceding section heading hierarchy for this chunk.
    *
    * Provides structural context for the chunk's content within the document.
+   * When multiple heading levels are present, the value contains the full
+   * hierarchy joined with " > " (e.g., "Chapter 1 > Section 1.1 > Details").
+   * When no section heading is found but the document has a title, the
+   * document title is used as a fallback.
    *
    * @default undefined
    */
