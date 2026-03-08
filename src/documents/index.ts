@@ -116,6 +116,9 @@ export type {
 // Table formatter
 export { TableFormatter } from "./TableFormatter.js";
 
+// Markdown table parser (inverse of TableFormatter.toMarkdown)
+export { MarkdownTableParser } from "./MarkdownTableParser.js";
+
 // Table content indexer
 export { TableContentIndexer } from "./TableContentIndexer.js";
 export type { TableIndexerConfig, TableIndexerContext } from "./TableContentIndexer.js";

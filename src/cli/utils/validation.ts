@@ -618,3 +618,18 @@ export const TablesListCommandOptionsSchema = z.object({
  * Inferred TypeScript type for tables list command
  */
 export type ValidatedTablesListOptions = z.infer<typeof TablesListCommandOptionsSchema>;
+
+/**
+ * Schema for tables export command options
+ *
+ * Validates options for exporting a table to CSV or JSON format.
+ */
+export const TablesExportCommandOptionsSchema = z.object({
+  format: z.enum(["csv", "json"]).default("csv"),
+  output: z.string().optional(),
+});
+
+/**
+ * Inferred TypeScript type for tables export command
+ */
+export type ValidatedTablesExportOptions = z.infer<typeof TablesExportCommandOptionsSchema>;
