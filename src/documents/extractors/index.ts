@@ -44,3 +44,7 @@ export type { ImageMetadataExtractorConfig } from "./ImageMetadataExtractor.js";
 // PDF table extraction
 export { PdfTableExtractor } from "./PdfTableExtractor.js";
 export type { PdfTableExtractorConfig } from "./PdfTableExtractor.js";
+
+// DOCX table extraction
+export { DocxTableExtractor } from "./DocxTableExtractor.js";
+export type { DocxTableExtractorConfig } from "./DocxTableExtractor.js";
