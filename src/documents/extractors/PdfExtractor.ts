@@ -14,12 +14,18 @@ let pdfParsePromise: Promise<typeof import("pdf-parse")> | undefined;
 async function ensurePdfParse(): Promise<typeof import("pdf-parse")> {
   if (!pdfParsePromise) {
     pdfParsePromise = (async () => {
-      // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const m = await import("pdf-parse/lib/pdf-parse.js");
-      // Handle CJS/ESM interop: module may export function directly or as .default
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      return (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+      try {
+        // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const m = await import("pdf-parse/lib/pdf-parse.js");
+        // Handle CJS/ESM interop: module may export function directly or as .default
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+      } catch (error) {
+        // Clear cached promise so subsequent calls can retry the import
+        pdfParsePromise = undefined;
+        throw error;
+      }
     })();
   }
   return pdfParsePromise;
