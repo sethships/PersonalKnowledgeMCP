@@ -72,6 +72,49 @@ The architecture follows a layered approach with clear separation of concerns. E
 This is the conclusion section. It wraps up the discussion and provides actionable recommendations based on the analysis presented in the previous sections.`;
 
 /**
+ * Long prose paragraph with multiple sentences and no internal newlines.
+ *
+ * ~300 tokens (1200+ characters). Simulates dense prose from PDFs/DOCX
+ * where paragraph boundaries don't contain `\n` characters.
+ */
+export const LONG_PROSE_PARAGRAPH =
+  "The architecture of modern distributed systems requires careful consideration of multiple factors including consistency, availability, and partition tolerance. " +
+  "When designing microservices, engineers must evaluate the trade-offs between synchronous and asynchronous communication patterns to ensure optimal performance. " +
+  "Database selection plays a critical role in determining system behavior under load, with relational databases offering strong consistency guarantees while NoSQL alternatives provide horizontal scalability. " +
+  "Caching strategies must be implemented at multiple levels of the stack, from application-level memoization to distributed caches like Redis and Memcached. " +
+  "Monitoring and observability are essential concerns that should be addressed from the earliest stages of development rather than retrofitted after deployment. " +
+  "Security considerations including authentication, authorization, and encryption must be woven into the fabric of the system rather than treated as an afterthought.";
+
+/**
+ * Long single sentence without sentence-ending punctuation boundaries.
+ *
+ * ~200 tokens (800+ characters). Forces word-level splitting when
+ * sentence boundary detection finds no split points.
+ */
+export const LONG_SINGLE_SENTENCE =
+  "The comprehensive analysis of distributed computing paradigms across " +
+  "heterogeneous cloud environments with varying network topologies and " +
+  "diverse workload characteristics including batch processing and " +
+  "real-time streaming and interactive query execution and machine " +
+  "learning inference and data transformation pipelines and event-driven " +
+  "architectures and serverless functions and container orchestration " +
+  "and service mesh configurations and API gateway routing and load " +
+  "balancing algorithms and circuit breaker patterns and retry mechanisms " +
+  "and timeout configurations and connection pooling strategies and " +
+  "thread management approaches and memory allocation techniques and " +
+  "garbage collection tuning and JIT compilation optimization and " +
+  "native code generation and cross-compilation toolchains reveals " +
+  "fundamental constraints on system performance";
+
+/**
+ * Very long single word (~3000 characters).
+ *
+ * Forces the word-level fallback to emit an oversized chunk
+ * since words are never broken mid-character.
+ */
+export const VERY_LONG_WORD = "supercalifragilisticexpialidocious".repeat(90);
+
+/**
  * Large document content that will produce multiple chunks.
  *
  * Generates content with many paragraphs, each ~200 characters (~50 tokens).

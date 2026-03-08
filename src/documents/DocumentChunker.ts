@@ -62,7 +62,11 @@ interface ChunkPositionData {
  * - **Section heading context**: Attaches nearest section heading to each chunk
  * - **Document metadata**: Preserves document type, title, and author in chunk metadata
  *
- * Falls back to FileChunker's line-level splitting when paragraphs exceed token limits.
+ * When paragraphs exceed token limits, falls back through a hierarchy:
+ * **Paragraph > Sentence > Word > (oversized word in own chunk)**.
+ * Sentence boundaries use punctuation followed by whitespace; word boundaries
+ * use whitespace splitting. Single words exceeding the token limit are emitted
+ * as their own chunk (never broken mid-word).
  *
  * When `overlapTokens > 0`, paragraph-boundary chunking carries the last N whole
  * paragraphs (fitting within the overlap budget) from the flushed group into the
@@ -345,8 +349,8 @@ export class DocumentChunker extends FileChunker {
    * into chunks respecting the token limit. When `overlapTokens > 0`,
    * the last N whole paragraphs fitting within the overlap budget are
    * carried from the flushed group into the next group for semantic
-   * continuity across chunk boundaries. Falls back to line-level
-   * splitting for individual paragraphs that exceed the token limit.
+   * continuity across chunk boundaries. Falls back through sentence
+   * and word boundaries for individual paragraphs that exceed the token limit.
    * Character offsets are tracked for section heading lookup.
    *
    * @param content - Full document content
@@ -378,17 +382,11 @@ export class DocumentChunker extends FileChunker {
     for (const paragraph of paragraphs) {
       const paragraphTokens = estimateTokens(paragraph.content);
 
-      // If single paragraph exceeds limit, chunk it with line-level splitting
+      // If single paragraph exceeds limit, chunk it with sentence/word fallbacks
       if (paragraphTokens > this.maxTokens && currentParagraphs.length === 0) {
-        const lineChunks = this.chunkFile(paragraph.content, fileInfo, source);
-        for (const chunk of lineChunks) {
-          allChunks.push({
-            ...chunk,
-            startLine: paragraph.startLine + chunk.startLine - 1,
-            endLine: paragraph.startLine + chunk.endLine - 1,
-          });
-          positions.push({ charOffset: paragraph.charOffset });
-        }
+        const subResult = this.chunkOversizedParagraph(paragraph, fileInfo, source, filePath);
+        allChunks.push(...subResult.chunks);
+        positions.push(...subResult.positions);
         overlapCount = 0;
         continue;
       }
@@ -532,6 +530,221 @@ export class DocumentChunker extends FileChunker {
     }
 
     return overlap;
+  }
+
+  /**
+   * Split text into sentences at punctuation boundaries.
+   *
+   * Uses a lookbehind regex to split after sentence-ending punctuation
+   * (`.`, `!`, `?`) followed by whitespace. Keeps punctuation attached
+   * to the preceding sentence. Imperfect for abbreviations and decimals,
+   * but acceptable for document chunking purposes.
+   *
+   * @param text - Text to split into sentences
+   * @returns Array of sentences (at least one element)
+   */
+  private splitIntoSentences(text: string): string[] {
+    const sentences = text.split(/(?<=[.!?])\s+/).filter((s) => s.length > 0);
+    return sentences.length > 0 ? sentences : [text];
+  }
+
+  /**
+   * Split text into words on whitespace boundaries.
+   *
+   * @param text - Text to split into words
+   * @returns Array of words (empty strings filtered out)
+   */
+  private splitIntoWords(text: string): string[] {
+    return text.split(/\s+/).filter((w) => w.length > 0);
+  }
+
+  /**
+   * Chunk an oversized paragraph using sentence and word boundary fallbacks.
+   *
+   * Fallback hierarchy:
+   * 1. If paragraph has internal newlines, try line-level splitting first
+   * 2. Split into sentences and group into chunks respecting maxTokens
+   * 3. For sentences exceeding maxTokens, split by words
+   * 4. Single words exceeding maxTokens get their own chunk (never broken mid-word)
+   *
+   * @param paragraph - The oversized paragraph block
+   * @param fileInfo - FileInfo for metadata
+   * @param source - Repository or source name
+   * @param filePath - Relative file path
+   * @returns Chunks and their position data
+   */
+  private chunkOversizedParagraph(
+    paragraph: ParagraphBlock,
+    fileInfo: FileInfo,
+    source: string,
+    filePath: string
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
+    // If paragraph has internal newlines, try line-level splitting first
+    if (paragraph.content.includes("\n")) {
+      const lineChunks = this.chunkFile(paragraph.content, fileInfo, source);
+      // Check if line-level produced reasonable chunks (all within limit)
+      const allWithinLimit = lineChunks.every(
+        (chunk) => estimateTokens(chunk.content) <= this.maxTokens
+      );
+      if (allWithinLimit) {
+        const chunks = lineChunks.map((chunk) => ({
+          ...chunk,
+          startLine: paragraph.startLine + chunk.startLine - 1,
+          endLine: paragraph.startLine + chunk.endLine - 1,
+        }));
+        const positions = chunks.map(() => ({ charOffset: paragraph.charOffset }));
+        return { chunks, positions };
+      }
+    }
+
+    // Sentence-level splitting
+    const sentences = this.splitIntoSentences(paragraph.content);
+    const resultChunks: FileChunk[] = [];
+    const resultPositions: ChunkPositionData[] = [];
+    let currentParts: string[] = [];
+    let currentTokens = 0;
+
+    const flushCurrent = (): void => {
+      if (currentParts.length === 0) return;
+      const content = currentParts.join(" ");
+      resultChunks.push({
+        id: createChunkId(source, filePath, resultChunks.length),
+        repository: source,
+        filePath,
+        content,
+        chunkIndex: resultChunks.length,
+        totalChunks: 0, // Updated later
+        startLine: paragraph.startLine,
+        endLine: paragraph.endLine,
+        metadata: {
+          extension: fileInfo.extension,
+          language: detectLanguage(filePath),
+          fileSizeBytes: fileInfo.sizeBytes,
+          contentHash: computeContentHash(content),
+          fileModifiedAt: fileInfo.modifiedAt,
+        },
+      });
+      resultPositions.push({ charOffset: paragraph.charOffset });
+      currentParts = [];
+      currentTokens = 0;
+    };
+
+    for (const sentence of sentences) {
+      const sentenceTokens = estimateTokens(sentence);
+
+      // If sentence itself exceeds limit, split by words
+      if (sentenceTokens > this.maxTokens) {
+        flushCurrent();
+        const wordChunks = this.chunkByWords(sentence, paragraph, fileInfo, source, filePath);
+        resultChunks.push(...wordChunks.chunks);
+        resultPositions.push(...wordChunks.positions);
+        continue;
+      }
+
+      // If adding this sentence would exceed limit, flush first
+      if (currentTokens + sentenceTokens > this.maxTokens && currentParts.length > 0) {
+        flushCurrent();
+      }
+
+      currentParts.push(sentence);
+      currentTokens += sentenceTokens;
+    }
+
+    flushCurrent();
+
+    return { chunks: resultChunks, positions: resultPositions };
+  }
+
+  /**
+   * Chunk text by word boundaries when sentence-level splitting is insufficient.
+   *
+   * Groups words into chunks respecting maxTokens. Single words exceeding
+   * the limit are emitted as their own chunk (never broken mid-word).
+   *
+   * @param text - Text to chunk by words
+   * @param paragraph - Source paragraph for position data
+   * @param fileInfo - FileInfo for metadata
+   * @param source - Repository or source name
+   * @param filePath - Relative file path
+   * @returns Chunks and their position data
+   */
+  private chunkByWords(
+    text: string,
+    paragraph: ParagraphBlock,
+    fileInfo: FileInfo,
+    source: string,
+    filePath: string
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
+    const words = this.splitIntoWords(text);
+    const resultChunks: FileChunk[] = [];
+    const resultPositions: ChunkPositionData[] = [];
+    let currentWords: string[] = [];
+    let currentTokens = 0;
+
+    const flushWords = (): void => {
+      if (currentWords.length === 0) return;
+      const content = currentWords.join(" ");
+      resultChunks.push({
+        id: createChunkId(source, filePath, resultChunks.length),
+        repository: source,
+        filePath,
+        content,
+        chunkIndex: resultChunks.length,
+        totalChunks: 0,
+        startLine: paragraph.startLine,
+        endLine: paragraph.endLine,
+        metadata: {
+          extension: fileInfo.extension,
+          language: detectLanguage(filePath),
+          fileSizeBytes: fileInfo.sizeBytes,
+          contentHash: computeContentHash(content),
+          fileModifiedAt: fileInfo.modifiedAt,
+        },
+      });
+      resultPositions.push({ charOffset: paragraph.charOffset });
+      currentWords = [];
+      currentTokens = 0;
+    };
+
+    for (const word of words) {
+      const wordTokens = estimateTokens(word);
+
+      // Single word exceeds limit - emit as its own chunk
+      if (wordTokens > this.maxTokens) {
+        flushWords();
+        const content = word;
+        resultChunks.push({
+          id: createChunkId(source, filePath, resultChunks.length),
+          repository: source,
+          filePath,
+          content,
+          chunkIndex: resultChunks.length,
+          totalChunks: 0,
+          startLine: paragraph.startLine,
+          endLine: paragraph.endLine,
+          metadata: {
+            extension: fileInfo.extension,
+            language: detectLanguage(filePath),
+            fileSizeBytes: fileInfo.sizeBytes,
+            contentHash: computeContentHash(content),
+            fileModifiedAt: fileInfo.modifiedAt,
+          },
+        });
+        resultPositions.push({ charOffset: paragraph.charOffset });
+        continue;
+      }
+
+      if (currentTokens + wordTokens > this.maxTokens && currentWords.length > 0) {
+        flushWords();
+      }
+
+      currentWords.push(word);
+      currentTokens += wordTokens;
+    }
+
+    flushWords();
+
+    return { chunks: resultChunks, positions: resultPositions };
   }
 
   /**

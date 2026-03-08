@@ -9,9 +9,13 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { DocumentChunker } from "../../../src/documents/DocumentChunker.js";
 import type { DocumentChunkerConfig, SectionInfo } from "../../../src/documents/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+import { estimateTokens } from "../../../src/ingestion/chunk-utils.js";
 import {
   SMALL_DOCUMENT_CONTENT,
   PARAGRAPH_DOCUMENT_CONTENT,
+  LONG_PROSE_PARAGRAPH,
+  LONG_SINGLE_SENTENCE,
+  VERY_LONG_WORD,
   createMockExtractionResult,
   createMultiPageExtractionResult,
   createSectionedExtractionResult,
@@ -217,21 +221,165 @@ describe("DocumentChunker", () => {
       expect(chunks[0]!.content).toBe(content);
     });
 
-    test("falls back to line-level for oversized paragraphs", () => {
+    test("falls back to sentence splitting for oversized paragraphs", () => {
       const chunker = createChunker({
-        maxChunkTokens: 50,
-        overlapTokens: 5,
+        maxChunkTokens: 100,
+        overlapTokens: 0,
         respectParagraphs: true,
         respectPageBoundaries: false,
       });
 
-      // Single long paragraph that exceeds 50 tokens
-      const longParagraph = Array.from({ length: 80 }, (_, i) => `word${i}`).join(" ");
-      const result = createMockExtractionResult({ content: longParagraph });
+      // LONG_PROSE_PARAGRAPH is ~300 tokens, no internal newlines, has sentence boundaries
+      const result = createMockExtractionResult({ content: LONG_PROSE_PARAGRAPH });
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
-      // Should split the oversized paragraph at line boundaries
-      expect(chunks.length).toBeGreaterThanOrEqual(1);
+      // Should produce multiple chunks split at sentence boundaries
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk should respect the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(100);
+      }
+
+      // Reassembled content should contain all original sentences
+      const reassembled = chunks.map((c) => c.content).join(" ");
+      expect(reassembled).toContain("architecture of modern distributed");
+      expect(reassembled).toContain("Security considerations");
+    });
+
+    test("falls back to word-level for oversized sentences", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // LONG_SINGLE_SENTENCE has no sentence-ending punctuation boundaries, ~200 tokens
+      const result = createMockExtractionResult({ content: LONG_SINGLE_SENTENCE });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should produce multiple chunks split at word boundaries
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk should respect the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(50);
+      }
+
+      // No chunk should break mid-word
+      for (const chunk of chunks) {
+        const words = chunk.content.split(/\s+/);
+        for (const word of words) {
+          // Each word should be a complete word from the original text
+          expect(LONG_SINGLE_SENTENCE).toContain(word);
+        }
+      }
+    });
+
+    test("never breaks mid-word even for very long words", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // VERY_LONG_WORD is ~3000 chars, a single word that exceeds token limits
+      const result = createMockExtractionResult({ content: VERY_LONG_WORD });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should emit the word as a single oversized chunk rather than breaking it
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.content).toBe(VERY_LONG_WORD);
+    });
+
+    test("sentence-boundary fallback respects token limit", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 80,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      const result = createMockExtractionResult({ content: LONG_PROSE_PARAGRAPH });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Every chunk must be within the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(80);
+      }
+    });
+
+    test("mixed sentence sizes group correctly", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 40,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Mix of short and medium sentences totaling ~100 tokens with 40 token limit
+      const content =
+        "Short one. Another short sentence here. " +
+        "This is a medium length sentence that adds significantly more tokens to the overall mix. " +
+        "Tiny. " +
+        "This is yet another medium sentence that should definitely push us past the boundary limit. " +
+        "The final concluding sentence wraps everything up nicely here.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(40);
+      }
+    });
+
+    test("multi-line oversized paragraph still uses line-level splitting", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Multi-line paragraph with internal \n characters (not \n\n) - 80+ tokens
+      const lines = Array.from({ length: 20 }, (_, i) => `Line ${i}: content for line ${i}`);
+      const multiLineParagraph = lines.join("\n");
+      const result = createMockExtractionResult({ content: multiLineParagraph });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should split successfully using line-level splitting
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(50);
+      }
+    });
+
+    test("sentence splitting handles common edge cases", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 40,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Content with abbreviation-like periods (Dr., Mr.) and decimals (3.14)
+      // These will cause imperfect splits, but no content should be lost
+      const content =
+        "Dr. Smith analyzed the data showing 3.14 as the ratio. " +
+        "The results were significant. " +
+        "Mr. Jones confirmed the findings in his independent review. " +
+        "The conclusion was unanimous.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should produce chunks without losing content
+      const reassembled = chunks.map((c) => c.content).join(" ");
+      expect(reassembled).toContain("3.14");
+      expect(reassembled).toContain("conclusion was unanimous");
     });
 
     test("groups multiple small paragraphs into one chunk", () => {
