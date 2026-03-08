@@ -63,6 +63,7 @@ export type {
   TableExtractionResult,
   TableExtractorConfig,
   TableExtractor,
+  MimeValidationResult,
 } from "./types.js";
 
 // Constants
@@ -74,6 +75,8 @@ export {
   DEFAULT_EXTRACTOR_CONFIG,
   DOCUMENT_TYPE_LABELS,
   EXTENSION_TO_TYPE,
+  MIME_TYPE_EQUIVALENCES,
+  TEXT_MIME_TYPES,
 } from "./constants.js";
 
 // Error classes
@@ -86,6 +89,7 @@ export {
   FileAccessError,
   ExtractionTimeoutError,
   NotImplementedError,
+  MimeTypeMismatchError,
   isDocumentError,
   isRetryableDocumentError,
 } from "./errors.js";
