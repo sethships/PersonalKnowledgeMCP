@@ -97,6 +97,8 @@ export class PersonalKnowledgeMCPServer {
         jobTracker: optionalDeps.jobTracker,
         graphService: optionalDeps.graphService,
         documentSearchService: optionalDeps.documentSearchService,
+        imageSearchService: optionalDeps.imageSearchService,
+        listWatchedFoldersService: optionalDeps.listWatchedFoldersService,
       });
     } else {
       // Legacy path - only core tools
