@@ -112,6 +112,9 @@ export class TableFormatter {
    *
    * When a cell has `colSpan > 1`, subsequent positions are filled with
    * empty cells so the total matches `columnCount`.
+   *
+   * Note: `rowSpan` is not expanded because Markdown and CSV have no
+   * native row-span concept. The JSON exporter preserves rowSpan as-is.
    */
   private static expandCells(cells: TableCell[], columnCount: number): TableCell[] {
     const expanded: TableCell[] = [];
@@ -137,10 +140,13 @@ export class TableFormatter {
    *
    * - Backslashes are escaped first (to avoid double-escaping).
    * - Pipe characters (`|`) are escaped with a backslash.
-   * - Newlines are replaced with `<br>`.
+   * - Newlines (`\n`, `\r\n`, `\r`) are replaced with `<br>`.
    */
   private static escapeMarkdown(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+    return value
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .replace(/\r\n|\r|\n/g, "<br>");
   }
 
   /**

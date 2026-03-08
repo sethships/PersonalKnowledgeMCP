@@ -9,7 +9,7 @@
  * controlled text item sequences for deterministic algorithm testing.
  */
 
-import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeAll, beforeEach, afterAll, mock } from "bun:test";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { DEFAULT_EXTRACTOR_CONFIG } from "../../../src/documents/constants.js";
@@ -82,10 +82,20 @@ import { PdfTableExtractor } from "../../../src/documents/extractors/PdfTableExt
 
 const FIXTURES_DIR = path.join(__dirname, "../../fixtures/documents");
 const PDF_TABLES_DIR = getPdfTablesFixturesDir(FIXTURES_DIR);
+const TMP_DIR = path.join(FIXTURES_DIR, "pdf-tables", "tmp");
 
 // Generate fixture files once before all tests
 beforeAll(async () => {
   await createTestPdfTableFiles(FIXTURES_DIR);
+});
+
+// Clean up temp PDF files after all tests
+afterAll(async () => {
+  try {
+    await fs.rm(TMP_DIR, { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup
+  }
 });
 
 // Reset mock state before each test
@@ -102,10 +112,9 @@ beforeEach(() => {
  * Returns the path to the created file.
  */
 async function createTempPdf(content: Buffer = Buffer.from("%PDF-1.4 minimal")): Promise<string> {
-  const tmpDir = path.join(FIXTURES_DIR, "pdf-tables", "tmp");
-  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.mkdir(TMP_DIR, { recursive: true });
   const filePath = path.join(
-    tmpDir,
+    TMP_DIR,
     `test-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
   );
   await fs.writeFile(filePath, content);

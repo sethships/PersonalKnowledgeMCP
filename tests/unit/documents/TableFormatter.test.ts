@@ -90,6 +90,20 @@ describe("TableFormatter.toMarkdown()", () => {
     expect(md).toContain("line1<br>line2");
   });
 
+  test("replaces Windows-style CRLF and bare CR with <br>", () => {
+    const table: TableData = {
+      rows: [
+        { cells: [{ content: "H1" }, { content: "H2" }], isHeader: true },
+        { cells: [{ content: "a\r\nb" }, { content: "c\rd" }] },
+      ],
+      columnCount: 2,
+    };
+
+    const md = TableFormatter.toMarkdown(table);
+    expect(md).toContain("a<br>b");
+    expect(md).toContain("c<br>d");
+  });
+
   test("escapes backslashes in cell content", () => {
     const table: TableData = {
       rows: [
