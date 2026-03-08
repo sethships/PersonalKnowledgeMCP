@@ -52,6 +52,9 @@ export interface DocumentSearchResult {
   /** Document title from extraction metadata */
   documentTitle?: string;
 
+  /** Document author from extraction metadata */
+  documentAuthor?: string;
+
   /** Type of the document (pdf, docx, markdown, txt) */
   documentType: string;
 

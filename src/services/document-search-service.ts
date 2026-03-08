@@ -483,35 +483,39 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
   /**
    * Format raw ChromaDB results into DocumentSearchResult objects
    *
-   * Extracts document-specific metadata (page number, section heading, title)
+   * Extracts document-specific metadata (page number, section heading, title, author)
    * from ChromaDB document metadata fields populated during ingestion.
-   * Document metadata fields (document_type, page_number, section_heading,
-   * document_title) are stored as additional ChromaDB metadata during document
-   * ingestion and are not part of the base DocumentMetadata type.
+   * Document metadata fields are part of the DocumentMetadata type as optional fields.
+   * Table-specific fields (isTable, tableCaption, etc.) use camelCase and are accessed
+   * dynamically since they are not part of DocumentMetadata.
    */
   private formatResults(rawResults: SimilarityResult[]): DocumentSearchResult[] {
     return rawResults.map((result) => {
-      // Cast to Record via unknown to access document-specific metadata fields
-      // that are stored in ChromaDB but not in the base DocumentMetadata type
-      const meta = (result.metadata as unknown as Record<string, unknown>) ?? {};
+      const meta = result.metadata;
+      // Cast for table-specific fields that use camelCase and aren't in DocumentMetadata
+      const dynamicMeta = meta as unknown as Record<string, unknown>;
 
       return {
         content: result.content,
-        documentPath: typeof meta["file_path"] === "string" ? meta["file_path"] : "unknown",
-        documentTitle:
-          typeof meta["document_title"] === "string" ? meta["document_title"] : undefined,
-        documentType: typeof meta["document_type"] === "string" ? meta["document_type"] : "unknown",
-        pageNumber: typeof meta["page_number"] === "number" ? meta["page_number"] : undefined,
-        sectionHeading:
-          typeof meta["section_heading"] === "string" ? meta["section_heading"] : undefined,
+        documentPath: meta.file_path ?? "unknown",
+        documentTitle: meta.document_title,
+        documentAuthor: meta.document_author,
+        documentType: meta.document_type ?? "unknown",
+        pageNumber: meta.page_number,
+        sectionHeading: meta.section_heading,
         similarity: result.similarity,
-        folder: typeof meta["repository"] === "string" ? meta["repository"] : "unknown",
-        isTable: meta["isTable"] === true ? true : undefined,
-        tableCaption: typeof meta["tableCaption"] === "string" ? meta["tableCaption"] : undefined,
+        folder: meta.repository ?? "unknown",
+        isTable: dynamicMeta["isTable"] === true ? true : undefined,
+        tableCaption:
+          typeof dynamicMeta["tableCaption"] === "string" ? dynamicMeta["tableCaption"] : undefined,
         tableColumnCount:
-          typeof meta["tableColumnCount"] === "number" ? meta["tableColumnCount"] : undefined,
+          typeof dynamicMeta["tableColumnCount"] === "number"
+            ? dynamicMeta["tableColumnCount"]
+            : undefined,
         tableRowCount:
-          typeof meta["tableRowCount"] === "number" ? meta["tableRowCount"] : undefined,
+          typeof dynamicMeta["tableRowCount"] === "number"
+            ? dynamicMeta["tableRowCount"]
+            : undefined,
       };
     });
   }

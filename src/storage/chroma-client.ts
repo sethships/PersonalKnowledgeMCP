@@ -513,6 +513,9 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const chromaMetadatas = metadatas.map((meta) => {
         const chromaMeta: Record<string, string | number | boolean> = {};
         for (const [key, value] of Object.entries(meta)) {
+          if (value === undefined || value === null) {
+            continue; // Skip undefined/null optional fields
+          }
           if (
             typeof value === "string" ||
             typeof value === "number" ||
@@ -834,6 +837,9 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const chromaMetadatas = metadatas.map((meta) => {
         const chromaMeta: Record<string, string | number | boolean> = {};
         for (const [key, value] of Object.entries(meta)) {
+          if (value === undefined || value === null) {
+            continue; // Skip undefined/null optional fields
+          }
           if (
             typeof value === "string" ||
             typeof value === "number" ||

@@ -71,6 +71,18 @@ export interface DocumentMetadata {
   indexed_at: string;
   /** ISO 8601 timestamp of the file's last modification */
   file_modified_at: string;
+
+  // Document-specific metadata (optional - only present for document chunks)
+  /** Document type identifier (e.g., "pdf", "docx", "markdown", "txt"). Only present for document chunks. */
+  document_type?: string;
+  /** Page number for multi-page documents (1-based). Only present for paginated documents like PDFs. */
+  page_number?: number;
+  /** Nearest preceding section heading for structural context. */
+  section_heading?: string;
+  /** Document title from extraction metadata. */
+  document_title?: string;
+  /** Document author from extraction metadata. */
+  document_author?: string;
 }
 
 /**

@@ -37,6 +37,7 @@ interface DocumentSearchResultJSON {
   content: string;
   documentPath: string;
   documentTitle?: string;
+  documentAuthor?: string;
   documentType: string;
   pageNumber?: number;
   sectionHeading?: string;
