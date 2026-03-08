@@ -104,6 +104,8 @@ describe("Test fixtures", () => {
       "test.tiff",
       "photo-with-exif.jpg",
       "corrupt.jpg",
+      "truncated.jpg",
+      "truncated.png",
     ];
 
     for (const file of expectedFiles) {
@@ -1363,6 +1365,56 @@ describe("ImageMetadataExtractor", () => {
             true
           );
         }
+      });
+
+      test("handles truncated JPEG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.jpg");
+        let handled = false;
+
+        try {
+          // NOTE: As of sharp 0.33.x, truncated JPEGs with intact headers are
+          // parsed successfully — the catch path is retained for resilience
+          // against future sharp versions or more aggressively truncated files.
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("jpeg");
+          handled = true;
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+          handled = true;
+        }
+
+        expect(handled).toBe(true);
+      });
+
+      test("handles truncated PNG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.png");
+        let handled = false;
+
+        try {
+          // NOTE: As of sharp 0.33.x, truncated PNGs with intact headers are
+          // parsed successfully — the catch path is retained for resilience
+          // against future sharp versions or more aggressively truncated files.
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("png");
+          handled = true;
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+          handled = true;
+        }
+
+        expect(handled).toBe(true);
       });
 
       test("completes successfully with reasonable timeout", async () => {
