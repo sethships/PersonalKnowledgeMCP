@@ -76,6 +76,13 @@ const DocumentSearchQuerySchema = z
       .min(0.0, "Threshold must be at least 0.0")
       .max(1.0, "Threshold must not exceed 1.0")
       .default(0.7),
+
+    include_tables: z
+      .enum(["include", "only", "exclude"], {
+        message: "include_tables must be one of: include, only, exclude",
+      })
+      .optional()
+      .default("include"),
   })
   .strict();
 
@@ -174,7 +181,7 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
       );
 
       // 4. Build metadata filter for ChromaDB
-      const whereFilter = this.buildWhereFilter(documentTypes);
+      const whereFilter = this.buildWhereFilter(documentTypes, validated.include_tables);
 
       // 5. Generate query embedding using default provider
       const embeddingStart = performance.now();
@@ -344,24 +351,39 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
   }
 
   /**
-   * Build ChromaDB where filter for document type filtering
+   * Build ChromaDB where filter for document type and table filtering
    *
    * @param documentTypes - Specific document types to filter by (empty = no filter)
+   * @param includeTablesMode - Table filtering mode: "include", "only", or "exclude"
    * @returns MetadataFilter for ChromaDB query, or undefined if no filtering needed
    */
-  private buildWhereFilter(documentTypes: string[]): MetadataFilter | undefined {
-    if (documentTypes.length === 0) {
-      return undefined;
-    }
-
+  private buildWhereFilter(
+    documentTypes: string[],
+    includeTablesMode: "include" | "only" | "exclude" = "include"
+  ): MetadataFilter | undefined {
+    // Build document type filter
+    let docTypeFilter: MetadataFilter | undefined;
     if (documentTypes.length === 1) {
-      return { document_type: documentTypes[0] };
+      docTypeFilter = { document_type: documentTypes[0] };
+    } else if (documentTypes.length > 1) {
+      docTypeFilter = {
+        $or: documentTypes.map((dt) => ({ document_type: dt })),
+      };
     }
 
-    // Multiple document types: use $or
-    return {
-      $or: documentTypes.map((dt) => ({ document_type: dt })),
-    };
+    // Build table filter
+    let tableFilter: MetadataFilter | undefined;
+    if (includeTablesMode === "only") {
+      tableFilter = { isTable: true };
+    } else if (includeTablesMode === "exclude") {
+      tableFilter = { isTable: { $ne: true } };
+    }
+
+    // Combine filters
+    if (docTypeFilter && tableFilter) {
+      return { $and: [docTypeFilter, tableFilter] };
+    }
+    return docTypeFilter ?? tableFilter;
   }
 
   /**
@@ -483,6 +505,12 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
           typeof meta["section_heading"] === "string" ? meta["section_heading"] : undefined,
         similarity: result.similarity,
         folder: typeof meta["repository"] === "string" ? meta["repository"] : "unknown",
+        isTable: meta["isTable"] === true ? true : undefined,
+        tableCaption: typeof meta["tableCaption"] === "string" ? meta["tableCaption"] : undefined,
+        tableColumnCount:
+          typeof meta["tableColumnCount"] === "number" ? meta["tableColumnCount"] : undefined,
+        tableRowCount:
+          typeof meta["tableRowCount"] === "number" ? meta["tableRowCount"] : undefined,
       };
     });
   }

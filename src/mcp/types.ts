@@ -160,6 +160,14 @@ export interface SearchDocumentsArgs {
 
   /** Minimum similarity score threshold (0.0-1.0) */
   threshold: number;
+
+  /**
+   * Table content filtering mode:
+   * - "include" (default): search both tables and text (no filter)
+   * - "only": search only table chunks
+   * - "exclude": exclude table chunks
+   */
+  include_tables: "include" | "only" | "exclude";
 }
 
 /**

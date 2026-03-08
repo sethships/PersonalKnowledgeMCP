@@ -118,6 +118,15 @@ export function validateSemanticSearchArgs(args: unknown): SemanticSearchArgs {
 export const SEARCH_DOCUMENT_TYPES = ["pdf", "docx", "markdown", "txt", "all"] as const;
 
 /**
+ * Valid table filtering modes for search_documents
+ *
+ * - "include": search both tables and text (default, no filter added)
+ * - "only": search only table chunks (ChromaDB filter: isTable == true)
+ * - "exclude": exclude table chunks (ChromaDB filter: isTable != true)
+ */
+export const SEARCH_TABLE_MODES = ["include", "only", "exclude"] as const;
+
+/**
  * Zod schema for search_documents tool arguments
  *
  * This schema:
@@ -160,6 +169,13 @@ export const SearchDocumentsArgsSchema = z
       .max(1.0, "Threshold must be between 0.0 and 1.0")
       .optional()
       .default(0.7),
+
+    include_tables: z
+      .enum(SEARCH_TABLE_MODES, {
+        message: `include_tables must be one of: ${SEARCH_TABLE_MODES.join(", ")}`,
+      })
+      .optional()
+      .default("include"),
   })
   .strict();
 
