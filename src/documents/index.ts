@@ -112,6 +112,10 @@ export type {
 // Table formatter
 export { TableFormatter } from "./TableFormatter.js";
 
+// Table content indexer
+export { TableContentIndexer } from "./TableContentIndexer.js";
+export type { TableIndexerConfig, TableIndexerContext } from "./TableContentIndexer.js";
+
 // Document chunker
 export { DocumentChunker } from "./DocumentChunker.js";
 

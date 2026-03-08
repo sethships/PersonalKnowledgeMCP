@@ -578,6 +578,64 @@ export interface DocumentChunkMetadata {
    * @default undefined
    */
   documentAuthor?: string;
+
+  // ── Table-specific metadata ───────────────────────────────────
+
+  /**
+   * Whether this chunk contains table content.
+   *
+   * When true, the chunk was generated from a {@link TableExtractionResult}
+   * rather than from prose text.
+   *
+   * @default undefined
+   */
+  isTable?: boolean;
+
+  /**
+   * Zero-based index of the table within the source document.
+   *
+   * Matches {@link TableExtractionResult.tableIndex}.
+   *
+   * @default undefined
+   */
+  tableIndex?: number;
+
+  /**
+   * Table caption text, if present in the source document.
+   *
+   * @default undefined
+   */
+  tableCaption?: string;
+
+  /**
+   * Number of columns in the source table.
+   *
+   * @default undefined
+   */
+  tableColumnCount?: number;
+
+  /**
+   * Number of data rows in the source table (excluding header rows).
+   *
+   * @default undefined
+   */
+  tableRowCount?: number;
+
+  /**
+   * Source document type that contained the table ("pdf" or "docx").
+   *
+   * @default undefined
+   */
+  tableSourceType?: string;
+
+  /**
+   * Extraction confidence score between 0.0 and 1.0.
+   *
+   * Propagated from {@link TableExtractionResult.confidence}.
+   *
+   * @default undefined
+   */
+  tableConfidence?: number;
 }
 
 /**
