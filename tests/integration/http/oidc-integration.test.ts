@@ -90,6 +90,7 @@ class MockOidcServer {
    * Install mocks for openid-client module
    */
   async install(): Promise<void> {
+    // `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
     void mock.module("openid-client", () => ({
       discovery: this.mockDiscovery,
       authorizationCodeGrant: this.mockCodeGrant,

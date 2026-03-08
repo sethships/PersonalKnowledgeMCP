@@ -34,6 +34,7 @@ let mockError: Error | null = null;
 let mockHang = false;
 
 // Mock mammoth before importing DocxTableExtractor
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("mammoth", () => {
   return {
     default: {

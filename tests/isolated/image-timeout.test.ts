@@ -20,6 +20,7 @@ let metadataDelayMs = 0;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Mock sharp BEFORE importing the extractor
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("sharp", () => {
   return {
     default: (_input: unknown) => ({

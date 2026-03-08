@@ -34,6 +34,7 @@ let mammothPendingTimers: ReturnType<typeof setTimeout>[] = [];
 // Mock pdf-parse to return a delayed-resolving promise.
 // PdfExtractor uses lazy `await import("pdf-parse/lib/pdf-parse.js")` with CJS/ESM
 // interop that picks `m.default` when it's a function, which matches our mock shape.
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("pdf-parse/lib/pdf-parse.js", () => ({
   default: () =>
     new Promise((resolve) => {
@@ -44,6 +45,7 @@ void mock.module("pdf-parse/lib/pdf-parse.js", () => ({
 }));
 
 // Mock mammoth to return delayed-resolving promises
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("mammoth", () => ({
   default: {
     convertToHtml: () =>

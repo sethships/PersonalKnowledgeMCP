@@ -42,6 +42,7 @@ let mockGraph: MockGraph;
 let mockClient: MockFalkorDBClient;
 
 // Mock the falkordb module BEFORE importing the adapter
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("falkordb", () => {
   return {
     FalkorDB: {

@@ -10,17 +10,25 @@
 // Import from lib directly to avoid debug mode in index.js.
 // Uses lazy dynamic import() so the binding is interceptable by Bun's mock.module in tests.
 import type pdfParseTypes from "pdf-parse";
-let pdfParse: typeof import("pdf-parse") | undefined;
+let pdfParsePromise: Promise<typeof import("pdf-parse")> | undefined;
 async function ensurePdfParse(): Promise<typeof import("pdf-parse")> {
-  if (!pdfParse) {
-    // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const m = await import("pdf-parse/lib/pdf-parse.js");
-    // Handle CJS/ESM interop: module may export function directly or as .default
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    pdfParse = (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+  if (!pdfParsePromise) {
+    pdfParsePromise = (async () => {
+      try {
+        // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const m = await import("pdf-parse/lib/pdf-parse.js");
+        // Handle CJS/ESM interop: module may export function directly or as .default
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+      } catch (error) {
+        // Clear cached promise so subsequent calls can retry the import
+        pdfParsePromise = undefined;
+        throw error;
+      }
+    })();
   }
-  return pdfParse;
+  return pdfParsePromise;
 }
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
 import { ExtractionError, ExtractionTimeoutError, PasswordProtectedError } from "../errors.js";
