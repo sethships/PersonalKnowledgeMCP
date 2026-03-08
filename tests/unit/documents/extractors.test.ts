@@ -104,6 +104,8 @@ describe("Test fixtures", () => {
       "test.tiff",
       "photo-with-exif.jpg",
       "corrupt.jpg",
+      "truncated.jpg",
+      "truncated.png",
     ];
 
     for (const file of expectedFiles) {
@@ -1359,6 +1361,42 @@ describe("ImageMetadataExtractor", () => {
           expect(isDocumentError(error)).toBe(true);
           // Corrupt images may throw ExtractionError or UnsupportedFormatError
           // depending on how sharp handles the data
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+        }
+      });
+
+      test("handles truncated JPEG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.jpg");
+
+        try {
+          // Sharp may be resilient enough to extract metadata from truncated
+          // files if headers are intact — either outcome is acceptable.
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("jpeg");
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+        }
+      });
+
+      test("handles truncated PNG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.png");
+
+        try {
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("png");
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
           expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
             true
           );
