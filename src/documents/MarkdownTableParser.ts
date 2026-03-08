@@ -20,6 +20,10 @@ import type { TableData, TableRow, TableCell } from "./types.js";
  * - Escape reversal (`\|` to `|`, `\\` to `\`, `<br>` to newline)
  * - Multi-chunk reconstruction with header deduplication
  *
+ * Note: This parser assumes space-padded pipe delimiters as produced by
+ * {@link TableFormatter.toMarkdown}. Compact markdown without spaces around
+ * pipes (e.g., `|a\|b|`) may not parse correctly.
+ *
  * @example
  * ```typescript
  * const markdown = "| Name | Age |\n| --- | --- |\n| Alice | 30 |";
@@ -49,7 +53,6 @@ export class MarkdownTableParser {
 
     const rows: TableRow[] = [];
     let columnCount = 0;
-    let nextRowIsHeader = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!.trim();
@@ -60,8 +63,6 @@ export class MarkdownTableParser {
         if (rows.length > 0) {
           rows[rows.length - 1]!.isHeader = true;
         }
-        // The row before the separator is already pushed; skip the separator
-        nextRowIsHeader = false;
         continue;
       }
 
@@ -71,11 +72,7 @@ export class MarkdownTableParser {
         columnCount = cells.length;
       }
 
-      rows.push({
-        cells,
-        ...(nextRowIsHeader ? { isHeader: true } : {}),
-      });
-      nextRowIsHeader = false;
+      rows.push({ cells });
     }
 
     return {
@@ -190,6 +187,10 @@ export class MarkdownTableParser {
    *
    * Handles escaped pipes (`\|`) by not splitting on them.
    * Strips the leading and trailing pipe characters.
+   *
+   * Note: The naive single-character lookbehind for escaped pipes works
+   * correctly for space-padded format (as produced by {@link TableFormatter.toMarkdown})
+   * but may misparse compact markdown without spaces around pipes.
    *
    * @param line - Trimmed line text
    * @returns Array of raw cell content strings

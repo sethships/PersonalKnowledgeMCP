@@ -684,6 +684,26 @@ describe("Tables Export Command", () => {
     });
   });
 
+  describe("File output", () => {
+    it("should handle writeFile failure gracefully", async () => {
+      mockListRepositories.mockResolvedValue([mockRepo]);
+      mockGetDocumentsByMetadata.mockResolvedValue([createExportTableChunk()]);
+
+      // Use a path that will fail (non-existent directory)
+      const badPath = "/nonexistent-dir-abc123/output.csv";
+
+      await tablesExportCommand(
+        "test-repo:docs/report.pdf:0",
+        { format: "csv", output: badPath },
+        mockDeps
+      );
+
+      const output = getFirstLogOutput(consoleLogSpy);
+      expect(output).toContain("Failed to write output file");
+      expect(output).toContain(badPath);
+    });
+  });
+
   describe("Error handling", () => {
     it("should handle invalid table ID format", async () => {
       await expect(tablesExportCommand("invalid-id", { format: "csv" }, mockDeps)).rejects.toThrow(

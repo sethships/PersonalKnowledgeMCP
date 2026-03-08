@@ -356,8 +356,27 @@ export async function tablesExportCommand(
 
   // Output
   if (options.output) {
-    await writeFile(options.output, formatted, "utf-8");
-    console.log(formatTableExportSuccess(options.output, options.format));
+    try {
+      await writeFile(options.output, formatted, "utf-8");
+      console.log(formatTableExportSuccess(options.output, options.format));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log(
+        chalk.red("Failed to write output file.") +
+          "\n\n" +
+          chalk.bold("Path:") +
+          " " +
+          chalk.cyan(options.output) +
+          "\n" +
+          chalk.bold("Error:") +
+          " " +
+          msg +
+          "\n\n" +
+          chalk.bold("Check:") +
+          "\n  " +
+          chalk.gray("Verify the output directory exists and is writable.")
+      );
+    }
   } else {
     console.log(formatted);
   }

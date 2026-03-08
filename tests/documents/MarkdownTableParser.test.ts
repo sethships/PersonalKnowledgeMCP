@@ -237,6 +237,21 @@ describe("MarkdownTableParser", () => {
       expect(parsed.rows[3]!.cells[0]!.content).toBe("line1\nline2");
     });
 
+    it("should round-trip a cell with backslash before pipe", () => {
+      const original: TableData = {
+        rows: [
+          { cells: [{ content: "Key" }], isHeader: true },
+          { cells: [{ content: "path\\|value" }] },
+        ],
+        columnCount: 1,
+      };
+
+      const markdown = TableFormatter.toMarkdown(original);
+      const parsed = MarkdownTableParser.parse(markdown);
+
+      expect(parsed.rows[1]!.cells[0]!.content).toBe("path\\|value");
+    });
+
     it("should round-trip a table with caption", () => {
       const original: TableData = {
         rows: [
