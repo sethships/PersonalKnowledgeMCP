@@ -911,25 +911,33 @@ export class DocumentChunker extends FileChunker {
    * @returns Hierarchical section heading string joined with " > ", or undefined
    */
   private findNearestSection(sections: SectionInfo[], position: number): string | undefined {
-    // Filter to sections that start at or before the chunk position
-    const preceding = sections.filter((s) => s.startOffset <= position);
-    if (preceding.length === 0) return undefined;
+    // Find the leaf: nearest preceding section (single pass, no allocation)
+    let leaf: SectionInfo | undefined;
+    for (const section of sections) {
+      if (section.startOffset <= position) {
+        if (!leaf || section.startOffset > leaf.startOffset) {
+          leaf = section;
+        }
+      }
+    }
+    if (!leaf) return undefined;
 
-    // Sort by startOffset descending (nearest first)
-    const sorted = [...preceding].sort((a, b) => b.startOffset - a.startOffset);
-
-    // Build hierarchy from leaf to root
-    const leaf = sorted[0]!;
     const hierarchy: string[] = [leaf.title];
     let currentLevel = leaf.level;
 
-    for (let i = 1; i < sorted.length; i++) {
-      const section = sorted[i]!;
-      if (section.level < currentLevel) {
-        hierarchy.unshift(section.title);
-        currentLevel = section.level;
+    // Walk preceding sections to build ancestor chain
+    while (currentLevel > 1) {
+      let bestAncestor: SectionInfo | undefined;
+      for (const section of sections) {
+        if (section.startOffset <= position && section.level < currentLevel) {
+          if (!bestAncestor || section.startOffset > bestAncestor.startOffset) {
+            bestAncestor = section;
+          }
+        }
       }
-      if (currentLevel <= 1) break;
+      if (!bestAncestor) break;
+      hierarchy.unshift(bestAncestor.title);
+      currentLevel = bestAncestor.level;
     }
 
     return hierarchy.join(" > ");

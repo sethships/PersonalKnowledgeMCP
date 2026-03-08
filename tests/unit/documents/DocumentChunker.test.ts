@@ -667,6 +667,51 @@ describe("DocumentChunker", () => {
       expect(chunks.length).toBe(1);
       expect(chunks[0]!.metadata.sectionHeading).toBe("Fallback Title");
     });
+
+    test("handles non-contiguous heading levels (H1 directly to H3)", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = "# Chapter\n\nIntro.\n\n### Subsection\n\nDetails here.";
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "Chapter",
+            level: 1,
+            startOffset: 0,
+            endOffset: content.indexOf("### Subsection"),
+          },
+          {
+            title: "Subsection",
+            level: 3,
+            startOffset: content.indexOf("### Subsection"),
+            endOffset: content.length,
+          },
+        ],
+        metadataOverrides: { documentType: "markdown", title: undefined },
+      });
+      const chunks = chunker.chunkDocument(result, "docs/test.md", TEST_SOURCE);
+      const detailChunk = chunks.find((c) => c.content.includes("Details here"));
+      expect(detailChunk).toBeDefined();
+      // H3 under H1 with no H2 — should still show hierarchy
+      expect(detailChunk!.metadata.sectionHeading).toBe("Chapter > Subsection");
+    });
+
+    test("does not fall back to title when includeSectionContext=false", () => {
+      const chunker = createChunker({ includeSectionContext: false });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: undefined,
+        metadataOverrides: { title: "Should Not Appear" },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+    });
   });
 
   describe("Document metadata", () => {
