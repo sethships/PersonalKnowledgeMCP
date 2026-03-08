@@ -175,6 +175,7 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
           threshold: validated.threshold,
           folder: validated.folder,
           document_types: documentTypes,
+          include_tables: validated.include_tables,
           target_repos: targetRepos.length,
         },
         "Executing document search"

@@ -141,6 +141,7 @@ export function createSearchDocumentsHandler(
           threshold: validatedArgs.threshold,
           document_types: validatedArgs.document_types,
           folder: validatedArgs.folder,
+          include_tables: validatedArgs.include_tables,
         },
         "Executing search_documents tool"
       );
@@ -213,7 +214,7 @@ function formatDocumentSearchResponse(response: DocumentSearchResponse): TextCon
       sectionHeading: result.sectionHeading,
       similarity: result.similarity,
       folder: result.folder,
-      ...(result.isTable && {
+      ...(result.isTable === true && {
         isTable: result.isTable,
         tableCaption: result.tableCaption,
         tableColumnCount: result.tableColumnCount,

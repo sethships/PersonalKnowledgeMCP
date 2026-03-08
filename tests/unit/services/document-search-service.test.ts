@@ -563,6 +563,23 @@ describe("DocumentSearchServiceImpl", () => {
       });
     });
 
+    it("should combine multiple doc types and table 'exclude' filter with $and", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["pdf", "docx"],
+        include_tables: "exclude",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        $and: [
+          { $or: [{ document_type: "pdf" }, { document_type: "docx" }] },
+          { isTable: { $ne: true } },
+        ],
+      });
+    });
+
     it("should use only doc type filter when include_tables is 'include' with doc types", async () => {
       mockStorage.setMockResults([]);
 
