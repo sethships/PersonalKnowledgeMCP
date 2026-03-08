@@ -958,3 +958,71 @@ export interface TableExtractor extends DocumentExtractor<TableExtractionResult[
   // Inherits: extract(filePath: string): Promise<TableExtractionResult[]>
   // Inherits: supports(extension: string): boolean
 }
+
+// ── MIME Validation Types ───────────────────────────────────────
+
+/**
+ * Result of MIME type validation for a file.
+ *
+ * Compares the expected MIME type (from file extension) against the
+ * actual MIME type detected from file content (magic bytes).
+ *
+ * @example
+ * ```typescript
+ * const result: MimeValidationResult = {
+ *   isValid: true,
+ *   detectedType: "pdf",
+ *   expectedMime: "application/pdf",
+ *   actualMime: "application/pdf",
+ *   filePath: "/docs/report.pdf",
+ *   skipped: false,
+ * };
+ * ```
+ */
+export interface MimeValidationResult {
+  /**
+   * Whether the file's content matches its extension-implied type.
+   *
+   * True when: content matches, file is text-based (skipped), or
+   * extension has no expected MIME type.
+   */
+  isValid: boolean;
+
+  /**
+   * Document type detected from the file extension.
+   */
+  detectedType: string;
+
+  /**
+   * Expected MIME type based on file extension from MIME_TYPES map.
+   *
+   * Undefined when the extension is not in the MIME_TYPES map.
+   */
+  expectedMime: string | undefined;
+
+  /**
+   * Actual MIME type detected from file content (magic bytes).
+   *
+   * Undefined when file-type cannot detect the content type
+   * (e.g., text files have no magic bytes).
+   */
+  actualMime: string | undefined;
+
+  /**
+   * Absolute or relative file path that was validated.
+   */
+  filePath: string;
+
+  /**
+   * Whether MIME validation was skipped.
+   *
+   * True for text-based files (no magic bytes) or files with
+   * unsupported/unknown extensions.
+   */
+  skipped: boolean;
+
+  /**
+   * Explanation when validation failed or was skipped.
+   */
+  reason?: string;
+}

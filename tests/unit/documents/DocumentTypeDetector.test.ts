@@ -1,15 +1,19 @@
 /**
  * Unit tests for DocumentTypeDetector.
  *
- * Tests document type detection and extractor routing.
+ * Tests document type detection, extractor routing, and MIME type validation.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterAll } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import { DocumentTypeDetector } from "../../../src/documents/DocumentTypeDetector.js";
 import { PdfExtractor } from "../../../src/documents/extractors/PdfExtractor.js";
 import { DocxExtractor } from "../../../src/documents/extractors/DocxExtractor.js";
 import { MarkdownParser } from "../../../src/documents/extractors/MarkdownParser.js";
 import { ImageMetadataExtractor } from "../../../src/documents/extractors/ImageMetadataExtractor.js";
+import { FileAccessError } from "../../../src/documents/errors.js";
 
 describe("DocumentTypeDetector", () => {
   describe("detect", () => {
@@ -218,6 +222,208 @@ describe("DocumentTypeDetector", () => {
     test("returns empty string for files without extension", () => {
       expect(detector.getExtension("/path/to/README")).toBe("");
       expect(detector.getExtension("Makefile")).toBe("");
+    });
+  });
+
+  describe("validateMimeType", () => {
+    const detector = new DocumentTypeDetector();
+    const fixturesDir = path.resolve(__dirname, "../../fixtures/documents");
+
+    // Temp directory for mismatch test files
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mime-validation-"));
+    const tmpFiles: string[] = [];
+
+    /**
+     * Helper to create a temp file with given extension and content.
+     */
+    function createTempFile(name: string, content: Buffer | string): string {
+      const filePath = path.join(tmpDir, name);
+      fs.writeFileSync(filePath, content);
+      tmpFiles.push(filePath);
+      return filePath;
+    }
+
+    afterAll(() => {
+      for (const f of tmpFiles) {
+        try {
+          fs.unlinkSync(f);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+      try {
+        fs.rmdirSync(tmpDir);
+      } catch {
+        // ignore cleanup errors
+      }
+    });
+
+    describe("valid files", () => {
+      test("validates valid PDF file", async () => {
+        const result = await detector.validateMimeType(path.join(fixturesDir, "pdf/simple.pdf"));
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.detectedType).toBe("pdf");
+        expect(result.expectedMime).toBe("application/pdf");
+        expect(result.actualMime).toBe("application/pdf");
+      });
+
+      test("validates valid DOCX file (DOCX or ZIP detection)", async () => {
+        const result = await detector.validateMimeType(path.join(fixturesDir, "docx/simple.docx"));
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.detectedType).toBe("docx");
+        // actualMime may be application/zip or the full OOXML type
+        const validDocxMimes = [
+          "application/zip",
+          "application/x-zip-compressed",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+        expect(result.actualMime).toBeDefined();
+        expect(validDocxMimes).toContain(result.actualMime as string);
+      });
+
+      test("validates valid JPEG image", async () => {
+        const result = await detector.validateMimeType(path.join(fixturesDir, "images/photo.jpg"));
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.actualMime).toBe("image/jpeg");
+      });
+
+      test("validates valid PNG image", async () => {
+        const result = await detector.validateMimeType(
+          path.join(fixturesDir, "images/screenshot.png")
+        );
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.actualMime).toBe("image/png");
+      });
+
+      test("validates valid GIF image", async () => {
+        const result = await detector.validateMimeType(
+          path.join(fixturesDir, "images/animated.gif")
+        );
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.actualMime).toBe("image/gif");
+      });
+
+      test("validates valid WebP image", async () => {
+        const result = await detector.validateMimeType(
+          path.join(fixturesDir, "images/diagram.webp")
+        );
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.actualMime).toBe("image/webp");
+      });
+
+      test("validates valid TIFF image", async () => {
+        const result = await detector.validateMimeType(path.join(fixturesDir, "images/test.tiff"));
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(false);
+        expect(result.actualMime).toBe("image/tiff");
+      });
+    });
+
+    describe("skipped files (text-based, no magic bytes)", () => {
+      test("skips Markdown files", async () => {
+        const result = await detector.validateMimeType(
+          path.join(fixturesDir, "markdown/simple.md")
+        );
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(true);
+        expect(result.detectedType).toBe("markdown");
+        expect(result.reason).toContain("Text-based");
+      });
+
+      test("skips text files", async () => {
+        const txtPath = createTempFile("notes.txt", "Just plain text content.");
+        const result = await detector.validateMimeType(txtPath);
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(true);
+        expect(result.detectedType).toBe("txt");
+      });
+
+      test("skips files with unsupported extension", async () => {
+        const unknownPath = createTempFile("data.xyz", "some data");
+        const result = await detector.validateMimeType(unknownPath);
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(true);
+        expect(result.reason).toContain("No expected MIME type");
+      });
+
+      test("skips files without extension", async () => {
+        const noExtPath = createTempFile("README", "# Readme content");
+        const result = await detector.validateMimeType(noExtPath);
+        expect(result.isValid).toBe(true);
+        expect(result.skipped).toBe(true);
+        expect(result.reason).toContain("no extension");
+      });
+    });
+
+    describe("mismatch detection", () => {
+      test("detects text content with .pdf extension", async () => {
+        const fakePdf = createTempFile("fake.pdf", "This is just plain text, not a PDF.");
+        const result = await detector.validateMimeType(fakePdf);
+        expect(result.isValid).toBe(false);
+        expect(result.skipped).toBe(false);
+        expect(result.expectedMime).toBe("application/pdf");
+        expect(result.reason).toContain("No magic bytes detected");
+      });
+
+      test("detects PNG content with .pdf extension", async () => {
+        // Read real PNG file and save with .pdf extension
+        const pngContent = fs.readFileSync(path.join(fixturesDir, "images/screenshot.png"));
+        const fakePdf = createTempFile("actually-png.pdf", pngContent);
+        const result = await detector.validateMimeType(fakePdf);
+        expect(result.isValid).toBe(false);
+        expect(result.skipped).toBe(false);
+        expect(result.expectedMime).toBe("application/pdf");
+        expect(result.actualMime).toBe("image/png");
+        expect(result.reason).toContain("does not match");
+      });
+    });
+
+    describe("error handling", () => {
+      test("throws FileAccessError for non-existent file", async () => {
+        try {
+          await detector.validateMimeType("/nonexistent/path/file.pdf");
+          // Should not reach here
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(error).toBeInstanceOf(FileAccessError);
+        }
+      });
+
+      test("returns invalid for empty file", async () => {
+        const emptyFile = createTempFile("empty.pdf", "");
+        const result = await detector.validateMimeType(emptyFile);
+        expect(result.isValid).toBe(false);
+        expect(result.skipped).toBe(false);
+        expect(result.reason).toBe("Empty file");
+      });
+    });
+  });
+
+  describe("detectWithValidation", () => {
+    const detector = new DocumentTypeDetector();
+    const fixturesDir = path.resolve(__dirname, "../../fixtures/documents");
+
+    test("returns both type and validation result", async () => {
+      const result = await detector.detectWithValidation(path.join(fixturesDir, "pdf/simple.pdf"));
+      expect(result.type).toBe("pdf");
+      expect(result.validation.isValid).toBe(true);
+      expect(result.validation.expectedMime).toBe("application/pdf");
+      expect(result.validation.actualMime).toBe("application/pdf");
+    });
+
+    test("returns type with skipped validation for text files", async () => {
+      const result = await detector.detectWithValidation(
+        path.join(fixturesDir, "markdown/simple.md")
+      );
+      expect(result.type).toBe("markdown");
+      expect(result.validation.isValid).toBe(true);
+      expect(result.validation.skipped).toBe(true);
     });
   });
 });

@@ -275,6 +275,43 @@ export class NotImplementedError extends DocumentError {
 }
 
 /**
+ * Error thrown when a file's content MIME type does not match its extension.
+ *
+ * Indicates that the file's magic bytes reveal a different content type
+ * than what the extension implies. Not retryable — the file itself is
+ * misidentified.
+ *
+ * @example
+ * ```typescript
+ * throw new MimeTypeMismatchError(
+ *   "File content (image/png) does not match expected type (application/pdf)",
+ *   "application/pdf",
+ *   "image/png",
+ *   { filePath: "/docs/fake.pdf" }
+ * );
+ * ```
+ */
+export class MimeTypeMismatchError extends DocumentError {
+  public readonly expectedMime: string;
+  public readonly actualMime: string | undefined;
+
+  constructor(
+    message: string,
+    expectedMime: string,
+    actualMime: string | undefined,
+    options?: DocumentErrorOptions
+  ) {
+    super(message, "MIME_TYPE_MISMATCH", {
+      ...options,
+      retryable: false,
+    });
+    this.name = "MimeTypeMismatchError";
+    this.expectedMime = expectedMime;
+    this.actualMime = actualMime;
+  }
+}
+
+/**
  * Type guard to check if an error is a DocumentError.
  *
  * @param error - The error to check
