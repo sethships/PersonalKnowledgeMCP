@@ -158,6 +158,9 @@ export class DocxTableExtractor
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
+        // NOTE: In-flight mammoth operations continue in background after timeout.
+        // Neither mammoth nor the JS runtime provides a cancellation mechanism.
+        // Consider worker threads for isolation if this becomes a production issue.
         reject(
           new ExtractionTimeoutError(
             `DOCX table extraction timed out after ${this.config.timeoutMs}ms`,
@@ -201,8 +204,15 @@ export class DocxTableExtractor
   private parseHtmlTables(html: string, filePath: string): TableExtractionResult[] {
     // Wrap in a root element for valid XML parsing
     const wrappedHtml = `<root>${html}</root>`;
+    const logger = this.getLogger();
     const doc = new DOMParser({
-      errorHandler: { warning: () => {}, error: () => {}, fatalError: () => {} },
+      errorHandler: {
+        warning: () => {},
+        error: (msg: string) => {
+          logger.debug(`DOMParser error (ignored): ${msg}`);
+        },
+        fatalError: () => {},
+      },
     }).parseFromString(wrappedHtml, "text/html");
 
     const results: TableExtractionResult[] = [];

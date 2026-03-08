@@ -733,6 +733,25 @@ describe("DocxTableExtractor", () => {
       expect(results[0]!.table.rows[1]!.cells[0]!.content).toBe("Data1");
     });
 
+    test("handles zero and negative colspan/rowspan gracefully", async () => {
+      const extractor = new DocxTableExtractor();
+      const filePath = await createTempDocx();
+
+      mockHtmlResult = `
+        <table>
+          <tr><td colspan="0">A</td><td rowspan="-1">B</td></tr>
+          <tr><td>C</td><td>D</td></tr>
+        </table>
+      `;
+
+      const results = await extractor.extract(filePath);
+
+      expect(results.length).toBe(1);
+      // colspan=0 and rowspan=-1 should not set span properties
+      expect(results[0]!.table.rows[0]!.cells[0]!.colSpan).toBeUndefined();
+      expect(results[0]!.table.rows[0]!.cells[1]!.rowSpan).toBeUndefined();
+    });
+
     test("handles invalid colspan attribute gracefully", async () => {
       const extractor = new DocxTableExtractor();
       const filePath = await createTempDocx();
