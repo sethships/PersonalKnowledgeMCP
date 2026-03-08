@@ -194,7 +194,7 @@ function createCorruptJpeg(): Buffer {
  */
 function createTruncatedJpeg(): Buffer {
   const full = createMinimalJpeg();
-  // Remove the last 4 bytes (SOS tail + EOI marker) to simulate truncation
+  // Remove the last 4 bytes (2 bytes of scan data + EOI marker 0xFF 0xD9) to simulate truncation
   return Buffer.from(full.buffer, full.byteOffset, full.length - 4);
 }
 
