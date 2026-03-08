@@ -13,6 +13,7 @@ import { describe, it, expect } from "bun:test";
 import {
   createTablesListTable,
   formatTablesListJson,
+  formatTableExportSuccess,
   type TableDisplayInfo,
 } from "../../../src/cli/output/tables-formatters.js";
 
@@ -246,6 +247,24 @@ describe("Tables Formatters", () => {
 
       expect(parsed.totalTables).toBe(3);
       expect(parsed.tables).toHaveLength(3);
+    });
+  });
+
+  describe("formatTableExportSuccess", () => {
+    it("should format success message with file path and format", () => {
+      const output = formatTableExportSuccess("/tmp/output.csv", "csv");
+
+      expect(output).toContain("exported successfully");
+      expect(output).toContain("/tmp/output.csv");
+      expect(output).toContain("CSV");
+    });
+
+    it("should handle json format", () => {
+      const output = formatTableExportSuccess("/tmp/output.json", "json");
+
+      expect(output).toContain("exported successfully");
+      expect(output).toContain("/tmp/output.json");
+      expect(output).toContain("JSON");
     });
   });
 });

@@ -53,7 +53,7 @@ import {
   modelsPathCommand,
   modelsImportCommand,
 } from "./commands/models-command.js";
-import { tablesListCommand } from "./commands/tables-command.js";
+import { tablesListCommand, tablesExportCommand } from "./commands/tables-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -82,6 +82,7 @@ import {
   ModelsPathCommandOptionsSchema,
   ModelsImportCommandOptionsSchema,
   TablesListCommandOptionsSchema,
+  TablesExportCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -574,6 +575,23 @@ tablesProgram
       const validatedOptions = TablesListCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await tablesListCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Tables export subcommand
+tablesProgram
+  .command("export")
+  .description("Export a table to CSV or JSON format")
+  .argument("<table-id>", "Table identifier (repo:filePath:tableIndex)")
+  .option("-f, --format <format>", "Export format (csv, json)", "csv")
+  .option("-o, --output <path>", "Output file path (default: stdout)")
+  .action(async (tableId: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TablesExportCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tablesExportCommand(tableId, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

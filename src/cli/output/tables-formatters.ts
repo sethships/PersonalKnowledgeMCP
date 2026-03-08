@@ -111,6 +111,27 @@ export function createTablesListTable(tables: TableDisplayInfo[], repoName?: str
 }
 
 /**
+ * Format a success message for table export to file
+ *
+ * @param filePath - Output file path
+ * @param format - Export format (csv or json)
+ * @returns Formatted success message
+ */
+export function formatTableExportSuccess(filePath: string, format: string): string {
+  return (
+    chalk.green("Table exported successfully.") +
+    "\n\n" +
+    chalk.bold("Output:") +
+    " " +
+    chalk.cyan(filePath) +
+    "\n" +
+    chalk.bold("Format:") +
+    " " +
+    format.toUpperCase()
+  );
+}
+
+/**
  * Format extracted tables as JSON
  *
  * @param tables - List of table display info
