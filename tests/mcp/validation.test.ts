@@ -7,7 +7,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { validateSemanticSearchArgs, SemanticSearchArgsSchema } from "../../src/mcp/validation.js";
+import {
+  validateSemanticSearchArgs,
+  SemanticSearchArgsSchema,
+  validateSearchDocumentsArgs,
+  SEARCH_TABLE_MODES,
+} from "../../src/mcp/validation.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
 describe("MCP Validation", () => {
@@ -386,6 +391,69 @@ describe("MCP Validation", () => {
       if (result.success) {
         expect(result.data.query).toBe("test query");
       }
+    });
+  });
+
+  describe("validateSearchDocumentsArgs", () => {
+    describe("include_tables validation", () => {
+      it("should default include_tables to 'include' when not specified", () => {
+        const result = validateSearchDocumentsArgs({
+          query: "test query",
+        });
+        expect(result.include_tables).toBe("include");
+      });
+
+      it("should accept 'include' value", () => {
+        const result = validateSearchDocumentsArgs({
+          query: "test",
+          include_tables: "include",
+        });
+        expect(result.include_tables).toBe("include");
+      });
+
+      it("should accept 'only' value", () => {
+        const result = validateSearchDocumentsArgs({
+          query: "test",
+          include_tables: "only",
+        });
+        expect(result.include_tables).toBe("only");
+      });
+
+      it("should accept 'exclude' value", () => {
+        const result = validateSearchDocumentsArgs({
+          query: "test",
+          include_tables: "exclude",
+        });
+        expect(result.include_tables).toBe("exclude");
+      });
+
+      it("should reject invalid include_tables value", () => {
+        expect(() => {
+          validateSearchDocumentsArgs({
+            query: "test",
+            include_tables: "invalid",
+          });
+        }).toThrow();
+      });
+
+      it("should reject numeric include_tables value", () => {
+        expect(() => {
+          validateSearchDocumentsArgs({
+            query: "test",
+            include_tables: 1,
+          });
+        }).toThrow();
+      });
+    });
+  });
+
+  describe("SEARCH_TABLE_MODES", () => {
+    it("should contain all valid table modes", () => {
+      expect(SEARCH_TABLE_MODES).toEqual(["include", "only", "exclude"]);
+    });
+
+    it("should have exactly 3 modes", () => {
+      expect(SEARCH_TABLE_MODES).toHaveLength(3);
     });
   });
 });
