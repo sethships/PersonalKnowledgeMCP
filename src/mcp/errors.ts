@@ -26,8 +26,12 @@ import {
   GitHubClientError,
   GitHubAuthenticationError,
   GitHubRateLimitError,
+  GitHubValidationError,
 } from "../services/github-client-errors.js";
-import { CoordinatorError } from "../services/incremental-update-coordinator-errors.js";
+import {
+  CoordinatorError,
+  GitPullError,
+} from "../services/incremental-update-coordinator-errors.js";
 import { InstanceAccessDeniedError } from "../auth/errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
@@ -182,8 +186,16 @@ export function mapToMCPError(error: unknown): McpError {
     );
   }
 
+  if (error instanceof GitHubValidationError) {
+    log.warn(
+      { error: error.message, validationErrors: error.validationErrors },
+      "GitHub validation error"
+    );
+    return new McpError(ErrorCode.InvalidParams, error.message);
+  }
+
   if (error instanceof GitHubClientError) {
-    // Catch-all for other GitHubClientError subclasses (NotFound, Network, API, Validation)
+    // Catch-all for other GitHubClientError subclasses (NotFound, Network, API)
     log.error(
       { error: error.message, code: error.code, retryable: error.retryable },
       "GitHub client error"
@@ -192,7 +204,15 @@ export function mapToMCPError(error: unknown): McpError {
     return new McpError(ErrorCode.InternalError, `${error.message}${retryHint}`);
   }
 
-  // Handle Coordinator errors (all subtypes have user-facing messages)
+  // Handle Coordinator errors (specific subtypes first, base class catch-all last)
+  if (error instanceof GitPullError) {
+    log.error(
+      { error: error.message, localPath: error.localPath },
+      "Git pull failed during incremental update"
+    );
+    return new McpError(ErrorCode.InternalError, `Failed to update local clone: ${error.reason}`);
+  }
+
   if (error instanceof CoordinatorError) {
     log.error(
       { error: error.message, retryable: error.retryable },

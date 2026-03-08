@@ -26,6 +26,7 @@ import {
   GitHubNotFoundError,
   GitHubNetworkError,
   GitHubAPIError,
+  GitHubValidationError,
 } from "../../src/services/github-client-errors.js";
 import {
   CoordinatorError,
@@ -284,6 +285,16 @@ describe("MCP Error Mapping", () => {
       });
     });
 
+    describe("GitHubValidationError mapping", () => {
+      it("should map to InvalidParams with original message", () => {
+        const error = new GitHubValidationError("Invalid repository format", ["owner: required"]);
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InvalidParams);
+        expect(mcpError.message).toContain("Invalid repository format");
+      });
+    });
+
     describe("GitHubClientError subclass ordering", () => {
       it("should NOT fall through to generic Error catch-all for GitHubAuthenticationError", () => {
         const error = new GitHubAuthenticationError();
@@ -355,13 +366,13 @@ describe("MCP Error Mapping", () => {
         expect(mcpError.message).toContain("my-repo");
       });
 
-      it("should map GitPullError with local path and reason", () => {
+      it("should map GitPullError with reason but not local path", () => {
         const error = new GitPullError("/repos/my-repo", "Merge conflict in src/index.ts");
         const mcpError = mapToMCPError(error);
 
         expect(mcpError.code).toBe(ErrorCode.InternalError);
-        expect(mcpError.message).toContain("/repos/my-repo");
         expect(mcpError.message).toContain("Merge conflict");
+        expect(mcpError.message).not.toContain("/repos/my-repo");
       });
 
       it("should NOT fall through to generic Error catch-all for coordinator errors", () => {

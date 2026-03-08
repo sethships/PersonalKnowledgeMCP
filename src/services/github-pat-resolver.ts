@@ -65,12 +65,12 @@ export async function readPATFromEnvFile(envFilePath?: string): Promise<string |
     const content = await file.text();
     // Match GITHUB_PAT=value, handling quotes and inline comments
     // Supports: GITHUB_PAT=token, GITHUB_PAT="token", GITHUB_PAT='token'
-    const match = content.match(/^GITHUB_PAT\s*=\s*(?:["']([^"']*)["']|([^\s#]*))/m);
+    const match = content.match(/^GITHUB_PAT\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s#]*))/m);
     if (!match) {
       return null;
     }
 
-    const value = (match[1] ?? match[2] ?? "").trim();
+    const value = (match[1] ?? match[2] ?? match[3] ?? "").trim();
     return value.length > 0 ? value : null;
   } catch {
     return null;
@@ -178,7 +178,8 @@ export async function resolveGitHubPAT(
   // Validate each unique candidate in order
   const triedSources: string[] = [];
   for (const candidate of uniqueCandidates) {
-    const maskedToken = `${candidate.token.substring(0, 8)}...`;
+    const maskedToken =
+      candidate.token.length > 12 ? `${candidate.token.substring(0, 8)}...` : "***";
     log.debug({ source: candidate.source, token: maskedToken }, "Validating GITHUB_PAT");
 
     try {

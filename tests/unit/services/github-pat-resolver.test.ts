@@ -97,6 +97,13 @@ describe("GitHub PAT Resolver", () => {
       const result = await readPATFromEnvFile(envPath);
       expect(result).toBe("ghp_beforecomment");
     });
+
+    it("should handle mismatched quotes as unquoted value", async () => {
+      const envPath = await createEnvFile("GITHUB_PAT=\"ghp_mismatch'");
+      const result = await readPATFromEnvFile(envPath);
+      // Mismatched quotes: falls through to unquoted pattern, captures quotes as part of value
+      expect(result).toBe("\"ghp_mismatch'");
+    });
   });
 
   describe("resolveGitHubPAT", () => {
