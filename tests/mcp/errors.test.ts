@@ -20,6 +20,21 @@ import {
   SearchOperationError,
   SearchError,
 } from "../../src/services/errors.js";
+import {
+  GitHubAuthenticationError,
+  GitHubRateLimitError,
+  GitHubNotFoundError,
+  GitHubNetworkError,
+  GitHubAPIError,
+} from "../../src/services/github-client-errors.js";
+import {
+  CoordinatorError,
+  ForcePushDetectedError,
+  ChangeThresholdExceededError,
+  MissingCommitShaError,
+  ConcurrentUpdateError,
+  GitPullError,
+} from "../../src/services/incremental-update-coordinator-errors.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
 describe("MCP Error Mapping", () => {
@@ -170,6 +185,190 @@ describe("MCP Error Mapping", () => {
         const mcpError = mapToMCPError(error);
 
         expect(mcpError.message).toContain("An error occurred during search.");
+      });
+    });
+
+    describe("GitHubAuthenticationError mapping", () => {
+      it("should map to InternalError with PAT remediation message", () => {
+        const error = new GitHubAuthenticationError("GitHub authentication failed");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("GitHub authentication failed");
+        expect(mcpError.message).toContain("GITHUB_PAT");
+        expect(mcpError.message).toContain("valid");
+      });
+
+      it("should not leak the actual token value", () => {
+        const error = new GitHubAuthenticationError("Token ghp_secret123 is invalid");
+        const mcpError = mapToMCPError(error);
+
+        // The mapped message uses a fixed remediation message, not the original
+        expect(mcpError.message).not.toContain("ghp_secret123");
+      });
+    });
+
+    describe("GitHubRateLimitError mapping", () => {
+      it("should map to InternalError with rate limit info", () => {
+        const error = new GitHubRateLimitError("Rate limit exceeded");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("rate limit");
+      });
+
+      it("should include reset time when available", () => {
+        const resetAt = new Date("2026-03-08T12:00:00Z");
+        const error = new GitHubRateLimitError("Rate limit exceeded", resetAt, 0);
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).toContain("2026-03-08T12:00:00.000Z");
+        expect(mcpError.message).toContain("resets at");
+      });
+
+      it("should not include reset time when not available", () => {
+        const error = new GitHubRateLimitError("Rate limit exceeded");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).not.toContain("resets at");
+        expect(mcpError.message).toContain("wait before retrying");
+      });
+    });
+
+    describe("GitHubNotFoundError mapping", () => {
+      it("should map to InternalError with original message", () => {
+        const error = new GitHubNotFoundError("Repository 'user/repo' not found", "user/repo");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Repository 'user/repo' not found");
+      });
+
+      it("should not include retry hint (not retryable)", () => {
+        const error = new GitHubNotFoundError("Not found");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).not.toContain("try again");
+      });
+    });
+
+    describe("GitHubNetworkError mapping", () => {
+      it("should map to InternalError with retry hint (retryable)", () => {
+        const error = new GitHubNetworkError("Connection timed out");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Connection timed out");
+        expect(mcpError.message).toContain("transient");
+        expect(mcpError.message).toContain("try again");
+      });
+    });
+
+    describe("GitHubAPIError mapping", () => {
+      it("should map non-retryable API error without retry hint", () => {
+        const error = new GitHubAPIError("Forbidden", 403, "Forbidden", false);
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Forbidden");
+        expect(mcpError.message).not.toContain("try again");
+      });
+
+      it("should map retryable API error with retry hint", () => {
+        const error = new GitHubAPIError("Server Error", 500, "Internal Server Error", true);
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Server Error");
+        expect(mcpError.message).toContain("try again");
+      });
+    });
+
+    describe("GitHubClientError subclass ordering", () => {
+      it("should NOT fall through to generic Error catch-all for GitHubAuthenticationError", () => {
+        const error = new GitHubAuthenticationError();
+        const mcpError = mapToMCPError(error);
+
+        // Generic Error catch-all returns "An unexpected error occurred."
+        expect(mcpError.message).not.toBe("An unexpected error occurred.");
+      });
+
+      it("should NOT fall through to generic Error catch-all for GitHubRateLimitError", () => {
+        const error = new GitHubRateLimitError("Rate limited");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).not.toBe("An unexpected error occurred.");
+      });
+
+      it("should NOT fall through to generic Error catch-all for GitHubNetworkError", () => {
+        const error = new GitHubNetworkError("Network failure");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).not.toBe("An unexpected error occurred.");
+      });
+    });
+
+    describe("CoordinatorError mapping", () => {
+      it("should map base CoordinatorError with original message", () => {
+        const error = new CoordinatorError("Something went wrong with the coordinator");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Something went wrong with the coordinator");
+      });
+
+      it("should map ForcePushDetectedError with full message", () => {
+        const error = new ForcePushDetectedError("my-repo", "abc1234567", "def7654321");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("Force push detected");
+        expect(mcpError.message).toContain("my-repo");
+        expect(mcpError.message).toContain("Full re-index required");
+      });
+
+      it("should map ChangeThresholdExceededError with details", () => {
+        const error = new ChangeThresholdExceededError("big-repo", 650, 500);
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("650");
+        expect(mcpError.message).toContain("500");
+        expect(mcpError.message).toContain("big-repo");
+      });
+
+      it("should map MissingCommitShaError with repository name", () => {
+        const error = new MissingCommitShaError("legacy-repo");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("legacy-repo");
+        expect(mcpError.message).toContain("lastIndexedCommitSha");
+      });
+
+      it("should map ConcurrentUpdateError with details", () => {
+        const error = new ConcurrentUpdateError("my-repo", "2026-03-08T10:00:00.000Z");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("already in progress");
+        expect(mcpError.message).toContain("my-repo");
+      });
+
+      it("should map GitPullError with local path and reason", () => {
+        const error = new GitPullError("/repos/my-repo", "Merge conflict in src/index.ts");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.code).toBe(ErrorCode.InternalError);
+        expect(mcpError.message).toContain("/repos/my-repo");
+        expect(mcpError.message).toContain("Merge conflict");
+      });
+
+      it("should NOT fall through to generic Error catch-all for coordinator errors", () => {
+        const error = new ForcePushDetectedError("repo", "abc1234567", "def7654321");
+        const mcpError = mapToMCPError(error);
+
+        expect(mcpError.message).not.toBe("An unexpected error occurred.");
       });
     });
 

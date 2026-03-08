@@ -22,6 +22,12 @@ import {
   GraphServiceTimeoutError,
   GraphServiceOperationError,
 } from "../services/graph-service-errors.js";
+import {
+  GitHubClientError,
+  GitHubAuthenticationError,
+  GitHubRateLimitError,
+} from "../services/github-client-errors.js";
+import { CoordinatorError } from "../services/incremental-update-coordinator-errors.js";
 import { InstanceAccessDeniedError } from "../auth/errors.js";
 import { getComponentLogger } from "../logging/index.js";
 
@@ -153,6 +159,46 @@ export function mapToMCPError(error: unknown): McpError {
     // Catch-all for any other GraphServiceError subclasses
     log.error({ error: error.message }, "Unknown GraphServiceError type");
     return new McpError(ErrorCode.InternalError, "An error occurred during graph query.");
+  }
+
+  // Handle GitHub Client errors (specific subclasses first, base class catch-all last)
+  if (error instanceof GitHubAuthenticationError) {
+    log.warn({ error: error.message }, "GitHub authentication failed");
+    return new McpError(
+      ErrorCode.InternalError,
+      "GitHub authentication failed. Verify your GITHUB_PAT is valid and not expired."
+    );
+  }
+
+  if (error instanceof GitHubRateLimitError) {
+    const resetInfo = error.resetAt ? ` Rate limit resets at ${error.resetAt.toISOString()}.` : "";
+    log.warn(
+      { error: error.message, resetAt: error.resetAt?.toISOString(), remaining: error.remaining },
+      "GitHub API rate limit exceeded"
+    );
+    return new McpError(
+      ErrorCode.InternalError,
+      `GitHub API rate limit exceeded.${resetInfo} Please wait before retrying.`
+    );
+  }
+
+  if (error instanceof GitHubClientError) {
+    // Catch-all for other GitHubClientError subclasses (NotFound, Network, API, Validation)
+    log.error(
+      { error: error.message, code: error.code, retryable: error.retryable },
+      "GitHub client error"
+    );
+    const retryHint = error.retryable ? " This may be transient — try again." : "";
+    return new McpError(ErrorCode.InternalError, `${error.message}${retryHint}`);
+  }
+
+  // Handle Coordinator errors (all subtypes have user-facing messages)
+  if (error instanceof CoordinatorError) {
+    log.error(
+      { error: error.message, retryable: error.retryable },
+      "Incremental update coordinator error"
+    );
+    return new McpError(ErrorCode.InternalError, error.message);
   }
 
   // Handle standard Error objects
