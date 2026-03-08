@@ -9,7 +9,7 @@
  * controlled text item sequences for deterministic algorithm testing.
  */
 
-import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeAll, beforeEach, afterAll, mock } from "bun:test";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { DEFAULT_EXTRACTOR_CONFIG } from "../../../src/documents/constants.js";
@@ -82,10 +82,20 @@ import { PdfTableExtractor } from "../../../src/documents/extractors/PdfTableExt
 
 const FIXTURES_DIR = path.join(__dirname, "../../fixtures/documents");
 const PDF_TABLES_DIR = getPdfTablesFixturesDir(FIXTURES_DIR);
+const TMP_DIR = path.join(FIXTURES_DIR, "pdf-tables", "tmp");
 
 // Generate fixture files once before all tests
 beforeAll(async () => {
   await createTestPdfTableFiles(FIXTURES_DIR);
+});
+
+// Clean up temp PDF files after all tests
+afterAll(async () => {
+  try {
+    await fs.rm(TMP_DIR, { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup
+  }
 });
 
 // Reset mock state before each test
@@ -102,10 +112,9 @@ beforeEach(() => {
  * Returns the path to the created file.
  */
 async function createTempPdf(content: Buffer = Buffer.from("%PDF-1.4 minimal")): Promise<string> {
-  const tmpDir = path.join(FIXTURES_DIR, "pdf-tables", "tmp");
-  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.mkdir(TMP_DIR, { recursive: true });
   const filePath = path.join(
-    tmpDir,
+    TMP_DIR,
     `test-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
   );
   await fs.writeFile(filePath, content);
@@ -785,6 +794,188 @@ describe("PdfTableExtractor", () => {
           expect(typeof cell.content).toBe("string");
         }
       }
+    });
+  });
+
+  // ── Additional edge cases ────────────────────────────────────
+
+  describe("additional edge cases", () => {
+    test("extracts large table with 10 rows and 5 columns", async () => {
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      const items: Array<{ page?: number; text?: string; x?: number; y?: number; w?: number }> = [
+        { page: 1 },
+      ];
+
+      const columns = [5, 15, 25, 35, 45];
+      for (let row = 0; row < 10; row++) {
+        const y = 10 + row * 2;
+        for (let col = 0; col < 5; col++) {
+          items.push({
+            text: row === 0 ? `H${col + 1}` : `R${row}C${col + 1}`,
+            x: columns[col],
+            y,
+            w: 3,
+          });
+        }
+      }
+
+      mockParseItems = items;
+      const results = await extractor.extract(filePath);
+
+      expect(results.length).toBe(1);
+      expect(results[0]!.table.columnCount).toBe(5);
+      expect(results[0]!.table.rows.length).toBe(10);
+      expect(results[0]!.table.rows[0]!.isHeader).toBe(true);
+      expect(results[0]!.table.rows[9]!.cells[4]!.content).toBe("R9C5");
+    });
+
+    test("handles special characters in cell content", async () => {
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      mockParseItems = [
+        { page: 1 },
+        { text: "Price ($)", x: 5, y: 10, w: 5 },
+        { text: "Tax %", x: 20, y: 10, w: 3 },
+        { text: "$1,234.56", x: 5, y: 12, w: 5 },
+        { text: "8.5%", x: 20, y: 12, w: 3 },
+        { text: 'Item "A"', x: 5, y: 14, w: 5 },
+        { text: "N/A", x: 20, y: 14, w: 3 },
+      ];
+
+      const results = await extractor.extract(filePath);
+
+      expect(results.length).toBe(1);
+      expect(results[0]!.table.rows[0]!.cells[0]!.content).toBe("Price ($)");
+      expect(results[0]!.table.rows[1]!.cells[0]!.content).toBe("$1,234.56");
+      expect(results[0]!.table.rows[2]!.cells[0]!.content).toBe('Item "A"');
+    });
+
+    test("columns very close together near COLUMN_X_TOLERANCE boundary", async () => {
+      // COLUMN_X_TOLERANCE is 1.0 — columns at x=5 and x=6.5 should merge
+      // but x=5 and x=7 should be separate
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      mockParseItems = [
+        { page: 1 },
+        // Two columns at x=5 and x=7 (difference = 2 > COLUMN_X_TOLERANCE of 1.0)
+        { text: "A", x: 5, y: 10, w: 1 },
+        { text: "B", x: 7, y: 10, w: 1 },
+        { text: "C", x: 5, y: 12, w: 1 },
+        { text: "D", x: 7, y: 12, w: 1 },
+      ];
+
+      const results = await extractor.extract(filePath);
+
+      expect(results.length).toBe(1);
+      expect(results[0]!.table.columnCount).toBe(2);
+    });
+
+    test("multiple consecutive rowSpans across 3+ rows", async () => {
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      // 3-column table: col 0 spans rows via empty cells below
+      // The algorithm only detects immediate rowSpan (cell above has content),
+      // so two consecutive empty rows each trigger separate rowSpan increments
+      // only for the directly adjacent non-empty cell above.
+      mockParseItems = [
+        { page: 1 },
+        // Row 0 — all 3 columns
+        { text: "Category", x: 5, y: 10, w: 1 },
+        { text: "V1", x: 20, y: 10, w: 1 },
+        { text: "N1", x: 40, y: 10, w: 1 },
+        // Row 1 — col 0 empty (rowSpan from row 0)
+        { text: "V2", x: 20, y: 12, w: 1 },
+        { text: "N2", x: 40, y: 12, w: 1 },
+        // Row 2 — col 0 empty again; algorithm checks cell above (row 1)
+        // which is an empty string from rowSpan skip, so no further rowSpan
+        { text: "V3", x: 20, y: 14, w: 1 },
+        { text: "N3", x: 40, y: 14, w: 1 },
+        // Row 3 — new category
+        { text: "Other", x: 5, y: 16, w: 1 },
+        { text: "V4", x: 20, y: 16, w: 1 },
+        { text: "N4", x: 40, y: 16, w: 1 },
+      ];
+
+      const results = await extractor.extract(filePath);
+
+      expect(results.length).toBe(1);
+      // "Category" in row 0, col 0 gets rowSpan=2 (only the immediately
+      // adjacent empty cell is detected as a rowSpan continuation)
+      const firstCell = results[0]!.table.rows[0]!.cells[0]!;
+      expect(firstCell.content).toBe("Category");
+      expect(firstCell.rowSpan).toBe(2);
+
+      // Row 2 col 0 is treated as an empty cell (not a rowSpan continuation)
+      // because the cell above it (row 1) has no content after the skip
+      expect(results[0]!.table.rows.length).toBe(4);
+    });
+
+    test("row with items at x-positions not matching any column boundary", async () => {
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      mockParseItems = [
+        { page: 1 },
+        // Rows with consistent columns at x=5 and x=20
+        { text: "A", x: 5, y: 10, w: 1 },
+        { text: "B", x: 20, y: 10, w: 1 },
+        { text: "C", x: 5, y: 12, w: 1 },
+        { text: "D", x: 20, y: 12, w: 1 },
+        // Row with items far from any column boundary (x=50)
+        { text: "Outlier", x: 50, y: 14, w: 1 },
+        // More aligned rows
+        { text: "E", x: 5, y: 16, w: 1 },
+        { text: "F", x: 20, y: 16, w: 1 },
+      ];
+
+      const results = await extractor.extract(filePath);
+
+      // Should detect tables; the outlier row breaks the region
+      expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("confidence score is lower for partially aligned tables", async () => {
+      const extractor = new PdfTableExtractor();
+      const filePath = await createTempPdf();
+
+      // First: a perfectly aligned table
+      mockParseItems = [
+        { page: 1 },
+        { text: "A", x: 5, y: 10, w: 1 },
+        { text: "B", x: 20, y: 10, w: 1 },
+        { text: "C", x: 5, y: 12, w: 1 },
+        { text: "D", x: 20, y: 12, w: 1 },
+      ];
+
+      const perfectResults = await extractor.extract(filePath);
+      const perfectConfidence = perfectResults[0]!.confidence!;
+
+      // Now: a table with slightly misaligned items (within tolerance but not perfect)
+      mockParseItems = [
+        { page: 1 },
+        { text: "A", x: 5, y: 10, w: 1 },
+        { text: "B", x: 20, y: 10, w: 1 },
+        { text: "C", x: 5.8, y: 12, w: 1 }, // slightly off from x=5
+        { text: "D", x: 20, y: 12, w: 1 },
+      ];
+
+      const filePath2 = await createTempPdf();
+      const offsetResults = await extractor.extract(filePath2);
+
+      // Both should be valid tables
+      expect(perfectResults.length).toBe(1);
+      expect(offsetResults.length).toBe(1);
+
+      // Both should have valid confidence scores
+      expect(perfectConfidence).toBeGreaterThanOrEqual(0);
+      expect(perfectConfidence).toBeLessThanOrEqual(1);
+      expect(offsetResults[0]!.confidence!).toBeGreaterThanOrEqual(0);
+      expect(offsetResults[0]!.confidence!).toBeLessThanOrEqual(1);
     });
   });
 

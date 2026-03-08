@@ -107,6 +107,9 @@ export type {
   PdfTableExtractorConfig,
 } from "./extractors/index.js";
 
+// Table formatter
+export { TableFormatter } from "./TableFormatter.js";
+
 // Document chunker
 export { DocumentChunker } from "./DocumentChunker.js";
 
