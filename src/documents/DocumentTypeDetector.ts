@@ -236,7 +236,7 @@ export class DocumentTypeDetector {
    * the extension. Handles edge cases like text files (no magic bytes),
    * DOCX/ZIP equivalence, empty files, and missing files.
    *
-   * @param filePath - Absolute path to the file to validate
+   * @param filePath - Path to the file to validate
    * @returns Promise resolving to the validation result
    * @throws {FileAccessError} When the file cannot be read (not found, permissions)
    *
@@ -378,7 +378,7 @@ export class DocumentTypeDetector {
    *
    * Convenience method combining {@link detect} and {@link validateMimeType}.
    *
-   * @param filePath - Absolute path to the file
+   * @param filePath - Path to the file to detect and validate
    * @returns Promise resolving to both the detected type and validation result
    * @throws {FileAccessError} When the file cannot be read
    *
@@ -391,8 +391,7 @@ export class DocumentTypeDetector {
   async detectWithValidation(
     filePath: string
   ): Promise<{ type: DetectedType; validation: MimeValidationResult }> {
-    const type = this.detect(filePath);
     const validation = await this.validateMimeType(filePath);
-    return { type, validation };
+    return { type: validation.detectedType, validation };
   }
 }

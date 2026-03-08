@@ -281,6 +281,9 @@ export class NotImplementedError extends DocumentError {
  * than what the extension implies. Not retryable — the file itself is
  * misidentified.
  *
+ * Available for callers that prefer throw/catch over the result-object
+ * pattern used by {@link DocumentTypeDetector.validateMimeType}.
+ *
  * @example
  * ```typescript
  * throw new MimeTypeMismatchError(

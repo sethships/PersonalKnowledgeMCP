@@ -128,18 +128,6 @@ export const DOCUMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
 export type ExtensionDocumentType = "pdf" | "docx" | "markdown" | "txt" | "image";
 
 /**
- * Extension to document type mapping.
- *
- * Maps file extensions to their corresponding document type.
- * Returns a strongly-typed union of document types.
- *
- * @example
- * ```typescript
- * const docType = EXTENSION_TO_TYPE[".pdf"]; // "pdf"
- * const docType2 = EXTENSION_TO_TYPE[".md"]; // "markdown"
- * ```
- */
-/**
  * MIME type equivalences for content validation.
  *
  * Maps expected MIME types to alternative MIME types that should be
@@ -169,6 +157,18 @@ export const MIME_TYPE_EQUIVALENCES: Readonly<Record<string, readonly string[]>>
  */
 export const TEXT_MIME_TYPES: ReadonlySet<string> = new Set(["text/markdown", "text/plain"]);
 
+/**
+ * Extension to document type mapping.
+ *
+ * Maps file extensions to their corresponding document type.
+ * Returns a strongly-typed union of document types.
+ *
+ * @example
+ * ```typescript
+ * const docType = EXTENSION_TO_TYPE[".pdf"]; // "pdf"
+ * const docType2 = EXTENSION_TO_TYPE[".md"]; // "markdown"
+ * ```
+ */
 export const EXTENSION_TO_TYPE: Readonly<Record<string, ExtensionDocumentType>> = {
   // PDF
   ".pdf": "pdf",

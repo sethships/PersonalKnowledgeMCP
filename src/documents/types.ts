@@ -991,7 +991,7 @@ export interface MimeValidationResult {
   /**
    * Document type detected from the file extension.
    */
-  detectedType: string;
+  detectedType: "pdf" | "docx" | "markdown" | "txt" | "image" | "unknown";
 
   /**
    * Expected MIME type based on file extension from MIME_TYPES map.

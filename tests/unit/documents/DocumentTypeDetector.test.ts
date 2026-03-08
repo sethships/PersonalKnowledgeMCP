@@ -4,7 +4,7 @@
  * Tests document type detection, extractor routing, and MIME type validation.
  */
 
-import { describe, test, expect, afterAll } from "bun:test";
+import { describe, test, expect, afterAll, spyOn } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -382,16 +382,52 @@ describe("DocumentTypeDetector", () => {
         expect(result.actualMime).toBe("image/png");
         expect(result.reason).toContain("does not match");
       });
+
+      test("detects PDF content with .docx extension", async () => {
+        const pdfContent = fs.readFileSync(path.join(fixturesDir, "pdf/simple.pdf"));
+        const fakeDocx = createTempFile("actually-pdf.docx", pdfContent);
+        const result = await detector.validateMimeType(fakeDocx);
+        expect(result.isValid).toBe(false);
+        expect(result.skipped).toBe(false);
+        expect(result.expectedMime).toBe(
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        expect(result.actualMime).toBe("application/pdf");
+      });
+
+      test("returns mismatch validation for misidentified files via detectWithValidation", async () => {
+        const pngContent = fs.readFileSync(path.join(fixturesDir, "images/screenshot.png"));
+        const fakePdf = createTempFile("detect-validation-mismatch.pdf", pngContent);
+        const result = await detector.detectWithValidation(fakePdf);
+        expect(result.type).toBe("pdf");
+        expect(result.validation.isValid).toBe(false);
+        expect(result.validation.actualMime).toBe("image/png");
+      });
     });
 
     describe("error handling", () => {
       test("throws FileAccessError for non-existent file", async () => {
+        let thrown: unknown;
         try {
           await detector.validateMimeType("/nonexistent/path/file.pdf");
-          // Should not reach here
-          expect(true).toBe(false);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(FileAccessError);
+      });
+
+      test("throws FileAccessError for non-ENOENT file system errors", async () => {
+        const mockError = new Error("Permission denied") as NodeJS.ErrnoException;
+        mockError.code = "EACCES";
+        const spy = spyOn(fs.promises, "open").mockRejectedValueOnce(mockError);
+        try {
+          await detector.validateMimeType("/some/path/file.pdf");
+          expect.unreachable("Should have thrown FileAccessError");
         } catch (error) {
           expect(error).toBeInstanceOf(FileAccessError);
+          expect((error as FileAccessError).message).toContain("Cannot read file");
+        } finally {
+          spy.mockRestore();
         }
       });
 
