@@ -597,3 +597,24 @@ export const CheckCompletenessCommandOptionsSchema = z.object({
 export type ValidatedCheckCompletenessOptions = z.infer<
   typeof CheckCompletenessCommandOptionsSchema
 >;
+
+// ============================================================================
+// Tables Command Validation Schemas
+// ============================================================================
+
+/**
+ * Schema for tables list command options
+ *
+ * Validates options for listing extracted tables from indexed documents.
+ */
+export const TablesListCommandOptionsSchema = z.object({
+  document: z.string().optional(),
+  folder: z.string().optional(),
+  repo: z.string().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for tables list command
+ */
+export type ValidatedTablesListOptions = z.infer<typeof TablesListCommandOptionsSchema>;
