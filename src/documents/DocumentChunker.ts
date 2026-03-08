@@ -822,6 +822,11 @@ export class DocumentChunker extends FileChunker {
         );
       }
 
+      // Fallback to document title when no section heading found
+      if (this.includeSectionContext && !sectionHeading && extractionResult.metadata.title) {
+        sectionHeading = extractionResult.metadata.title;
+      }
+
       const documentMetadata: DocumentChunkMetadata = {
         extension: chunk.metadata.extension,
         language: chunk.metadata.language,
@@ -895,24 +900,39 @@ export class DocumentChunker extends FileChunker {
   }
 
   /**
-   * Find the nearest section whose startOffset is at or before the given position.
+   * Find the nearest section whose startOffset is at or before the given position,
+   * returning the full heading hierarchy (e.g., "Chapter 1 > Section 1.1 > Details").
    *
-   * @param sections - Sorted sections
+   * Builds the hierarchy by finding the nearest preceding section at each heading
+   * level, walking from the leaf (nearest) up to the root (lowest level number).
+   *
+   * @param sections - Document sections with offsets and levels
    * @param position - Character position in content
-   * @returns Section title or undefined
+   * @returns Hierarchical section heading string joined with " > ", or undefined
    */
   private findNearestSection(sections: SectionInfo[], position: number): string | undefined {
-    let nearest: SectionInfo | undefined;
+    // Filter to sections that start at or before the chunk position
+    const preceding = sections.filter((s) => s.startOffset <= position);
+    if (preceding.length === 0) return undefined;
 
-    for (const section of sections) {
-      if (section.startOffset <= position) {
-        if (!nearest || section.startOffset > nearest.startOffset) {
-          nearest = section;
-        }
+    // Sort by startOffset descending (nearest first)
+    const sorted = [...preceding].sort((a, b) => b.startOffset - a.startOffset);
+
+    // Build hierarchy from leaf to root
+    const leaf = sorted[0]!;
+    const hierarchy: string[] = [leaf.title];
+    let currentLevel = leaf.level;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const section = sorted[i]!;
+      if (section.level < currentLevel) {
+        hierarchy.unshift(section.title);
+        currentLevel = section.level;
       }
+      if (currentLevel <= 1) break;
     }
 
-    return nearest?.title;
+    return hierarchy.join(" > ");
   }
 
   /**
