@@ -15,6 +15,7 @@ import { tablesListCommand } from "../../../src/cli/commands/tables-command.js";
 import type { CliDependencies } from "../../../src/cli/utils/dependency-init.js";
 import type { RepositoryInfo } from "../../../src/repositories/types.js";
 import type { DocumentQueryResult, DocumentMetadata } from "../../../src/storage/types.js";
+import { StorageError } from "../../../src/storage/errors.js";
 
 /**
  * Create a mock table chunk result from ChromaDB
@@ -186,6 +187,21 @@ describe("Tables List Command", () => {
       expect(parsed.tables[0].chunkCount).toBe(3);
     });
 
+    it("should not skip tableIndex 0 (falsy guard regression)", async () => {
+      mockListRepositories.mockResolvedValue([mockRepo]);
+      mockGetDocumentsByMetadata.mockResolvedValue([
+        createTableChunk({ filePath: "docs/a.pdf", tableIndex: 0 }),
+      ]);
+
+      await tablesListCommand({ json: true }, mockDeps);
+
+      const output = getFirstLogOutput(consoleLogSpy);
+      const parsed = JSON.parse(output);
+
+      expect(parsed.totalTables).toBe(1);
+      expect(parsed.tables[0].tableIndex).toBe(0);
+    });
+
     it("should list tables from multiple repositories", async () => {
       mockListRepositories.mockResolvedValue([mockRepo, mockRepo2]);
       mockGetDocumentsByMetadata
@@ -335,10 +351,10 @@ describe("Tables List Command", () => {
   });
 
   describe("Error handling", () => {
-    it("should skip repositories where ChromaDB query fails", async () => {
+    it("should skip repositories where ChromaDB query fails with StorageError", async () => {
       mockListRepositories.mockResolvedValue([mockRepo, mockRepo2]);
       mockGetDocumentsByMetadata
-        .mockRejectedValueOnce(new Error("Collection not found"))
+        .mockRejectedValueOnce(new StorageError("Collection not found"))
         .mockResolvedValueOnce([createTableChunk({ filePath: "docs/b.pdf", tableIndex: 0 })]);
 
       await tablesListCommand({ json: true }, mockDeps);
@@ -350,9 +366,9 @@ describe("Tables List Command", () => {
       expect(parsed.totalTables).toBe(1);
     });
 
-    it("should handle all repositories failing gracefully", async () => {
+    it("should handle all repositories failing gracefully with StorageError", async () => {
       mockListRepositories.mockResolvedValue([mockRepo]);
-      mockGetDocumentsByMetadata.mockRejectedValue(new Error("Connection failed"));
+      mockGetDocumentsByMetadata.mockRejectedValue(new StorageError("Connection failed"));
 
       await tablesListCommand({ json: true }, mockDeps);
 
@@ -360,6 +376,13 @@ describe("Tables List Command", () => {
       const parsed = JSON.parse(output);
 
       expect(parsed.totalTables).toBe(0);
+    });
+
+    it("should re-throw non-StorageError errors", async () => {
+      mockListRepositories.mockResolvedValue([mockRepo]);
+      mockGetDocumentsByMetadata.mockRejectedValue(new TypeError("Unexpected type"));
+
+      await expect(tablesListCommand({ json: true }, mockDeps)).rejects.toThrow("Unexpected type");
     });
   });
 

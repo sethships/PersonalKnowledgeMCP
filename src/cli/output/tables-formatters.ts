@@ -97,7 +97,7 @@ export function createTablesListTable(tables: TableDisplayInfo[], repoName?: str
       truncate(t.repository, 14),
       truncate(t.filePath, 28),
       t.tableIndex.toString(),
-      truncate(t.caption || chalk.gray("(none)"), 22),
+      t.caption ? truncate(t.caption, 22) : chalk.gray("(none)"),
       size,
       t.sourceType,
       confidence,

@@ -10,11 +10,23 @@
 import chalk from "chalk";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import type { DocumentQueryResult, MetadataFilter } from "../../storage/types.js";
+import { StorageError } from "../../storage/errors.js";
 import {
   createTablesListTable,
   formatTablesListJson,
   type TableDisplayInfo,
 } from "../output/tables-formatters.js";
+
+/** Table metadata field names as stored in ChromaDB by TableContentIndexer */
+const TABLE_META_FIELDS = {
+  isTable: "isTable",
+  tableIndex: "tableIndex",
+  tableCaption: "tableCaption",
+  tableColumnCount: "tableColumnCount",
+  tableRowCount: "tableRowCount",
+  tableSourceType: "tableSourceType",
+  tableConfidence: "tableConfidence",
+} as const;
 
 /**
  * Tables list command options
@@ -60,16 +72,20 @@ export async function tablesListCommand(
 
   const allTables: TableDisplayInfo[] = [];
 
-  for (const repo of repos) {
-    // Build where clause for isTable chunks
-    const where = buildWhereClause(options);
+  // Build where clause once - it is loop-invariant (depends only on options)
+  const where = buildWhereClause(options);
 
+  for (const repo of repos) {
+    // TODO: Add --limit/--offset pagination for large table sets (see follow-up issue)
     let results: DocumentQueryResult[];
     try {
       results = await deps.chromaClient.getDocumentsByMetadata(repo.collectionName, where);
-    } catch {
-      // Collection might not exist or have no table chunks - skip silently
-      continue;
+    } catch (error) {
+      if (error instanceof StorageError) {
+        // Collection might not exist or have no table chunks - skip silently
+        continue;
+      }
+      throw error;
     }
 
     // Post-filter by folder if specified (ChromaDB doesn't support prefix matching)
@@ -134,7 +150,7 @@ function groupTableChunks(chunks: DocumentQueryResult[], repository: string): Ta
     // Use file_path and tableIndex to identify unique tables
     // tableIndex is stored as a generic metadata field alongside DocumentMetadata
     const metaRecord = meta as unknown as Record<string, unknown>;
-    const tableIndex = metaRecord["tableIndex"] as number | undefined;
+    const tableIndex = metaRecord[TABLE_META_FIELDS.tableIndex] as number | undefined;
     if (tableIndex === undefined) continue;
 
     const key = `${meta.file_path}::${tableIndex}`;
@@ -152,12 +168,12 @@ function groupTableChunks(chunks: DocumentQueryResult[], repository: string): Ta
     tables.push({
       repository,
       filePath: group.metadata.file_path,
-      tableIndex: (meta["tableIndex"] as number) ?? 0,
-      caption: meta["tableCaption"] as string | undefined,
-      columnCount: (meta["tableColumnCount"] as number) ?? 0,
-      rowCount: (meta["tableRowCount"] as number) ?? 0,
-      sourceType: (meta["tableSourceType"] as string) ?? "unknown",
-      confidence: meta["tableConfidence"] as number | undefined,
+      tableIndex: (meta[TABLE_META_FIELDS.tableIndex] as number) ?? 0,
+      caption: meta[TABLE_META_FIELDS.tableCaption] as string | undefined,
+      columnCount: (meta[TABLE_META_FIELDS.tableColumnCount] as number) ?? 0,
+      rowCount: (meta[TABLE_META_FIELDS.tableRowCount] as number) ?? 0,
+      sourceType: (meta[TABLE_META_FIELDS.tableSourceType] as string) ?? "unknown",
+      confidence: meta[TABLE_META_FIELDS.tableConfidence] as number | undefined,
       chunkCount: group.chunks.length,
     });
   }
