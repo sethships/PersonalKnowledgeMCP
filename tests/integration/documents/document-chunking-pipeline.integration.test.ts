@@ -95,6 +95,9 @@ function createMockCloner(fixturePath: string): RepositoryCloner {
       branch: "main",
       commitSha: "abc123def456",
     }),
+    cleanup: async (_repoPath: string): Promise<void> => {
+      // No-op: test fixtures are cleaned up by afterAll
+    },
   } as unknown as RepositoryCloner;
 }
 
@@ -141,7 +144,7 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     // Setup fixture directory
     fixtureDir = path.join(testDataPath, "fixtures");
     pdfDir = path.join(fixtureDir, "docs");
-    docxDir = path.join(fixtureDir, "docs");
+    docxDir = pdfDir; // PDF and DOCX share the docs/ directory intentionally
     mdDir = path.join(fixtureDir, "notes");
 
     fs.mkdirSync(pdfDir, { recursive: true });
@@ -286,14 +289,28 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
   /**
    * Track a collection name from a repository URL for cleanup.
    *
-   * The IngestionService sanitizes repo names from URLs. This reproduces
-   * the same logic for test cleanup tracking.
+   * Reproduces the exact logic from IngestionService.extractRepositoryName()
+   * and IngestionService.sanitizeCollectionName() to ensure test collection
+   * names match what the service creates internally.
    */
   function trackCollectionFromUrl(url: string): string {
+    // Match IngestionService.extractRepositoryName() exactly
     const match = url.match(/[/:]([^/:]+?)(\.git)?$/);
     const repoName = match?.[1]?.replace(".git", "") ?? "unknown";
-    // Sanitize: ChromaDB collection name rules (simplified)
-    const collectionName = repoName.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+    // Match IngestionService.sanitizeCollectionName() exactly
+    let collectionName = repoName
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]/g, "_")
+      .replace(/^[^a-z0-9]+/, "")
+      .replace(/[^a-z0-9]+$/, "");
+    if (collectionName.length < 3) {
+      collectionName = collectionName.padEnd(3, "_");
+    }
+    if (collectionName.length > 63) {
+      collectionName = collectionName.substring(0, 63);
+    }
+
     createdCollections.push(collectionName);
     return collectionName;
   }
@@ -376,11 +393,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     it("extracts, chunks, embeds, stores DOCX with headings/sections", async () => {
       const docxPath = path.join(docxDir, "with-headings.docx");
 
-      // Skip if fixture file doesn't exist
-      if (!fs.existsSync(docxPath)) {
-        console.warn("Skipping DOCX test: with-headings.docx fixture not found");
-        return;
-      }
+      // Guard: fixture must exist for meaningful test
+      expect(fs.existsSync(docxPath)).toBe(true);
 
       const files = [createFileInfo("docs/with-headings.docx", docxPath)];
       const service = createIngestionService(files);
@@ -411,10 +425,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     it("extracts Dublin Core metadata (title, author) from DOCX", async () => {
       const docxPath = path.join(docxDir, "with-metadata.docx");
 
-      if (!fs.existsSync(docxPath)) {
-        console.warn("Skipping DOCX metadata test: with-metadata.docx fixture not found");
-        return;
-      }
+      // Guard: fixture must exist for meaningful test
+      expect(fs.existsSync(docxPath)).toBe(true);
 
       const files = [createFileInfo("docs/with-metadata.docx", docxPath)];
       const service = createIngestionService(files);
@@ -436,14 +448,11 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
       const doc = docs[0]!;
       expect(doc.metadata.document_type).toBe("docx");
 
-      // The with-metadata.docx fixture should have Dublin Core title/author
-      // If not present, the extractor still succeeds but fields may be undefined
-      if (doc.metadata.document_title) {
-        expect(typeof doc.metadata.document_title).toBe("string");
-      }
-      if (doc.metadata.document_author) {
-        expect(typeof doc.metadata.document_author).toBe("string");
-      }
+      // The with-metadata.docx fixture has Dublin Core title/author
+      expect(doc.metadata.document_title).toBeDefined();
+      expect(typeof doc.metadata.document_title).toBe("string");
+      expect(doc.metadata.document_author).toBeDefined();
+      expect(typeof doc.metadata.document_author).toBe("string");
     });
   });
 
@@ -454,10 +463,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     it("extracts, chunks, embeds, stores markdown with sections", async () => {
       const mdPath = path.join(mdDir, "simple.md");
 
-      if (!fs.existsSync(mdPath)) {
-        console.warn("Skipping Markdown test: simple.md fixture not found");
-        return;
-      }
+      // Guard: fixture must exist for meaningful test
+      expect(fs.existsSync(mdPath)).toBe(true);
 
       const files = [createFileInfo("notes/simple.md", mdPath)];
       const service = createIngestionService(files);
@@ -494,10 +501,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     it("extracts frontmatter metadata (title, author) from markdown", async () => {
       const mdPath = path.join(mdDir, "with-frontmatter.md");
 
-      if (!fs.existsSync(mdPath)) {
-        console.warn("Skipping Markdown frontmatter test: with-frontmatter.md fixture not found");
-        return;
-      }
+      // Guard: fixture must exist for meaningful test
+      expect(fs.existsSync(mdPath)).toBe(true);
 
       const files = [createFileInfo("notes/with-frontmatter.md", mdPath)];
       const service = createIngestionService(files);
@@ -544,11 +549,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
         files.push(createFileInfo("notes/simple.md", mdPath));
       }
 
-      // Need at least 2 document types for a meaningful test
-      if (files.length < 2) {
-        console.warn("Skipping mixed document test: insufficient fixture files available");
-        return;
-      }
+      // Guard: need at least 2 document types for a meaningful test
+      expect(files.length).toBeGreaterThanOrEqual(2);
 
       const service = createIngestionService(files);
       const url = "https://github.com/test/doc-pipeline-mixed.git";
@@ -614,10 +616,8 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
     it("preserves standard metadata alongside document metadata", async () => {
       const mdPath = path.join(mdDir, "with-frontmatter.md");
 
-      if (!fs.existsSync(mdPath)) {
-        console.warn("Skipping standard metadata test: with-frontmatter.md not found");
-        return;
-      }
+      // Guard: fixture must exist for meaningful test
+      expect(fs.existsSync(mdPath)).toBe(true);
 
       const files = [createFileInfo("notes/with-frontmatter.md", mdPath)];
       const service = createIngestionService(files);
@@ -696,7 +696,7 @@ describeIntegration("Document Chunking Pipeline Integration Tests", () => {
       const firstIndexedAt = docs1[0]!.metadata.indexed_at;
 
       // Brief pause so indexed_at differs
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Re-index with force
       await service.indexRepository(url, { force: true });
