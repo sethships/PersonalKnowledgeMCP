@@ -758,6 +758,38 @@ describe("ChromaStorageClientImpl", () => {
         DocumentOperationError
       );
     });
+
+    test("should not store undefined optional fields as 'undefined' strings via upsert", async () => {
+      const collectionName = "repo_test";
+      const docWithoutOptionals: DocumentInput = {
+        id: "folder:docs/plain.txt:0",
+        content: "Plain text content",
+        embedding: createTestEmbedding(44),
+        metadata: createTestMetadata({
+          file_path: "docs/plain.txt",
+          repository: "folder",
+          file_extension: ".txt",
+          language: "unknown",
+        }),
+      };
+
+      await client.upsertDocuments(collectionName, [docWithoutOptionals]);
+
+      const results = await client.similaritySearch({
+        embedding: createTestEmbedding(44),
+        collections: [collectionName],
+        limit: 1,
+        threshold: 0.0,
+      });
+
+      expect(results).toHaveLength(1);
+      const meta = results[0]!.metadata;
+      expect(meta.document_type).toBeUndefined();
+      expect(meta.page_number).toBeUndefined();
+      expect(meta.section_heading).toBeUndefined();
+      expect(meta.document_title).toBeUndefined();
+      expect(meta.document_author).toBeUndefined();
+    });
   });
 
   describe("deleteDocuments", () => {
