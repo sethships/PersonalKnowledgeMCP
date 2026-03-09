@@ -69,6 +69,9 @@ describe("Test fixtures", () => {
       "with-headings.docx",
       "with-lists.docx",
       "with-metadata.docx",
+      "with-metadata-alt-ns.docx",
+      "with-malformed-metadata.docx",
+      "with-empty-metadata.docx",
       "invalid.docx",
     ];
 
@@ -824,6 +827,37 @@ describe("DocxExtractor", () => {
         expect(result.metadata.title).toBeUndefined();
         expect(result.metadata.author).toBeUndefined();
         expect(result.metadata.createdAt).toBeUndefined();
+      });
+
+      test("gracefully degrades when core.xml contains garbage/malformed content", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-malformed-metadata.docx");
+
+        // Extraction should succeed; metadata fields should be undefined
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+        expect(result.metadata.documentType).toBe("docx");
+        // @xmldom/xmldom returns a best-effort document for garbage input;
+        // namespace queries return no elements, so metadata fields are undefined
+        expect(result.metadata.title).toBeUndefined();
+        expect(result.metadata.author).toBeUndefined();
+        expect(result.metadata.createdAt).toBeUndefined();
+      });
+
+      test("returns undefined (not empty strings) for empty metadata elements", async () => {
+        const extractor = new DocxExtractor();
+        const filePath = path.join(DOCX_DIR, "with-empty-metadata.docx");
+
+        const result = await extractor.extract(filePath);
+
+        expect(result.content).toBeDefined();
+        expect(result.content.length).toBeGreaterThan(0);
+        expect(result.metadata.documentType).toBe("docx");
+        // Empty <dc:title></dc:title> should result in undefined, not ""
+        expect(result.metadata.title).toBeUndefined();
+        expect(result.metadata.author).toBeUndefined();
       });
     });
   });
