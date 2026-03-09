@@ -188,6 +188,18 @@ describeIntegration("semantic_search MCP Tool with include_documents Integration
       }
     }
     createdCollections.length = 0;
+
+    // Clean up repository metadata for any repos created in previous tests
+    const allRepos = await repositoryService.listRepositories();
+    for (const repo of allRepos) {
+      if (repo.name.startsWith("search-docs-")) {
+        try {
+          await repositoryService.removeRepository(repo.name);
+        } catch (_error) {
+          // Ignore cleanup errors
+        }
+      }
+    }
   });
 
   // ---------------------------------------------------------------------------

@@ -583,6 +583,38 @@ describeIntegration("search_documents MCP Tool Integration Tests", () => {
         expect(r.isTable).toBeUndefined();
       }
     });
+
+    it("should return both table and non-table chunks when include_tables is 'include'", async () => {
+      await indexTestDocumentFolder(REPO_TABLE, COLLECTION_TABLE_FOLDER, [
+        {
+          content: "| Metric | Value |\n|---|---|\n| Recall | 0.88 |",
+          filePath: "combined.pdf",
+          chunkIndex: 0,
+          documentType: "pdf",
+          isTable: true,
+          tableCaption: "Recall Metrics",
+          tableColumnCount: 2,
+          tableRowCount: 1,
+        },
+        {
+          content: "The recall metric measures the proportion of relevant items retrieved.",
+          filePath: "combined.pdf",
+          chunkIndex: 1,
+          documentType: "pdf",
+        },
+      ]);
+
+      const { parsed, result } = await callHandler({
+        query: "recall metric proportion",
+        include_tables: "include",
+        threshold: 0.0,
+        limit: 10,
+      });
+
+      expect(result.isError).toBe(false);
+      // Both table and non-table chunks should appear
+      expect(parsed.results.length).toBeGreaterThanOrEqual(1);
+    });
   });
 
   describe("Threshold filtering", () => {

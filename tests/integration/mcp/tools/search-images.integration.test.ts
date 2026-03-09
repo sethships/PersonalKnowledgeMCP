@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/explicit-function-return-type */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
 /**
  * Integration tests for the search_images MCP tool handler
  *
@@ -15,6 +12,10 @@
  *
  * @module tests/integration/mcp/tools/search-images.integration
  */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { createSearchImagesHandler } from "../../../../src/mcp/tools/search-images.js";
@@ -526,6 +527,7 @@ describe("search_images MCP Tool - Integration Tests", () => {
       // mapToMCPError sanitizes generic Error messages
       expect(errorText).not.toContain("/internal/secret/path");
       expect(errorText).not.toContain("5432");
+      expect(errorText).toContain("unexpected error occurred");
     });
 
     it("should handle non-Error thrown values gracefully", async () => {
@@ -536,15 +538,17 @@ describe("search_images MCP Tool - Integration Tests", () => {
         throw "unexpected string error";
       };
 
-      const handler = createSearchImagesHandler(mockService);
-      const result = await handler({});
+      try {
+        const handler = createSearchImagesHandler(mockService);
+        const result = await handler({});
 
-      expect(result.isError).toBe(true);
-      const errorText = (result.content[0] as TextContent).text;
-      expect(errorText).toContain("Error:");
-
-      // Restore original function
-      mockService.searchImages = originalFn;
+        expect(result.isError).toBe(true);
+        const errorText = (result.content[0] as TextContent).text;
+        expect(errorText).toContain("Error:");
+      } finally {
+        // Restore original function even if assertions fail
+        mockService.searchImages = originalFn;
+      }
     });
   });
 

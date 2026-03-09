@@ -461,6 +461,9 @@ describe("list_watched_folders MCP Tool Integration Tests", () => {
   );
 
   // ---- 11. Enabled flag is preserved in response --------------------------
+  // Note: only enabled=true is tested here because FolderWatcherService.startWatching()
+  // requires an active watcher. Testing enabled=false would require a different setup
+  // path (e.g. loading persisted config) which is beyond the scope of this integration test.
 
   it(
     "should preserve the enabled flag from the folder configuration",
