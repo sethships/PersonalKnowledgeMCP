@@ -16,6 +16,7 @@ import type {
 } from "../../../../src/auth/types.js";
 
 // Mock logger to avoid console output during tests
+// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
 void mock.module("../../../../src/logging/index.js", () => ({
   getComponentLogger: () => ({
     debug: () => {},

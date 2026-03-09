@@ -27,6 +27,23 @@ export type {
 } from "./document-search-types.js";
 export { DocumentSearchServiceImpl } from "./document-search-service.js";
 
+// ImageSearchService exports
+export type {
+  ImageSearchService,
+  ImageSearchQuery,
+  ImageSearchResult,
+  ImageSearchResponse,
+  ImageExifData,
+  ImageFormat,
+} from "./image-search-types.js";
+
+// ListWatchedFoldersService exports
+export type {
+  ListWatchedFoldersService,
+  ListWatchedFoldersResponse,
+  WatchedFolderEntry,
+} from "./list-watched-folders-types.js";
+
 // IngestionService exports
 export { IngestionService } from "./ingestion-service.js";
 export type {

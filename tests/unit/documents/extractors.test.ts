@@ -107,6 +107,8 @@ describe("Test fixtures", () => {
       "test.tiff",
       "photo-with-exif.jpg",
       "corrupt.jpg",
+      "truncated.jpg",
+      "truncated.png",
     ];
 
     for (const file of expectedFiles) {
@@ -301,8 +303,7 @@ describe("PdfExtractor", () => {
         // small PDFs may resolve before the timeout fires. This test validates that both
         // outcomes are handled correctly: either ExtractionTimeoutError is thrown, or
         // extraction completes successfully.
-        // TODO: Add deterministic timeout test using Bun mock to force the timeout path
-        // (see code review on PR #467 — Issue #1)
+        // Deterministic timeout test: see tests/isolated/extractor-timeout.test.ts
         const extractor = new PdfExtractor({ timeoutMs: 1 });
         const filePath = path.join(PDF_DIR, "multi-page.pdf");
 
@@ -350,25 +351,22 @@ describe("PdfExtractor", () => {
       });
     });
 
-    describe("extractPages error handling", () => {
-      test("returns empty array when per-page extraction fails", async () => {
+    describe("page content validation", () => {
+      test("each page has non-negative wordCount matching content", async () => {
         const extractor = new PdfExtractor({ extractPageInfo: true });
-        // Access private extractPages method for testing via type cast
-        // (same pattern used for parsePdfDate tests below)
-        const extractPages = (buffer: Buffer, filePath: string): Promise<unknown[]> =>
-          (
-            extractor as unknown as {
-              extractPages: (buf: Buffer, path: string) => Promise<unknown[]>;
-            }
-          ).extractPages(buffer, filePath);
+        const filePath = path.join(PDF_DIR, "multi-page.pdf");
+        const result = await extractor.extract(filePath);
 
-        // Pass an invalid buffer that will cause pdf-parse to throw during
-        // per-page extraction, triggering the catch block and getLogger()
-        const invalidBuffer = Buffer.from("not a valid pdf");
-        const result = await extractPages(invalidBuffer, "/test/fake.pdf");
-
-        // The catch block should return an empty array instead of throwing
-        expect(result).toEqual([]);
+        expect(result.pages).toBeDefined();
+        for (const page of result.pages!) {
+          expect(page.wordCount).toBeGreaterThanOrEqual(0);
+          // wordCount should be consistent with content
+          if (page.content.trim().length === 0) {
+            expect(page.wordCount).toBe(0);
+          } else {
+            expect(page.wordCount).toBeGreaterThan(0);
+          }
+        }
       });
     });
 
@@ -775,8 +773,7 @@ describe("DocxExtractor", () => {
       test("handles timeout or fast completion gracefully with 1ms timeout", async () => {
         // Uses a very short timeout (1ms) to exercise the timeout path.
         // Due to JS event loop mechanics, small DOCXs may resolve before the timeout fires.
-        // TODO: Add deterministic timeout test using Bun mock to force the timeout path
-        // (consistent with PdfExtractor TODOs from PR #467)
+        // Deterministic timeout test: see tests/isolated/extractor-timeout.test.ts
         const extractor = new DocxExtractor({ timeoutMs: 1 });
         const filePath = path.join(DOCX_DIR, "simple.docx");
 
@@ -1402,6 +1399,56 @@ describe("ImageMetadataExtractor", () => {
             true
           );
         }
+      });
+
+      test("handles truncated JPEG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.jpg");
+        let handled = false;
+
+        try {
+          // NOTE: As of sharp 0.33.x, truncated JPEGs with intact headers are
+          // parsed successfully — the catch path is retained for resilience
+          // against future sharp versions or more aggressively truncated files.
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("jpeg");
+          handled = true;
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+          handled = true;
+        }
+
+        expect(handled).toBe(true);
+      });
+
+      test("handles truncated PNG gracefully", async () => {
+        const extractor = new ImageMetadataExtractor();
+        const filePath = path.join(IMAGES_DIR, "truncated.png");
+        let handled = false;
+
+        try {
+          // NOTE: As of sharp 0.33.x, truncated PNGs with intact headers are
+          // parsed successfully — the catch path is retained for resilience
+          // against future sharp versions or more aggressively truncated files.
+          const result = await extractor.extract(filePath);
+          expect(result.format).toBe("png");
+          handled = true;
+        } catch (error) {
+          expect(isDocumentError(error)).toBe(true);
+          // Truncated images should throw ExtractionError or UnsupportedFormatError,
+          // never an unhandled native crash
+          expect(error instanceof ExtractionError || error instanceof UnsupportedFormatError).toBe(
+            true
+          );
+          handled = true;
+        }
+
+        expect(handled).toBe(true);
       });
 
       test("completes successfully with reasonable timeout", async () => {

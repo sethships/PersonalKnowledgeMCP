@@ -9,6 +9,8 @@ import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
 import type { GraphService } from "../services/graph-service-types.js";
 import type { DocumentSearchService } from "../services/document-search-types.js";
+import type { ImageSearchService } from "../services/image-search-types.js";
+import type { ListWatchedFoldersService } from "../services/list-watched-folders-types.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -137,6 +139,12 @@ export interface MCPServerOptionalDeps {
 
   /** DocumentSearchService for document semantic search */
   documentSearchService?: DocumentSearchService;
+
+  /** ImageSearchService for image metadata search */
+  imageSearchService?: ImageSearchService;
+
+  /** ListWatchedFoldersService for listing watched folders */
+  listWatchedFoldersService?: ListWatchedFoldersService;
 }
 
 /**
@@ -160,6 +168,46 @@ export interface SearchDocumentsArgs {
 
   /** Minimum similarity score threshold (0.0-1.0) */
   threshold: number;
+
+  /**
+   * Table content filtering mode:
+   * - "include" (default): search both tables and text (no filter)
+   * - "only": search only table chunks
+   * - "exclude": exclude table chunks
+   */
+  include_tables: "include" | "only" | "exclude";
+}
+
+/**
+ * Validated search_images tool arguments
+ *
+ * This interface represents the tool arguments after Zod schema validation.
+ * All optional fields have been populated with defaults.
+ */
+export interface SearchImagesArgs {
+  /** Limit search to a specific watched folder */
+  folder?: string;
+
+  /** Image formats to filter by (default: ["all"]) */
+  format: ("jpeg" | "png" | "gif" | "webp" | "tiff" | "all")[];
+
+  /** Filter images on or after this date (YYYY-MM-DD) */
+  date_from?: string;
+
+  /** Filter images on or before this date (YYYY-MM-DD) */
+  date_to?: string;
+
+  /** Minimum image width in pixels */
+  min_width?: number;
+
+  /** Minimum image height in pixels */
+  min_height?: number;
+
+  /** Glob pattern to match filenames */
+  filename_pattern?: string;
+
+  /** Maximum number of results to return (1-100) */
+  limit: number;
 }
 
 /**

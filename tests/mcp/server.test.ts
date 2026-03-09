@@ -16,6 +16,20 @@ import type { RepositoryMetadataService, RepositoryInfo } from "../../src/reposi
 import { PersonalKnowledgeMCPServer } from "../../src/mcp/server.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  DocumentSearchService,
+  DocumentSearchQuery,
+  DocumentSearchResponse,
+} from "../../src/services/document-search-types.js";
+import type {
+  ImageSearchService,
+  ImageSearchQuery,
+  ImageSearchResponse,
+} from "../../src/services/image-search-types.js";
+import type {
+  ListWatchedFoldersService,
+  ListWatchedFoldersResponse,
+} from "../../src/services/list-watched-folders-types.js";
 
 /**
  * Type definition for list_indexed_repositories response.
@@ -477,6 +491,81 @@ describe("PersonalKnowledgeMCPServer", () => {
       const registry2 = getToolRegistry(server2);
 
       expect(registry1).not.toBe(registry2);
+    });
+  });
+
+  describe("optional document tool registration", () => {
+    /** Minimal mock for DocumentSearchService */
+    const mockDocumentSearchService: DocumentSearchService = {
+      async searchDocuments(_query: DocumentSearchQuery): Promise<DocumentSearchResponse> {
+        return {
+          results: [],
+          metadata: {
+            totalResults: 0,
+            queryTimeMs: 0,
+            searchedFolders: [],
+            searchedDocumentTypes: [],
+          },
+        };
+      },
+    };
+
+    /** Minimal mock for ImageSearchService */
+    const mockImageSearchService: ImageSearchService = {
+      async searchImages(_query: ImageSearchQuery): Promise<ImageSearchResponse> {
+        return { results: [], metadata: { totalResults: 0, queryTimeMs: 0 } };
+      },
+    };
+
+    /** Minimal mock for ListWatchedFoldersService */
+    const mockListWatchedFoldersService: ListWatchedFoldersService = {
+      async listWatchedFolders(): Promise<ListWatchedFoldersResponse> {
+        return { folders: [] };
+      },
+    };
+
+    it("should register search_documents when documentSearchService is provided", () => {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, undefined, {
+        documentSearchService: mockDocumentSearchService,
+      });
+      const registry = getToolRegistry(server);
+      expect(registry?.["search_documents"]).toBeDefined();
+    });
+
+    it("should register search_images when imageSearchService is provided", () => {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, undefined, {
+        imageSearchService: mockImageSearchService,
+      });
+      const registry = getToolRegistry(server);
+      expect(registry?.["search_images"]).toBeDefined();
+    });
+
+    it("should register list_watched_folders when listWatchedFoldersService is provided", () => {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, undefined, {
+        listWatchedFoldersService: mockListWatchedFoldersService,
+      });
+      const registry = getToolRegistry(server);
+      expect(registry?.["list_watched_folders"]).toBeDefined();
+    });
+
+    it("should not register document tools when deps are not provided", () => {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      const registry = getToolRegistry(server);
+      expect(registry?.["search_documents"]).toBeUndefined();
+      expect(registry?.["search_images"]).toBeUndefined();
+      expect(registry?.["list_watched_folders"]).toBeUndefined();
+    });
+
+    it("should register all document tools when all deps are provided", () => {
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService, undefined, {
+        documentSearchService: mockDocumentSearchService,
+        imageSearchService: mockImageSearchService,
+        listWatchedFoldersService: mockListWatchedFoldersService,
+      });
+      const registry = getToolRegistry(server);
+      expect(registry?.["search_documents"]).toBeDefined();
+      expect(registry?.["search_images"]).toBeDefined();
+      expect(registry?.["list_watched_folders"]).toBeDefined();
     });
   });
 });

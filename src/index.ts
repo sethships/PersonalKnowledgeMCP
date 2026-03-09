@@ -46,6 +46,8 @@ import { JobTracker } from "./mcp/job-tracker.js";
 import { GraphIngestionService } from "./graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "./graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "./graph/extraction/RelationshipExtractor.js";
+import { resolveGitHubPAT } from "./services/github-pat-resolver.js";
+import { DocumentSearchServiceImpl } from "./services/document-search-service.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -239,12 +241,26 @@ async function main(): Promise<void> {
     );
     logger.info("Search service initialized");
 
+    // Step 5a: Initialize document search service
+    logger.info("Initializing document search service");
+    const documentSearchService = new DocumentSearchServiceImpl(
+      embeddingProvider,
+      embeddingProviderFactory,
+      chromaClient,
+      repositoryService
+    );
+    logger.info("Document search service initialized");
+
     // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
     let jobTracker: JobTracker | undefined;
 
-    const githubPat = Bun.env["GITHUB_PAT"];
+    const resolvedPat = await resolveGitHubPAT();
+    const githubPat = resolvedPat?.token;
+    if (resolvedPat) {
+      logger.info({ source: resolvedPat.source }, "GitHub PAT resolved");
+    }
     if (githubPat) {
       try {
         logger.info("Initializing incremental update dependencies");
@@ -327,6 +343,7 @@ async function main(): Promise<void> {
         updateCoordinator,
         rateLimiter,
         jobTracker,
+        documentSearchService,
       }
     );
 

@@ -557,9 +557,13 @@ export interface DocumentChunkMetadata {
   pageNumber?: number;
 
   /**
-   * Nearest preceding section heading for this chunk.
+   * Nearest preceding section heading hierarchy for this chunk.
    *
    * Provides structural context for the chunk's content within the document.
+   * When multiple heading levels are present, the value contains the full
+   * hierarchy joined with " > " (e.g., "Chapter 1 > Section 1.1 > Details").
+   * When no section heading is found but the document has a title, the
+   * document title is used as a fallback.
    *
    * @default undefined
    */
@@ -578,6 +582,64 @@ export interface DocumentChunkMetadata {
    * @default undefined
    */
   documentAuthor?: string;
+
+  // ── Table-specific metadata ───────────────────────────────────
+
+  /**
+   * Whether this chunk contains table content.
+   *
+   * When true, the chunk was generated from a {@link TableExtractionResult}
+   * rather than from prose text.
+   *
+   * @default undefined
+   */
+  isTable?: boolean;
+
+  /**
+   * Zero-based index of the table within the source document.
+   *
+   * Matches {@link TableExtractionResult.tableIndex}.
+   *
+   * @default undefined
+   */
+  tableIndex?: number;
+
+  /**
+   * Table caption text, if present in the source document.
+   *
+   * @default undefined
+   */
+  tableCaption?: string;
+
+  /**
+   * Number of columns in the source table.
+   *
+   * @default undefined
+   */
+  tableColumnCount?: number;
+
+  /**
+   * Number of data rows in the source table (excluding header rows).
+   *
+   * @default undefined
+   */
+  tableRowCount?: number;
+
+  /**
+   * Source document type that contained the table ("pdf" or "docx").
+   *
+   * @default undefined
+   */
+  tableSourceType?: string;
+
+  /**
+   * Extraction confidence score between 0.0 and 1.0.
+   *
+   * Propagated from {@link TableExtractionResult.confidence}.
+   *
+   * @default undefined
+   */
+  tableConfidence?: number;
 }
 
 /**
@@ -723,4 +785,248 @@ export interface DocumentChunkerConfig {
    * @default true
    */
   respectPageBoundaries?: boolean;
+}
+
+// ── Table Extraction Types ──────────────────────────────────────
+
+/**
+ * Source document type for table extraction.
+ *
+ * Derived from {@link DocumentType} to maintain a compile-time
+ * relationship — if "pdf" or "docx" are removed from DocumentType,
+ * the compiler will flag this type.
+ */
+export type TableSourceType = Extract<DocumentType, "pdf" | "docx">;
+
+/**
+ * Individual cell in an extracted table.
+ *
+ * @example
+ * ```typescript
+ * const cell: TableCell = {
+ *   content: "Revenue",
+ *   rowSpan: 1,
+ *   colSpan: 2,
+ * };
+ * ```
+ */
+export interface TableCell {
+  /** Text content of the cell. */
+  content: string;
+
+  /**
+   * Number of rows this cell spans.
+   *
+   * @default 1
+   */
+  rowSpan?: number;
+
+  /**
+   * Number of columns this cell spans.
+   *
+   * @default 1
+   */
+  colSpan?: number;
+}
+
+/**
+ * A row in an extracted table.
+ *
+ * @example
+ * ```typescript
+ * const headerRow: TableRow = {
+ *   cells: [{ content: "Name" }, { content: "Value" }],
+ *   isHeader: true,
+ * };
+ * ```
+ */
+export interface TableRow {
+  /** Ordered cells in the row. */
+  cells: TableCell[];
+
+  /**
+   * Whether this row is a header row.
+   *
+   * @default false
+   */
+  isHeader?: boolean;
+}
+
+/**
+ * Structured table data extracted from a document.
+ *
+ * @example
+ * ```typescript
+ * const table: TableData = {
+ *   rows: [
+ *     { cells: [{ content: "Name" }, { content: "Age" }], isHeader: true },
+ *     { cells: [{ content: "Alice" }, { content: "30" }] },
+ *   ],
+ *   columnCount: 2,
+ *   caption: "User demographics",
+ * };
+ * ```
+ */
+export interface TableData {
+  /** All rows in the table, in document order. */
+  rows: TableRow[];
+
+  /** Number of columns in the table. */
+  columnCount: number;
+
+  /**
+   * Table caption, if present in the source document.
+   *
+   * @default undefined
+   */
+  caption?: string;
+}
+
+/**
+ * Result of extracting a single table from a document.
+ *
+ * One document may contain multiple tables, so extractors return
+ * an array of these results.
+ *
+ * @example
+ * ```typescript
+ * const result: TableExtractionResult = {
+ *   table: { rows: [...], columnCount: 3 },
+ *   filePath: "/docs/report.pdf",
+ *   sourceType: "pdf",
+ *   pageNumber: 4,
+ *   tableIndex: 0,
+ *   confidence: 0.95,
+ * };
+ * ```
+ */
+export interface TableExtractionResult {
+  /** The extracted table data. */
+  table: TableData;
+
+  /** Absolute path to the source file. */
+  filePath: string;
+
+  /** Document type that contained the table. */
+  sourceType: TableSourceType;
+
+  /**
+   * 1-based page number where the table was found (PDF only).
+   *
+   * @default undefined
+   */
+  pageNumber?: number;
+
+  /** 0-based index of this table within the document. */
+  tableIndex: number;
+
+  /**
+   * Extraction confidence score between 0.0 and 1.0.
+   *
+   * @default undefined
+   */
+  confidence?: number;
+}
+
+/**
+ * Configuration for table extractors.
+ *
+ * Extends {@link ExtractorConfig} so concrete extractors inherit
+ * `maxFileSizeBytes` and `timeoutMs` from {@link BaseExtractor}.
+ * Concrete implementations (#410, #411) will add their own options.
+ */
+export interface TableExtractorConfig extends ExtractorConfig {
+  // Intentionally empty — concrete extractors add their own options.
+}
+
+/**
+ * Interface for table extractors (PDF, DOCX).
+ *
+ * Extends {@link DocumentExtractor} with a result type of
+ * `TableExtractionResult[]` because a single document can contain
+ * multiple tables.
+ *
+ * @example
+ * ```typescript
+ * class PdfTableExtractor implements TableExtractor {
+ *   async extract(filePath: string): Promise<TableExtractionResult[]> {
+ *     // Extract tables from PDF
+ *   }
+ *   supports(extension: string): boolean {
+ *     return extension === ".pdf";
+ *   }
+ * }
+ * ```
+ */
+export interface TableExtractor extends DocumentExtractor<TableExtractionResult[]> {
+  // Inherits: extract(filePath: string): Promise<TableExtractionResult[]>
+  // Inherits: supports(extension: string): boolean
+}
+
+// ── MIME Validation Types ───────────────────────────────────────
+
+/**
+ * Result of MIME type validation for a file.
+ *
+ * Compares the expected MIME type (from file extension) against the
+ * actual MIME type detected from file content (magic bytes).
+ *
+ * @example
+ * ```typescript
+ * const result: MimeValidationResult = {
+ *   isValid: true,
+ *   detectedType: "pdf",
+ *   expectedMime: "application/pdf",
+ *   actualMime: "application/pdf",
+ *   filePath: "/docs/report.pdf",
+ *   skipped: false,
+ * };
+ * ```
+ */
+export interface MimeValidationResult {
+  /**
+   * Whether the file's content matches its extension-implied type.
+   *
+   * True when: content matches, file is text-based (skipped), or
+   * extension has no expected MIME type.
+   */
+  isValid: boolean;
+
+  /**
+   * Document type detected from the file extension.
+   */
+  detectedType: "pdf" | "docx" | "markdown" | "txt" | "image" | "unknown";
+
+  /**
+   * Expected MIME type based on file extension from MIME_TYPES map.
+   *
+   * Undefined when the extension is not in the MIME_TYPES map.
+   */
+  expectedMime: string | undefined;
+
+  /**
+   * Actual MIME type detected from file content (magic bytes).
+   *
+   * Undefined when file-type cannot detect the content type
+   * (e.g., text files have no magic bytes).
+   */
+  actualMime: string | undefined;
+
+  /**
+   * Absolute or relative file path that was validated.
+   */
+  filePath: string;
+
+  /**
+   * Whether MIME validation was skipped.
+   *
+   * True for text-based files (no magic bytes) or files with
+   * unsupported/unknown extensions.
+   */
+  skipped: boolean;
+
+  /**
+   * Explanation when validation failed or was skipped.
+   */
+  reason?: string;
 }

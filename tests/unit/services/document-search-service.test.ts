@@ -475,6 +475,126 @@ describe("DocumentSearchServiceImpl", () => {
     });
   });
 
+  describe("include_tables filtering", () => {
+    it("should not add table filter when include_tables is 'include' (default)", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        include_tables: "include",
+      });
+
+      expect(mockStorage.lastQuery?.where).toBeUndefined();
+    });
+
+    it("should not add table filter when include_tables is omitted", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({ query: "test" });
+
+      expect(mockStorage.lastQuery?.where).toBeUndefined();
+    });
+
+    it("should add isTable filter when include_tables is 'only'", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        include_tables: "only",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        isTable: true,
+      });
+    });
+
+    it("should add isTable $ne filter when include_tables is 'exclude'", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        include_tables: "exclude",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        isTable: { $ne: true },
+      });
+    });
+
+    it("should combine doc type and table 'only' filter with $and", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["pdf"],
+        include_tables: "only",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        $and: [{ document_type: "pdf" }, { isTable: true }],
+      });
+    });
+
+    it("should combine doc type and table 'exclude' filter with $and", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["docx"],
+        include_tables: "exclude",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        $and: [{ document_type: "docx" }, { isTable: { $ne: true } }],
+      });
+    });
+
+    it("should combine multiple doc types and table 'only' filter with $and", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["pdf", "docx"],
+        include_tables: "only",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        $and: [{ $or: [{ document_type: "pdf" }, { document_type: "docx" }] }, { isTable: true }],
+      });
+    });
+
+    it("should combine multiple doc types and table 'exclude' filter with $and", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["pdf", "docx"],
+        include_tables: "exclude",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        $and: [
+          { $or: [{ document_type: "pdf" }, { document_type: "docx" }] },
+          { isTable: { $ne: true } },
+        ],
+      });
+    });
+
+    it("should use only doc type filter when include_tables is 'include' with doc types", async () => {
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({
+        query: "test",
+        document_types: ["pdf"],
+        include_tables: "include",
+      });
+
+      expect(mockStorage.lastQuery?.where).toEqual({
+        document_type: "pdf",
+      });
+    });
+  });
+
   describe("result formatting", () => {
     it("should format results with document-specific metadata", async () => {
       mockStorage.setMockResults([
@@ -539,6 +659,63 @@ describe("DocumentSearchServiceImpl", () => {
       expect(result.pageNumber).toBeUndefined();
       expect(result.sectionHeading).toBeUndefined();
       expect(result.documentType).toBe("txt");
+    });
+
+    it("should include table metadata when isTable is true", async () => {
+      const meta: Record<string, unknown> = {
+        file_path: "docs/report.docx",
+        repository: "test-folder",
+        chunk_index: 0,
+        total_chunks: 1,
+        chunk_start_line: 1,
+        chunk_end_line: 10,
+        file_extension: ".docx",
+        language: "unknown",
+        file_size_bytes: 2048,
+        content_hash: "table123",
+        indexed_at: "2025-01-01T00:00:00Z",
+        file_modified_at: "2025-01-01T00:00:00Z",
+        document_type: "docx",
+        document_title: "Report",
+        isTable: true,
+        tableCaption: "Financial Summary",
+        tableColumnCount: 5,
+        tableRowCount: 10,
+      };
+
+      mockStorage.setMockResults([
+        {
+          id: "test-folder:docs/report.docx:0",
+          content: "| Col1 | Col2 |",
+          metadata: meta as unknown as DocumentMetadata,
+          distance: 0.1,
+          similarity: 0.9,
+        },
+      ]);
+
+      const response = await service.searchDocuments({ query: "table data" });
+
+      const result = response.results[0]!;
+      expect(result.isTable).toBe(true);
+      expect(result.tableCaption).toBe("Financial Summary");
+      expect(result.tableColumnCount).toBe(5);
+      expect(result.tableRowCount).toBe(10);
+    });
+
+    it("should not include table metadata when isTable is not present", async () => {
+      mockStorage.setMockResults([
+        createDocumentResult({
+          content: "Regular text content",
+        }),
+      ]);
+
+      const response = await service.searchDocuments({ query: "text" });
+
+      const result = response.results[0]!;
+      expect(result.isTable).toBeUndefined();
+      expect(result.tableCaption).toBeUndefined();
+      expect(result.tableColumnCount).toBeUndefined();
+      expect(result.tableRowCount).toBeUndefined();
     });
 
     it("should return multiple results sorted by similarity", async () => {

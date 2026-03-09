@@ -11,6 +11,7 @@ import { createValidationError } from "./errors.js";
 import type {
   SemanticSearchArgs,
   SearchDocumentsArgs,
+  SearchImagesArgs,
   GetDependenciesArgs,
   GetDependentsArgs,
   GetArchitectureArgs,
@@ -118,6 +119,15 @@ export function validateSemanticSearchArgs(args: unknown): SemanticSearchArgs {
 export const SEARCH_DOCUMENT_TYPES = ["pdf", "docx", "markdown", "txt", "all"] as const;
 
 /**
+ * Valid table filtering modes for search_documents
+ *
+ * - "include": search both tables and text (default, no filter added)
+ * - "only": search only table chunks (ChromaDB filter: isTable == true)
+ * - "exclude": exclude table chunks (ChromaDB filter: isTable != true)
+ */
+export const SEARCH_TABLE_MODES = ["include", "only", "exclude"] as const;
+
+/**
  * Zod schema for search_documents tool arguments
  *
  * This schema:
@@ -160,6 +170,13 @@ export const SearchDocumentsArgsSchema = z
       .max(1.0, "Threshold must be between 0.0 and 1.0")
       .optional()
       .default(0.7),
+
+    include_tables: z
+      .enum(SEARCH_TABLE_MODES, {
+        message: `include_tables must be one of: ${SEARCH_TABLE_MODES.join(", ")}`,
+      })
+      .optional()
+      .default("include"),
   })
   .strict();
 
@@ -583,4 +600,167 @@ export function validateFindPathArgs(args: unknown): FindPathArgs {
   }
 
   return result.data;
+}
+
+/**
+ * Valid image format strings for search_images
+ */
+export const SEARCH_IMAGE_FORMATS = ["jpeg", "png", "gif", "webp", "tiff", "all"] as const;
+
+/**
+ * Date format regex for YYYY-MM-DD validation
+ */
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validates that a date string is both syntactically and semantically valid.
+ *
+ * Checks the YYYY-MM-DD regex format first, then parses the date and verifies
+ * the components match the input to catch impossible dates like month 13 or day 32.
+ *
+ * @param dateStr - Date string to validate
+ * @returns true if the date is valid YYYY-MM-DD, false otherwise
+ */
+function isValidDate(dateStr: string): boolean {
+  if (!DATE_REGEX.test(dateStr)) {
+    return false;
+  }
+
+  const parsed = new Date(dateStr + "T00:00:00Z");
+  if (isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  // Verify parsed components match input to catch impossible dates (e.g., Feb 30)
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = parsed.getUTCFullYear();
+  const month = parsed.getUTCMonth() + 1; // getUTCMonth is 0-based
+  const day = parsed.getUTCDate();
+
+  return year === Number(yearStr) && month === Number(monthStr) && day === Number(dayStr);
+}
+
+/**
+ * Zod schema for search_images tool arguments
+ *
+ * This schema:
+ * - Enforces MCP tool contract from Phase 6 PRD Section 7
+ * - Validates format enum values
+ * - Validates date strings as YYYY-MM-DD format
+ * - Provides default values for optional parameters
+ *
+ * Aligns with the inputSchema in search_images tool definition.
+ */
+export const SearchImagesArgsSchema = z
+  .object({
+    folder: z.string().trim().min(1, "Folder name cannot be empty").optional(),
+
+    format: z
+      .array(
+        z.enum(SEARCH_IMAGE_FORMATS, {
+          message: `format must be one of: ${SEARCH_IMAGE_FORMATS.join(", ")}`,
+        })
+      )
+      .optional()
+      .default(["all"]),
+
+    date_from: z
+      .string()
+      .trim()
+      .refine((val) => isValidDate(val), {
+        message: "date_from must be in YYYY-MM-DD format",
+      })
+      .optional(),
+
+    date_to: z
+      .string()
+      .trim()
+      .refine((val) => isValidDate(val), {
+        message: "date_to must be in YYYY-MM-DD format",
+      })
+      .optional(),
+
+    min_width: z
+      .number()
+      .int("min_width must be an integer")
+      .min(1, "min_width must be at least 1")
+      .optional(),
+
+    min_height: z
+      .number()
+      .int("min_height must be an integer")
+      .min(1, "min_height must be at least 1")
+      .optional(),
+
+    filename_pattern: z.string().trim().min(1, "filename_pattern cannot be empty").optional(),
+
+    limit: z
+      .number()
+      .int("Limit must be an integer")
+      .min(1, "Limit must be at least 1")
+      .max(100, "Limit cannot exceed 100")
+      .optional()
+      .default(20),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.date_from && data.date_to) {
+        return data.date_from <= data.date_to;
+      }
+      return true;
+    },
+    {
+      message: "date_from must be on or before date_to",
+    }
+  );
+
+/**
+ * Validates and parses search_images tool arguments
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @returns Validated and normalized arguments with defaults applied
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ *
+ * @example
+ * ```typescript
+ * const args = validateSearchImagesArgs({
+ *   format: ["png"],
+ *   min_width: 800,
+ *   limit: 10
+ * });
+ * // args.limit === 10
+ * // args.format === ["png"]
+ * ```
+ */
+export function validateSearchImagesArgs(args: unknown): SearchImagesArgs {
+  const result = SearchImagesArgsSchema.safeParse(args);
+
+  if (!result.success) {
+    const errorMessage = result.error.issues
+      .map((e) => {
+        const path = e.path.length > 0 ? `${e.path.join(".")}: ` : "";
+        return `${path}${e.message}`;
+      })
+      .join("; ");
+
+    throw createValidationError(`Invalid search_images arguments: ${errorMessage}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * Validates list_watched_folders tool arguments
+ *
+ * This tool has an empty input schema (no parameters), so validation
+ * just ensures the input is an object (or undefined/null).
+ *
+ * @param args - Raw arguments from MCP CallTool request
+ * @throws {McpError} If validation fails (ErrorCode.InvalidParams)
+ */
+export function validateListWatchedFoldersArgs(args: unknown): void {
+  if (args !== undefined && args !== null && typeof args !== "object") {
+    throw createValidationError("Invalid list_watched_folders arguments: expected an object");
+  }
 }

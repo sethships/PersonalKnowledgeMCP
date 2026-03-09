@@ -7,28 +7,33 @@
  * @module documents/extractors/PdfExtractor
  */
 
-import * as fs from "node:fs/promises";
-import * as crypto from "node:crypto";
-// Import from lib directly to avoid debug mode in index.js
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require("pdf-parse/lib/pdf-parse.js") as typeof import("pdf-parse");
+// Import from lib directly to avoid debug mode in index.js.
+// Uses lazy dynamic import() so the binding is interceptable by Bun's mock.module in tests.
 import type pdfParseTypes from "pdf-parse";
+let pdfParsePromise: Promise<typeof import("pdf-parse")> | undefined;
+async function ensurePdfParse(): Promise<typeof import("pdf-parse")> {
+  if (!pdfParsePromise) {
+    pdfParsePromise = (async () => {
+      try {
+        // @ts-expect-error — pdf-parse/lib/pdf-parse.js has no type declarations
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const m = await import("pdf-parse/lib/pdf-parse.js");
+        // Handle CJS/ESM interop: module may export function directly or as .default
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        return (typeof m.default === "function" ? m.default : m) as typeof import("pdf-parse");
+      } catch (error) {
+        // Clear cached promise so subsequent calls can retry the import
+        pdfParsePromise = undefined;
+        throw error;
+      }
+    })();
+  }
+  return pdfParsePromise;
+}
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
-import {
-  ExtractionError,
-  ExtractionTimeoutError,
-  FileAccessError,
-  FileTooLargeError,
-  PasswordProtectedError,
-} from "../errors.js";
-import { getComponentLogger } from "../../logging/index.js";
-import type {
-  DocumentExtractor,
-  DocumentMetadata,
-  ExtractionResult,
-  ExtractorConfig,
-  PageInfo,
-} from "../types.js";
+import { ExtractionError, ExtractionTimeoutError, PasswordProtectedError } from "../errors.js";
+import { BaseExtractor } from "./BaseExtractor.js";
+import type { DocumentMetadata, ExtractionResult, ExtractorConfig, PageInfo } from "../types.js";
 
 /**
  * PDF-specific extractor configuration.
@@ -82,7 +87,7 @@ interface PdfInfo {
  * Uses pdf-parse library for text extraction. Handles multi-page documents
  * and extracts metadata such as title, author, and creation date when available.
  *
- * @implements {DocumentExtractor<ExtractionResult>}
+ * @extends {BaseExtractor<Required<PdfExtractorConfig>, ExtractionResult>}
  *
  * @example
  * ```typescript
@@ -95,55 +100,18 @@ interface PdfInfo {
  * }
  * ```
  */
-/** Lazily-initialized logger for PDF extractor operations */
-let logger: ReturnType<typeof getComponentLogger> | null = null;
-
-/** Shared no-op function for the silent logger */
-const noop = (): void => {};
-
-/** No-op logger for when logging system is not initialized */
-const noopLogger = {
-  warn: noop,
-  info: noop,
-  error: noop,
-  debug: noop,
-  trace: noop,
-  fatal: noop,
-  level: "silent" as const,
-  silent: true,
-} as unknown as ReturnType<typeof getComponentLogger>;
-
-/**
- * Get the component logger, initializing if needed.
- * Lazy initialization avoids errors when module loads before logger is initialized.
- */
-function getLogger(): ReturnType<typeof getComponentLogger> {
-  if (!logger) {
-    try {
-      logger = getComponentLogger("documents:pdf-extractor");
-    } catch {
-      // If logger not initialized, return no-op logger for testing
-      // This allows tests to run without initializing the full logging system
-      return noopLogger;
-    }
-  }
-  return logger;
-}
-
-export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
-  private readonly config: Required<PdfExtractorConfig>;
-
+export class PdfExtractor extends BaseExtractor<Required<PdfExtractorConfig>, ExtractionResult> {
   /**
    * Creates a new PdfExtractor instance.
    *
    * @param config - Optional configuration overrides
    */
   constructor(config?: PdfExtractorConfig) {
-    this.config = {
+    super("documents:pdf-extractor", {
       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
       extractPageInfo: config?.extractPageInfo ?? true,
-    };
+    });
   }
 
   /**
@@ -169,27 +137,19 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     const stats = await this.getFileStats(filePath);
 
     // 2. Check file size
-    if (stats.size > this.config.maxFileSizeBytes) {
-      throw new FileTooLargeError(
-        `File exceeds maximum size of ${this.config.maxFileSizeBytes} bytes (actual: ${stats.size} bytes)`,
-        stats.size,
-        this.config.maxFileSizeBytes,
-        { filePath }
-      );
-    }
+    this.validateFileSize(stats.size, filePath);
 
     // 3. Read file buffer
     const buffer = await this.readFileBuffer(filePath);
 
-    // 4. Parse PDF with timeout
-    const pdfData = await this.parsePdfWithTimeout(buffer, filePath);
+    // 4. Parse PDF with timeout (single pass — extracts pages inline when configured)
+    const { pdfData, pages } = await this.parsePdfWithTimeout(
+      buffer,
+      filePath,
+      this.config.extractPageInfo
+    );
 
-    // 5. Extract pages if configured
-    const pages = this.config.extractPageInfo
-      ? await this.extractPages(buffer, filePath)
-      : undefined;
-
-    // 6. Build metadata
+    // 5. Build metadata
     const metadata = this.buildMetadata(pdfData, filePath, stats, buffer);
 
     return {
@@ -219,80 +179,53 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
   }
 
   /**
-   * Get the current configuration.
+   * Parse PDF with timeout protection, optionally extracting per-page content in a single pass.
    *
-   * @returns The extractor configuration
-   */
-  getConfig(): Readonly<Required<PdfExtractorConfig>> {
-    return this.config;
-  }
-
-  /**
-   * Get file stats and handle errors.
-   *
-   * @param filePath - Path to the file
-   * @returns File stats
-   * @throws {FileAccessError} If file cannot be accessed
-   */
-  private async getFileStats(filePath: string): Promise<{ size: number; mtime: Date }> {
-    try {
-      const stats = await fs.stat(filePath);
-      return {
-        size: stats.size,
-        mtime: stats.mtime,
-      };
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        throw new FileAccessError(`File not found: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      if (nodeError.code === "EACCES") {
-        throw new FileAccessError(`Permission denied: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      throw new FileAccessError(`Cannot access file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Read file contents as buffer.
-   *
-   * @param filePath - Path to the file
-   * @returns File contents as buffer
-   * @throws {FileAccessError} If file cannot be read
-   */
-  private async readFileBuffer(filePath: string): Promise<Buffer> {
-    try {
-      return await fs.readFile(filePath);
-    } catch (error) {
-      throw new FileAccessError(`Cannot read file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Parse PDF with timeout protection.
+   * When `extractPageInfo` is true, a `pagerender` callback captures per-page text
+   * during the same parse call, avoiding a second full parse of the buffer.
    *
    * @param buffer - PDF file buffer
    * @param filePath - Path to the file (for error context)
-   * @returns Parsed PDF data
+   * @param extractPageInfo - Whether to capture per-page content
+   * @returns Parsed PDF data and optional page info
    * @throws {ExtractionTimeoutError} If parsing times out
    * @throws {PasswordProtectedError} If PDF is encrypted
    * @throws {ExtractionError} If parsing fails
    */
-  private async parsePdfWithTimeout(buffer: Buffer, filePath: string): Promise<PdfParseResult> {
+  private async parsePdfWithTimeout(
+    buffer: Buffer,
+    filePath: string,
+    extractPageInfo: boolean
+  ): Promise<{ pdfData: PdfParseResult; pages?: PageInfo[] }> {
+    // Ensure pdf-parse is loaded (lazy dynamic import resolves on first use)
+    const parseFn = await ensurePdfParse();
+
     // Use settled flag to prevent race condition between timeout and parse completion
     let settled = false;
+    const pageContents: string[] = [];
+
+    // Note: graceful degradation for per-page failures relies on two layers:
+    // 1. Our per-page .catch() below (handles individual getTextContent rejections)
+    // 2. pdf-parse's internal catch around each pagerender call
+    // Unlike the previous two-pass design, a catastrophic pdfParse failure will
+    // now propagate to the caller rather than silently returning pages: [].
+    const options: pdfParseTypes.Options = {};
+    if (extractPageInfo) {
+      options.pagerender = (pageData: PageData) => {
+        return pageData
+          .getTextContent()
+          .then((textContent: TextContent) => {
+            const pageText = textContent.items.map((item: TextItem) => item.str).join(" ");
+            pageContents.push(pageText);
+            return pageText;
+          })
+          .catch(() => {
+            // Individual page failure — record empty content but don't fail the whole parse
+            pageContents.push("");
+            return "";
+          });
+      };
+    }
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -307,7 +240,7 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
         );
       }, this.config.timeoutMs);
 
-      pdfParse(buffer)
+      parseFn(buffer, options)
         .then((result: pdfParseTypes.Result) => {
           clearTimeout(timeoutId);
           if (settled) return;
@@ -324,7 +257,15 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
             return;
           }
 
-          resolve(result as PdfParseResult);
+          const pages = extractPageInfo
+            ? pageContents.map((content, index) => ({
+                pageNumber: index + 1,
+                content,
+                wordCount: this.countWords(content),
+              }))
+            : undefined;
+
+          resolve({ pdfData: result as PdfParseResult, pages });
         })
         .catch((error: Error) => {
           clearTimeout(timeoutId);
@@ -355,49 +296,6 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
           );
         });
     });
-  }
-
-  /**
-   * Extract per-page content from PDF.
-   *
-   * Uses pdf-parse pagerender callback to extract text from each page individually.
-   *
-   * @param buffer - PDF file buffer
-   * @param filePath - Path to the file (for error context)
-   * @returns Array of page information
-   */
-  private async extractPages(buffer: Buffer, filePath: string): Promise<PageInfo[]> {
-    const pageContents: string[] = [];
-
-    try {
-      // Use pagerender to extract content from each page
-      const options: pdfParseTypes.Options = {
-        pagerender: (pageData: PageData) => {
-          return pageData.getTextContent().then((textContent: TextContent) => {
-            const pageText = textContent.items.map((item: TextItem) => item.str).join(" ");
-            pageContents.push(pageText);
-            return pageText;
-          });
-        },
-      };
-
-      await pdfParse(buffer, options);
-
-      // Build PageInfo array
-      return pageContents.map((content, index) => ({
-        pageNumber: index + 1,
-        content,
-        wordCount: this.countWords(content),
-      }));
-    } catch (error) {
-      // If per-page extraction fails, return empty array
-      // The main text content is still available from the full parse
-      getLogger().warn(
-        { filePath, error: error instanceof Error ? error.message : "unknown error" },
-        "Per-page extraction failed, returning empty pages array"
-      );
-      return [];
-    }
   }
 
   /**
@@ -491,31 +389,6 @@ export class PdfExtractor implements DocumentExtractor<ExtractionResult> {
     } catch {
       return undefined;
     }
-  }
-
-  /**
-   * Count words in text.
-   *
-   * @param text - Text to count words in
-   * @returns Word count
-   */
-  private countWords(text: string): number {
-    if (!text || text.trim().length === 0) {
-      return 0;
-    }
-    // Split on whitespace and filter empty strings
-    return text.split(/\s+/).filter((word) => word.length > 0).length;
-  }
-
-  /**
-   * Compute SHA-256 hash of content.
-   *
-   * @param buffer - Content buffer
-   * @returns Hex-encoded SHA-256 hash with sha256: prefix
-   */
-  private computeContentHash(buffer: Buffer): string {
-    const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-    return `sha256:${hash}`;
   }
 }
 

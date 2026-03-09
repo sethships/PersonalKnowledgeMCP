@@ -128,6 +128,36 @@ export const DOCUMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
 export type ExtensionDocumentType = "pdf" | "docx" | "markdown" | "txt" | "image";
 
 /**
+ * MIME type equivalences for content validation.
+ *
+ * Maps expected MIME types to alternative MIME types that should be
+ * considered valid matches. For example, DOCX files are ZIP archives
+ * internally, so file-type may detect them as "application/zip".
+ *
+ * @example
+ * ```typescript
+ * const expected = MIME_TYPES[".docx"];
+ * const actual = "application/zip";
+ * const equivalents = MIME_TYPE_EQUIVALENCES[expected];
+ * const isEquivalent = equivalents?.includes(actual); // true
+ * ```
+ */
+export const MIME_TYPE_EQUIVALENCES: Readonly<Record<string, readonly string[]>> = {
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+    "application/zip",
+    "application/x-zip-compressed",
+  ],
+};
+
+/**
+ * Set of text-based MIME types that cannot be validated via magic bytes.
+ *
+ * Files with these MIME types are skipped during MIME validation because
+ * they contain no magic bytes (binary signatures) for content detection.
+ */
+export const TEXT_MIME_TYPES: ReadonlySet<string> = new Set(["text/markdown", "text/plain"]);
+
+/**
  * Extension to document type mapping.
  *
  * Maps file extensions to their corresponding document type.

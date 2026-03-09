@@ -185,6 +185,34 @@ function createCorruptJpeg(): Buffer {
 }
 
 /**
+ * Create a truncated JPEG file (valid header, cut short before image data completes).
+ *
+ * Takes the minimal valid JPEG and removes the EOI marker and trailing bytes,
+ * simulating a download interrupted mid-stream.
+ *
+ * @returns Buffer with truncated JPEG data
+ */
+function createTruncatedJpeg(): Buffer {
+  const full = createMinimalJpeg();
+  // Remove the last 4 bytes (2 bytes of scan data + EOI marker 0xFF 0xD9) to simulate truncation
+  return Buffer.from(full.buffer, full.byteOffset, full.length - 4);
+}
+
+/**
+ * Create a truncated PNG file (valid header and IHDR, but missing IEND chunk).
+ *
+ * Takes the minimal valid PNG and removes the IEND chunk,
+ * simulating an incomplete file transfer.
+ *
+ * @returns Buffer with truncated PNG data
+ */
+function createTruncatedPng(): Buffer {
+  const full = createMinimalPng();
+  // Remove the last 12 bytes (IEND chunk: 4 length + 4 type + 4 CRC)
+  return Buffer.from(full.buffer, full.byteOffset, full.length - 12);
+}
+
+/**
  * Create test image files in the fixtures directory.
  *
  * Writes image files into an `images/` subdirectory under the given fixtures dir.
@@ -207,5 +235,7 @@ export async function createTestImageFiles(fixturesDir: string): Promise<void> {
     fs.writeFile(path.join(imagesDir, "test.tiff"), tiffBuffer),
     fs.writeFile(path.join(imagesDir, "photo-with-exif.jpg"), exifJpegBuffer),
     fs.writeFile(path.join(imagesDir, "corrupt.jpg"), createCorruptJpeg()),
+    fs.writeFile(path.join(imagesDir, "truncated.jpg"), createTruncatedJpeg()),
+    fs.writeFile(path.join(imagesDir, "truncated.png"), createTruncatedPng()),
   ]);
 }

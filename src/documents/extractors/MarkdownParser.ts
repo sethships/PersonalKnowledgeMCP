@@ -5,28 +5,15 @@
  * heading-based section structure analysis. Supports CommonMark and
  * GitHub Flavored Markdown (GFM) via the marked library.
  *
- * NOTE: Several private methods (getFileStats, readFileContent, countWords,
- * computeContentHash, lazy logger pattern) are duplicated from DocxExtractor.
- * These should be extracted into a shared BaseExtractor or utility module
- * in a follow-up refactoring.
- *
  * @module documents/extractors/MarkdownParser
  */
 
-import * as fs from "node:fs/promises";
-import * as crypto from "node:crypto";
 import { marked, type Token, type Tokens } from "marked";
 import matter from "gray-matter";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
-import {
-  ExtractionError,
-  ExtractionTimeoutError,
-  FileAccessError,
-  FileTooLargeError,
-} from "../errors.js";
-import { getComponentLogger } from "../../logging/index.js";
+import { ExtractionError, ExtractionTimeoutError } from "../errors.js";
+import { BaseExtractor } from "./BaseExtractor.js";
 import type {
-  DocumentExtractor,
   DocumentMetadata,
   MarkdownExtractionResult,
   MarkdownFrontmatter,
@@ -63,39 +50,6 @@ export interface MarkdownParserConfig extends ExtractorConfig {
   extractSections?: boolean;
 }
 
-/** Lazily-initialized logger for Markdown parser operations */
-let logger: ReturnType<typeof getComponentLogger> | null = null;
-
-/** Shared no-op function for the silent logger */
-const noop = (): void => {};
-
-/** No-op logger for when logging system is not initialized */
-const noopLogger = {
-  warn: noop,
-  info: noop,
-  error: noop,
-  debug: noop,
-  trace: noop,
-  fatal: noop,
-  level: "silent" as const,
-  silent: true,
-} as unknown as ReturnType<typeof getComponentLogger>;
-
-/**
- * Get the component logger, initializing if needed.
- * Lazy initialization avoids errors when module loads before logger is initialized.
- */
-function getLogger(): ReturnType<typeof getComponentLogger> {
-  if (!logger) {
-    try {
-      logger = getComponentLogger("documents:markdown-parser");
-    } catch {
-      return noopLogger;
-    }
-  }
-  return logger;
-}
-
 /**
  * Parses Markdown files with frontmatter and structure extraction.
  *
@@ -103,7 +57,7 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * extraction and builds section hierarchy from headings. Handles both
  * CommonMark and GitHub Flavored Markdown (GFM).
  *
- * @implements {DocumentExtractor<MarkdownExtractionResult>}
+ * @extends {BaseExtractor<Required<MarkdownParserConfig>, MarkdownExtractionResult>}
  *
  * @example
  * ```typescript
@@ -116,21 +70,22 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * }
  * ```
  */
-export class MarkdownParser implements DocumentExtractor<MarkdownExtractionResult> {
-  private readonly config: Required<MarkdownParserConfig>;
-
+export class MarkdownParser extends BaseExtractor<
+  Required<MarkdownParserConfig>,
+  MarkdownExtractionResult
+> {
   /**
    * Creates a new MarkdownParser instance.
    *
    * @param config - Optional configuration overrides
    */
   constructor(config?: MarkdownParserConfig) {
-    this.config = {
+    super("documents:markdown-parser", {
       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
       parseFrontmatter: config?.parseFrontmatter ?? true,
       extractSections: config?.extractSections ?? true,
-    };
+    });
   }
 
   /**
@@ -156,14 +111,7 @@ export class MarkdownParser implements DocumentExtractor<MarkdownExtractionResul
     const stats = await this.getFileStats(filePath);
 
     // 2. Check file size
-    if (stats.size > this.config.maxFileSizeBytes) {
-      throw new FileTooLargeError(
-        `File exceeds maximum size of ${this.config.maxFileSizeBytes} bytes (actual: ${stats.size} bytes)`,
-        stats.size,
-        this.config.maxFileSizeBytes,
-        { filePath }
-      );
-    }
+    this.validateFileSize(stats.size, filePath);
 
     // 3. Read file as UTF-8 string
     const rawContent = await this.readFileContent(filePath);
@@ -190,68 +138,6 @@ export class MarkdownParser implements DocumentExtractor<MarkdownExtractionResul
     return DOCUMENT_EXTENSIONS.markdown.includes(
       normalizedExt as (typeof DOCUMENT_EXTENSIONS.markdown)[number]
     );
-  }
-
-  /**
-   * Get the current configuration.
-   *
-   * @returns The parser configuration
-   */
-  getConfig(): Readonly<Required<MarkdownParserConfig>> {
-    return this.config;
-  }
-
-  /**
-   * Get file stats and handle errors.
-   *
-   * @param filePath - Path to the file
-   * @returns File stats
-   * @throws {FileAccessError} If file cannot be accessed
-   */
-  private async getFileStats(filePath: string): Promise<{ size: number; mtime: Date }> {
-    try {
-      const stats = await fs.stat(filePath);
-      return {
-        size: stats.size,
-        mtime: stats.mtime,
-      };
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        throw new FileAccessError(`File not found: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      if (nodeError.code === "EACCES") {
-        throw new FileAccessError(`Permission denied: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      throw new FileAccessError(`Cannot access file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Read file contents as UTF-8 string.
-   *
-   * @param filePath - Path to the file
-   * @returns File contents as string
-   * @throws {FileAccessError} If file cannot be read
-   */
-  private async readFileContent(filePath: string): Promise<string> {
-    try {
-      return await fs.readFile(filePath, "utf-8");
-    } catch (error) {
-      throw new FileAccessError(`Cannot read file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
   }
 
   /**
@@ -369,7 +255,7 @@ export class MarkdownParser implements DocumentExtractor<MarkdownExtractionResul
       };
     } catch (error) {
       // If frontmatter parsing fails, return raw content without frontmatter
-      getLogger().warn(
+      this.getLogger().warn(
         { error: error instanceof Error ? error.message : "unknown error" },
         "Failed to parse frontmatter, continuing without it"
       );
@@ -491,32 +377,5 @@ export class MarkdownParser implements DocumentExtractor<MarkdownExtractionResul
       }
     }
     return undefined;
-  }
-
-  /**
-   * Count words in text.
-   *
-   * @param text - Text to count words in
-   * @returns Word count
-   */
-  private countWords(text: string): number {
-    if (!text || text.trim().length === 0) {
-      return 0;
-    }
-    return text.split(/\s+/).filter((word) => word.length > 0).length;
-  }
-
-  /**
-   * Compute SHA-256 hash of raw file content.
-   *
-   * Hashes the original file content (including frontmatter) for
-   * consistent deduplication regardless of parsing options.
-   *
-   * @param rawContent - Original file content as string
-   * @returns Hex-encoded SHA-256 hash with sha256: prefix
-   */
-  private computeContentHash(rawContent: string): string {
-    const hash = crypto.createHash("sha256").update(rawContent, "utf-8").digest("hex");
-    return `sha256:${hash}`;
   }
 }

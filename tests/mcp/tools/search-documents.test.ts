@@ -42,6 +42,10 @@ interface DocumentSearchResultJSON {
   sectionHeading?: string;
   similarity: number;
   folder: string;
+  isTable?: boolean;
+  tableCaption?: string;
+  tableColumnCount?: number;
+  tableRowCount?: number;
 }
 
 interface DocumentSearchResponseJSON {
@@ -173,6 +177,15 @@ describe("search_documents Tool", () => {
       expect(thresholdProp.maximum).toBe(1.0);
       expect(thresholdProp.default).toBe(0.7);
     });
+
+    it("should define include_tables property with enum", () => {
+      const tablesProp = searchDocumentsToolDefinition.inputSchema.properties![
+        "include_tables"
+      ] as JsonSchemaProperty;
+      expect(tablesProp.type).toBe("string");
+      expect(tablesProp.enum).toEqual(["include", "only", "exclude"]);
+      expect(tablesProp.default).toBe("include");
+    });
   });
 
   describe("createSearchDocumentsHandler", () => {
@@ -251,6 +264,7 @@ describe("search_documents Tool", () => {
         expect(mockService.lastQuery?.limit).toBe(10);
         expect(mockService.lastQuery?.threshold).toBe(0.7);
         expect(mockService.lastQuery?.document_types).toEqual(["all"]);
+        expect(mockService.lastQuery?.include_tables).toBe("include");
       });
 
       it("should pass folder filter to service", async () => {
@@ -411,6 +425,77 @@ describe("search_documents Tool", () => {
         ) as DocumentSearchResponseJSON;
 
         expect(responseData.metadata.warnings).toBeUndefined();
+      });
+
+      it("should include table metadata in response when result is a table", async () => {
+        const mockResponse: DocumentSearchResponse = {
+          results: [
+            {
+              content: "| Col1 | Col2 |\n|------|------|\n| A | B |",
+              documentPath: "docs/report.docx",
+              documentTitle: "Quarterly Report",
+              documentType: "docx",
+              similarity: 0.88,
+              folder: "reports",
+              isTable: true,
+              tableCaption: "Financial Summary",
+              tableColumnCount: 2,
+              tableRowCount: 3,
+            },
+          ],
+          metadata: {
+            totalResults: 1,
+            queryTimeMs: 100,
+            searchedFolders: ["reports"],
+            searchedDocumentTypes: ["docx"],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSearchDocumentsHandler(mockService);
+        const result = await handler({ query: "financial data" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as DocumentSearchResponseJSON;
+
+        expect(responseData.results[0]!.isTable).toBe(true);
+        expect(responseData.results[0]!.tableCaption).toBe("Financial Summary");
+        expect(responseData.results[0]!.tableColumnCount).toBe(2);
+        expect(responseData.results[0]!.tableRowCount).toBe(3);
+      });
+
+      it("should omit table metadata when result is not a table", async () => {
+        const mockResponse: DocumentSearchResponse = {
+          results: [
+            {
+              content: "Regular text content",
+              documentPath: "docs/notes.md",
+              documentType: "markdown",
+              similarity: 0.85,
+              folder: "notes",
+            },
+          ],
+          metadata: {
+            totalResults: 1,
+            queryTimeMs: 50,
+            searchedFolders: ["notes"],
+            searchedDocumentTypes: ["markdown"],
+          },
+        };
+
+        mockService.setMockResponse(mockResponse);
+        const handler = createSearchDocumentsHandler(mockService);
+        const result = await handler({ query: "text" });
+
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as DocumentSearchResponseJSON;
+
+        expect(responseData.results[0]!.isTable).toBeUndefined();
+        expect(responseData.results[0]!.tableCaption).toBeUndefined();
+        expect(responseData.results[0]!.tableColumnCount).toBeUndefined();
+        expect(responseData.results[0]!.tableRowCount).toBeUndefined();
       });
 
       it("should handle results with optional fields undefined", async () => {
@@ -591,6 +676,28 @@ describe("search_documents Tool", () => {
         });
 
         expect(mockService.lastQuery?.document_types).toEqual(["pdf", "docx", "markdown", "txt"]);
+      });
+
+      it("should pass include_tables to service", async () => {
+        const handler = createSearchDocumentsHandler(mockService);
+
+        await handler({
+          query: "tables only",
+          include_tables: "only",
+        });
+
+        expect(mockService.lastQuery?.include_tables).toBe("only");
+      });
+
+      it("should pass include_tables exclude to service", async () => {
+        const handler = createSearchDocumentsHandler(mockService);
+
+        await handler({
+          query: "no tables",
+          include_tables: "exclude",
+        });
+
+        expect(mockService.lastQuery?.include_tables).toBe("exclude");
       });
 
       it("should accept 'all' document type", async () => {

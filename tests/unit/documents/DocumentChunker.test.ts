@@ -7,14 +7,19 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { DocumentChunker } from "../../../src/documents/DocumentChunker.js";
-import type { DocumentChunkerConfig } from "../../../src/documents/types.js";
+import type { DocumentChunkerConfig, SectionInfo } from "../../../src/documents/types.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
+import { estimateTokens } from "../../../src/ingestion/chunk-utils.js";
 import {
   SMALL_DOCUMENT_CONTENT,
   PARAGRAPH_DOCUMENT_CONTENT,
+  LONG_PROSE_PARAGRAPH,
+  LONG_SINGLE_SENTENCE,
+  VERY_LONG_WORD,
   createMockExtractionResult,
   createMultiPageExtractionResult,
   createSectionedExtractionResult,
+  createHierarchicalSectionedExtractionResult,
   createTypedExtractionResult,
   generateLargeDocumentContent,
 } from "../../fixtures/documents/document-chunk-fixtures.js";
@@ -22,6 +27,28 @@ import {
 // Common test parameters
 const TEST_SOURCE = "test-docs";
 const TEST_FILE_PATH = "docs/test.pdf";
+
+/**
+ * Test subclass that exposes the protected findSectionHeading method.
+ *
+ * Allows direct testing of fallback code paths in findSectionHeading
+ * that are impossible to exercise through chunkDocument() alone because
+ * FileChunker always produces chunks whose content is a verbatim substring
+ * of the source text.
+ */
+class TestableDocumentChunker extends DocumentChunker {
+  /**
+   * Expose findSectionHeading for direct unit testing.
+   */
+  public exposedFindSectionHeading(
+    sections: SectionInfo[],
+    chunkContent: string,
+    fullContent: string,
+    charOffset?: number
+  ): string | undefined {
+    return this.findSectionHeading(sections, chunkContent, fullContent, charOffset);
+  }
+}
 
 /**
  * Helper to create a DocumentChunker with test-friendly defaults.
@@ -195,21 +222,165 @@ describe("DocumentChunker", () => {
       expect(chunks[0]!.content).toBe(content);
     });
 
-    test("falls back to line-level for oversized paragraphs", () => {
+    test("falls back to sentence splitting for oversized paragraphs", () => {
       const chunker = createChunker({
-        maxChunkTokens: 50,
-        overlapTokens: 5,
+        maxChunkTokens: 100,
+        overlapTokens: 0,
         respectParagraphs: true,
         respectPageBoundaries: false,
       });
 
-      // Single long paragraph that exceeds 50 tokens
-      const longParagraph = Array.from({ length: 80 }, (_, i) => `word${i}`).join(" ");
-      const result = createMockExtractionResult({ content: longParagraph });
+      // LONG_PROSE_PARAGRAPH is ~300 tokens, no internal newlines, has sentence boundaries
+      const result = createMockExtractionResult({ content: LONG_PROSE_PARAGRAPH });
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
-      // Should split the oversized paragraph at line boundaries
-      expect(chunks.length).toBeGreaterThanOrEqual(1);
+      // Should produce multiple chunks split at sentence boundaries
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk should respect the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(100);
+      }
+
+      // Reassembled content should contain all original sentences
+      const reassembled = chunks.map((c) => c.content).join(" ");
+      expect(reassembled).toContain("architecture of modern distributed");
+      expect(reassembled).toContain("Security considerations");
+    });
+
+    test("falls back to word-level for oversized sentences", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // LONG_SINGLE_SENTENCE has no sentence-ending punctuation boundaries, ~200 tokens
+      const result = createMockExtractionResult({ content: LONG_SINGLE_SENTENCE });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should produce multiple chunks split at word boundaries
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk should respect the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(50);
+      }
+
+      // No chunk should break mid-word
+      for (const chunk of chunks) {
+        const words = chunk.content.split(/\s+/);
+        for (const word of words) {
+          // Each word should be a complete word from the original text
+          expect(LONG_SINGLE_SENTENCE).toContain(word);
+        }
+      }
+    });
+
+    test("never breaks mid-word even for very long words", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // VERY_LONG_WORD is ~3000 chars, a single word that exceeds token limits
+      const result = createMockExtractionResult({ content: VERY_LONG_WORD });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should emit the word as a single oversized chunk rather than breaking it
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.content).toBe(VERY_LONG_WORD);
+    });
+
+    test("sentence-boundary fallback respects token limit", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 80,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      const result = createMockExtractionResult({ content: LONG_PROSE_PARAGRAPH });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Every chunk must be within the token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(80);
+      }
+    });
+
+    test("mixed sentence sizes group correctly", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 40,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Mix of short and medium sentences totaling ~100 tokens with 40 token limit
+      const content =
+        "Short one. Another short sentence here. " +
+        "This is a medium length sentence that adds significantly more tokens to the overall mix. " +
+        "Tiny. " +
+        "This is yet another medium sentence that should definitely push us past the boundary limit. " +
+        "The final concluding sentence wraps everything up nicely here.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(40);
+      }
+    });
+
+    test("multi-line oversized paragraph still uses line-level splitting", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 50,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Multi-line paragraph with internal \n characters (not \n\n) - 80+ tokens
+      const lines = Array.from({ length: 20 }, (_, i) => `Line ${i}: content for line ${i}`);
+      const multiLineParagraph = lines.join("\n");
+      const result = createMockExtractionResult({ content: multiLineParagraph });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should split successfully using line-level splitting
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(50);
+      }
+    });
+
+    test("sentence splitting handles common edge cases", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 40,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Content with abbreviation-like periods (Dr., Mr.) and decimals (3.14)
+      // These will cause imperfect splits, but no content should be lost
+      const content =
+        "Dr. Smith analyzed the data showing 3.14 as the ratio. " +
+        "The results were significant. " +
+        "Mr. Jones confirmed the findings in his independent review. " +
+        "The conclusion was unanimous.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Should produce chunks without losing content
+      const reassembled = chunks.map((c) => c.content).join(" ");
+      expect(reassembled).toContain("3.14");
+      expect(reassembled).toContain("conclusion was unanimous");
     });
 
     test("groups multiple small paragraphs into one chunk", () => {
@@ -345,7 +516,7 @@ describe("DocumentChunker", () => {
       }
     });
 
-    test("handles document with no sections", () => {
+    test("handles document with no sections but has title (falls back to title)", () => {
       const chunker = createChunker({
         includeSectionContext: true,
       });
@@ -356,7 +527,8 @@ describe("DocumentChunker", () => {
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
       expect(chunks.length).toBe(1);
-      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+      // No sections but document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
     });
 
     test("handles document with empty sections array", () => {
@@ -370,6 +542,174 @@ describe("DocumentChunker", () => {
       const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
 
       expect(chunks.length).toBe(1);
+      // Empty sections + document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
+    });
+
+    test("preserves heading hierarchy in H1 > H2 > H3 format", () => {
+      // Use small token limit so the Details 1.1.1 content gets its own chunk
+      // (paragraph "This subsection provides..." is ~33 tokens at ceil(131/4))
+      const chunker = createChunker({
+        maxChunkTokens: 35,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createHierarchicalSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/hierarchical.md", TEST_SOURCE);
+
+      // Find a chunk whose content is under "Details 1.1.1" (H3)
+      const detailsChunk = chunks.find((c) =>
+        c.content.includes("granular details about section 1.1")
+      );
+      expect(detailsChunk).toBeDefined();
+      expect(detailsChunk!.metadata.sectionHeading).toBe("Chapter 1 > Section 1.1 > Details 1.1.1");
+    });
+
+    test("single-level headings return just the heading without separator", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 200,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/design.md", TEST_SOURCE);
+
+      // All sections in SECTIONED_DOCUMENT_CONTENT are H1 - no hierarchy separator
+      const chunksWithHeadings = chunks.filter((c) => c.metadata.sectionHeading);
+      for (const chunk of chunksWithHeadings) {
+        expect(chunk.metadata.sectionHeading).not.toContain(" > ");
+      }
+    });
+
+    test("H2 heading under H1 shows two-level hierarchy", () => {
+      // Use small token limit so Section 2.1 content gets its own chunk
+      const chunker = createChunker({
+        maxChunkTokens: 35,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createHierarchicalSectionedExtractionResult();
+      const chunks = chunker.chunkDocument(result, "docs/hierarchical.md", TEST_SOURCE);
+
+      // Find a chunk under "Section 2.1" (H2 under H1 "Chapter 2")
+      const section21Chunk = chunks.find((c) => c.content.includes("first topic in chapter 2"));
+      expect(section21Chunk).toBeDefined();
+      expect(section21Chunk!.metadata.sectionHeading).toBe("Chapter 2 > Section 2.1");
+    });
+
+    test("chunks before any heading fall back to document title", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 500,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Content that starts with text before any heading
+      const content = "This text comes before any heading.\n\n# First Section\n\nSection content.";
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "First Section",
+            level: 1,
+            startOffset: content.indexOf("# First Section"),
+            endOffset: content.length,
+          },
+        ],
+        metadataOverrides: {
+          title: "My Document Title",
+          documentType: "markdown",
+        },
+      });
+
+      const chunks = chunker.chunkDocument(result, "docs/test.md", TEST_SOURCE);
+
+      // The chunk containing pre-heading text should fall back to document title
+      const preHeadingChunk = chunks.find((c) => c.content.includes("before any heading"));
+      expect(preHeadingChunk).toBeDefined();
+      expect(preHeadingChunk!.metadata.sectionHeading).toBe("My Document Title");
+    });
+
+    test("chunks without headings AND without document title remain undefined", () => {
+      const chunker = createChunker({
+        includeSectionContext: true,
+      });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: undefined,
+        metadataOverrides: { title: undefined },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+    });
+
+    test("document title fallback used when sections array is empty and document has title", () => {
+      const chunker = createChunker({
+        includeSectionContext: true,
+      });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: [],
+        metadataOverrides: { title: "Fallback Title" },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(1);
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Fallback Title");
+    });
+
+    test("handles non-contiguous heading levels (H1 directly to H3)", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 0,
+        includeSectionContext: true,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = "# Chapter\n\nIntro.\n\n### Subsection\n\nDetails here.";
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "Chapter",
+            level: 1,
+            startOffset: 0,
+            endOffset: content.indexOf("### Subsection"),
+          },
+          {
+            title: "Subsection",
+            level: 3,
+            startOffset: content.indexOf("### Subsection"),
+            endOffset: content.length,
+          },
+        ],
+        metadataOverrides: { documentType: "markdown", title: undefined },
+      });
+      const chunks = chunker.chunkDocument(result, "docs/test.md", TEST_SOURCE);
+      const detailChunk = chunks.find((c) => c.content.includes("Details here"));
+      expect(detailChunk).toBeDefined();
+      // H3 under H1 with no H2 — should still show hierarchy
+      expect(detailChunk!.metadata.sectionHeading).toBe("Chapter > Subsection");
+    });
+
+    test("does not fall back to title when includeSectionContext=false", () => {
+      const chunker = createChunker({ includeSectionContext: false });
+      const result = createMockExtractionResult({
+        content: SMALL_DOCUMENT_CONTENT,
+        sections: undefined,
+        metadataOverrides: { title: "Should Not Appear" },
+      });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
       expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
     });
   });
@@ -522,7 +862,8 @@ describe("DocumentChunker", () => {
 
       expect(chunks.length).toBe(1);
       expect(chunks[0]!.metadata.pageNumber).toBeUndefined();
-      expect(chunks[0]!.metadata.sectionHeading).toBeUndefined();
+      // No sections but document has title → falls back to document title
+      expect(chunks[0]!.metadata.sectionHeading).toBe("Test Document");
     });
 
     test("handles document with empty pages array", () => {
@@ -656,6 +997,271 @@ describe("DocumentChunker", () => {
       expect(() => chunker.chunkDocument(result, "", TEST_SOURCE)).toThrow();
       expect(() => chunker.chunkDocument(result, "   ", TEST_SOURCE)).toThrow();
     });
+
+    test("section heading with duplicate content uses indexOf (first-occurrence bias)", () => {
+      // When charOffset is undefined (line-level fallback), findSectionHeading
+      // uses fullContent.indexOf(chunkContent.substring(0, 100)) which always
+      // finds the first occurrence. This test documents that behavior.
+      const sharedPrefix = "A".repeat(100);
+      const content =
+        `# Section One\n\n${sharedPrefix} unique-ending-one.\n\n` +
+        `# Section Two\n\n${sharedPrefix} unique-ending-two.`;
+
+      const sectionOneStart = 0;
+      const sectionTwoStart = content.indexOf("# Section Two");
+
+      const result = createMockExtractionResult({
+        content,
+        sections: [
+          {
+            title: "Section One",
+            level: 1,
+            startOffset: sectionOneStart,
+            endOffset: sectionTwoStart,
+          },
+          {
+            title: "Section Two",
+            level: 1,
+            startOffset: sectionTwoStart,
+            endOffset: content.length,
+          },
+        ],
+      });
+
+      // Use line-level fallback (no paragraphs, no pages) so charOffset is undefined
+      const chunker = createChunker({
+        maxChunkTokens: 30,
+        overlapTokens: 0,
+        respectParagraphs: false,
+        respectPageBoundaries: false,
+        includeSectionContext: true,
+      });
+
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+      // Find a chunk whose content starts with the shared prefix and belongs to Section Two's text
+      const sectionTwoChunks = chunks.filter((c) => c.content.includes("unique-ending-two"));
+      expect(sectionTwoChunks.length).toBeGreaterThanOrEqual(1);
+
+      // Due to indexOf first-occurrence bias, the chunk containing Section Two's
+      // duplicate-prefix content may be assigned to Section One instead
+      for (const chunk of sectionTwoChunks) {
+        // Known limitation: indexOf matches the first occurrence of the shared
+        // 100-char prefix, which falls in Section One. This pins the current
+        // biased behavior as a behavioral contract.
+        // TODO: If indexOf bias is fixed (e.g., via lastIndexOf or smarter
+        // search), update this assertion to expect "Section Two" instead.
+        expect(chunk.metadata.sectionHeading).toBe("Section One");
+      }
+    });
+
+    test("findSectionHeading falls back to first-line search when 100-char substring not found", () => {
+      // This test directly exercises the first-line fallback at lines 671-678 of
+      // DocumentChunker.ts. The fallback triggers when:
+      //   1. charOffset is undefined (no positional data)
+      //   2. fullContent.indexOf(chunkContent.substring(0, 100)) returns -1
+      //   3. The chunk's first line IS found in fullContent
+      //
+      // This path is impossible to reach via chunkDocument() because FileChunker
+      // always produces chunks whose content is a verbatim substring of the source.
+      // We use a test subclass to call findSectionHeading directly with controlled
+      // inputs where the full 100-char prefix does NOT appear in fullContent but
+      // the first line does.
+      const chunker = new TestableDocumentChunker();
+
+      const fullContent =
+        "# Introduction\n\nThis is intro text.\n\n" +
+        "# Details\n\nThe actual details are here with some content.";
+
+      const detailsOffset = fullContent.indexOf("# Details");
+
+      const sections: SectionInfo[] = [
+        { title: "Introduction", level: 1, startOffset: 0, endOffset: detailsOffset },
+        { title: "Details", level: 1, startOffset: detailsOffset, endOffset: fullContent.length },
+      ];
+
+      // Construct a chunk whose first line ("The actual details are here with some content.")
+      // exists in fullContent within the "Details" section, but whose full content
+      // (>100 chars including a second line) does NOT appear anywhere in fullContent.
+      // This forces indexOf(chunkContent.substring(0, 100)) to return -1, triggering
+      // the first-line fallback at line 671.
+      const chunkContent =
+        "The actual details are here with some content.\n" +
+        "This second line was added by a hypothetical post-processing step and does not exist in the original document.";
+
+      // Verify preconditions:
+      // - The first 100 chars of chunkContent must NOT be found in fullContent
+      expect(fullContent.indexOf(chunkContent.substring(0, 100))).toBe(-1);
+      // - The first line of chunkContent MUST be found in fullContent
+      const firstLine = chunkContent.split("\n")[0]!;
+      expect(fullContent.indexOf(firstLine)).toBeGreaterThan(-1);
+
+      // Call findSectionHeading without charOffset to exercise the fallback
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined // no charOffset -- forces content search path
+      );
+
+      // The first line appears inside the "Details" section, so the fallback
+      // should resolve to "Details"
+      expect(heading).toBe("Details");
+    });
+
+    test("findSectionHeading returns undefined when neither 100-char nor first-line search matches", () => {
+      // Exercise the double-miss path at lines 675-676 of DocumentChunker.ts:
+      // both indexOf attempts return -1, so the method returns undefined.
+      const chunker = new TestableDocumentChunker();
+
+      const fullContent = "# Section A\n\nSome text in section A.";
+      const sections: SectionInfo[] = [
+        { title: "Section A", level: 1, startOffset: 0, endOffset: fullContent.length },
+      ];
+
+      // Chunk content that does not appear anywhere in fullContent
+      const chunkContent = "Completely unrelated content that appears nowhere in the document.";
+
+      // Verify preconditions: neither the 100-char prefix nor the first line is found
+      expect(
+        fullContent.indexOf(chunkContent.substring(0, Math.min(100, chunkContent.length)))
+      ).toBe(-1);
+      expect(fullContent.indexOf(chunkContent.split("\n")[0]!.substring(0, 80))).toBe(-1);
+
+      const heading = chunker.exposedFindSectionHeading(
+        sections,
+        chunkContent,
+        fullContent,
+        undefined
+      );
+
+      expect(heading).toBeUndefined();
+    });
+
+    test("chunkByPages produces more than MAX_CHUNKS_PER_FILE (100) chunks for many-page documents", () => {
+      // MAX_CHUNKS_PER_FILE = 100 is enforced per-page call inside chunkFile(),
+      // but chunkByPages() has no document-level limit. A document with >100 pages
+      // each producing 1 chunk per page should yield >100 total chunks.
+      //
+      // Regression guard: if someone adds a document-level chunk cap to chunkByPages,
+      // this test will fail and force a deliberate decision about the desired behavior.
+      const pageCount = 105;
+      const pages = [];
+      const contentParts = [];
+
+      for (let i = 0; i < pageCount; i++) {
+        const pageContent = `Page ${i + 1} has some short content here.`;
+        pages.push({
+          pageNumber: i + 1,
+          content: pageContent,
+          wordCount: 7,
+        });
+        contentParts.push(pageContent);
+      }
+
+      const result = createMockExtractionResult({
+        content: contentParts.join("\n\n"),
+        pages,
+        metadataOverrides: {
+          pageCount,
+          wordCount: pageCount * 7,
+        },
+      });
+
+      const chunker = createChunker({
+        maxChunkTokens: 500,
+        overlapTokens: 0,
+        respectPageBoundaries: true,
+        respectParagraphs: false,
+      });
+
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Each page produces exactly 1 chunk, so total should equal pageCount
+      expect(chunks.length).toBe(pageCount);
+
+      // Verify page numbers are assigned correctly
+      for (let i = 0; i < pageCount; i++) {
+        expect(chunks[i]!.metadata.pageNumber).toBe(i + 1);
+      }
+    });
+
+    test("Windows CRLF line endings produce same paragraph split as LF equivalents", () => {
+      // Each paragraph is ~6-7 tokens; use limit of 6 to force separate chunks
+      const chunker = createChunker({
+        maxChunkTokens: 6,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      const lfContent =
+        "First paragraph content.\n\nSecond paragraph content.\n\nThird paragraph content.";
+      const crlfContent =
+        "First paragraph content.\r\n\r\nSecond paragraph content.\r\n\r\nThird paragraph content.";
+
+      const lfResult = createMockExtractionResult({ content: lfContent });
+      const crlfResult = createMockExtractionResult({ content: crlfContent });
+
+      const lfChunks = chunker.chunkDocument(lfResult, TEST_FILE_PATH, TEST_SOURCE);
+      const crlfChunks = chunker.chunkDocument(crlfResult, TEST_FILE_PATH, TEST_SOURCE);
+
+      // Same number of chunks
+      expect(crlfChunks.length).toBe(lfChunks.length);
+      expect(crlfChunks.length).toBe(3);
+
+      // Same content in each chunk (CRLF normalized to LF)
+      for (let i = 0; i < lfChunks.length; i++) {
+        expect(crlfChunks[i]!.content).toBe(lfChunks[i]!.content);
+        expect(crlfChunks[i]!.content).not.toContain("\r");
+      }
+
+      // Same line tracking
+      for (let i = 0; i < lfChunks.length; i++) {
+        expect(crlfChunks[i]!.startLine).toBe(lfChunks[i]!.startLine);
+        expect(crlfChunks[i]!.endLine).toBe(lfChunks[i]!.endLine);
+      }
+    });
+
+    test("multi-line paragraphs track startLine and endLine correctly", () => {
+      // Para 1: ~17 tokens (3 lines), Para 2: ~6 tokens (1 line), Para 3: ~12 tokens (2 lines)
+      // Use limit of 17 so each paragraph gets its own chunk without line-level fallback
+      const chunker = createChunker({
+        maxChunkTokens: 17,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Paragraphs with internal newlines (multi-line paragraphs)
+      const content =
+        "Line one of para one.\nLine two of para one.\nLine three of para one." +
+        "\n\n" +
+        "Single line para two." +
+        "\n\n" +
+        "Line one of para three.\nLine two of para three.";
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBe(3);
+
+      // First paragraph: 3 lines starting at line 1
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(3);
+      expect(chunks[0]!.endLine - chunks[0]!.startLine + 1).toBe(3);
+
+      // Second paragraph: 1 line starting at line 5 (after line 4 = blank)
+      expect(chunks[1]!.startLine).toBe(5);
+      expect(chunks[1]!.endLine).toBe(5);
+      expect(chunks[1]!.endLine - chunks[1]!.startLine + 1).toBe(1);
+
+      // Third paragraph: 2 lines starting at line 7 (after line 6 = blank)
+      expect(chunks[2]!.startLine).toBe(7);
+      expect(chunks[2]!.endLine).toBe(8);
+      expect(chunks[2]!.endLine - chunks[2]!.startLine + 1).toBe(2);
+    });
   });
 
   describe("FileChunker inheritance", () => {
@@ -734,6 +1340,165 @@ describe("DocumentChunker", () => {
       for (const chunk of chunks) {
         expect(chunk.metadata.pageNumber).toBeUndefined();
         expect(chunk.metadata.sectionHeading).toBeUndefined();
+      }
+    });
+  });
+
+  describe("Paragraph overlap behavior", () => {
+    // Each paragraph from generateLargeDocumentContent has ~363 chars → ~91 tokens
+    // (estimateTokens uses ceil(charCount / 4))
+
+    test("consecutive paragraph chunks include overlap from previous chunk", () => {
+      // maxChunkTokens=120: fits one ~91-token paragraph, but not two (182 > 120)
+      // overlapTokens=100: enough to carry one ~91-token paragraph forward
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 100,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(5);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // For each consecutive pair, the last paragraph of chunk N should
+      // appear in chunk N+1 as overlap content
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("no overlap when overlapTokens is 0", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 0,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(5);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // No paragraph should appear in two consecutive chunks
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const nextParagraphs = chunks[i + 1]!.content.split("\n\n");
+
+        const currentSet = new Set(currentParagraphs);
+        for (const para of nextParagraphs) {
+          expect(currentSet.has(para)).toBe(false);
+        }
+      }
+    });
+
+    test("overlap includes at least one paragraph even when it exceeds budget", () => {
+      // Each paragraph ~91 tokens. With overlapTokens=50, the "at least one"
+      // rule still includes one paragraph. With maxChunkTokens=200, two fit
+      // (91+91=182 < 200) but three don't (273 > 200).
+      // After flushing a 2-paragraph group, overlap budget of 50 means
+      // one paragraph (91 tokens) is included via the "at least one" rule.
+      const chunker = createChunker({
+        maxChunkTokens: 200,
+        overlapTokens: 50,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(8);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(2);
+
+      // After the first chunk, each subsequent chunk should contain overlap
+      // (at least one paragraph from the previous chunk via "at least one" rule)
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("overlap budget constrains number of overlap paragraphs", () => {
+      // Use short paragraphs (~8 chars → ~2 tokens each) to test real budget
+      // constraints. With overlapTokens=5, two ~2-token paragraphs fit (4 ≤ 5)
+      // but three don't (6 > 5).
+      const shortParas = Array.from({ length: 10 }, (_, i) => `Para ${i + 1}.`);
+      const content = shortParas.join("\n\n");
+      // Each paragraph ~2 tokens, maxChunkTokens=8 fits ~4 paragraphs per chunk
+      const chunker = createChunker({
+        maxChunkTokens: 8,
+        overlapTokens: 5,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // With ~2 tokens per paragraph and overlap budget of 5, at most 2 paragraphs
+      // should be carried as overlap (2*2=4 ≤ 5, but 3*2=6 > 5)
+      for (let i = 1; i < chunks.length; i++) {
+        const paras = chunks[i]!.content.split("\n\n");
+        // Overlap paragraphs from the previous chunk
+        const prevParas = chunks[i - 1]!.content.split("\n\n");
+        const overlapParas = paras.filter((p) => prevParas.includes(p));
+        expect(overlapParas.length).toBeLessThanOrEqual(2);
+        expect(overlapParas.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    test("single-paragraph groups still produce overlap", () => {
+      // maxChunkTokens=120: fits one ~91-token paragraph but not two
+      // overlapTokens=100: enough to carry the single paragraph forward
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 100,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(4);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk after the first should contain the previous chunk's paragraph
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
+      }
+    });
+
+    test("at least one overlap paragraph included even with tiny overlapTokens budget", () => {
+      // With overlapTokens=1 and paragraphs at ~91 tokens each,
+      // the "at least one" rule should still include one paragraph
+      const chunker = createChunker({
+        maxChunkTokens: 120,
+        overlapTokens: 1,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+      const content = generateLargeDocumentContent(4);
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk after the first should still contain overlap
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const currentParagraphs = chunks[i]!.content.split("\n\n");
+        const lastParagraph = currentParagraphs[currentParagraphs.length - 1]!;
+        expect(chunks[i + 1]!.content).toContain(lastParagraph);
       }
     });
   });

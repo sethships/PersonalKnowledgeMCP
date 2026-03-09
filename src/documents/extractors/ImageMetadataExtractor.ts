@@ -7,25 +7,12 @@
  * @module documents/extractors/ImageMetadataExtractor
  */
 
-import * as fs from "node:fs/promises";
 import sharp from "sharp";
 import * as exifParser from "exif-parser";
 import { IMAGE_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
-import {
-  ExtractionError,
-  ExtractionTimeoutError,
-  FileAccessError,
-  FileTooLargeError,
-  UnsupportedFormatError,
-} from "../errors.js";
-import { getComponentLogger } from "../../logging/index.js";
-import type {
-  DocumentExtractor,
-  ImageMetadata,
-  ExifData,
-  ImageFormat,
-  ExtractorConfig,
-} from "../types.js";
+import { ExtractionError, ExtractionTimeoutError, UnsupportedFormatError } from "../errors.js";
+import { BaseExtractor } from "./BaseExtractor.js";
+import type { ImageMetadata, ExifData, ImageFormat, ExtractorConfig } from "../types.js";
 
 /**
  * Image-specific extractor configuration.
@@ -61,40 +48,6 @@ const SHARP_FORMAT_MAP: Readonly<Record<string, ImageFormat>> = {
   tif: "tiff",
 };
 
-/** Lazily-initialized logger for image extractor operations */
-let logger: ReturnType<typeof getComponentLogger> | null = null;
-
-/** Shared no-op function for the silent logger */
-const noop = (): void => {};
-
-/** No-op logger for when logging system is not initialized */
-const noopLogger = {
-  warn: noop,
-  info: noop,
-  error: noop,
-  debug: noop,
-  trace: noop,
-  fatal: noop,
-  level: "silent" as const,
-  silent: true,
-} as unknown as ReturnType<typeof getComponentLogger>;
-
-/**
- * Get the component logger, initializing if needed.
- * Lazy initialization avoids errors when module loads before logger is initialized.
- */
-function getLogger(): ReturnType<typeof getComponentLogger> {
-  if (!logger) {
-    try {
-      logger = getComponentLogger("documents:image-extractor");
-    } catch {
-      // If logger not initialized, return no-op logger for testing
-      return noopLogger;
-    }
-  }
-  return logger;
-}
-
 /**
  * Extracts metadata from image files.
  *
@@ -102,7 +55,7 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * for EXIF metadata extraction. Does not extract text content from images
  * (OCR not included in Phase 6 scope).
  *
- * @implements {DocumentExtractor<ImageMetadata>}
+ * @extends {BaseExtractor<Required<ImageMetadataExtractorConfig>, ImageMetadata>}
  *
  * @example
  * ```typescript
@@ -118,20 +71,21 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * }
  * ```
  */
-export class ImageMetadataExtractor implements DocumentExtractor<ImageMetadata> {
-  private readonly config: Required<ImageMetadataExtractorConfig>;
-
+export class ImageMetadataExtractor extends BaseExtractor<
+  Required<ImageMetadataExtractorConfig>,
+  ImageMetadata
+> {
   /**
    * Creates a new ImageMetadataExtractor instance.
    *
    * @param config - Optional configuration overrides
    */
   constructor(config?: ImageMetadataExtractorConfig) {
-    this.config = {
+    super("documents:image-extractor", {
       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
       extractExif: config?.extractExif ?? true,
-    };
+    });
   }
 
   /**
@@ -157,14 +111,7 @@ export class ImageMetadataExtractor implements DocumentExtractor<ImageMetadata> 
     const stats = await this.getFileStats(filePath);
 
     // 2. Check file size against limit
-    if (stats.size > this.config.maxFileSizeBytes) {
-      throw new FileTooLargeError(
-        `File exceeds maximum size of ${this.config.maxFileSizeBytes} bytes (actual: ${stats.size} bytes)`,
-        stats.size,
-        this.config.maxFileSizeBytes,
-        { filePath }
-      );
-    }
+    this.validateFileSize(stats.size, filePath);
 
     // 3. Read file into buffer
     const buffer = await this.readFileBuffer(filePath);
@@ -213,68 +160,6 @@ export class ImageMetadataExtractor implements DocumentExtractor<ImageMetadata> 
   supports(extension: string): boolean {
     const normalizedExt = extension.toLowerCase();
     return IMAGE_EXTENSIONS.includes(normalizedExt as (typeof IMAGE_EXTENSIONS)[number]);
-  }
-
-  /**
-   * Get the current configuration.
-   *
-   * @returns The extractor configuration
-   */
-  getConfig(): Readonly<Required<ImageMetadataExtractorConfig>> {
-    return this.config;
-  }
-
-  /**
-   * Get file stats and handle errors.
-   *
-   * @param filePath - Path to the file
-   * @returns File stats with size and modification time
-   * @throws {FileAccessError} If file cannot be accessed
-   */
-  private async getFileStats(filePath: string): Promise<{ size: number; mtime: Date }> {
-    try {
-      const stats = await fs.stat(filePath);
-      return {
-        size: stats.size,
-        mtime: stats.mtime,
-      };
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        throw new FileAccessError(`File not found: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      if (nodeError.code === "EACCES") {
-        throw new FileAccessError(`Permission denied: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      throw new FileAccessError(`Cannot access file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Read file contents as buffer.
-   *
-   * @param filePath - Path to the file
-   * @returns File contents as buffer
-   * @throws {FileAccessError} If file cannot be read
-   */
-  private async readFileBuffer(filePath: string): Promise<Buffer> {
-    try {
-      return Buffer.from(await fs.readFile(filePath));
-    } catch (error) {
-      throw new FileAccessError(`Cannot read file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
   }
 
   /**
@@ -411,7 +296,7 @@ export class ImageMetadataExtractor implements DocumentExtractor<ImageMetadata> 
       };
     } catch (error) {
       // EXIF parsing failure is non-fatal; log and return undefined
-      getLogger().debug(
+      this.getLogger().debug(
         { error: error instanceof Error ? error.message : "unknown error", format },
         "EXIF extraction failed, returning undefined"
       );

@@ -92,6 +92,16 @@ export const searchDocumentsToolDefinition: Tool = {
         maximum: 1.0,
         default: 0.7,
       },
+      include_tables: {
+        type: "string",
+        description:
+          "Controls whether table content is included in search results. " +
+          "'include' (default) searches both tables and text. " +
+          "'only' searches only table chunks. " +
+          "'exclude' excludes table chunks from results.",
+        enum: ["include", "only", "exclude"],
+        default: "include",
+      },
     },
     required: ["query"],
   },
@@ -131,6 +141,7 @@ export function createSearchDocumentsHandler(
           threshold: validatedArgs.threshold,
           document_types: validatedArgs.document_types,
           folder: validatedArgs.folder,
+          include_tables: validatedArgs.include_tables,
         },
         "Executing search_documents tool"
       );
@@ -142,6 +153,7 @@ export function createSearchDocumentsHandler(
         threshold: validatedArgs.threshold,
         document_types: validatedArgs.document_types,
         folder: validatedArgs.folder,
+        include_tables: validatedArgs.include_tables,
       });
 
       // Step 3: Format response for MCP
@@ -202,6 +214,12 @@ function formatDocumentSearchResponse(response: DocumentSearchResponse): TextCon
       sectionHeading: result.sectionHeading,
       similarity: result.similarity,
       folder: result.folder,
+      ...(result.isTable === true && {
+        isTable: result.isTable,
+        tableCaption: result.tableCaption,
+        tableColumnCount: result.tableColumnCount,
+        tableRowCount: result.tableRowCount,
+      }),
     })),
     metadata: {
       totalResults: response.metadata.totalResults,

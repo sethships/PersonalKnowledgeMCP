@@ -29,6 +29,14 @@ export interface DocumentSearchQuery {
 
   /** Minimum similarity threshold (0.0-1.0, default: 0.7) */
   threshold?: number;
+
+  /**
+   * Table content filtering mode:
+   * - "include" (default): search both tables and text (no filter)
+   * - "only": search only table chunks
+   * - "exclude": exclude table chunks
+   */
+  include_tables?: "include" | "only" | "exclude";
 }
 
 /**
@@ -58,6 +66,18 @@ export interface DocumentSearchResult {
 
   /** Source folder name */
   folder: string;
+
+  /** Whether this result is a table chunk */
+  isTable?: boolean;
+
+  /** Table caption if this is a table chunk */
+  tableCaption?: string;
+
+  /** Number of columns in the table */
+  tableColumnCount?: number;
+
+  /** Number of rows in the table */
+  tableRowCount?: number;
 }
 
 /**

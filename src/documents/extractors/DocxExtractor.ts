@@ -5,35 +5,16 @@
  * structure including headings, lists, and paragraphs. Extracts Dublin Core
  * metadata from docProps/core.xml when available.
  *
- * NOTE: Several private methods (getFileStats, readFileBuffer, countWords,
- * computeContentHash, lazy logger pattern) are duplicated from PdfExtractor.
- * These should be extracted into a shared BaseExtractor or utility module
- * in a follow-up refactoring.
- *
  * @module documents/extractors/DocxExtractor
  */
 
-import * as fs from "node:fs/promises";
-import * as crypto from "node:crypto";
 import mammoth from "mammoth";
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
-import {
-  ExtractionError,
-  ExtractionTimeoutError,
-  FileAccessError,
-  FileTooLargeError,
-  UnsupportedFormatError,
-} from "../errors.js";
-import { getComponentLogger } from "../../logging/index.js";
-import type {
-  DocumentExtractor,
-  DocumentMetadata,
-  ExtractionResult,
-  ExtractorConfig,
-  SectionInfo,
-} from "../types.js";
+import { ExtractionError, ExtractionTimeoutError, UnsupportedFormatError } from "../errors.js";
+import { BaseExtractor } from "./BaseExtractor.js";
+import type { DocumentMetadata, ExtractionResult, ExtractorConfig, SectionInfo } from "../types.js";
 
 /**
  * DOCX-specific extractor configuration.
@@ -108,7 +89,7 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * plain text while optionally preserving basic formatting. Extracts
  * Dublin Core metadata from docProps/core.xml when present.
  *
- * @implements {DocumentExtractor<ExtractionResult>}
+ * @extends {BaseExtractor<Required<DocxExtractorConfig>, ExtractionResult>}
  *
  * @example
  * ```typescript
@@ -121,20 +102,18 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
  * }
  * ```
  */
-export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
-  private readonly config: Required<DocxExtractorConfig>;
-
+export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, ExtractionResult> {
   /**
    * Creates a new DocxExtractor instance.
    *
    * @param config - Optional configuration overrides
    */
   constructor(config?: DocxExtractorConfig) {
-    this.config = {
+    super("documents:docx-extractor", {
       maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_EXTRACTOR_CONFIG.maxFileSizeBytes,
       timeoutMs: config?.timeoutMs ?? DEFAULT_EXTRACTOR_CONFIG.timeoutMs,
       preserveFormatting: config?.preserveFormatting ?? false,
-    };
+    });
   }
 
   /**
@@ -160,14 +139,7 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
     const stats = await this.getFileStats(filePath);
 
     // 2. Check file size
-    if (stats.size > this.config.maxFileSizeBytes) {
-      throw new FileTooLargeError(
-        `File exceeds maximum size of ${this.config.maxFileSizeBytes} bytes (actual: ${stats.size} bytes)`,
-        stats.size,
-        this.config.maxFileSizeBytes,
-        { filePath }
-      );
-    }
+    this.validateFileSize(stats.size, filePath);
 
     // 3. Read file buffer
     const buffer = await this.readFileBuffer(filePath);
@@ -224,68 +196,6 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
   }
 
   /**
-   * Get the current configuration.
-   *
-   * @returns The extractor configuration
-   */
-  getConfig(): Readonly<Required<DocxExtractorConfig>> {
-    return this.config;
-  }
-
-  /**
-   * Get file stats and handle errors.
-   *
-   * @param filePath - Path to the file
-   * @returns File stats
-   * @throws {FileAccessError} If file cannot be accessed
-   */
-  private async getFileStats(filePath: string): Promise<{ size: number; mtime: Date }> {
-    try {
-      const stats = await fs.stat(filePath);
-      return {
-        size: stats.size,
-        mtime: stats.mtime,
-      };
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        throw new FileAccessError(`File not found: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      if (nodeError.code === "EACCES") {
-        throw new FileAccessError(`Permission denied: ${filePath}`, {
-          filePath,
-          cause: error instanceof Error ? error : undefined,
-        });
-      }
-      throw new FileAccessError(`Cannot access file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
-   * Read file contents as buffer.
-   *
-   * @param filePath - Path to the file
-   * @returns File contents as buffer
-   * @throws {FileAccessError} If file cannot be read
-   */
-  private async readFileBuffer(filePath: string): Promise<Buffer> {
-    try {
-      return await fs.readFile(filePath);
-    } catch (error) {
-      throw new FileAccessError(`Cannot read file: ${filePath}`, {
-        filePath,
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-  }
-
-  /**
    * Extract content from DOCX with timeout protection.
    *
    * Uses mammoth.convertToHtml for structured HTML and mammoth.extractRawText for plain text.
@@ -335,7 +245,7 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
             (m): m is { type: "warning"; message: string } => m.type === "warning"
           );
           if (warnings.length > 0) {
-            getLogger().warn(
+            this.getLogger().warn(
               { filePath, warnings: warnings.map((w) => w.message) },
               "Mammoth extraction produced warnings"
             );
@@ -433,7 +343,7 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
       return this.parseCoreXml(coreXml);
     } catch (error) {
       // Gracefully handle missing or unparseable metadata
-      getLogger().warn(
+      this.getLogger().warn(
         { filePath, error: error instanceof Error ? error.message : "unknown error" },
         "Failed to extract DOCX metadata, continuing without it"
       );
@@ -528,29 +438,5 @@ export class DocxExtractor implements DocumentExtractor<ExtractionResult> {
       contentHash: this.computeContentHash(buffer),
       fileModifiedAt: stats.mtime,
     };
-  }
-
-  /**
-   * Count words in text.
-   *
-   * @param text - Text to count words in
-   * @returns Word count
-   */
-  private countWords(text: string): number {
-    if (!text || text.trim().length === 0) {
-      return 0;
-    }
-    return text.split(/\s+/).filter((word) => word.length > 0).length;
-  }
-
-  /**
-   * Compute SHA-256 hash of content.
-   *
-   * @param buffer - Content buffer
-   * @returns Hex-encoded SHA-256 hash with sha256: prefix
-   */
-  private computeContentHash(buffer: Buffer): string {
-    const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-    return `sha256:${hash}`;
   }
 }

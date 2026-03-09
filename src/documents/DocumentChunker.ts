@@ -58,10 +58,19 @@ interface ChunkPositionData {
  * Extends FileChunker with document-specific chunking strategies:
  * - **Page-boundary chunking**: Chunks each PDF page independently
  * - **Paragraph-boundary chunking**: Splits at paragraph boundaries (double newlines)
+ *   with whole-paragraph overlap between consecutive chunks for semantic continuity
  * - **Section heading context**: Attaches nearest section heading to each chunk
  * - **Document metadata**: Preserves document type, title, and author in chunk metadata
  *
- * Falls back to FileChunker's line-level splitting when paragraphs exceed token limits.
+ * When paragraphs exceed token limits, falls back through a hierarchy:
+ * **Paragraph > Sentence > Word > (oversized word in own chunk)**.
+ * Sentence boundaries use punctuation followed by whitespace; word boundaries
+ * use whitespace splitting. Single words exceeding the token limit are emitted
+ * as their own chunk (never broken mid-word).
+ *
+ * When `overlapTokens > 0`, paragraph-boundary chunking carries the last N whole
+ * paragraphs (fitting within the overlap budget) from the flushed group into the
+ * next group, analogous to how FileChunker's `getOverlapLines` carries lines.
  *
  * @example
  * ```typescript
@@ -82,12 +91,14 @@ export class DocumentChunker extends FileChunker {
   private readonly includeSectionContext: boolean;
   private readonly respectPageBoundaries: boolean;
   private readonly maxTokens: number;
+  private readonly overlapTokens: number;
 
   /**
    * Create a new DocumentChunker instance.
    *
    * Configuration priority: defaults -> constructor params -> environment variables.
-   * The CHUNK_MAX_TOKENS env var is respected for consistency with FileChunker.
+   * The CHUNK_MAX_TOKENS and CHUNK_OVERLAP_TOKENS env vars are respected for
+   * consistency with FileChunker.
    *
    * @param config - Document chunker configuration
    */
@@ -105,6 +116,12 @@ export class DocumentChunker extends FileChunker {
     this.maxTokens =
       !isNaN(parsedEnv) && parsedEnv > 0 ? parsedEnv : (config?.maxChunkTokens ?? 500);
 
+    // Apply CHUNK_OVERLAP_TOKENS env var override, matching FileChunker behavior
+    const envOverlap = process.env["CHUNK_OVERLAP_TOKENS"];
+    const parsedOverlap = envOverlap ? parseInt(envOverlap, 10) : NaN;
+    this.overlapTokens =
+      !isNaN(parsedOverlap) && parsedOverlap >= 0 ? parsedOverlap : (config?.overlapTokens ?? 50);
+
     this.respectParagraphs = config?.respectParagraphs ?? true;
     this.includeSectionContext = config?.includeSectionContext ?? true;
     this.respectPageBoundaries = config?.respectPageBoundaries ?? true;
@@ -115,6 +132,7 @@ export class DocumentChunker extends FileChunker {
         includeSectionContext: this.includeSectionContext,
         respectPageBoundaries: this.respectPageBoundaries,
         maxTokens: this.maxTokens,
+        overlapTokens: this.overlapTokens,
       },
       "DocumentChunker initialized"
     );
@@ -328,8 +346,11 @@ export class DocumentChunker extends FileChunker {
    * Chunk document by paragraph boundaries.
    *
    * Splits content at double-newline boundaries and groups paragraphs
-   * into chunks respecting the token limit. Falls back to line-level
-   * splitting for individual paragraphs that exceed the token limit.
+   * into chunks respecting the token limit. When `overlapTokens > 0`,
+   * the last N whole paragraphs fitting within the overlap budget are
+   * carried from the flushed group into the next group for semantic
+   * continuity across chunk boundaries. Falls back through sentence
+   * and word boundaries for individual paragraphs that exceed the token limit.
    * Character offsets are tracked for section heading lookup.
    *
    * @param content - Full document content
@@ -355,22 +376,18 @@ export class DocumentChunker extends FileChunker {
     const positions: ChunkPositionData[] = [];
     let currentParagraphs: ParagraphBlock[] = [];
     let currentTokens = 0;
+    let overlapCount = 0; // Track how many leading paragraphs are overlap from previous group
     const fileInfo = this.createDocumentFileInfo(extractionResult, filePath);
 
     for (const paragraph of paragraphs) {
       const paragraphTokens = estimateTokens(paragraph.content);
 
-      // If single paragraph exceeds limit, chunk it with line-level splitting
+      // If single paragraph exceeds limit, chunk it with sentence/word fallbacks
       if (paragraphTokens > this.maxTokens && currentParagraphs.length === 0) {
-        const lineChunks = this.chunkFile(paragraph.content, fileInfo, source);
-        for (const chunk of lineChunks) {
-          allChunks.push({
-            ...chunk,
-            startLine: paragraph.startLine + chunk.startLine - 1,
-            endLine: paragraph.startLine + chunk.endLine - 1,
-          });
-          positions.push({ charOffset: paragraph.charOffset });
-        }
+        const subResult = this.chunkOversizedParagraph(paragraph, fileInfo, source, filePath);
+        allChunks.push(...subResult.chunks);
+        positions.push(...subResult.positions);
+        overlapCount = 0;
         continue;
       }
 
@@ -379,9 +396,16 @@ export class DocumentChunker extends FileChunker {
         allChunks.push(
           this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo)
         );
-        positions.push({ charOffset: currentParagraphs[0]!.charOffset });
-        currentParagraphs = [];
-        currentTokens = 0;
+        // Use the first non-overlap paragraph's offset for section heading lookup,
+        // falling back to the first paragraph if the group is entirely overlap
+        const posIndex = Math.min(overlapCount, currentParagraphs.length - 1);
+        positions.push({ charOffset: currentParagraphs[posIndex]!.charOffset });
+
+        // Seed next group with overlap paragraphs from the tail of the flushed group
+        const overlapParas = this.getOverlapParagraphs(currentParagraphs, this.overlapTokens);
+        currentParagraphs = [...overlapParas];
+        currentTokens = overlapParas.reduce((sum, p) => sum + estimateTokens(p.content), 0);
+        overlapCount = overlapParas.length;
       }
 
       currentParagraphs.push(paragraph);
@@ -391,7 +415,8 @@ export class DocumentChunker extends FileChunker {
     // Flush remaining paragraphs
     if (currentParagraphs.length > 0) {
       allChunks.push(this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo));
-      positions.push({ charOffset: currentParagraphs[0]!.charOffset });
+      const posIndex = Math.min(overlapCount, currentParagraphs.length - 1);
+      positions.push({ charOffset: currentParagraphs[posIndex]!.charOffset });
     }
 
     // Fix chunk indices and totalChunks
@@ -469,6 +494,260 @@ export class DocumentChunker extends FileChunker {
   }
 
   /**
+   * Extract overlap paragraphs from the end of a flushed paragraph group.
+   *
+   * Takes whole paragraphs from the tail of the group until the overlap
+   * token budget is reached. Analogous to `getOverlapLines` in FileChunker,
+   * but operates on whole paragraphs to maintain the paragraph-boundary
+   * chunking contract.
+   *
+   * @param paragraphs - Paragraphs from the flushed group
+   * @param overlapTokens - Token budget for overlap
+   * @returns Paragraphs to carry into the next group
+   */
+  private getOverlapParagraphs(
+    paragraphs: ParagraphBlock[],
+    overlapTokens: number
+  ): ParagraphBlock[] {
+    if (paragraphs.length === 0 || overlapTokens <= 0) {
+      return [];
+    }
+
+    const overlap: ParagraphBlock[] = [];
+    let tokens = 0;
+
+    for (let i = paragraphs.length - 1; i >= 0; i--) {
+      const pTokens = estimateTokens(paragraphs[i]!.content);
+
+      // Stop if adding this paragraph would exceed the overlap budget
+      // (but include at least one paragraph if possible)
+      if (tokens + pTokens > overlapTokens && overlap.length > 0) {
+        break;
+      }
+
+      overlap.unshift(paragraphs[i]!);
+      tokens += pTokens;
+    }
+
+    return overlap;
+  }
+
+  /**
+   * Split text into sentences at punctuation boundaries.
+   *
+   * Uses a lookbehind regex to split after sentence-ending punctuation
+   * (`.`, `!`, `?`) followed by whitespace. Keeps punctuation attached
+   * to the preceding sentence. Imperfect for abbreviations and decimals,
+   * but acceptable for document chunking purposes.
+   *
+   * @param text - Text to split into sentences
+   * @returns Array of sentences (at least one element)
+   */
+  private splitIntoSentences(text: string): string[] {
+    const sentences = text.split(/(?<=[.!?])\s+/).filter((s) => s.length > 0);
+    return sentences.length > 0 ? sentences : [text];
+  }
+
+  /**
+   * Split text into words on whitespace boundaries.
+   *
+   * @param text - Text to split into words
+   * @returns Array of words (empty strings filtered out)
+   */
+  private splitIntoWords(text: string): string[] {
+    return text.split(/\s+/).filter((w) => w.length > 0);
+  }
+
+  /**
+   * Chunk an oversized paragraph using sentence and word boundary fallbacks.
+   *
+   * Fallback hierarchy:
+   * 1. If paragraph has internal newlines, try line-level splitting first
+   * 2. Split into sentences and group into chunks respecting maxTokens
+   * 3. For sentences exceeding maxTokens, split by words
+   * 4. Single words exceeding maxTokens get their own chunk (never broken mid-word)
+   *
+   * @param paragraph - The oversized paragraph block
+   * @param fileInfo - FileInfo for metadata
+   * @param source - Repository or source name
+   * @param filePath - Relative file path
+   * @returns Chunks and their position data
+   */
+  private chunkOversizedParagraph(
+    paragraph: ParagraphBlock,
+    fileInfo: FileInfo,
+    source: string,
+    filePath: string
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
+    // If paragraph has internal newlines, try line-level splitting first
+    if (paragraph.content.includes("\n")) {
+      const lineChunks = this.chunkFile(paragraph.content, fileInfo, source);
+      // Check if line-level produced reasonable chunks (all within limit)
+      const allWithinLimit = lineChunks.every(
+        (chunk) => estimateTokens(chunk.content) <= this.maxTokens
+      );
+      if (allWithinLimit) {
+        const chunks = lineChunks.map((chunk) => ({
+          ...chunk,
+          startLine: paragraph.startLine + chunk.startLine - 1,
+          endLine: paragraph.startLine + chunk.endLine - 1,
+        }));
+        const positions = chunks.map(() => ({ charOffset: paragraph.charOffset }));
+        return { chunks, positions };
+      }
+    }
+
+    // Sentence-level splitting
+    const sentences = this.splitIntoSentences(paragraph.content);
+    const resultChunks: FileChunk[] = [];
+    const resultPositions: ChunkPositionData[] = [];
+    let currentParts: string[] = [];
+    let currentTokens = 0;
+
+    const flushCurrent = (): void => {
+      if (currentParts.length === 0) return;
+      const content = currentParts.join(" ");
+      resultChunks.push({
+        id: createChunkId(source, filePath, resultChunks.length),
+        repository: source,
+        filePath,
+        content,
+        chunkIndex: resultChunks.length,
+        totalChunks: 0, // Updated later
+        startLine: paragraph.startLine,
+        endLine: paragraph.endLine,
+        metadata: {
+          extension: fileInfo.extension,
+          language: detectLanguage(filePath),
+          fileSizeBytes: fileInfo.sizeBytes,
+          contentHash: computeContentHash(content),
+          fileModifiedAt: fileInfo.modifiedAt,
+        },
+      });
+      resultPositions.push({ charOffset: paragraph.charOffset });
+      currentParts = [];
+      currentTokens = 0;
+    };
+
+    for (const sentence of sentences) {
+      const sentenceTokens = estimateTokens(sentence);
+
+      // If sentence itself exceeds limit, split by words
+      if (sentenceTokens > this.maxTokens) {
+        flushCurrent();
+        const wordChunks = this.chunkByWords(sentence, paragraph, fileInfo, source, filePath);
+        resultChunks.push(...wordChunks.chunks);
+        resultPositions.push(...wordChunks.positions);
+        continue;
+      }
+
+      // If adding this sentence would exceed limit, flush first
+      if (currentTokens + sentenceTokens > this.maxTokens && currentParts.length > 0) {
+        flushCurrent();
+      }
+
+      currentParts.push(sentence);
+      currentTokens += sentenceTokens;
+    }
+
+    flushCurrent();
+
+    return { chunks: resultChunks, positions: resultPositions };
+  }
+
+  /**
+   * Chunk text by word boundaries when sentence-level splitting is insufficient.
+   *
+   * Groups words into chunks respecting maxTokens. Single words exceeding
+   * the limit are emitted as their own chunk (never broken mid-word).
+   *
+   * @param text - Text to chunk by words
+   * @param paragraph - Source paragraph for position data
+   * @param fileInfo - FileInfo for metadata
+   * @param source - Repository or source name
+   * @param filePath - Relative file path
+   * @returns Chunks and their position data
+   */
+  private chunkByWords(
+    text: string,
+    paragraph: ParagraphBlock,
+    fileInfo: FileInfo,
+    source: string,
+    filePath: string
+  ): { chunks: FileChunk[]; positions: ChunkPositionData[] } {
+    const words = this.splitIntoWords(text);
+    const resultChunks: FileChunk[] = [];
+    const resultPositions: ChunkPositionData[] = [];
+    let currentWords: string[] = [];
+    let currentTokens = 0;
+
+    const flushWords = (): void => {
+      if (currentWords.length === 0) return;
+      const content = currentWords.join(" ");
+      resultChunks.push({
+        id: createChunkId(source, filePath, resultChunks.length),
+        repository: source,
+        filePath,
+        content,
+        chunkIndex: resultChunks.length,
+        totalChunks: 0,
+        startLine: paragraph.startLine,
+        endLine: paragraph.endLine,
+        metadata: {
+          extension: fileInfo.extension,
+          language: detectLanguage(filePath),
+          fileSizeBytes: fileInfo.sizeBytes,
+          contentHash: computeContentHash(content),
+          fileModifiedAt: fileInfo.modifiedAt,
+        },
+      });
+      resultPositions.push({ charOffset: paragraph.charOffset });
+      currentWords = [];
+      currentTokens = 0;
+    };
+
+    for (const word of words) {
+      const wordTokens = estimateTokens(word);
+
+      // Single word exceeds limit - emit as its own chunk
+      if (wordTokens > this.maxTokens) {
+        flushWords();
+        const content = word;
+        resultChunks.push({
+          id: createChunkId(source, filePath, resultChunks.length),
+          repository: source,
+          filePath,
+          content,
+          chunkIndex: resultChunks.length,
+          totalChunks: 0,
+          startLine: paragraph.startLine,
+          endLine: paragraph.endLine,
+          metadata: {
+            extension: fileInfo.extension,
+            language: detectLanguage(filePath),
+            fileSizeBytes: fileInfo.sizeBytes,
+            contentHash: computeContentHash(content),
+            fileModifiedAt: fileInfo.modifiedAt,
+          },
+        });
+        resultPositions.push({ charOffset: paragraph.charOffset });
+        continue;
+      }
+
+      if (currentTokens + wordTokens > this.maxTokens && currentWords.length > 0) {
+        flushWords();
+      }
+
+      currentWords.push(word);
+      currentTokens += wordTokens;
+    }
+
+    flushWords();
+
+    return { chunks: resultChunks, positions: resultPositions };
+  }
+
+  /**
    * Create a FileChunk from a group of paragraphs.
    *
    * @param paragraphs - Paragraphs to combine into a chunk
@@ -543,6 +822,11 @@ export class DocumentChunker extends FileChunker {
         );
       }
 
+      // Fallback to document title when no section heading found
+      if (this.includeSectionContext && !sectionHeading && extractionResult.metadata.title) {
+        sectionHeading = extractionResult.metadata.title;
+      }
+
       const documentMetadata: DocumentChunkMetadata = {
         extension: chunk.metadata.extension,
         language: chunk.metadata.language,
@@ -583,7 +867,7 @@ export class DocumentChunker extends FileChunker {
    * @param charOffset - Optional character offset for direct lookup
    * @returns Section heading title, or undefined if none found
    */
-  private findSectionHeading(
+  protected findSectionHeading(
     sections: SectionInfo[],
     chunkContent: string,
     fullContent: string,
@@ -616,24 +900,47 @@ export class DocumentChunker extends FileChunker {
   }
 
   /**
-   * Find the nearest section whose startOffset is at or before the given position.
+   * Find the nearest section whose startOffset is at or before the given position,
+   * returning the full heading hierarchy (e.g., "Chapter 1 > Section 1.1 > Details").
    *
-   * @param sections - Sorted sections
+   * Builds the hierarchy by finding the nearest preceding section at each heading
+   * level, walking from the leaf (nearest) up to the root (lowest level number).
+   *
+   * @param sections - Document sections with offsets and levels
    * @param position - Character position in content
-   * @returns Section title or undefined
+   * @returns Hierarchical section heading string joined with " > ", or undefined
    */
   private findNearestSection(sections: SectionInfo[], position: number): string | undefined {
-    let nearest: SectionInfo | undefined;
-
+    // Find the leaf: nearest preceding section (single pass, no allocation)
+    let leaf: SectionInfo | undefined;
     for (const section of sections) {
       if (section.startOffset <= position) {
-        if (!nearest || section.startOffset > nearest.startOffset) {
-          nearest = section;
+        if (!leaf || section.startOffset > leaf.startOffset) {
+          leaf = section;
         }
       }
     }
+    if (!leaf) return undefined;
 
-    return nearest?.title;
+    const hierarchy: string[] = [leaf.title];
+    let currentLevel = leaf.level;
+
+    // Walk preceding sections to build ancestor chain
+    while (currentLevel > 1) {
+      let bestAncestor: SectionInfo | undefined;
+      for (const section of sections) {
+        if (section.startOffset <= position && section.level < currentLevel) {
+          if (!bestAncestor || section.startOffset > bestAncestor.startOffset) {
+            bestAncestor = section;
+          }
+        }
+      }
+      if (!bestAncestor) break;
+      hierarchy.unshift(bestAncestor.title);
+      currentLevel = bestAncestor.level;
+    }
+
+    return hierarchy.join(" > ");
   }
 
   /**

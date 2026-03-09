@@ -56,6 +56,14 @@ export type {
   DocumentChunk,
   DocumentChunkMetadata,
   DocumentChunkerConfig,
+  TableSourceType,
+  TableCell,
+  TableRow,
+  TableData,
+  TableExtractionResult,
+  TableExtractorConfig,
+  TableExtractor,
+  MimeValidationResult,
 } from "./types.js";
 
 // Constants
@@ -67,6 +75,8 @@ export {
   DEFAULT_EXTRACTOR_CONFIG,
   DOCUMENT_TYPE_LABELS,
   EXTENSION_TO_TYPE,
+  MIME_TYPE_EQUIVALENCES,
+  TEXT_MIME_TYPES,
 } from "./constants.js";
 
 // Error classes
@@ -79,6 +89,7 @@ export {
   FileAccessError,
   ExtractionTimeoutError,
   NotImplementedError,
+  MimeTypeMismatchError,
   isDocumentError,
   isRetryableDocumentError,
 } from "./errors.js";
@@ -90,13 +101,27 @@ export {
   DocxExtractor,
   MarkdownParser,
   ImageMetadataExtractor,
+  PdfTableExtractor,
+  DocxTableExtractor,
 } from "./extractors/index.js";
 export type {
   PdfExtractorConfig,
   DocxExtractorConfig,
   MarkdownParserConfig,
   ImageMetadataExtractorConfig,
+  PdfTableExtractorConfig,
+  DocxTableExtractorConfig,
 } from "./extractors/index.js";
+
+// Table formatter
+export { TableFormatter } from "./TableFormatter.js";
+
+// Markdown table parser (inverse of TableFormatter.toMarkdown)
+export { MarkdownTableParser } from "./MarkdownTableParser.js";
+
+// Table content indexer
+export { TableContentIndexer } from "./TableContentIndexer.js";
+export type { TableIndexerConfig, TableIndexerContext } from "./TableContentIndexer.js";
 
 // Document chunker
 export { DocumentChunker } from "./DocumentChunker.js";

@@ -16,6 +16,7 @@
  * - graph: Manage knowledge graph (migrate, populate, transfer)
  * - providers: Manage embedding providers (status, setup)
  * - models: Manage embedding model cache (list, status, validate, clear, path, import)
+ * - tables: Manage extracted tables (list)
  */
 
 import "dotenv/config";
@@ -52,6 +53,7 @@ import {
   modelsPathCommand,
   modelsImportCommand,
 } from "./commands/models-command.js";
+import { tablesListCommand, tablesExportCommand } from "./commands/tables-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -79,6 +81,8 @@ import {
   ModelsClearCommandOptionsSchema,
   ModelsPathCommandOptionsSchema,
   ModelsImportCommandOptionsSchema,
+  TablesListCommandOptionsSchema,
+  TablesExportCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -550,6 +554,44 @@ modelsProgram
     try {
       const validatedOptions = ModelsImportCommandOptionsSchema.parse(options);
       await modelsImportCommand(sourcePath, validatedOptions);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Tables command group
+const tablesProgram = program.command("tables").description("Manage extracted tables");
+
+// Tables list subcommand
+tablesProgram
+  .command("list")
+  .description("List extracted tables from indexed documents")
+  .option("-d, --document <path>", "Filter to tables from a specific document")
+  .option("--folder <path>", "Filter to tables within a folder path")
+  .option("-r, --repo <name>", "Filter to specific repository")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TablesListCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tablesListCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Tables export subcommand
+tablesProgram
+  .command("export")
+  .description("Export a table to CSV or JSON format")
+  .argument("<table-id>", "Table identifier (repo:filePath:tableIndex)")
+  .option("-f, --format <format>", "Export format (csv, json)", "csv")
+  .option("-o, --output <path>", "Output file path (default: stdout)")
+  .action(async (tableId: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = TablesExportCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await tablesExportCommand(tableId, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

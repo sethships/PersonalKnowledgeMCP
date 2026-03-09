@@ -8,13 +8,19 @@
  */
 
 import * as path from "node:path";
+import * as fs from "node:fs";
+import { fileTypeFromBuffer } from "file-type";
 import {
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
   EXTENSION_TO_TYPE,
+  MIME_TYPES,
+  MIME_TYPE_EQUIVALENCES,
+  TEXT_MIME_TYPES,
   type ExtensionDocumentType,
 } from "./constants.js";
-import type { DocumentExtractor, DocumentType } from "./types.js";
+import type { DocumentExtractor, DocumentType, MimeValidationResult } from "./types.js";
+import { FileAccessError } from "./errors.js";
 import { PdfExtractor } from "./extractors/PdfExtractor.js";
 import { DocxExtractor } from "./extractors/DocxExtractor.js";
 import { MarkdownParser } from "./extractors/MarkdownParser.js";
@@ -220,5 +226,172 @@ export class DocumentTypeDetector {
    */
   getExtension(filePath: string): string {
     return path.extname(filePath).toLowerCase();
+  }
+
+  /**
+   * Validate that a file's content matches its extension-implied MIME type.
+   *
+   * Reads the first 4100 bytes of the file to detect magic bytes, then
+   * compares the detected MIME type against the expected MIME type from
+   * the extension. Handles edge cases like text files (no magic bytes),
+   * DOCX/ZIP equivalence, empty files, and missing files.
+   *
+   * @param filePath - Path to the file to validate
+   * @returns Promise resolving to the validation result
+   * @throws {FileAccessError} When the file cannot be read (not found, permissions)
+   *
+   * @example
+   * ```typescript
+   * const result = await detector.validateMimeType("/path/to/file.pdf");
+   * if (!result.isValid) {
+   *   console.error(`MIME mismatch: expected ${result.expectedMime}, got ${result.actualMime}`);
+   * }
+   * ```
+   */
+  async validateMimeType(filePath: string): Promise<MimeValidationResult> {
+    const detectedType = this.detect(filePath);
+    const extension = path.extname(filePath).toLowerCase();
+    const expectedMime: string | undefined = extension ? MIME_TYPES[extension] : undefined;
+
+    // No expected MIME type — skip validation (unsupported or no extension)
+    if (!expectedMime) {
+      return {
+        isValid: true,
+        detectedType,
+        expectedMime: undefined,
+        actualMime: undefined,
+        filePath,
+        skipped: true,
+        reason: extension
+          ? `No expected MIME type for extension "${extension}"`
+          : "File has no extension",
+      };
+    }
+
+    // Text-based types have no magic bytes — skip validation
+    if (TEXT_MIME_TYPES.has(expectedMime)) {
+      return {
+        isValid: true,
+        detectedType,
+        expectedMime,
+        actualMime: undefined,
+        filePath,
+        skipped: true,
+        reason: "Text-based file type; no magic bytes to validate",
+      };
+    }
+
+    // Read first 4100 bytes (minimum needed by file-type)
+    let fileHandle: fs.promises.FileHandle | undefined;
+    let buffer: Buffer;
+    try {
+      fileHandle = await fs.promises.open(filePath, "r");
+      const stat = await fileHandle.stat();
+
+      if (stat.size === 0) {
+        return {
+          isValid: false,
+          detectedType,
+          expectedMime,
+          actualMime: undefined,
+          filePath,
+          skipped: false,
+          reason: "Empty file",
+        };
+      }
+
+      const readSize = Math.min(4100, stat.size);
+      buffer = Buffer.alloc(readSize);
+      await fileHandle.read(buffer, 0, readSize, 0);
+    } catch (error: unknown) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === "ENOENT") {
+        throw new FileAccessError(`File not found: ${filePath}`, {
+          cause: nodeError,
+          filePath,
+        });
+      }
+      throw new FileAccessError(`Cannot read file: ${filePath}`, {
+        cause: nodeError,
+        filePath,
+      });
+    } finally {
+      await fileHandle?.close();
+    }
+
+    // Detect actual MIME type from content
+    const detected = await fileTypeFromBuffer(buffer);
+    const actualMime = detected?.mime;
+
+    // No magic bytes detected — content mismatch for binary types
+    if (!actualMime) {
+      return {
+        isValid: false,
+        detectedType,
+        expectedMime,
+        actualMime: undefined,
+        filePath,
+        skipped: false,
+        reason: `No magic bytes detected; expected ${expectedMime}`,
+      };
+    }
+
+    // Direct match
+    if (actualMime === expectedMime) {
+      return {
+        isValid: true,
+        detectedType,
+        expectedMime,
+        actualMime,
+        filePath,
+        skipped: false,
+      };
+    }
+
+    // Check equivalences (e.g., DOCX detected as ZIP)
+    const equivalents = MIME_TYPE_EQUIVALENCES[expectedMime];
+    if (equivalents?.includes(actualMime)) {
+      return {
+        isValid: true,
+        detectedType,
+        expectedMime,
+        actualMime,
+        filePath,
+        skipped: false,
+      };
+    }
+
+    // Mismatch
+    return {
+      isValid: false,
+      detectedType,
+      expectedMime,
+      actualMime,
+      filePath,
+      skipped: false,
+      reason: `Content type "${actualMime}" does not match expected "${expectedMime}"`,
+    };
+  }
+
+  /**
+   * Detect document type and validate MIME type in one call.
+   *
+   * Convenience method combining {@link detect} and {@link validateMimeType}.
+   *
+   * @param filePath - Path to the file to detect and validate
+   * @returns Promise resolving to both the detected type and validation result
+   * @throws {FileAccessError} When the file cannot be read
+   *
+   * @example
+   * ```typescript
+   * const { type, validation } = await detector.detectWithValidation("/path/to/file.pdf");
+   * console.log(`Type: ${type}, Valid: ${validation.isValid}`);
+   * ```
+   */
+  async detectWithValidation(
+    filePath: string
+  ): Promise<{ type: DetectedType; validation: MimeValidationResult }> {
+    const validation = await this.validateMimeType(filePath);
+    return { type: validation.detectedType, validation };
   }
 }
