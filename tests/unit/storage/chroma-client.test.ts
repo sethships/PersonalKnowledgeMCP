@@ -19,6 +19,7 @@ import { MockChromaClient } from "../../helpers/chroma-mock.js";
 import {
   sampleDocuments,
   queryEmbeddingSimilarToAuth,
+  createTestEmbedding,
   createTestMetadata,
   similarityThresholds,
 } from "../../fixtures/sample-embeddings.js";
@@ -757,6 +758,38 @@ describe("ChromaStorageClientImpl", () => {
         DocumentOperationError
       );
     });
+
+    test("should not store undefined optional fields as 'undefined' strings via upsert", async () => {
+      const collectionName = "repo_test";
+      const docWithoutOptionals: DocumentInput = {
+        id: "folder:docs/plain.txt:0",
+        content: "Plain text content",
+        embedding: createTestEmbedding(44),
+        metadata: createTestMetadata({
+          file_path: "docs/plain.txt",
+          repository: "folder",
+          file_extension: ".txt",
+          language: "unknown",
+        }),
+      };
+
+      await client.upsertDocuments(collectionName, [docWithoutOptionals]);
+
+      const results = await client.similaritySearch({
+        embedding: createTestEmbedding(44),
+        collections: [collectionName],
+        limit: 1,
+        threshold: 0.0,
+      });
+
+      expect(results).toHaveLength(1);
+      const meta = results[0]!.metadata;
+      expect(meta.document_type).toBeUndefined();
+      expect(meta.page_number).toBeUndefined();
+      expect(meta.section_heading).toBeUndefined();
+      expect(meta.document_title).toBeUndefined();
+      expect(meta.document_author).toBeUndefined();
+    });
   });
 
   describe("deleteDocuments", () => {
@@ -1232,6 +1265,77 @@ describe("ChromaStorageClientImpl", () => {
       const freshResults = await client.similaritySearch(searchQuery);
       expect(freshResults.length).toBe(1);
       expect(freshResults[0]!.id).toBe("doc2");
+    });
+
+    test("should store document metadata fields when present", async () => {
+      const docWithDocumentMeta: DocumentInput = {
+        id: "folder:docs/guide.pdf:0",
+        content: "Chapter 1 content",
+        embedding: createTestEmbedding(42),
+        metadata: createTestMetadata({
+          file_path: "docs/guide.pdf",
+          repository: "folder",
+          file_extension: ".pdf",
+          language: "unknown",
+          document_type: "pdf",
+          page_number: 3,
+          section_heading: "Introduction",
+          document_title: "User Guide",
+          document_author: "Jane Doe",
+        }),
+      };
+
+      await client.addDocuments(collectionName, [docWithDocumentMeta]);
+
+      // Retrieve and verify the metadata was stored correctly
+      const results = await client.similaritySearch({
+        embedding: createTestEmbedding(42),
+        collections: [collectionName],
+        limit: 1,
+        threshold: 0.0,
+      });
+
+      expect(results).toHaveLength(1);
+      const meta = results[0]!.metadata;
+      expect(meta.document_type).toBe("pdf");
+      expect(meta.page_number).toBe(3);
+      expect(meta.section_heading).toBe("Introduction");
+      expect(meta.document_title).toBe("User Guide");
+      expect(meta.document_author).toBe("Jane Doe");
+    });
+
+    test("should not store undefined optional fields as 'undefined' strings", async () => {
+      const docWithoutOptionals: DocumentInput = {
+        id: "folder:docs/plain.txt:0",
+        content: "Plain text content",
+        embedding: createTestEmbedding(43),
+        metadata: createTestMetadata({
+          file_path: "docs/plain.txt",
+          repository: "folder",
+          file_extension: ".txt",
+          language: "unknown",
+          // document_type, page_number, section_heading, document_title, document_author are all undefined
+        }),
+      };
+
+      await client.addDocuments(collectionName, [docWithoutOptionals]);
+
+      // Retrieve and verify undefined fields were not stored as "undefined" strings
+      const results = await client.similaritySearch({
+        embedding: createTestEmbedding(43),
+        collections: [collectionName],
+        limit: 1,
+        threshold: 0.0,
+      });
+
+      expect(results).toHaveLength(1);
+      const meta = results[0]!.metadata;
+      // These optional fields should not exist in the stored metadata, not be "undefined" strings
+      expect(meta.document_type).toBeUndefined();
+      expect(meta.page_number).toBeUndefined();
+      expect(meta.section_heading).toBeUndefined();
+      expect(meta.document_title).toBeUndefined();
+      expect(meta.document_author).toBeUndefined();
     });
 
     test("should return fresh collection from getOrCreateCollection after external delete and recreate", async () => {

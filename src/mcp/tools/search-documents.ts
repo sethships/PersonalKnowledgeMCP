@@ -209,6 +209,7 @@ function formatDocumentSearchResponse(response: DocumentSearchResponse): TextCon
       content: result.content,
       documentPath: result.documentPath,
       documentTitle: result.documentTitle,
+      documentAuthor: result.documentAuthor,
       documentType: result.documentType,
       pageNumber: result.pageNumber,
       sectionHeading: result.sectionHeading,

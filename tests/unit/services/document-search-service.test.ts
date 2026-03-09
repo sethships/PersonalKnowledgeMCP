@@ -205,11 +205,12 @@ function createDocumentResult(
     repository: string;
     document_type: string;
     document_title: string;
+    document_author: string;
     page_number: number;
     section_heading: string;
   }> = {}
 ): SimilarityResult {
-  const meta: Record<string, unknown> = {
+  const meta: DocumentMetadata = {
     file_path: overrides.file_path ?? "docs/test.pdf",
     repository: overrides.repository ?? "test-folder",
     chunk_index: 0,
@@ -224,6 +225,7 @@ function createDocumentResult(
     file_modified_at: "2025-01-01T00:00:00Z",
     document_type: overrides.document_type ?? "pdf",
     document_title: overrides.document_title ?? "Test Document",
+    document_author: overrides.document_author,
     page_number: overrides.page_number ?? 1,
     section_heading: overrides.section_heading ?? "Introduction",
   };
@@ -231,7 +233,7 @@ function createDocumentResult(
   return {
     id: overrides.id ?? "test-folder:docs/test.pdf:0",
     content: overrides.content ?? "Test document content for searching.",
-    metadata: meta as unknown as DocumentMetadata,
+    metadata: meta,
     distance: overrides.distance ?? 0.1,
     similarity: overrides.similarity ?? 0.9,
   };
@@ -624,8 +626,26 @@ describe("DocumentSearchServiceImpl", () => {
       expect(result.folder).toBe("study-folder");
     });
 
+    it("should include documentAuthor when present in metadata", async () => {
+      mockStorage.setMockResults([
+        createDocumentResult({
+          content: "Chapter 1: Introduction",
+          document_title: "ML Textbook",
+          document_author: "Dr. Jane Smith",
+          similarity: 0.92,
+        }),
+      ]);
+
+      const response = await service.searchDocuments({ query: "machine learning" });
+
+      expect(response.results).toHaveLength(1);
+      const result = response.results[0]!;
+      expect(result.documentAuthor).toBe("Dr. Jane Smith");
+      expect(result.documentTitle).toBe("ML Textbook");
+    });
+
     it("should handle results without optional metadata fields", async () => {
-      const meta: Record<string, unknown> = {
+      const meta: DocumentMetadata = {
         file_path: "notes/plain.txt",
         repository: "my-notes",
         chunk_index: 0,
@@ -639,14 +659,14 @@ describe("DocumentSearchServiceImpl", () => {
         indexed_at: "2025-01-01T00:00:00Z",
         file_modified_at: "2025-01-01T00:00:00Z",
         document_type: "txt",
-        // No document_title, page_number, or section_heading
+        // No document_title, document_author, page_number, or section_heading
       };
 
       mockStorage.setMockResults([
         {
           id: "my-notes:notes/plain.txt:0",
           content: "Simple text content",
-          metadata: meta as unknown as DocumentMetadata,
+          metadata: meta,
           distance: 0.2,
           similarity: 0.8,
         },
@@ -656,13 +676,16 @@ describe("DocumentSearchServiceImpl", () => {
 
       const result = response.results[0]!;
       expect(result.documentTitle).toBeUndefined();
+      expect(result.documentAuthor).toBeUndefined();
       expect(result.pageNumber).toBeUndefined();
       expect(result.sectionHeading).toBeUndefined();
       expect(result.documentType).toBe("txt");
     });
 
     it("should include table metadata when isTable is true", async () => {
-      const meta: Record<string, unknown> = {
+      // Table fields (isTable, tableCaption, etc.) use camelCase and are stored
+      // as additional ChromaDB metadata outside the typed DocumentMetadata interface
+      const baseMeta: DocumentMetadata = {
         file_path: "docs/report.docx",
         repository: "test-folder",
         chunk_index: 0,
@@ -677,17 +700,20 @@ describe("DocumentSearchServiceImpl", () => {
         file_modified_at: "2025-01-01T00:00:00Z",
         document_type: "docx",
         document_title: "Report",
+      };
+      const meta = {
+        ...baseMeta,
         isTable: true,
         tableCaption: "Financial Summary",
         tableColumnCount: 5,
         tableRowCount: 10,
-      };
+      } as unknown as DocumentMetadata;
 
       mockStorage.setMockResults([
         {
           id: "test-folder:docs/report.docx:0",
           content: "| Col1 | Col2 |",
-          metadata: meta as unknown as DocumentMetadata,
+          metadata: meta,
           distance: 0.1,
           similarity: 0.9,
         },

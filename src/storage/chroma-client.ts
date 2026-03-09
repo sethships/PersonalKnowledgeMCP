@@ -510,21 +510,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
       // Add documents in batch
       // Convert DocumentMetadata to ChromaDB's Metadata type (string | number | boolean values)
-      const chromaMetadatas = metadatas.map((meta) => {
-        const chromaMeta: Record<string, string | number | boolean> = {};
-        for (const [key, value] of Object.entries(meta)) {
-          if (
-            typeof value === "string" ||
-            typeof value === "number" ||
-            typeof value === "boolean"
-          ) {
-            chromaMeta[key] = value;
-          } else {
-            chromaMeta[key] = String(value);
-          }
-        }
-        return chromaMeta;
-      });
+      const chromaMetadatas = metadatas.map((meta) => this.convertToChromaMetadata(meta));
 
       // Add documents with retry for transient failures
       await this.withRetryWrapper(
@@ -831,22 +817,7 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       const metadatas = documents.map((d) => d.metadata);
 
       // Convert metadata to ChromaDB-compatible format (primitives only)
-      const chromaMetadatas = metadatas.map((meta) => {
-        const chromaMeta: Record<string, string | number | boolean> = {};
-        for (const [key, value] of Object.entries(meta)) {
-          if (
-            typeof value === "string" ||
-            typeof value === "number" ||
-            typeof value === "boolean"
-          ) {
-            chromaMeta[key] = value;
-          } else {
-            // Convert complex types to strings
-            chromaMeta[key] = String(value);
-          }
-        }
-        return chromaMeta;
-      });
+      const chromaMetadatas = metadatas.map((meta) => this.convertToChromaMetadata(meta));
 
       // Upsert to ChromaDB with retry for transient failures (idempotent - updates existing, adds new)
       await this.withRetryWrapper(
@@ -1198,6 +1169,27 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
     );
 
     return ids.length;
+  }
+
+  /**
+   * Convert DocumentMetadata to ChromaDB-compatible primitive format.
+   * Skips undefined/null optional fields to avoid "undefined" string storage.
+   */
+  private convertToChromaMetadata(
+    meta: DocumentMetadata
+  ): Record<string, string | number | boolean> {
+    const chromaMeta: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(meta)) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        chromaMeta[key] = value;
+      } else {
+        chromaMeta[key] = String(value);
+      }
+    }
+    return chromaMeta;
   }
 
   /**
