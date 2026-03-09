@@ -225,7 +225,7 @@ export function createSemanticSearchHandler(
 /**
  * Executes parallel code + document search and merges results
  *
- * Runs both searches concurrently via Promise.all. If DocumentSearchService
+ * Runs both searches concurrently via Promise.allSettled. If DocumentSearchService
  * is not available, returns code-only results with a warning.
  *
  * @param searchService - Code search service
@@ -274,7 +274,8 @@ async function executeIncludeDocumentsSearch(
 
   // Code search must succeed; document search can gracefully degrade
   if (codeSettled.status === "rejected") {
-    throw codeSettled.reason as Error;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw codeSettled.reason;
   }
 
   const codeResponse = codeSettled.value;
@@ -381,8 +382,7 @@ function formatMergedResponse(
       document_matches: docMatchCount,
       query_time_ms: codeResponse.metadata.query_time_ms + (docResponse?.metadata.queryTimeMs ?? 0),
       embedding_time_ms: codeResponse.metadata.embedding_time_ms,
-      search_time_ms:
-        codeResponse.metadata.search_time_ms + (docResponse?.metadata.queryTimeMs ?? 0),
+      search_time_ms: codeResponse.metadata.search_time_ms,
       repositories_searched: codeResponse.metadata.repositories_searched,
       ...(docResponse && {
         document_folders_searched: docResponse.metadata.searchedFolders,

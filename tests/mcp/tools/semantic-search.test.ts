@@ -936,6 +936,83 @@ describe("semantic_search Tool", () => {
       expect(docResultItem!.metadata["section_heading"]).toBe("Authentication");
     });
 
+    it("should merge warnings from both code and document searches", async () => {
+      const codeWithWarnings: SearchResponse = {
+        results: [
+          {
+            file_path: "src/auth.ts",
+            repository: "repo1",
+            content_snippet: "auth code",
+            similarity_score: 0.9,
+            chunk_index: 0,
+            metadata: {
+              file_extension: ".ts",
+              file_size_bytes: 512,
+              indexed_at: "2025-01-01T00:00:00Z",
+            },
+          },
+        ],
+        metadata: {
+          total_matches: 1,
+          query_time_ms: 100,
+          embedding_time_ms: 50,
+          search_time_ms: 50,
+          repositories_searched: ["repo1"],
+          warnings: [
+            {
+              type: "partial_index",
+              repository: "repo1",
+              message: "Code warning message",
+            },
+          ],
+        },
+      };
+
+      const docWithWarnings: DocumentSearchResponse = {
+        results: [
+          {
+            content: "document content",
+            documentPath: "docs/guide.pdf",
+            documentType: "pdf",
+            similarity: 0.85,
+            folder: "folder1",
+          },
+        ],
+        metadata: {
+          totalResults: 1,
+          queryTimeMs: 80,
+          searchedFolders: ["folder1"],
+          searchedDocumentTypes: ["pdf"],
+          warnings: [
+            {
+              type: "partial_index",
+              repository: "folder1",
+              message: "Doc warning message",
+            },
+          ],
+        },
+      };
+
+      mockSearchService.setMockResponse(codeWithWarnings);
+      mockDocSearchService.setMockResponse(docWithWarnings);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "test",
+        include_documents: true,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      expect(responseData.metadata.warnings).toBeDefined();
+      expect(responseData.metadata.warnings!.length).toBe(2);
+      expect(responseData.metadata.warnings).toContain("Code warning message");
+      expect(responseData.metadata.warnings).toContain("Doc warning message");
+    });
+
     describe("graceful degradation", () => {
       it("should return code-only results with warning when DocumentSearchService unavailable", async () => {
         mockSearchService.setMockResponse(codeResult);
