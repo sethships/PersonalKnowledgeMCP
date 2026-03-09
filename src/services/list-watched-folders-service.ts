@@ -37,9 +37,8 @@ export class ListWatchedFoldersServiceImpl implements ListWatchedFoldersService 
    *
    * @returns Response containing all watched folders with status information
    */
-  async listWatchedFolders(): Promise<ListWatchedFoldersResponse> {
-    // Async to match interface contract - future implementations will query document store
-    const details = await Promise.resolve(this.folderWatcherService.getAllWatchedFolderDetails());
+  listWatchedFolders(): Promise<ListWatchedFoldersResponse> {
+    const details = this.folderWatcherService.getAllWatchedFolderDetails();
 
     const folders: WatchedFolderEntry[] = details.map((detail) => ({
       id: detail.folder.id,
@@ -54,6 +53,6 @@ export class ListWatchedFoldersServiceImpl implements ListWatchedFoldersService 
       imageCount: 0, // Not yet implemented - Phase 6 image store pending
     }));
 
-    return { folders };
+    return Promise.resolve({ folders });
   }
 }

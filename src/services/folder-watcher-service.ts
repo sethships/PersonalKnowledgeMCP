@@ -379,17 +379,13 @@ export class FolderWatcherService {
    * @returns Array of watched folder details with config and status
    */
   getAllWatchedFolderDetails(): WatchedFolderDetail[] {
-    const details: WatchedFolderDetail[] = [];
-    for (const state of this.watchers.values()) {
-      details.push({
-        folder: state.folder,
-        status: state.status,
-        filesWatched: state.filesWatched,
-        lastEventAt: state.lastEventAt,
-        error: state.error,
-      });
-    }
-    return details;
+    return Array.from(this.watchers.values(), (state) => ({
+      folder: { ...state.folder },
+      status: state.status,
+      filesWatched: state.filesWatched,
+      lastEventAt: state.lastEventAt,
+      error: state.error,
+    }));
   }
 
   /**
