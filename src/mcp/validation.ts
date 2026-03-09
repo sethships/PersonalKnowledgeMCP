@@ -70,6 +70,8 @@ export const SemanticSearchArgsSchema = z
         "php",
       ])
       .optional(),
+
+    include_documents: z.boolean().optional().default(false),
   })
   .strict();
 
