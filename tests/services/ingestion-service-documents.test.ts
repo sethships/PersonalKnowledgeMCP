@@ -999,6 +999,52 @@ describe("IngestionService - Document Integration", () => {
       expect(result.stats.chunksCreated).toBe(1);
     });
 
+    it("should use FileChunker when only documentChunker is provided (no detector)", async () => {
+      const service = new IngestionService(
+        mockCloner as any,
+        mockScanner as any,
+        mockFileChunker as any,
+        mockEmbeddingProvider,
+        mockChromaClient,
+        mockRepoService,
+        { documentChunker: mockDocumentChunker as any } // No detector
+      );
+
+      const pdfFile = createMockFile("docs/report.pdf", ".pdf");
+      mockScanner.setMockFiles([pdfFile]);
+
+      const result = await service.indexRepository("https://github.com/test/repo.git");
+
+      expect(result.status).toBe("success");
+      expect(result.stats.filesProcessed).toBe(1);
+      // Should go through FileChunker, so no document metadata
+      const doc = mockChromaClient.capturedDocuments[0]!;
+      expect(doc.metadata.document_type).toBeUndefined();
+    });
+
+    it("should use FileChunker when only documentTypeDetector is provided (no chunker)", async () => {
+      const service = new IngestionService(
+        mockCloner as any,
+        mockScanner as any,
+        mockFileChunker as any,
+        mockEmbeddingProvider,
+        mockChromaClient,
+        mockRepoService,
+        { documentTypeDetector: mockDocumentTypeDetector as any } // No chunker
+      );
+
+      const pdfFile = createMockFile("docs/report.pdf", ".pdf");
+      mockScanner.setMockFiles([pdfFile]);
+
+      const result = await service.indexRepository("https://github.com/test/repo.git");
+
+      expect(result.status).toBe("success");
+      expect(result.stats.filesProcessed).toBe(1);
+      // Should go through FileChunker, so no document metadata
+      const doc = mockChromaClient.capturedDocuments[0]!;
+      expect(doc.metadata.document_type).toBeUndefined();
+    });
+
     it("should work when empty options object is passed", async () => {
       const service = new IngestionService(
         mockCloner as any,

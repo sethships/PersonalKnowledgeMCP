@@ -269,18 +269,18 @@ export async function initializeDependencies(
     );
     logger.debug("Ingestion service initialized (with document support)");
 
-    // Step 9: Initialize GitHub client
+    // Step 10: Initialize GitHub client
     const githubClient = new GitHubClientImpl({
       token: Bun.env["GITHUB_PAT"],
     });
     logger.debug("GitHub client initialized");
 
-    // Step 10: Initialize token service for authentication
+    // Step 11: Initialize token service for authentication
     const tokenStore = TokenStoreImpl.getInstance(config.data.path);
     const tokenService = new TokenServiceImpl(tokenStore);
     logger.debug("Token service initialized");
 
-    // Step 11: Initialize graph adapter (optional - only if configured)
+    // Step 12: Initialize graph adapter (optional - only if configured)
     // Must be initialized before IncrementalUpdatePipeline so GraphIngestionService can be passed
     let graphAdapter: GraphStorageAdapter | undefined;
     let graphIngestionService: GraphIngestionService | undefined;
@@ -339,7 +339,7 @@ export async function initializeDependencies(
       );
     }
 
-    // Step 12: Initialize incremental update pipeline (with optional graph ingestion service)
+    // Step 13: Initialize incremental update pipeline (with optional graph ingestion service)
     const updatePipeline = new IncrementalUpdatePipeline(
       fileChunker,
       embeddingProvider,
@@ -352,10 +352,10 @@ export async function initializeDependencies(
       "Incremental update pipeline initialized"
     );
 
-    // Step 13: Initialize completeness checker (uses existing FileScanner)
+    // Step 14: Initialize completeness checker (uses existing FileScanner)
     const completenessChecker = new IndexCompletenessChecker(fileScanner);
 
-    // Step 14: Initialize incremental update coordinator
+    // Step 15: Initialize incremental update coordinator
     const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
     const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
 

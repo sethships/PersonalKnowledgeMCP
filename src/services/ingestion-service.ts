@@ -830,6 +830,9 @@ export class IngestionService {
       repositoryName
     );
 
+    // Note: Table-related fields (isTable, tableIndex, tableCaption) from
+    // DocumentChunkMetadata are intentionally omitted. Table support will be
+    // added when the storage schema supports table metadata fields.
     return documentChunks.map((chunk) => ({
       content: chunk.content,
       startLine: chunk.startLine,
