@@ -35,6 +35,8 @@ import { getDefaultAdapterType, getAdapterConfig, getAdapterDisplayName } from "
 import { GraphIngestionService } from "../../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
+import { DocumentChunker } from "../../documents/DocumentChunker.js";
+import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -251,16 +253,21 @@ export async function initializeDependencies(
     const fileScanner = new FileScanner();
     const fileChunker = new FileChunker();
 
-    // Step 8: Initialize ingestion service
+    // Step 8: Initialize document processing dependencies
+    const documentChunker = new DocumentChunker();
+    const documentTypeDetector = new DocumentTypeDetector();
+
+    // Step 9: Initialize ingestion service (with document support)
     const ingestionService = new IngestionServiceImpl(
       repositoryCloner,
       fileScanner,
       fileChunker,
       embeddingProvider,
       chromaClient,
-      repositoryService
+      repositoryService,
+      { documentChunker, documentTypeDetector }
     );
-    logger.debug("Ingestion service initialized");
+    logger.debug("Ingestion service initialized (with document support)");
 
     // Step 9: Initialize GitHub client
     const githubClient = new GitHubClientImpl({

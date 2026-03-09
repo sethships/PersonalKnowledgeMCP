@@ -29,6 +29,7 @@ import type {
   IndexError,
   IngestionStatus,
   BatchResult,
+  InternalChunk,
 } from "./ingestion-types.js";
 import {
   IngestionError,
@@ -36,6 +37,9 @@ import {
   IndexingInProgressError,
   CollectionCreationError,
 } from "./ingestion-errors.js";
+import type { DocumentChunker } from "../documents/DocumentChunker.js";
+import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
+import type { ExtractionResult } from "../documents/types.js";
 
 /**
  * Service for orchestrating repository indexing operations
@@ -90,14 +94,34 @@ export class IngestionService {
    */
   private readonly EMBEDDING_TIMEOUT_MS = 120000;
 
+  /**
+   * Optional document chunker for document-aware chunking.
+   * When provided alongside documentTypeDetector, document files
+   * (PDF, DOCX, MD, TXT) are routed through the document chunking pipeline.
+   */
+  private readonly documentChunker?: DocumentChunker;
+
+  /**
+   * Optional document type detector for identifying document files.
+   * Works in tandem with documentChunker to route files appropriately.
+   */
+  private readonly documentTypeDetector?: DocumentTypeDetector;
+
   constructor(
     private readonly repositoryCloner: RepositoryCloner,
     private readonly fileScanner: FileScanner,
     private readonly fileChunker: FileChunker,
     private readonly embeddingProvider: EmbeddingProvider,
     private readonly storageClient: ChromaStorageClient,
-    private readonly repositoryService: RepositoryMetadataService
-  ) {}
+    private readonly repositoryService: RepositoryMetadataService,
+    options?: {
+      documentChunker?: DocumentChunker;
+      documentTypeDetector?: DocumentTypeDetector;
+    }
+  ) {
+    this.documentChunker = options?.documentChunker;
+    this.documentTypeDetector = options?.documentTypeDetector;
+  }
 
   /**
    * Get logger instance (lazy initialization)
@@ -613,7 +637,7 @@ export class IngestionService {
       errors: [],
     };
 
-    const allChunks: FileChunk[] = [];
+    const allChunks: InternalChunk[] = [];
 
     // Phase 1: Chunk files
     context.onProgress("chunking", {
@@ -623,11 +647,24 @@ export class IngestionService {
 
     for (const fileInfo of files) {
       try {
-        const content = await Bun.file(fileInfo.absolutePath).text();
-        const chunks = this.fileChunker.chunkFile(content, fileInfo, repositoryName);
-        allChunks.push(...chunks);
-        result.filesProcessed++;
-        result.chunksCreated += chunks.length;
+        // Check if file is a document type and we have document processing capabilities
+        if (this.isDocumentFile(fileInfo)) {
+          const docChunks = await this.processDocumentFile(
+            fileInfo.absolutePath,
+            fileInfo.relativePath,
+            repositoryName
+          );
+          allChunks.push(...docChunks);
+          result.filesProcessed++;
+          result.chunksCreated += docChunks.length;
+        } else {
+          // Existing code path: read as text → FileChunker
+          const content = await Bun.file(fileInfo.absolutePath).text();
+          const chunks = this.fileChunker.chunkFile(content, fileInfo, repositoryName);
+          allChunks.push(...this.convertFileChunksToInternal(chunks));
+          result.filesProcessed++;
+          result.chunksCreated += chunks.length;
+        }
       } catch (error) {
         // Individual file error - log and continue
         this.logger.warn("Failed to chunk file", {
@@ -687,24 +724,44 @@ export class IngestionService {
       if (!embedding) {
         throw new Error(`Missing embedding for chunk ${index}`);
       }
+
+      const metadata: DocumentInput["metadata"] = {
+        file_path: chunk.filePath,
+        repository: chunk.repository,
+        chunk_index: chunk.chunkIndex,
+        total_chunks: chunk.totalChunks,
+        chunk_start_line: chunk.startLine,
+        chunk_end_line: chunk.endLine,
+        file_extension: chunk.extension,
+        language: chunk.language,
+        file_size_bytes: chunk.fileSizeBytes,
+        content_hash: chunk.contentHash,
+        indexed_at: new Date().toISOString(),
+        file_modified_at: chunk.fileModifiedAt.toISOString(),
+      };
+
+      // Enrich with document-specific metadata when available
+      if (chunk.documentMetadata) {
+        metadata.document_type = chunk.documentMetadata.documentType;
+        if (chunk.documentMetadata.pageNumber !== undefined) {
+          metadata.page_number = chunk.documentMetadata.pageNumber;
+        }
+        if (chunk.documentMetadata.sectionHeading !== undefined) {
+          metadata.section_heading = chunk.documentMetadata.sectionHeading;
+        }
+        if (chunk.documentMetadata.documentTitle !== undefined) {
+          metadata.document_title = chunk.documentMetadata.documentTitle;
+        }
+        if (chunk.documentMetadata.documentAuthor !== undefined) {
+          metadata.document_author = chunk.documentMetadata.documentAuthor;
+        }
+      }
+
       return {
         id: chunk.id,
         content: chunk.content,
         embedding,
-        metadata: {
-          file_path: chunk.filePath,
-          repository: chunk.repository,
-          chunk_index: chunk.chunkIndex,
-          total_chunks: chunk.totalChunks,
-          chunk_start_line: chunk.startLine,
-          chunk_end_line: chunk.endLine,
-          file_extension: chunk.metadata.extension,
-          language: chunk.metadata.language,
-          file_size_bytes: chunk.metadata.fileSizeBytes,
-          content_hash: chunk.metadata.contentHash,
-          indexed_at: new Date().toISOString(),
-          file_modified_at: chunk.metadata.fileModifiedAt.toISOString(),
-        },
+        metadata,
       };
     });
 
@@ -719,6 +776,109 @@ export class IngestionService {
     });
 
     return result;
+  }
+
+  /**
+   * Check if a file should be processed through the document chunking pipeline.
+   *
+   * Returns true when both documentTypeDetector and documentChunker are available
+   * and the file's extension is recognized as a document type.
+   *
+   * @param fileInfo - File information from the scanner
+   * @returns true if the file should be processed as a document
+   */
+  private isDocumentFile(fileInfo: FileInfo): boolean {
+    if (!this.documentTypeDetector || !this.documentChunker) {
+      return false;
+    }
+    return this.documentTypeDetector.isDocument(fileInfo.relativePath);
+  }
+
+  /**
+   * Process a document file through the document extraction and chunking pipeline.
+   *
+   * Uses the DocumentTypeDetector to find the appropriate extractor,
+   * extracts content and metadata, then chunks the document using
+   * DocumentChunker. The resulting DocumentChunks are converted to
+   * InternalChunks with document-specific metadata preserved.
+   *
+   * @param absolutePath - Absolute path to the document file
+   * @param relativePath - Relative path for chunk identification
+   * @param repositoryName - Repository or source name
+   * @returns Array of InternalChunks with document metadata
+   * @throws {Error} If no extractor is found or extraction/chunking fails
+   */
+  private async processDocumentFile(
+    absolutePath: string,
+    relativePath: string,
+    repositoryName: string
+  ): Promise<InternalChunk[]> {
+    const extractor = this.documentTypeDetector!.getExtractor(absolutePath);
+    if (!extractor) {
+      throw new Error(`No extractor found for document: ${relativePath}`);
+    }
+
+    this.logger.debug("Processing document file", {
+      file: relativePath,
+      type: this.documentTypeDetector!.detect(absolutePath),
+    });
+
+    const extractionResult = (await extractor.extract(absolutePath)) as ExtractionResult;
+    const documentChunks = this.documentChunker!.chunkDocument(
+      extractionResult,
+      relativePath,
+      repositoryName
+    );
+
+    return documentChunks.map((chunk) => ({
+      content: chunk.content,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      filePath: chunk.filePath,
+      id: chunk.id,
+      repository: chunk.repository,
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+      extension: chunk.metadata.extension,
+      language: chunk.metadata.language,
+      fileSizeBytes: chunk.metadata.fileSizeBytes,
+      contentHash: chunk.metadata.contentHash,
+      fileModifiedAt: chunk.metadata.fileModifiedAt,
+      documentMetadata: {
+        documentType: chunk.metadata.documentType,
+        pageNumber: chunk.metadata.pageNumber,
+        sectionHeading: chunk.metadata.sectionHeading,
+        documentTitle: chunk.metadata.documentTitle,
+        documentAuthor: chunk.metadata.documentAuthor,
+      },
+    }));
+  }
+
+  /**
+   * Convert FileChunk[] to InternalChunk[] for unified batch processing.
+   *
+   * Maps FileChunk metadata fields to the flat InternalChunk structure.
+   * No documentMetadata is set since these are code/text file chunks.
+   *
+   * @param chunks - FileChunks from FileChunker
+   * @returns InternalChunks without document metadata
+   */
+  private convertFileChunksToInternal(chunks: FileChunk[]): InternalChunk[] {
+    return chunks.map((chunk) => ({
+      content: chunk.content,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      filePath: chunk.filePath,
+      id: chunk.id,
+      repository: chunk.repository,
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+      extension: chunk.metadata.extension,
+      language: chunk.metadata.language,
+      fileSizeBytes: chunk.metadata.fileSizeBytes,
+      contentHash: chunk.metadata.contentHash,
+      fileModifiedAt: chunk.metadata.fileModifiedAt,
+    }));
   }
 
   /**

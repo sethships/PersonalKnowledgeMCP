@@ -271,6 +271,56 @@ export interface IngestionStatus {
 }
 
 /**
+ * Internal representation of a chunk during batch processing.
+ *
+ * Unifies FileChunk (code files) and DocumentChunk (documents) into a
+ * single type that flows through the embedding and storage pipeline.
+ * When `documentMetadata` is present, the chunk originated from a document
+ * file and will have document-specific fields populated in ChromaDB metadata.
+ */
+export interface InternalChunk {
+  /** Chunk text content */
+  content: string;
+  /** Starting line number in the original file (1-based) */
+  startLine: number;
+  /** Ending line number in the original file (1-based, inclusive) */
+  endLine: number;
+  /** Relative file path within the repository */
+  filePath: string;
+  /** Chunk ID in format {source}:{filePath}:{chunkIndex} */
+  id: string;
+  /** Repository or source name */
+  repository: string;
+  /** Zero-based chunk index within the file */
+  chunkIndex: number;
+  /** Total number of chunks for this file */
+  totalChunks: number;
+  /** File extension (lowercase, with leading dot) */
+  extension: string;
+  /** Programming language detected from file extension */
+  language: string;
+  /** Original file size in bytes */
+  fileSizeBytes: number;
+  /** SHA-256 hash of chunk content */
+  contentHash: string;
+  /** File modification timestamp */
+  fileModifiedAt: Date;
+  /** Optional document-specific metadata (only present for document chunks) */
+  documentMetadata?: {
+    /** Document type identifier (e.g., "pdf", "docx", "markdown", "txt") */
+    documentType: string;
+    /** Page number for multi-page documents (1-based) */
+    pageNumber?: number;
+    /** Nearest preceding section heading for structural context */
+    sectionHeading?: string;
+    /** Document title from extraction metadata */
+    documentTitle?: string;
+    /** Document author from extraction metadata */
+    documentAuthor?: string;
+  };
+}
+
+/**
  * Internal type for batch processing results
  */
 export interface BatchResult {
