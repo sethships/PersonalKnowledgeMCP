@@ -13,6 +13,7 @@ import type {
   ListWatchedFoldersService,
   ListWatchedFoldersResponse,
 } from "../../services/list-watched-folders-types.js";
+import { validateListWatchedFoldersArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
@@ -71,6 +72,9 @@ export function createListWatchedFoldersHandler(
 
     try {
       log.info("Executing list_watched_folders tool");
+
+      // Step 1: Validate MCP arguments (no parameters, but validates input is an object)
+      validateListWatchedFoldersArgs(_args);
 
       // Call service to get folder list
       const response = await listWatchedFoldersService.listWatchedFolders();

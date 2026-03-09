@@ -613,6 +613,34 @@ export const SEARCH_IMAGE_FORMATS = ["jpeg", "png", "gif", "webp", "tiff", "all"
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Validates that a date string is both syntactically and semantically valid.
+ *
+ * Checks the YYYY-MM-DD regex format first, then parses the date and verifies
+ * the components match the input to catch impossible dates like month 13 or day 32.
+ *
+ * @param dateStr - Date string to validate
+ * @returns true if the date is valid YYYY-MM-DD, false otherwise
+ */
+function isValidDate(dateStr: string): boolean {
+  if (!DATE_REGEX.test(dateStr)) {
+    return false;
+  }
+
+  const parsed = new Date(dateStr + "T00:00:00Z");
+  if (isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  // Verify parsed components match input to catch impossible dates (e.g., Feb 30)
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = parsed.getUTCFullYear();
+  const month = parsed.getUTCMonth() + 1; // getUTCMonth is 0-based
+  const day = parsed.getUTCDate();
+
+  return year === Number(yearStr) && month === Number(monthStr) && day === Number(dayStr);
+}
+
+/**
  * Zod schema for search_images tool arguments
  *
  * This schema:
@@ -639,7 +667,7 @@ export const SearchImagesArgsSchema = z
     date_from: z
       .string()
       .trim()
-      .refine((val) => DATE_REGEX.test(val), {
+      .refine((val) => isValidDate(val), {
         message: "date_from must be in YYYY-MM-DD format",
       })
       .optional(),
@@ -647,7 +675,7 @@ export const SearchImagesArgsSchema = z
     date_to: z
       .string()
       .trim()
-      .refine((val) => DATE_REGEX.test(val), {
+      .refine((val) => isValidDate(val), {
         message: "date_to must be in YYYY-MM-DD format",
       })
       .optional(),
@@ -674,7 +702,18 @@ export const SearchImagesArgsSchema = z
       .optional()
       .default(20),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => {
+      if (data.date_from && data.date_to) {
+        return data.date_from <= data.date_to;
+      }
+      return true;
+    },
+    {
+      message: "date_from must be on or before date_to",
+    }
+  );
 
 /**
  * Validates and parses search_images tool arguments

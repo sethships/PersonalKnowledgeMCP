@@ -266,6 +266,9 @@ describe("list_watched_folders Tool", () => {
         expect(result.isError).toBe(true);
         expect((result.content[0] as TextContent).text).not.toContain("/internal/path");
         expect((result.content[0] as TextContent).text).not.toContain("PostgreSQL");
+        expect((result.content[0] as TextContent).text).toBe(
+          "Error: MCP error -32603: An unexpected error occurred."
+        );
       });
     });
   });

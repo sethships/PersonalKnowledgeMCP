@@ -56,10 +56,12 @@ export const searchImagesToolDefinition: Tool = {
       },
       date_from: {
         type: "string",
+        format: "date",
         description: "Filter images taken/modified on or after this date (YYYY-MM-DD).",
       },
       date_to: {
         type: "string",
+        format: "date",
         description: "Filter images taken/modified on or before this date (YYYY-MM-DD).",
       },
       min_width: {

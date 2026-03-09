@@ -21,6 +21,7 @@ import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
 /** Helper interface for JSON Schema property testing */
 interface JsonSchemaProperty {
   type?: string;
+  format?: string;
   minimum?: number;
   maximum?: number;
   default?: unknown;
@@ -418,6 +419,67 @@ describe("search_images Tool", () => {
 
         const result = await handler({
           unknown_param: "value",
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject min_width of 0", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          min_width: 0,
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject min_height of 0", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          min_height: 0,
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject limit of 0", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          limit: 0,
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject semantically invalid date with month 13", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          date_from: "2026-13-01",
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject semantically invalid date with Feb 30", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          date_to: "2026-02-30",
+        });
+
+        expect(result.isError).toBe(true);
+      });
+
+      it("should reject inverted date range", async () => {
+        const handler = createSearchImagesHandler(mockService);
+
+        const result = await handler({
+          date_from: "2026-12-31",
+          date_to: "2026-01-01",
         });
 
         expect(result.isError).toBe(true);
