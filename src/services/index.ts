@@ -43,6 +43,7 @@ export type {
   ListWatchedFoldersResponse,
   WatchedFolderEntry,
 } from "./list-watched-folders-types.js";
+export { ListWatchedFoldersServiceImpl } from "./list-watched-folders-service.js";
 
 // IngestionService exports
 export { IngestionService } from "./ingestion-service.js";
@@ -225,6 +226,7 @@ export { GraphMetricsCollector, graphMetricsCollector } from "./graph-metrics-co
 export { FolderWatcherService } from "./folder-watcher-service.js";
 export type {
   WatchedFolder,
+  WatchedFolderDetail,
   FileEvent,
   FileEventType,
   WatcherStatus,

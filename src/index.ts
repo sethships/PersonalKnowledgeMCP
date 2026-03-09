@@ -48,6 +48,8 @@ import { EntityExtractor } from "./graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "./graph/extraction/RelationshipExtractor.js";
 import { resolveGitHubPAT } from "./services/github-pat-resolver.js";
 import { DocumentSearchServiceImpl } from "./services/document-search-service.js";
+import { FolderWatcherService } from "./services/folder-watcher-service.js";
+import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -251,6 +253,12 @@ async function main(): Promise<void> {
     );
     logger.info("Document search service initialized");
 
+    // Step 5a-ii: Initialize folder watcher and list watched folders service
+    logger.info("Initializing folder watcher service");
+    const folderWatcherService = new FolderWatcherService();
+    const listWatchedFoldersService = new ListWatchedFoldersServiceImpl(folderWatcherService);
+    logger.info("Folder watcher service initialized (no folders watched until configured)");
+
     // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
@@ -344,6 +352,7 @@ async function main(): Promise<void> {
         rateLimiter,
         jobTracker,
         documentSearchService,
+        listWatchedFoldersService,
       }
     );
 

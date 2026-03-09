@@ -370,6 +370,54 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
     });
   });
 
+  describe("getAllWatchedFolderDetails", () => {
+    it("should return empty array when no folders are watched", () => {
+      const details = service.getAllWatchedFolderDetails();
+      expect(details).toEqual([]);
+    });
+
+    it("should return detail for watched folder", async () => {
+      await service.startWatching(testFolder);
+
+      const details = service.getAllWatchedFolderDetails();
+      expect(details).toHaveLength(1);
+
+      const [detail] = details;
+      expect(detail?.folder.id).toBe(testFolder.id);
+      expect(detail?.folder.path).toBe(testFolder.path);
+      expect(detail?.folder.name).toBe(testFolder.name);
+      expect(detail?.status).toBe("active");
+      expect(typeof detail?.filesWatched).toBe("number");
+      expect(detail?.error).toBeUndefined();
+    });
+
+    it("should return details for multiple watched folders", async () => {
+      const folder2Path = testFolder.path + "-2";
+      fs.mkdirSync(folder2Path, { recursive: true });
+
+      const folder2 = createTestFolder({
+        id: "test-folder-2",
+        path: folder2Path,
+        name: "Test Folder 2",
+      });
+
+      try {
+        await service.startWatching(testFolder);
+        await service.startWatching(folder2);
+
+        const details = service.getAllWatchedFolderDetails();
+        expect(details).toHaveLength(2);
+
+        const ids = details.map((d) => d.folder.id);
+        expect(ids).toContain(testFolder.id);
+        expect(ids).toContain("test-folder-2");
+      } finally {
+        await service.stopWatching(folder2.id);
+        fs.rmSync(folder2Path, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("Pattern filtering", () => {
     describe("shouldIncludeFile", () => {
       it("should include all files when no patterns specified", () => {
