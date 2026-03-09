@@ -13,9 +13,16 @@ import type { MCPRateLimiter } from "../rate-limiter.js";
 import type { JobTracker } from "../job-tracker.js";
 import type { GraphService } from "../../services/graph-service-types.js";
 import type { DocumentSearchService } from "../../services/document-search-types.js";
+import type { ImageSearchService } from "../../services/image-search-types.js";
+import type { ListWatchedFoldersService } from "../../services/list-watched-folders-types.js";
 import type { ToolRegistry, ToolHandler } from "../types.js";
 import { semanticSearchToolDefinition, createSemanticSearchHandler } from "./semantic-search.js";
 import { searchDocumentsToolDefinition, createSearchDocumentsHandler } from "./search-documents.js";
+import { searchImagesToolDefinition, createSearchImagesHandler } from "./search-images.js";
+import {
+  listWatchedFoldersToolDefinition,
+  createListWatchedFoldersHandler,
+} from "./list-watched-folders.js";
 import {
   listIndexedRepositoriesToolDefinition,
   createListRepositoriesHandler,
@@ -58,6 +65,10 @@ export interface ToolRegistryDependencies {
   graphService?: GraphService;
   /** Optional: DocumentSearchService for document semantic search */
   documentSearchService?: DocumentSearchService;
+  /** Optional: ImageSearchService for image metadata search */
+  imageSearchService?: ImageSearchService;
+  /** Optional: ListWatchedFoldersService for listing watched folders */
+  listWatchedFoldersService?: ListWatchedFoldersService;
 }
 
 /**
@@ -175,6 +186,22 @@ export function createToolRegistry(
     registry["search_documents"] = {
       definition: searchDocumentsToolDefinition,
       handler: createSearchDocumentsHandler(deps.documentSearchService),
+    };
+  }
+
+  // Conditionally add image search tool when ImageSearchService is provided
+  if (deps.imageSearchService) {
+    registry["search_images"] = {
+      definition: searchImagesToolDefinition,
+      handler: createSearchImagesHandler(deps.imageSearchService),
+    };
+  }
+
+  // Conditionally add list watched folders tool when ListWatchedFoldersService is provided
+  if (deps.listWatchedFoldersService) {
+    registry["list_watched_folders"] = {
+      definition: listWatchedFoldersToolDefinition,
+      handler: createListWatchedFoldersHandler(deps.listWatchedFoldersService),
     };
   }
 
