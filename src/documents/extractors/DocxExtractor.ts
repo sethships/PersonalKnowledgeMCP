@@ -14,6 +14,7 @@ import { DOMParser } from "@xmldom/xmldom";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
 import { ExtractionError, ExtractionTimeoutError, UnsupportedFormatError } from "../errors.js";
 import { BaseExtractor } from "./BaseExtractor.js";
+import { getComponentLogger } from "../../logging/index.js";
 import type { DocumentMetadata, ExtractionResult, ExtractorConfig, SectionInfo } from "../types.js";
 import { getComponentLogger } from "../../logging/index.js";
 
