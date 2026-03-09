@@ -125,7 +125,7 @@ export function createToolRegistry(
   const registry: ToolRegistry = {
     semantic_search: {
       definition: semanticSearchToolDefinition,
-      handler: createSemanticSearchHandler(deps.searchService),
+      handler: createSemanticSearchHandler(deps.searchService, deps.documentSearchService),
     },
     list_indexed_repositories: {
       definition: listIndexedRepositoriesToolDefinition,

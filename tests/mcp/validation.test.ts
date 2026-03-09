@@ -394,6 +394,52 @@ describe("MCP Validation", () => {
     });
   });
 
+  describe("include_documents validation", () => {
+    it("should default include_documents to false when not specified", () => {
+      const result = validateSemanticSearchArgs({
+        query: "test",
+      });
+
+      expect(result.include_documents).toBe(false);
+    });
+
+    it("should accept include_documents=true", () => {
+      const result = validateSemanticSearchArgs({
+        query: "test",
+        include_documents: true,
+      });
+
+      expect(result.include_documents).toBe(true);
+    });
+
+    it("should accept include_documents=false", () => {
+      const result = validateSemanticSearchArgs({
+        query: "test",
+        include_documents: false,
+      });
+
+      expect(result.include_documents).toBe(false);
+    });
+
+    it("should reject non-boolean include_documents value", () => {
+      expect(() => {
+        validateSemanticSearchArgs({
+          query: "test",
+          include_documents: "true",
+        });
+      }).toThrow();
+    });
+
+    it("should reject numeric include_documents value", () => {
+      expect(() => {
+        validateSemanticSearchArgs({
+          query: "test",
+          include_documents: 1,
+        });
+      }).toThrow();
+    });
+  });
+
   describe("validateSearchDocumentsArgs", () => {
     describe("include_tables validation", () => {
       it("should default include_tables to 'include' when not specified", () => {

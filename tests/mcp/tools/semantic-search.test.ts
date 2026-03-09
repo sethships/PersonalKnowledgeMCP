@@ -1,12 +1,18 @@
 /**
  * Unit tests for semantic_search MCP tool
  *
- * Tests tool definition, handler execution, response formatting, and error handling
- * with mocked SearchService dependencies.
+ * Tests tool definition, handler execution, response formatting, error handling,
+ * and include_documents functionality with mocked SearchService and
+ * DocumentSearchService dependencies.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type { SearchService, SearchResponse, SearchQuery } from "../../../src/services/types.js";
+import type {
+  DocumentSearchService,
+  DocumentSearchResponse,
+  DocumentSearchQuery,
+} from "../../../src/services/document-search-types.js";
 import {
   semanticSearchToolDefinition,
   createSemanticSearchHandler,
@@ -26,7 +32,7 @@ interface JsonSchemaProperty {
   description?: string;
 }
 
-// Helper interface for semantic_search tool response
+// Helper interface for semantic_search tool response (legacy code-only)
 interface SemanticSearchResult {
   content: string;
   similarity_score: number;
@@ -52,15 +58,40 @@ interface SemanticSearchResponse {
   };
 }
 
+// Helper interface for merged response (include_documents=true)
+interface MergedSearchResult {
+  source_type: "code" | "document";
+  content: string;
+  similarity_score: number;
+  metadata: Record<string, unknown>;
+}
+
+interface MergedSearchResponse {
+  results: MergedSearchResult[];
+  metadata: {
+    total_matches: number;
+    code_matches: number;
+    document_matches: number;
+    query_time_ms: number;
+    embedding_time_ms: number;
+    search_time_ms: number;
+    repositories_searched: string[];
+    document_folders_searched?: string[];
+    warnings?: string[];
+  };
+}
+
 // Mock SearchService
 class MockSearchService implements SearchService {
   private mockResponse: SearchResponse | null = null;
   private shouldFail = false;
   private failureError: Error | null = null;
   public lastQuery: SearchQuery | null = null;
+  public callCount = 0;
 
   async search(query: SearchQuery): Promise<SearchResponse> {
     this.lastQuery = query;
+    this.callCount++;
 
     if (this.shouldFail && this.failureError) {
       throw this.failureError;
@@ -81,6 +112,45 @@ class MockSearchService implements SearchService {
   }
 
   setMockResponse(response: SearchResponse): void {
+    this.mockResponse = response;
+  }
+
+  setShouldFail(shouldFail: boolean, error?: Error): void {
+    this.shouldFail = shouldFail;
+    this.failureError = error || null;
+  }
+}
+
+// Mock DocumentSearchService
+class MockDocumentSearchService implements DocumentSearchService {
+  private mockResponse: DocumentSearchResponse | null = null;
+  private shouldFail = false;
+  private failureError: Error | null = null;
+  public lastQuery: DocumentSearchQuery | null = null;
+  public callCount = 0;
+
+  async searchDocuments(query: DocumentSearchQuery): Promise<DocumentSearchResponse> {
+    this.lastQuery = query;
+    this.callCount++;
+
+    if (this.shouldFail && this.failureError) {
+      throw this.failureError;
+    }
+
+    return (
+      this.mockResponse || {
+        results: [],
+        metadata: {
+          totalResults: 0,
+          queryTimeMs: 100,
+          searchedFolders: [],
+          searchedDocumentTypes: ["all"],
+        },
+      }
+    );
+  }
+
+  setMockResponse(response: DocumentSearchResponse): void {
     this.mockResponse = response;
   }
 
@@ -162,6 +232,16 @@ describe("semantic_search Tool", () => {
       expect(langProp).toBeDefined();
       expect(langProp.type).toBe("string");
       expect(semanticSearchToolDefinition.inputSchema.required).not.toContain("language");
+    });
+
+    it("should define include_documents property with boolean type and default false", () => {
+      const prop = semanticSearchToolDefinition.inputSchema.properties![
+        "include_documents"
+      ] as JsonSchemaProperty;
+      expect(prop).toBeDefined();
+      expect(prop.type).toBe("boolean");
+      expect(prop.default).toBe(false);
+      expect(semanticSearchToolDefinition.inputSchema.required).not.toContain("include_documents");
     });
   });
 
@@ -539,6 +619,385 @@ describe("semantic_search Tool", () => {
         // Invalid language values should return an error
         expect(result.isError).toBe(true);
         expect((result.content[0] as { text: string }).text).toContain("Error");
+      });
+    });
+  });
+
+  describe("include_documents", () => {
+    let mockSearchService: MockSearchService;
+    let mockDocSearchService: MockDocumentSearchService;
+
+    const codeResult: SearchResponse = {
+      results: [
+        {
+          file_path: "src/auth.ts",
+          repository: "backend-api",
+          content_snippet: "export function authenticate() { }",
+          similarity_score: 0.92,
+          chunk_index: 0,
+          metadata: {
+            file_extension: ".ts",
+            file_size_bytes: 1024,
+            indexed_at: "2025-01-01T00:00:00Z",
+          },
+        },
+      ],
+      metadata: {
+        total_matches: 1,
+        query_time_ms: 200,
+        embedding_time_ms: 100,
+        search_time_ms: 100,
+        repositories_searched: ["backend-api"],
+      },
+    };
+
+    const docResult: DocumentSearchResponse = {
+      results: [
+        {
+          content: "Authentication best practices for web apps...",
+          documentPath: "docs/security.pdf",
+          documentTitle: "Security Guide",
+          documentAuthor: "Jane Doe",
+          documentType: "pdf",
+          pageNumber: 5,
+          sectionHeading: "Authentication",
+          similarity: 0.88,
+          folder: "my-docs",
+        },
+      ],
+      metadata: {
+        totalResults: 1,
+        queryTimeMs: 150,
+        searchedFolders: ["my-docs"],
+        searchedDocumentTypes: ["pdf"],
+      },
+    };
+
+    beforeEach(() => {
+      mockSearchService = new MockSearchService();
+      mockDocSearchService = new MockDocumentSearchService();
+    });
+
+    it("should preserve exact legacy output format when include_documents=false", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: false,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as SemanticSearchResponse;
+
+      // Legacy format: no source_type field, standard metadata
+      expect(responseData.results[0]!.content).toBe("export function authenticate() { }");
+      expect(responseData.results[0]!.similarity_score).toBe(0.92);
+      expect(responseData.results[0]!.metadata.file_path).toBe("src/auth.ts");
+      expect(responseData.metadata.total_matches).toBe(1);
+      expect(responseData.metadata.repositories_searched).toEqual(["backend-api"]);
+      // Should NOT have source_type or code_matches/document_matches
+      const resultAsAny = responseData.results[0] as unknown as Record<string, unknown>;
+      expect(resultAsAny["source_type"]).toBeUndefined();
+      const metadataAsAny = responseData.metadata as unknown as Record<string, unknown>;
+      expect(metadataAsAny["code_matches"]).toBeUndefined();
+      expect(metadataAsAny["document_matches"]).toBeUndefined();
+    });
+
+    it("should not call DocumentSearchService when include_documents=false", async () => {
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      await handler({ query: "test", include_documents: false });
+
+      expect(mockDocSearchService.callCount).toBe(0);
+      expect(mockSearchService.callCount).toBe(1);
+    });
+
+    it("should default include_documents to false when omitted", async () => {
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      await handler({ query: "test" });
+
+      expect(mockDocSearchService.callCount).toBe(0);
+      expect(mockSearchService.callCount).toBe(1);
+    });
+
+    it("should return merged results with source_type when include_documents=true", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      expect(responseData.results).toHaveLength(2);
+      // Verify source_type tagging
+      const codeResults = responseData.results.filter((r) => r.source_type === "code");
+      const docResults = responseData.results.filter((r) => r.source_type === "document");
+      expect(codeResults).toHaveLength(1);
+      expect(docResults).toHaveLength(1);
+    });
+
+    it("should sort merged results by similarity_score descending", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      // Code result (0.92) should come before document result (0.88)
+      expect(responseData.results[0]!.source_type).toBe("code");
+      expect(responseData.results[0]!.similarity_score).toBe(0.92);
+      expect(responseData.results[1]!.source_type).toBe("document");
+      expect(responseData.results[1]!.similarity_score).toBe(0.88);
+    });
+
+    it("should truncate merged results to limit", async () => {
+      // Create multiple code results
+      const multiCodeResult: SearchResponse = {
+        results: [
+          {
+            file_path: "src/a.ts",
+            repository: "repo",
+            content_snippet: "code A",
+            similarity_score: 0.95,
+            chunk_index: 0,
+            metadata: {
+              file_extension: ".ts",
+              file_size_bytes: 100,
+              indexed_at: "2025-01-01T00:00:00Z",
+            },
+          },
+          {
+            file_path: "src/b.ts",
+            repository: "repo",
+            content_snippet: "code B",
+            similarity_score: 0.9,
+            chunk_index: 0,
+            metadata: {
+              file_extension: ".ts",
+              file_size_bytes: 100,
+              indexed_at: "2025-01-01T00:00:00Z",
+            },
+          },
+        ],
+        metadata: {
+          total_matches: 2,
+          query_time_ms: 100,
+          embedding_time_ms: 50,
+          search_time_ms: 50,
+          repositories_searched: ["repo"],
+        },
+      };
+
+      const multiDocResult: DocumentSearchResponse = {
+        results: [
+          {
+            content: "doc content A",
+            documentPath: "a.pdf",
+            documentType: "pdf",
+            similarity: 0.93,
+            folder: "docs",
+          },
+          {
+            content: "doc content B",
+            documentPath: "b.pdf",
+            documentType: "pdf",
+            similarity: 0.85,
+            folder: "docs",
+          },
+        ],
+        metadata: {
+          totalResults: 2,
+          queryTimeMs: 80,
+          searchedFolders: ["docs"],
+          searchedDocumentTypes: ["pdf"],
+        },
+      };
+
+      mockSearchService.setMockResponse(multiCodeResult);
+      mockDocSearchService.setMockResponse(multiDocResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "test",
+        limit: 3,
+        include_documents: true,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      // 4 total results but limit=3
+      expect(responseData.results).toHaveLength(3);
+      expect(responseData.metadata.total_matches).toBe(3);
+    });
+
+    it("should call both services in parallel", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      // Both services should have been called
+      expect(mockSearchService.callCount).toBe(1);
+      expect(mockDocSearchService.callCount).toBe(1);
+    });
+
+    it("should include code_matches and document_matches in metadata", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      expect(responseData.metadata.code_matches).toBe(1);
+      expect(responseData.metadata.document_matches).toBe(1);
+      expect(responseData.metadata.total_matches).toBe(2);
+    });
+
+    it("should include document_folders_searched in metadata", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      expect(responseData.metadata.document_folders_searched).toEqual(["my-docs"]);
+      expect(responseData.metadata.repositories_searched).toEqual(["backend-api"]);
+    });
+
+    it("should include document metadata fields in results", async () => {
+      mockSearchService.setMockResponse({
+        results: [],
+        metadata: {
+          total_matches: 0,
+          query_time_ms: 100,
+          embedding_time_ms: 50,
+          search_time_ms: 50,
+          repositories_searched: [],
+        },
+      });
+      mockDocSearchService.setMockResponse(docResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: true,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as MergedSearchResponse;
+
+      const docResultItem = responseData.results.find((r) => r.source_type === "document");
+      expect(docResultItem).toBeDefined();
+      expect(docResultItem!.metadata["document_path"]).toBe("docs/security.pdf");
+      expect(docResultItem!.metadata["document_type"]).toBe("pdf");
+      expect(docResultItem!.metadata["folder"]).toBe("my-docs");
+      expect(docResultItem!.metadata["document_title"]).toBe("Security Guide");
+      expect(docResultItem!.metadata["document_author"]).toBe("Jane Doe");
+      expect(docResultItem!.metadata["page_number"]).toBe(5);
+      expect(docResultItem!.metadata["section_heading"]).toBe("Authentication");
+    });
+
+    describe("graceful degradation", () => {
+      it("should return code-only results with warning when DocumentSearchService unavailable", async () => {
+        mockSearchService.setMockResponse(codeResult);
+        // No document search service passed
+        const handler = createSemanticSearchHandler(mockSearchService);
+
+        const result = await handler({
+          query: "authentication",
+          include_documents: true,
+        });
+
+        expect(result.isError).toBe(false);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as MergedSearchResponse;
+
+        // Should still return code results
+        expect(responseData.results).toHaveLength(1);
+        expect(responseData.results[0]!.source_type).toBe("code");
+        // Should have warning about missing document service
+        expect(responseData.metadata.warnings).toBeDefined();
+        expect(responseData.metadata.warnings!.length).toBeGreaterThan(0);
+        expect(responseData.metadata.warnings![0]).toContain("not available");
+      });
+
+      it("should return code results when document search throws", async () => {
+        mockSearchService.setMockResponse(codeResult);
+        mockDocSearchService.setShouldFail(
+          true,
+          new SearchOperationError("Document search failed")
+        );
+        const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+        const result = await handler({
+          query: "authentication",
+          include_documents: true,
+        });
+
+        expect(result.isError).toBe(false);
+        const responseData = JSON.parse(
+          (result.content[0] as TextContent).text
+        ) as MergedSearchResponse;
+
+        // Should return code results with warning
+        expect(responseData.results.length).toBeGreaterThanOrEqual(1);
+        expect(responseData.results[0]!.source_type).toBe("code");
+        expect(responseData.metadata.warnings).toBeDefined();
+        expect(responseData.metadata.warnings![0]).toContain("not available");
+      });
+
+      it("should return error when both searches fail", async () => {
+        mockSearchService.setShouldFail(true, new SearchOperationError("Code search failed"));
+        mockDocSearchService.setShouldFail(true, new SearchOperationError("Doc search failed"));
+        const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+        const result = await handler({
+          query: "test",
+          include_documents: true,
+        });
+
+        expect(result.isError).toBe(true);
+        expect((result.content[0] as TextContent).text).toContain("Error");
       });
     });
   });

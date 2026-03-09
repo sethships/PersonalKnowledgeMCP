@@ -99,6 +99,13 @@ export interface SemanticSearchArgs {
    * of the specified programming language. Supported values: typescript, tsx, javascript, jsx.
    */
   language?: string;
+
+  /**
+   * Whether to include indexed documents (PDFs, DOCX, Markdown, TXT) alongside
+   * code results. When true, both code and document results are merged and ranked
+   * by similarity score. Default: false (code-only, backward compatible).
+   */
+  include_documents: boolean;
 }
 
 /**
