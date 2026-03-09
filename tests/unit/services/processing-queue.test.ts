@@ -869,5 +869,98 @@ describe("ProcessingQueue", () => {
 
       expect(queue.getStatus().state).toBe("stopped");
     });
+
+    test("items enqueued during active processing are included in the next batch", async () => {
+      const { processor, calls } = createSlowProcessor(150);
+      queue = new ProcessingQueue(processor, {
+        maxBatchSize: 5,
+        batchDelayMs: TEST_BATCH_DELAY_MS,
+        maxBatchWaitMs: TEST_MAX_BATCH_WAIT_MS,
+        shutdownTimeoutMs: 5000,
+      });
+
+      // Enqueue initial item and let debounce fire
+      queue.enqueue(createTestChange({ relativePath: "first.ts" }));
+
+      // Wait for debounce to fire and processing to start
+      await wait(TEST_BATCH_DELAY_MS + 30);
+
+      // Processor is now running (takes 150ms). Enqueue more items while active.
+      queue.enqueue(createTestChange({ relativePath: "during-1.ts" }));
+      queue.enqueue(createTestChange({ relativePath: "during-2.ts" }));
+
+      // Shut down and wait for all items to drain
+      await queue.shutdown();
+
+      // First batch should have the initial item
+      expect(calls.length).toBe(2);
+      expect(calls[0]!.length).toBe(1);
+      expect(calls[0]![0]!.relativePath).toBe("first.ts");
+
+      // Second batch should have the items enqueued during processing
+      expect(calls[1]!.length).toBe(2);
+      expect(calls[1]![0]!.relativePath).toBe("during-1.ts");
+      expect(calls[1]![1]!.relativePath).toBe("during-2.ts");
+    });
+
+    test("multiple concurrent shutdown calls both resolve without error", async () => {
+      const { processor } = createSuccessProcessor();
+      queue = new ProcessingQueue(processor, {
+        batchDelayMs: 60000,
+        maxBatchWaitMs: 60000,
+        shutdownTimeoutMs: TEST_SHUTDOWN_TIMEOUT_MS,
+      });
+
+      queue.enqueue(createTestChange({ relativePath: "a.ts" }));
+
+      // Call shutdown twice concurrently
+      const [result1, result2] = await Promise.allSettled([queue.shutdown(), queue.shutdown()]);
+
+      // Both should resolve (first drains, second sees stopped state)
+      expect(result1.status).toBe("fulfilled");
+      expect(result2.status).toBe("fulfilled");
+      expect(queue.getStatus().state).toBe("stopped");
+    });
+
+    test("forceStop during active processing reaches clean stopped state", async () => {
+      const { processor } = createSlowProcessor(500);
+      queue = new ProcessingQueue(processor, {
+        batchDelayMs: TEST_BATCH_DELAY_MS,
+        maxBatchWaitMs: TEST_MAX_BATCH_WAIT_MS,
+      });
+
+      queue.enqueue(createTestChange({ relativePath: "slow.ts" }));
+      queue.enqueue(createTestChange({ relativePath: "pending.ts" }));
+
+      // Wait for debounce to fire and processing to start
+      await wait(TEST_BATCH_DELAY_MS + 30);
+
+      // Force stop while the slow processor is running
+      queue.forceStop();
+
+      expect(queue.getStatus().state).toBe("stopped");
+      expect(queue.getStatus().queueDepth).toBe(0);
+
+      // Wait for the slow processor to finish its in-flight work
+      await wait(600);
+
+      // Queue should remain in a clean stopped state
+      expect(queue.getStatus().state).toBe("stopped");
+      expect(queue.getStatus().queueDepth).toBe(0);
+    });
+
+    test("cross-field validation catches batchDelayMs exceeding default maxBatchWaitMs", () => {
+      const { processor } = createSuccessProcessor();
+
+      // batchDelayMs (50000) > default maxBatchWaitMs (30000) should fail
+      expect(() => new ProcessingQueue(processor, { batchDelayMs: 50000 })).toThrow();
+    });
+
+    test("cross-field validation catches maxQueueSize less than default maxBatchSize", () => {
+      const { processor } = createSuccessProcessor();
+
+      // maxQueueSize (10) < default maxBatchSize (50) should fail
+      expect(() => new ProcessingQueue(processor, { maxQueueSize: 10 })).toThrow();
+    });
   });
 });

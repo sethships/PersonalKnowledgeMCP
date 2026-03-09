@@ -118,11 +118,17 @@ export class ProcessingQueue {
   /** Whether a batch is currently being processed */
   private processing = false;
 
+  /** Retry delay timer handle (for cancellation on shutdown) */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Timestamp of first enqueue after idle (for max-wait tracking) */
   private firstEnqueueTime: number | null = null;
 
   /** Promise that resolves when shutdown drain completes */
   private drainPromiseResolve: (() => void) | null = null;
+
+  /** Stored drain promise so multiple shutdown callers can await the same drain */
+  private drainPromise: Promise<void> | null = null;
 
   /** Lazy-initialized logger */
   private _logger: pino.Logger | null = null;
@@ -164,16 +170,15 @@ export class ProcessingQueue {
    * @throws z.ZodError if configuration values are invalid
    */
   constructor(processor: BatchProcessor, config?: ProcessingQueueConfig) {
-    // Validate config if provided
-    if (config !== undefined) {
-      validateProcessingQueueConfig(config);
-    }
-
     this.processor = processor;
     this.config = {
       ...DEFAULT_PROCESSING_QUEUE_CONFIG,
       ...config,
     };
+
+    // Validate the merged config to catch cross-field constraint violations
+    // (e.g., user provides batchDelayMs > default maxBatchWaitMs)
+    validateProcessingQueueConfig(this.config);
   }
 
   // =========================================================================
@@ -259,6 +264,11 @@ export class ProcessingQueue {
       return;
     }
 
+    // If already draining (concurrent shutdown call), await the existing drain
+    if (this.state === "draining" && this.drainPromise !== null) {
+      return this.drainPromise;
+    }
+
     this.logger.info(
       { queueDepth: this.queue.length, isProcessing: this.processing },
       "Processing queue shutdown initiated"
@@ -274,12 +284,13 @@ export class ProcessingQueue {
     }
 
     // Start draining: process remaining items
-    return new Promise<void>((resolve, reject) => {
+    this.drainPromise = new Promise<void>((resolve, reject) => {
       // Set up timeout
       const timeoutTimer = setTimeout(() => {
         const remaining = this.queue.length;
         this.state = "stopped";
         this.drainPromiseResolve = null;
+        this.drainPromise = null;
         reject(new ShutdownTimeoutError(remaining, this.config.shutdownTimeoutMs));
       }, this.config.shutdownTimeoutMs);
 
@@ -288,6 +299,7 @@ export class ProcessingQueue {
         clearTimeout(timeoutTimer);
         this.state = "stopped";
         this.drainPromiseResolve = null;
+        this.drainPromise = null;
         resolve();
       };
 
@@ -299,7 +311,12 @@ export class ProcessingQueue {
       }
       // If already processing, processNextBatch will chain and eventually
       // call drainPromiseResolve when the queue is empty
+      // NOTE: This works because state="draining" was set synchronously above,
+      // so when the in-flight processNextBatch resumes after its await, it will
+      // see the draining state and chain to drain remaining items.
     });
+
+    return this.drainPromise;
   }
 
   /**
@@ -372,6 +389,10 @@ export class ProcessingQueue {
     if (this.maxWaitTimer !== null) {
       clearTimeout(this.maxWaitTimer);
       this.maxWaitTimer = null;
+    }
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
     }
   }
 
@@ -525,6 +546,7 @@ export class ProcessingQueue {
       );
     } finally {
       this.processing = false;
+      this.pruneStaleRecords();
     }
 
     // Chain to next batch if items remain
@@ -593,6 +615,18 @@ export class ProcessingQueue {
   // =========================================================================
 
   /**
+   * Remove batch records older than the rate calculation window.
+   *
+   * Called after each batch completes to prevent unbounded growth of the
+   * batchRecords array. Without this, records would only be pruned when
+   * getMetrics() is called, which may not happen frequently.
+   */
+  private pruneStaleRecords(): void {
+    const windowStart = Date.now() - RATE_WINDOW_MS;
+    this.batchRecords = this.batchRecords.filter((r) => r.completedAt >= windowStart);
+  }
+
+  /**
    * Calculate the processing rate (events/second) over a rolling 60-second window.
    */
   private calculateProcessingRate(): number {
@@ -616,7 +650,8 @@ export class ProcessingQueue {
     const windowDurationMs = now - oldestRecord.completedAt;
 
     if (windowDurationMs <= 0) {
-      return totalProcessedInWindow; // All in same millisecond, return count as rate
+      // All records in same millisecond -- cannot calculate meaningful rate
+      return 0;
     }
 
     return (totalProcessedInWindow / windowDurationMs) * 1000;
@@ -642,6 +677,11 @@ export class ProcessingQueue {
    * @param ms - Milliseconds to wait
    */
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        resolve();
+      }, ms);
+    });
   }
 }
