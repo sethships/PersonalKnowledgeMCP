@@ -17,6 +17,7 @@ import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type {
   WatchedFolder,
+  WatchedFolderDetail,
   FileEvent,
   FileEventType,
   WatcherInfo,
@@ -367,6 +368,24 @@ export class FolderWatcherService {
       });
     }
     return statuses;
+  }
+
+  /**
+   * Get detailed information for all watched folders
+   *
+   * Returns the full folder configuration combined with runtime status
+   * for each watched folder. Used by the list_watched_folders MCP tool.
+   *
+   * @returns Array of watched folder details with config and status
+   */
+  getAllWatchedFolderDetails(): WatchedFolderDetail[] {
+    return Array.from(this.watchers.values(), (state) => ({
+      folder: { ...state.folder },
+      status: state.status,
+      filesWatched: state.filesWatched,
+      lastEventAt: state.lastEventAt,
+      error: state.error,
+    }));
   }
 
   /**

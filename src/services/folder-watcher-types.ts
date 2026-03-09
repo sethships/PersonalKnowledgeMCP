@@ -76,6 +76,29 @@ export interface WatchedFolder {
   updatedAt: Date | null;
 }
 
+/**
+ * Combined folder configuration and runtime status
+ *
+ * Provides a complete picture of a watched folder's config and current state,
+ * used by the list_watched_folders MCP tool.
+ */
+export interface WatchedFolderDetail {
+  /** Full folder configuration */
+  folder: WatchedFolder;
+
+  /** Current watcher status */
+  status: WatcherStatus;
+
+  /** Number of files currently being watched */
+  filesWatched: number;
+
+  /** When the last file event was detected */
+  lastEventAt: Date | null;
+
+  /** Error message if status is "error" */
+  error?: string;
+}
+
 // =============================================================================
 // File Event Types
 // =============================================================================
