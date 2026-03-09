@@ -289,3 +289,30 @@ export {
   safeValidateChangeDetectionConfig,
 } from "./change-detection-validation.js";
 export type { ValidatedChangeDetectionConfig } from "./change-detection-validation.js";
+
+// ProcessingQueue exports
+export { ProcessingQueue } from "./processing-queue.js";
+export type {
+  ProcessingQueueConfig,
+  ProcessingQueueState,
+  ProcessingQueueStatus,
+  ProcessingQueueMetrics,
+  BatchProcessor,
+  BatchProcessorResult,
+} from "./processing-queue-types.js";
+export { DEFAULT_PROCESSING_QUEUE_CONFIG } from "./processing-queue-types.js";
+export {
+  ProcessingQueueError,
+  QueueFullError,
+  QueueStoppedError,
+  BatchProcessingError,
+  ShutdownTimeoutError,
+  isProcessingQueueError,
+  isRetryableProcessingQueueError,
+} from "./processing-queue-errors.js";
+export {
+  ProcessingQueueConfigSchema,
+  validateProcessingQueueConfig,
+  safeValidateProcessingQueueConfig,
+} from "./processing-queue-validation.js";
+export type { ValidatedProcessingQueueConfig } from "./processing-queue-validation.js";
