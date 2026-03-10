@@ -35,14 +35,16 @@ export interface RateLimitCheckResult {
  * Configuration for the rate limiter
  */
 export interface RateLimiterConfig {
-  /** Cooldown period between triggers in milliseconds (default: 5 minutes) */
+  /** Cooldown period between triggers in milliseconds (default: 2 seconds) */
   cooldownMs?: number;
 }
 
 /**
- * Default cooldown period: 5 minutes
+ * Default cooldown period: 2 seconds
+ *
+ * Can be overridden via the UPDATE_RATE_LIMIT_MS environment variable.
  */
-const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
+const DEFAULT_COOLDOWN_MS = 2 * 1000;
 
 /**
  * MCP Rate Limiter
@@ -238,13 +240,19 @@ let sharedInstance: MCPRateLimiter | null = null;
 /**
  * Get the shared rate limiter instance
  *
- * Creates the instance on first call with default configuration.
+ * Creates the instance on first call. Reads the UPDATE_RATE_LIMIT_MS
+ * environment variable to configure the cooldown period. Falls back
+ * to DEFAULT_COOLDOWN_MS (2 seconds) when not set.
  *
  * @returns Shared rate limiter instance
  */
 export function getSharedRateLimiter(): MCPRateLimiter {
   if (!sharedInstance) {
-    sharedInstance = new MCPRateLimiter();
+    const envCooldown = process.env["UPDATE_RATE_LIMIT_MS"];
+    const cooldownMs = envCooldown ? parseInt(envCooldown, 10) : undefined;
+    sharedInstance = new MCPRateLimiter(
+      cooldownMs && !isNaN(cooldownMs) && cooldownMs > 0 ? { cooldownMs } : {}
+    );
   }
   return sharedInstance;
 }

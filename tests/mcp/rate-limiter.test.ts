@@ -150,7 +150,7 @@ describe("MCPRateLimiter", () => {
 
     it("should use default cooldown when not specified", () => {
       const defaultLimiter = new MCPRateLimiter();
-      expect(defaultLimiter.getCooldownMs()).toBe(5 * 60 * 1000); // 5 minutes
+      expect(defaultLimiter.getCooldownMs()).toBe(2 * 1000); // 2 seconds
     });
   });
 
@@ -200,6 +200,42 @@ describe("Shared Rate Limiter", () => {
     const instance1 = getSharedRateLimiter();
     const instance2 = getSharedRateLimiter();
     expect(instance1).toBe(instance2);
+  });
+
+  it("should use UPDATE_RATE_LIMIT_MS env var for cooldown", () => {
+    const original = process.env["UPDATE_RATE_LIMIT_MS"];
+    try {
+      process.env["UPDATE_RATE_LIMIT_MS"] = "30000";
+      resetSharedRateLimiter();
+
+      const instance = getSharedRateLimiter();
+      expect(instance.getCooldownMs()).toBe(30000);
+    } finally {
+      if (original === undefined) {
+        delete process.env["UPDATE_RATE_LIMIT_MS"];
+      } else {
+        process.env["UPDATE_RATE_LIMIT_MS"] = original;
+      }
+      resetSharedRateLimiter();
+    }
+  });
+
+  it("should ignore invalid UPDATE_RATE_LIMIT_MS values", () => {
+    const original = process.env["UPDATE_RATE_LIMIT_MS"];
+    try {
+      process.env["UPDATE_RATE_LIMIT_MS"] = "not-a-number";
+      resetSharedRateLimiter();
+
+      const instance = getSharedRateLimiter();
+      expect(instance.getCooldownMs()).toBe(2 * 1000); // falls back to default
+    } finally {
+      if (original === undefined) {
+        delete process.env["UPDATE_RATE_LIMIT_MS"];
+      } else {
+        process.env["UPDATE_RATE_LIMIT_MS"] = original;
+      }
+      resetSharedRateLimiter();
+    }
   });
 
   it("should create new instance after reset", () => {

@@ -421,6 +421,17 @@ function formatSearchResponse(response: SearchResponse): TextContent {
         file_extension: result.metadata.file_extension,
         file_size_bytes: result.metadata.file_size_bytes,
         indexed_at: result.metadata.indexed_at,
+        ...(result.metadata.document_type && { document_type: result.metadata.document_type }),
+        ...(result.metadata.document_title && { document_title: result.metadata.document_title }),
+        ...(result.metadata.document_author && {
+          document_author: result.metadata.document_author,
+        }),
+        ...(result.metadata.section_heading && {
+          section_heading: result.metadata.section_heading,
+        }),
+        ...(result.metadata.page_number !== undefined && {
+          page_number: result.metadata.page_number,
+        }),
       },
     })),
     metadata: {

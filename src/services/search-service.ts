@@ -672,6 +672,13 @@ export class SearchServiceImpl implements SearchService {
           file_size_bytes: metadata.file_size_bytes ?? 0,
           indexed_at: metadata.indexed_at ?? new Date().toISOString(),
           language: derivedLanguage,
+          ...(metadata.document_type && { document_type: metadata.document_type }),
+          ...(metadata.document_title && { document_title: metadata.document_title }),
+          ...(metadata.document_author && { document_author: metadata.document_author }),
+          ...(metadata.section_heading && { section_heading: metadata.section_heading }),
+          ...(metadata.page_number !== undefined && {
+            page_number: metadata.page_number,
+          }),
         },
       };
     });

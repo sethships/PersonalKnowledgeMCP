@@ -54,6 +54,16 @@ export interface SearchResult {
     indexed_at: string; // ISO 8601 timestamp
     /** Programming language of the source file (derived from extension) */
     language?: string;
+    /** Document type when result is from document ingestion (e.g. "pdf", "docx", "markdown") */
+    document_type?: string;
+    /** Document title extracted from metadata */
+    document_title?: string;
+    /** Document author extracted from metadata */
+    document_author?: string;
+    /** Section heading within the document */
+    section_heading?: string;
+    /** Page number within the document (for paginated formats) */
+    page_number?: number;
   };
 }
 
