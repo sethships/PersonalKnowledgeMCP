@@ -345,7 +345,9 @@ export async function initializeDependencies(
       embeddingProvider,
       chromaClient,
       getComponentLogger("services:incremental-update-pipeline"),
-      graphIngestionService
+      graphIngestionService,
+      documentTypeDetector,
+      documentChunker
     );
     logger.debug(
       { graphEnabled: !!graphIngestionService },

@@ -25,9 +25,13 @@ import type {
   GraphUpdateStats,
   FilterStats,
 } from "./incremental-update-types.js";
+import type { InternalChunk } from "./ingestion-types.js";
 import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
 import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
+import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
+import type { DocumentChunker } from "../documents/DocumentChunker.js";
+import type { ExtractionResult } from "../documents/types.js";
 
 /**
  * Pipeline service for processing incremental repository updates.
@@ -79,13 +83,17 @@ export class IncrementalUpdatePipeline {
    * @param storageClient - ChromaDB client for vector storage
    * @param logger - Logger instance
    * @param graphIngestionService - Optional graph ingestion service for graph database updates
+   * @param documentTypeDetector - Optional detector for routing document files to extractors
+   * @param documentChunker - Optional document-aware chunker for PDF, DOCX, Markdown
    */
   constructor(
     private readonly fileChunker: FileChunker,
     private readonly embeddingProvider: EmbeddingProvider,
     private readonly storageClient: ChromaStorageClient,
     private readonly logger: Logger,
-    private readonly graphIngestionService?: GraphIngestionService
+    private readonly graphIngestionService?: GraphIngestionService,
+    private readonly documentTypeDetector?: DocumentTypeDetector,
+    private readonly documentChunker?: DocumentChunker
   ) {}
 
   /**
@@ -252,8 +260,10 @@ export class IncrementalUpdatePipeline {
       "Filtered changes by extension and exclusion patterns"
     );
 
-    // Collect all chunks from added/modified/renamed files for batch embedding
-    const allChunks: FileChunk[] = [];
+    // Collect all chunks from added/modified/renamed files for batch embedding.
+    // Uses InternalChunk to support both code files (via FileChunker) and
+    // document files (via DocumentChunker) in a single accumulator.
+    const allChunks: InternalChunk[] = [];
 
     // Process each change
     for (const change of filteredChanges) {
@@ -520,34 +530,45 @@ export class IncrementalUpdatePipeline {
   private async processAddedFile(
     change: FileChange,
     options: UpdateOptions,
-    allChunks: FileChunk[],
+    allChunks: InternalChunk[],
     stats: UpdateStats,
     graphStats?: GraphUpdateStats
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing added file");
 
     const absolutePath = this.validateFilePath(options.localPath, change.path);
-    const content = await Bun.file(absolutePath).text();
 
-    const fileInfo: FileInfo = {
-      relativePath: change.path,
-      absolutePath,
-      extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: Buffer.byteLength(content, "utf8"),
-      modifiedAt: new Date(), // Use current time for newly added files
-    };
-
-    const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
-    allChunks.push(...chunks);
-
-    // Graph update (errors captured in graphStats, don't block pipeline)
-    if (graphStats) {
-      await this.processGraphUpdate(
-        "ingest",
-        { path: change.path, content },
-        options.repository,
-        graphStats
+    // Route document files through the document pipeline
+    if (this.isDocumentFile(change.path)) {
+      const docChunks = await this.processDocumentFile(
+        absolutePath,
+        change.path,
+        options.repository
       );
+      allChunks.push(...docChunks);
+    } else {
+      const content = await Bun.file(absolutePath).text();
+
+      const fileInfo: FileInfo = {
+        relativePath: change.path,
+        absolutePath,
+        extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
+        sizeBytes: Buffer.byteLength(content, "utf8"),
+        modifiedAt: new Date(),
+      };
+
+      const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
+      allChunks.push(...this.convertFileChunksToInternal(chunks));
+
+      // Graph update only for code files (documents are not AST-parsed)
+      if (graphStats) {
+        await this.processGraphUpdate(
+          "ingest",
+          { path: change.path, content },
+          options.repository,
+          graphStats
+        );
+      }
     }
 
     stats.filesAdded++;
@@ -568,7 +589,7 @@ export class IncrementalUpdatePipeline {
   private async processModifiedFile(
     change: FileChange,
     options: UpdateOptions,
-    allChunks: FileChunk[],
+    allChunks: InternalChunk[],
     stats: UpdateStats,
     graphStats?: GraphUpdateStats
   ): Promise<void> {
@@ -582,39 +603,50 @@ export class IncrementalUpdatePipeline {
     );
     stats.chunksDeleted += deletedCount;
 
-    // Graph: delete old data first (non-blocking)
-    if (graphStats) {
-      await this.processGraphUpdate(
-        "delete",
-        { path: change.path },
-        options.repository,
-        graphStats
-      );
-    }
-
-    // Read and chunk new content
     const absolutePath = this.validateFilePath(options.localPath, change.path);
-    const content = await Bun.file(absolutePath).text();
 
-    const fileInfo: FileInfo = {
-      relativePath: change.path,
-      absolutePath,
-      extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: Buffer.byteLength(content, "utf8"),
-      modifiedAt: new Date(),
-    };
-
-    const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
-    allChunks.push(...chunks);
-
-    // Graph: ingest new data (non-blocking)
-    if (graphStats) {
-      await this.processGraphUpdate(
-        "ingest",
-        { path: change.path, content },
-        options.repository,
-        graphStats
+    // Route document files through the document pipeline
+    if (this.isDocumentFile(change.path)) {
+      const docChunks = await this.processDocumentFile(
+        absolutePath,
+        change.path,
+        options.repository
       );
+      allChunks.push(...docChunks);
+    } else {
+      // Graph: delete old data first (non-blocking, code files only)
+      if (graphStats) {
+        await this.processGraphUpdate(
+          "delete",
+          { path: change.path },
+          options.repository,
+          graphStats
+        );
+      }
+
+      // Read and chunk new content
+      const content = await Bun.file(absolutePath).text();
+
+      const fileInfo: FileInfo = {
+        relativePath: change.path,
+        absolutePath,
+        extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
+        sizeBytes: Buffer.byteLength(content, "utf8"),
+        modifiedAt: new Date(),
+      };
+
+      const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
+      allChunks.push(...this.convertFileChunksToInternal(chunks));
+
+      // Graph: ingest new data (non-blocking, code files only)
+      if (graphStats) {
+        await this.processGraphUpdate(
+          "ingest",
+          { path: change.path, content },
+          options.repository,
+          graphStats
+        );
+      }
     }
 
     stats.filesModified++;
@@ -674,7 +706,7 @@ export class IncrementalUpdatePipeline {
   private async processRenamedFile(
     change: FileChange,
     options: UpdateOptions,
-    allChunks: FileChunk[],
+    allChunks: InternalChunk[],
     stats: UpdateStats,
     graphStats?: GraphUpdateStats
   ): Promise<void> {
@@ -696,39 +728,50 @@ export class IncrementalUpdatePipeline {
     );
     stats.chunksDeleted += deletedCount;
 
-    // Graph: delete old path data (non-blocking)
-    if (graphStats) {
-      await this.processGraphUpdate(
-        "delete",
-        { path: change.previousPath },
-        options.repository,
-        graphStats
-      );
-    }
-
     // Read and chunk at new path
     const absolutePath = this.validateFilePath(options.localPath, change.path);
-    const content = await Bun.file(absolutePath).text();
 
-    const fileInfo: FileInfo = {
-      relativePath: change.path,
-      absolutePath,
-      extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
-      sizeBytes: Buffer.byteLength(content, "utf8"),
-      modifiedAt: new Date(),
-    };
-
-    const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
-    allChunks.push(...chunks);
-
-    // Graph: ingest new path data (non-blocking)
-    if (graphStats) {
-      await this.processGraphUpdate(
-        "ingest",
-        { path: change.path, content },
-        options.repository,
-        graphStats
+    // Route document files through the document pipeline
+    if (this.isDocumentFile(change.path)) {
+      const docChunks = await this.processDocumentFile(
+        absolutePath,
+        change.path,
+        options.repository
       );
+      allChunks.push(...docChunks);
+    } else {
+      // Graph: delete old path data (non-blocking, code files only)
+      if (graphStats) {
+        await this.processGraphUpdate(
+          "delete",
+          { path: change.previousPath },
+          options.repository,
+          graphStats
+        );
+      }
+
+      const content = await Bun.file(absolutePath).text();
+
+      const fileInfo: FileInfo = {
+        relativePath: change.path,
+        absolutePath,
+        extension: change.path.substring(change.path.lastIndexOf(".")).toLowerCase(),
+        sizeBytes: Buffer.byteLength(content, "utf8"),
+        modifiedAt: new Date(),
+      };
+
+      const chunks = this.fileChunker.chunkFile(content, fileInfo, options.repository);
+      allChunks.push(...this.convertFileChunksToInternal(chunks));
+
+      // Graph: ingest new path data (non-blocking, code files only)
+      if (graphStats) {
+        await this.processGraphUpdate(
+          "ingest",
+          { path: change.path, content },
+          options.repository,
+          graphStats
+        );
+      }
     }
 
     stats.filesModified++; // Rename counts as modification
@@ -745,7 +788,7 @@ export class IncrementalUpdatePipeline {
    * @param stats - Statistics to update
    */
   private async embedAndStoreChunks(
-    chunks: FileChunk[],
+    chunks: InternalChunk[],
     collectionName: string,
     stats: UpdateStats,
     logger: Logger
@@ -790,7 +833,7 @@ export class IncrementalUpdatePipeline {
       );
     }
 
-    // Create DocumentInput objects
+    // Create DocumentInput objects from InternalChunks
     const documents: DocumentInput[] = chunks.map((chunk, index) => {
       const embedding = allEmbeddings[index];
       if (!embedding) {
@@ -808,12 +851,28 @@ export class IncrementalUpdatePipeline {
           total_chunks: chunk.totalChunks,
           chunk_start_line: chunk.startLine,
           chunk_end_line: chunk.endLine,
-          file_extension: chunk.metadata.extension,
-          language: chunk.metadata.language,
-          file_size_bytes: chunk.metadata.fileSizeBytes,
-          content_hash: chunk.metadata.contentHash,
+          file_extension: chunk.extension,
+          language: chunk.language,
+          file_size_bytes: chunk.fileSizeBytes,
+          content_hash: chunk.contentHash,
           indexed_at: new Date().toISOString(),
-          file_modified_at: chunk.metadata.fileModifiedAt.toISOString(),
+          file_modified_at: chunk.fileModifiedAt.toISOString(),
+          // Document-specific metadata (only present for document chunks)
+          ...(chunk.documentMetadata && {
+            document_type: chunk.documentMetadata.documentType,
+            ...(chunk.documentMetadata.pageNumber !== undefined && {
+              page_number: chunk.documentMetadata.pageNumber,
+            }),
+            ...(chunk.documentMetadata.sectionHeading && {
+              section_heading: chunk.documentMetadata.sectionHeading,
+            }),
+            ...(chunk.documentMetadata.documentTitle && {
+              document_title: chunk.documentMetadata.documentTitle,
+            }),
+            ...(chunk.documentMetadata.documentAuthor && {
+              document_author: chunk.documentMetadata.documentAuthor,
+            }),
+          }),
         },
       };
     });
@@ -842,5 +901,109 @@ export class IncrementalUpdatePipeline {
       },
       "Successfully upserted chunks to ChromaDB"
     );
+  }
+
+  /**
+   * Check if a file should be processed through the document chunking pipeline.
+   *
+   * Returns true when both documentTypeDetector and documentChunker are available
+   * and the file's extension is recognized as a document type.
+   *
+   * @param filePath - Relative file path to check
+   * @returns true if the file should be processed as a document
+   */
+  private isDocumentFile(filePath: string): boolean {
+    if (!this.documentTypeDetector || !this.documentChunker) {
+      return false;
+    }
+    return this.documentTypeDetector.isDocument(filePath);
+  }
+
+  /**
+   * Process a document file through the document extraction and chunking pipeline.
+   *
+   * Uses the DocumentTypeDetector to find the appropriate extractor,
+   * extracts content and metadata, then chunks the document using
+   * DocumentChunker. The resulting DocumentChunks are converted to
+   * InternalChunks with document-specific metadata preserved.
+   *
+   * @param absolutePath - Absolute path to the document file
+   * @param relativePath - Relative path for chunk identification
+   * @param repository - Repository or source name
+   * @returns Array of InternalChunks with document metadata
+   * @throws {Error} If no extractor is found or extraction/chunking fails
+   */
+  private async processDocumentFile(
+    absolutePath: string,
+    relativePath: string,
+    repository: string
+  ): Promise<InternalChunk[]> {
+    const extractor = this.documentTypeDetector!.getExtractor(absolutePath);
+    if (!extractor) {
+      throw new Error(`No extractor found for document: ${relativePath}`);
+    }
+
+    const detectedType = this.documentTypeDetector!.detect(absolutePath);
+    this.logger.debug(
+      { file: relativePath, type: detectedType },
+      "Processing document file in incremental pipeline"
+    );
+
+    const extractionResult = (await extractor.extract(absolutePath)) as ExtractionResult;
+    const documentChunks = this.documentChunker!.chunkDocument(
+      extractionResult,
+      relativePath,
+      repository
+    );
+
+    return documentChunks.map((chunk) => ({
+      content: chunk.content,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      filePath: chunk.filePath,
+      id: chunk.id,
+      repository: chunk.repository,
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+      extension: chunk.metadata.extension,
+      language: chunk.metadata.language,
+      fileSizeBytes: chunk.metadata.fileSizeBytes,
+      contentHash: chunk.metadata.contentHash,
+      fileModifiedAt: chunk.metadata.fileModifiedAt,
+      documentMetadata: {
+        documentType: chunk.metadata.documentType,
+        pageNumber: chunk.metadata.pageNumber,
+        sectionHeading: chunk.metadata.sectionHeading,
+        documentTitle: chunk.metadata.documentTitle,
+        documentAuthor: chunk.metadata.documentAuthor,
+      },
+    }));
+  }
+
+  /**
+   * Convert FileChunk[] to InternalChunk[] for unified batch processing.
+   *
+   * Maps FileChunk metadata fields to the flat InternalChunk structure.
+   * No documentMetadata is set since these are code/text file chunks.
+   *
+   * @param chunks - FileChunks from FileChunker
+   * @returns InternalChunks without document metadata
+   */
+  private convertFileChunksToInternal(chunks: FileChunk[]): InternalChunk[] {
+    return chunks.map((chunk) => ({
+      content: chunk.content,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      filePath: chunk.filePath,
+      id: chunk.id,
+      repository: chunk.repository,
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+      extension: chunk.metadata.extension,
+      language: chunk.metadata.language,
+      fileSizeBytes: chunk.metadata.fileSizeBytes,
+      contentHash: chunk.metadata.contentHash,
+      fileModifiedAt: chunk.metadata.fileModifiedAt,
+    }));
   }
 }

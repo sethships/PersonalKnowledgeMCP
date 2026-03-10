@@ -16,6 +16,7 @@ import type {
 import { validateSemanticSearchArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
+import { toolDebugLog } from "../debug-logger.js";
 import type { ToolHandler } from "../types.js";
 
 /**
@@ -206,6 +207,7 @@ export function createSemanticSearchHandler(
       // Step 4: Handle all errors gracefully
       const duration = performance.now() - startTime;
       log.error({ error, duration_ms: Math.round(duration) }, "semantic_search failed");
+      toolDebugLog("semantic_search", error);
 
       const mcpError = mapToMCPError(error);
 
