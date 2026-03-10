@@ -38,3 +38,10 @@ When not provided, the pipeline falls back to `FileChunker` for all files.
 
 Document files skip graph ingestion because they are not AST-parseable.
 The knowledge graph only tracks code entities and their relationships.
+
+## Verification
+
+This document was used to verify end-to-end document routing in the incremental
+update pipeline. After rebuilding the MCP server with PR #522 changes, modifying
+this file and triggering an incremental update should produce chunks with
+`document_type: "markdown"` metadata in ChromaDB.
