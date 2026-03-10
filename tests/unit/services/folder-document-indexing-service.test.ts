@@ -188,6 +188,28 @@ describe("FolderDocumentIndexingService", () => {
       expect(context?.includeExtensions).toEqual([".md", ".txt", ".pdf"]);
     });
 
+    it("should convert recursive glob patterns like **/*.md to extensions", () => {
+      const folder = createTestFolder({
+        includePatterns: ["**/*.md", "**/*.txt", "*.pdf"],
+      });
+      service.registerFolder(folder);
+
+      const context = service.getFolderContext(folder.id);
+      expect(context?.includeExtensions).toEqual([".md", ".txt", ".pdf"]);
+    });
+
+    it("should fall back to defaults when patterns cannot be parsed", () => {
+      const folder = createTestFolder({
+        includePatterns: ["docs/readme", "no-extension"],
+      });
+      service.registerFolder(folder);
+
+      const context = service.getFolderContext(folder.id);
+      expect(context?.includeExtensions).toEqual(
+        DEFAULT_FOLDER_INDEXING_CONFIG.defaultIncludeExtensions
+      );
+    });
+
     it("should use default exclude patterns when folder has none", () => {
       const folder = createTestFolder({ excludePatterns: null });
       service.registerFolder(folder);
@@ -420,6 +442,29 @@ describe("FolderDocumentIndexingService", () => {
       } catch (error) {
         expect(error).toBeInstanceOf(ContentHashCheckError);
       }
+    });
+
+    it("should compute hash using binary-safe approach for non-text files", async () => {
+      // Write binary-like content to verify raw byte hashing
+      const binaryContent = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const expectedHash = createHash("sha256").update(binaryContent).digest("hex");
+
+      const filePath = path.join(testDir, "binary-file.png");
+      await fs.promises.writeFile(filePath, binaryContent);
+
+      (mockStorage.getDocumentsByMetadata as ReturnType<typeof mock>).mockImplementation(() =>
+        Promise.resolve([])
+      );
+
+      const result = await service.checkContentHash(
+        filePath,
+        "test-repo",
+        "test_collection",
+        "binary-file.png"
+      );
+
+      expect(result.computedHash).toBe(expectedHash);
+      expect(result.unchanged).toBe(false);
     });
   });
 

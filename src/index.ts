@@ -283,6 +283,9 @@ async function main(): Promise<void> {
       folderUpdatePipeline,
       chromaClient
     );
+    // TODO(#383): registerFolder() is called by the folder management MCP tools
+    // (e.g., watch_folder) when users add folders. This is expected incremental delivery —
+    // the service is wired up but folders are registered on-demand via MCP tool invocations.
 
     // Wire change detection → folder document indexing
     changeDetectionService.onDetectedChange((change) => {
