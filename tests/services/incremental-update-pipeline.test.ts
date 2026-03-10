@@ -1028,7 +1028,7 @@ describe("IncrementalUpdatePipeline", () => {
       // Verify document metadata is included in stored documents
       const upsertCall = (mockStorageClient.upsertDocuments as ReturnType<typeof mock>).mock
         .calls[0] as [string, Array<{ metadata: Record<string, unknown> }>];
-      const storedDoc = upsertCall[1][0];
+      const storedDoc = upsertCall[1][0]!;
       expect(storedDoc.metadata["document_type"]).toBe("pdf");
       expect(storedDoc.metadata["document_title"]).toBe("Test Report");
       expect(storedDoc.metadata["document_author"]).toBe("Test Author");
@@ -1173,7 +1173,130 @@ describe("IncrementalUpdatePipeline", () => {
       // Stored with document_type metadata
       const upsertCall = (mockStorageClient.upsertDocuments as ReturnType<typeof mock>).mock
         .calls[0] as [string, Array<{ metadata: Record<string, unknown> }>];
-      expect(upsertCall[1][0].metadata["document_type"]).toBe("docx");
+      expect(upsertCall[1][0]!.metadata["document_type"]).toBe("docx");
+    });
+
+    it("should handle renamed document files correctly", async () => {
+      const pdfContent = "Renamed document content";
+      const newPath = "docs/renamed-report.pdf";
+      const oldPath = "docs/old-report.pdf";
+      const docsDir = join(testDir, "docs");
+      await mkdir(docsDir, { recursive: true });
+      await writeFile(join(testDir, newPath), pdfContent);
+
+      const mockExtractor = {
+        extract: mock(async () => ({
+          content: pdfContent,
+          metadata: {
+            title: "Renamed Report",
+            pageCount: 1,
+            pages: [{ pageNumber: 1, content: pdfContent }],
+          },
+        })),
+      };
+
+      const mockDetector = {
+        isDocument: mock((path: string) => path.endsWith(".pdf")),
+        detect: mock(() => "pdf" as const),
+        getExtractor: mock(() => mockExtractor),
+      };
+
+      const mockDocChunker = {
+        chunkDocument: mock((_result: unknown, relativePath: string, repo: string) => [
+          {
+            content: pdfContent,
+            startLine: 1,
+            endLine: 1,
+            filePath: relativePath,
+            id: `${repo}:${relativePath}:0`,
+            repository: repo,
+            chunkIndex: 0,
+            totalChunks: 1,
+            metadata: {
+              extension: ".pdf",
+              language: "unknown",
+              fileSizeBytes: pdfContent.length,
+              contentHash: "ren789",
+              fileModifiedAt: new Date(),
+              documentType: "pdf",
+            },
+          },
+        ]),
+      };
+
+      const docPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        mockDetector as never,
+        mockDocChunker as never
+      );
+
+      const changes: FileChange[] = [{ path: newPath, status: "renamed", previousPath: oldPath }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await docPipeline.processChanges(changes, options);
+
+      expect(result.stats.filesModified).toBe(1); // Renames count as modifications
+      // Old path chunks should be deleted
+      expect(mockStorageClient.deleteDocumentsByFilePrefix).toHaveBeenCalledWith(
+        "test_collection",
+        "test-repo",
+        oldPath
+      );
+      // Document pipeline should be used for new path
+      expect(mockExtractor.extract).toHaveBeenCalledTimes(1);
+      expect(mockDocChunker.chunkDocument).toHaveBeenCalledTimes(1);
+      // Stored with document_type metadata
+      const upsertCall = (mockStorageClient.upsertDocuments as ReturnType<typeof mock>).mock
+        .calls[0] as [string, Array<{ metadata: Record<string, unknown> }>];
+      expect(upsertCall[1][0]!.metadata["document_type"]).toBe("pdf");
+    });
+
+    it("should collect errors when document extraction fails", async () => {
+      const badFile = "docs/corrupt.pdf";
+      const docsDir = join(testDir, "docs");
+      await mkdir(docsDir, { recursive: true });
+      await writeFile(join(testDir, badFile), "not a real pdf");
+
+      const mockExtractor = {
+        extract: mock(async () => {
+          throw new Error("Failed to parse PDF: corrupt file");
+        }),
+      };
+
+      const mockDetector = {
+        isDocument: mock((path: string) => path.endsWith(".pdf")),
+        detect: mock(() => "pdf" as const),
+        getExtractor: mock(() => mockExtractor),
+      };
+
+      const mockDocChunker = {
+        chunkDocument: mock(() => []),
+      };
+
+      const docPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        mockDetector as never,
+        mockDocChunker as never
+      );
+
+      const changes: FileChange[] = [{ path: badFile, status: "added" }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await docPipeline.processChanges(changes, options);
+
+      // File should not be counted as added
+      expect(result.stats.filesAdded).toBe(0);
+      // Error should be collected
+      expect(result.errors.length).toBe(1);
+      expect(result.errors[0]!.error).toContain("corrupt file");
+      // Document chunker should NOT be called since extraction failed
+      expect(mockDocChunker.chunkDocument).not.toHaveBeenCalled();
     });
   });
 });
