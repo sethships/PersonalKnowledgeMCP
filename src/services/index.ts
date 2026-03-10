@@ -316,3 +316,20 @@ export {
   safeValidateProcessingQueueConfig,
 } from "./processing-queue-validation.js";
 export type { ValidatedProcessingQueueConfig } from "./processing-queue-validation.js";
+
+// FolderDocumentIndexingService exports
+export { FolderDocumentIndexingService } from "./folder-document-indexing-service.js";
+export type {
+  FolderIndexingConfig,
+  FolderContext,
+  ContentHashCheckResult,
+  FolderIndexingResult,
+} from "./folder-document-indexing-types.js";
+export { DEFAULT_FOLDER_INDEXING_CONFIG } from "./folder-document-indexing-types.js";
+export {
+  FolderDocumentIndexingError,
+  FolderNotRegisteredError,
+  ContentHashCheckError,
+  isFolderDocumentIndexingError,
+  isRetryableFolderDocumentIndexingError,
+} from "./folder-document-indexing-errors.js";

@@ -49,6 +49,8 @@ import { RelationshipExtractor } from "./graph/extraction/RelationshipExtractor.
 import { resolveGitHubPAT } from "./services/github-pat-resolver.js";
 import { DocumentSearchServiceImpl } from "./services/document-search-service.js";
 import { FolderWatcherService } from "./services/folder-watcher-service.js";
+import { ChangeDetectionService } from "./services/change-detection-service.js";
+import { FolderDocumentIndexingService } from "./services/folder-document-indexing-service.js";
 import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
 import { DocumentTypeDetector } from "./documents/DocumentTypeDetector.js";
 import { DocumentChunker } from "./documents/DocumentChunker.js";
@@ -255,11 +257,50 @@ async function main(): Promise<void> {
     );
     logger.info("Document search service initialized");
 
-    // Step 5a-ii: Initialize folder watcher and list watched folders service
+    // Step 5a-ii: Initialize folder watcher, change detection, and document indexing services
     logger.info("Initializing folder watcher service");
     const folderWatcherService = new FolderWatcherService();
     const listWatchedFoldersService = new ListWatchedFoldersServiceImpl(folderWatcherService);
-    logger.info("Folder watcher service initialized (no folders watched until configured)");
+
+    // Create change detection service wrapping folder watcher
+    const changeDetectionService = new ChangeDetectionService(folderWatcherService);
+
+    // Create folder document indexing service to connect change detection → pipeline
+    // Uses its own IncrementalUpdatePipeline instance (independent of GitHub-based updates)
+    const folderFileChunker = new FileChunker();
+    const folderDocTypeDetector = new DocumentTypeDetector();
+    const folderDocChunker = new DocumentChunker();
+    const folderUpdatePipeline = new IncrementalUpdatePipeline(
+      folderFileChunker,
+      embeddingProvider,
+      chromaClient,
+      getComponentLogger("services:folder-update-pipeline"),
+      undefined, // No graph ingestion for folder watching (can be added later)
+      folderDocTypeDetector,
+      folderDocChunker
+    );
+    const folderDocumentIndexingService = new FolderDocumentIndexingService(
+      folderUpdatePipeline,
+      chromaClient
+    );
+
+    // Wire change detection → folder document indexing
+    changeDetectionService.onDetectedChange((change) => {
+      try {
+        folderDocumentIndexingService.handleDetectedChange(change);
+      } catch (error) {
+        logger.warn(
+          {
+            folderId: change.folderId,
+            path: change.relativePath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Failed to enqueue detected change for indexing"
+        );
+      }
+    });
+
+    logger.info("Folder watcher and document indexing services initialized");
 
     // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
@@ -363,6 +404,13 @@ async function main(): Promise<void> {
         listWatchedFoldersService,
       }
     );
+
+    // Register folder document indexing shutdown hook
+    mcpServer.registerPreShutdownHook(async () => {
+      logger.info("Shutting down folder document indexing service");
+      changeDetectionService.dispose();
+      await folderDocumentIndexingService.shutdown();
+    });
 
     // Register instance router shutdown hook
     mcpServer.registerPreShutdownHook(async () => {
