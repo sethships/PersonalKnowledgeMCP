@@ -129,3 +129,15 @@ export { DocumentChunker } from "./DocumentChunker.js";
 // Type detector
 export { DocumentTypeDetector } from "./DocumentTypeDetector.js";
 export type { DetectedType } from "./DocumentTypeDetector.js";
+
+// OCR service
+export { OcrService } from "./OcrService.js";
+export type {
+  OcrConfig,
+  OcrResult,
+  OcrPageResult,
+  OcrProgress,
+  OcrProgressCallback,
+  OcrInput,
+} from "./ocr-types.js";
+export { DEFAULT_OCR_CONFIG, OCR_SUPPORTED_EXTENSIONS } from "./ocr-constants.js";
