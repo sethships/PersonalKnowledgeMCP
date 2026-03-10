@@ -16,6 +16,7 @@ import { RelationshipType } from "../../graph/types.js";
 import { validateGetDependenciesArgs } from "../validation.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
+import { toolDebugLog } from "../debug-logger.js";
 import type { ToolHandler, GetDependenciesArgs } from "../types.js";
 import { mapMCPRelationshipTypes } from "./utils/relationship-mapper.js";
 
@@ -163,6 +164,7 @@ export function createGetDependenciesHandler(graphService: GraphService): ToolHa
       // Step 5: Handle all errors gracefully
       const duration = performance.now() - startTime;
       log.error({ error, duration_ms: Math.round(duration) }, "get_dependencies failed");
+      toolDebugLog("get_dependencies", error);
 
       const mcpError = mapToMCPError(error);
 

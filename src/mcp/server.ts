@@ -18,6 +18,7 @@ import type { MCPServerConfig, ToolRegistry, MCPServerOptionalDeps } from "./typ
 import { createToolRegistry, getToolDefinitions, getToolHandler } from "./tools/index.js";
 import { createMethodNotFoundError } from "./errors.js";
 import { getComponentLogger } from "../logging/index.js";
+import { debugLog, toolDebugLog } from "./debug-logger.js";
 
 /** Default server configuration */
 const DEFAULT_CONFIG: MCPServerConfig = {
@@ -190,13 +191,16 @@ export class PersonalKnowledgeMCPServer {
     // Handle CallTool request
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name: toolName, arguments: args } = request.params;
+      const callStart = performance.now();
 
+      debugLog(`CallTool START: ${toolName} args=${JSON.stringify(args)}`);
       this.logger.info({ toolName, args }, "Handling CallTool request");
 
       // Get tool handler from registry
       const handler = getToolHandler(this.toolRegistry, toolName);
 
       if (!handler) {
+        debugLog(`CallTool NOT_FOUND: ${toolName}`);
         this.logger.warn({ toolName }, "Tool not found");
 
         const error = createMethodNotFoundError(toolName);
@@ -213,14 +217,30 @@ export class PersonalKnowledgeMCPServer {
 
       // Execute tool handler
       try {
+        debugLog(`CallTool EXECUTING: ${toolName}`);
         const result = await handler(args);
 
+        const durationMs = Math.round(performance.now() - callStart);
+        debugLog(
+          `CallTool RESULT: ${toolName} isError=${result.isError ?? false} duration=${durationMs}ms`
+        );
+        if (result.isError) {
+          const errContent = result.content
+            ?.map((c: { type: string; text?: string }) =>
+              c.type === "text" ? (c as { text: string }).text : c.type
+            )
+            .join(" | ");
+          debugLog(`  ERROR_CONTENT: ${errContent}`);
+        }
         this.logger.info({ toolName, isError: result.isError }, "CallTool completed");
 
         return result;
       } catch (error) {
         // This should rarely happen as handlers catch their own errors
         // But we handle it defensively to prevent server crashes
+        const durationMs = Math.round(performance.now() - callStart);
+        debugLog(`CallTool UNCAUGHT_ERROR: ${toolName} duration=${durationMs}ms`);
+        toolDebugLog(toolName, error);
         this.logger.error({ toolName, error }, "Unexpected error in tool handler");
 
         return {

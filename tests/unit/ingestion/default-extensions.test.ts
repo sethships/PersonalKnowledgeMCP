@@ -13,8 +13,13 @@ describe("DEFAULT_EXTENSIONS", () => {
     expect(DEFAULT_EXTENSIONS.length).toBeGreaterThan(0);
   });
 
-  it("should contain exactly 19 extensions", () => {
-    expect(DEFAULT_EXTENSIONS).toHaveLength(19);
+  it("should contain exactly 21 extensions", () => {
+    expect(DEFAULT_EXTENSIONS).toHaveLength(21);
+  });
+
+  it("should contain document extensions", () => {
+    expect(DEFAULT_EXTENSIONS).toContain(".pdf");
+    expect(DEFAULT_EXTENSIONS).toContain(".docx");
   });
 
   it("should contain all expected JavaScript/TypeScript extensions", () => {

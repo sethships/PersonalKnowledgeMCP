@@ -62,6 +62,15 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
 export function mapToMCPError(error: unknown): McpError {
   const log = getLogger();
 
+  // If it's already an McpError (e.g., from validation), preserve it as-is.
+  // Without this check, McpError falls through to the generic Error branch,
+  // which replaces the specific error code (e.g., InvalidParams -32602) with
+  // InternalError (-32603) and loses the descriptive message.
+  if (error instanceof McpError) {
+    log.warn({ code: error.code, message: error.message }, "Passing through McpError");
+    return error;
+  }
+
   // Handle instance access errors (authorization)
   if (error instanceof InstanceAccessDeniedError) {
     log.warn(

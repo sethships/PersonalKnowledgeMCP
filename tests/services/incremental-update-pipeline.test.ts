@@ -939,4 +939,241 @@ describe("IncrementalUpdatePipeline", () => {
       expect(mockGraphService.ingestFile).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("document file routing", () => {
+    const baseOptions: UpdateOptions = {
+      repository: "test-repo",
+      localPath: "",
+      collectionName: "test_collection",
+      includeExtensions: [".ts", ".pdf", ".docx", ".md"],
+      excludePatterns: ["node_modules/**"],
+    };
+
+    it("should route PDF files through document pipeline when detector and chunker are provided", async () => {
+      const pdfContent = "Sample PDF text content";
+      const pdfFile = "docs/report.pdf";
+      const absoluteDir = join(testDir, "docs");
+      await mkdir(absoluteDir, { recursive: true });
+      await writeFile(join(testDir, pdfFile), pdfContent);
+
+      const mockExtractor = {
+        extract: mock(async () => ({
+          content: pdfContent,
+          metadata: {
+            title: "Test Report",
+            author: "Test Author",
+            pageCount: 1,
+            pages: [{ pageNumber: 1, content: pdfContent }],
+          },
+        })),
+      };
+
+      const mockDetector = {
+        isDocument: mock((path: string) => path.endsWith(".pdf")),
+        detect: mock(() => "pdf" as const),
+        getExtractor: mock(() => mockExtractor),
+      };
+
+      const mockChunker = {
+        chunkDocument: mock((_extractionResult: unknown, relativePath: string, repo: string) => [
+          {
+            content: pdfContent,
+            startLine: 1,
+            endLine: 1,
+            filePath: relativePath,
+            id: `${repo}:${relativePath}:0`,
+            repository: repo,
+            chunkIndex: 0,
+            totalChunks: 1,
+            metadata: {
+              extension: ".pdf",
+              language: "unknown",
+              fileSizeBytes: pdfContent.length,
+              contentHash: "abc123",
+              fileModifiedAt: new Date(),
+              documentType: "pdf",
+              pageNumber: 1,
+              sectionHeading: undefined,
+              documentTitle: "Test Report",
+              documentAuthor: "Test Author",
+            },
+          },
+        ]),
+      };
+
+      const docPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined, // no graph service
+        mockDetector as never,
+        mockChunker as never
+      );
+
+      const changes: FileChange[] = [{ path: pdfFile, status: "added" }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await docPipeline.processChanges(changes, options);
+
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      expect(mockDetector.isDocument).toHaveBeenCalledWith(pdfFile);
+      expect(mockExtractor.extract).toHaveBeenCalledTimes(1);
+      expect(mockChunker.chunkDocument).toHaveBeenCalledTimes(1);
+
+      // Verify embeddings were generated and stored
+      expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledTimes(1);
+      expect(mockStorageClient.upsertDocuments).toHaveBeenCalledTimes(1);
+
+      // Verify document metadata is included in stored documents
+      const upsertCall = (mockStorageClient.upsertDocuments as ReturnType<typeof mock>).mock
+        .calls[0] as [string, Array<{ metadata: Record<string, unknown> }>];
+      const storedDoc = upsertCall[1][0];
+      expect(storedDoc.metadata["document_type"]).toBe("pdf");
+      expect(storedDoc.metadata["document_title"]).toBe("Test Report");
+      expect(storedDoc.metadata["document_author"]).toBe("Test Author");
+      expect(storedDoc.metadata["page_number"]).toBe(1);
+    });
+
+    it("should route code files through FileChunker even when document pipeline is available", async () => {
+      const tsContent = 'export const hello = "world";';
+      const tsFile = "src/hello.ts";
+      const srcDir = join(testDir, "src");
+      await mkdir(srcDir, { recursive: true });
+      await writeFile(join(testDir, tsFile), tsContent);
+
+      const mockDetector = {
+        isDocument: mock(() => false),
+        detect: mock(() => "unknown" as const),
+        getExtractor: mock(() => null),
+      };
+
+      const mockChunker = {
+        chunkDocument: mock(() => []),
+      };
+
+      const docPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        mockDetector as never,
+        mockChunker as never
+      );
+
+      const changes: FileChange[] = [{ path: tsFile, status: "added" }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await docPipeline.processChanges(changes, options);
+
+      expect(result.stats.filesAdded).toBe(1);
+      expect(mockDetector.isDocument).toHaveBeenCalledWith(tsFile);
+      // Document chunker should NOT be called for code files
+      expect(mockChunker.chunkDocument).not.toHaveBeenCalled();
+      // FileChunker path should have produced chunks (via embedAndStore)
+      expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledTimes(1);
+    });
+
+    it("should fall back to FileChunker when document dependencies are not provided", async () => {
+      // Pipeline without document deps (backward compatibility)
+      const plainPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger
+      );
+
+      const mdContent = "# Hello\n\nSome markdown content";
+      const mdFile = "docs/readme.md";
+      const docsDir = join(testDir, "docs");
+      await mkdir(docsDir, { recursive: true });
+      await writeFile(join(testDir, mdFile), mdContent);
+
+      const changes: FileChange[] = [{ path: mdFile, status: "added" }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await plainPipeline.processChanges(changes, options);
+
+      // Should still process the file via FileChunker (no error)
+      expect(result.stats.filesAdded).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalledTimes(1);
+    });
+
+    it("should handle modified document files correctly", async () => {
+      const docxContent = "Updated document content";
+      const docxFile = "docs/report.docx";
+      const docsDir = join(testDir, "docs");
+      await mkdir(docsDir, { recursive: true });
+      await writeFile(join(testDir, docxFile), docxContent);
+
+      const mockExtractor = {
+        extract: mock(async () => ({
+          content: docxContent,
+          metadata: {
+            title: "Report",
+            pageCount: 1,
+            pages: [{ pageNumber: 1, content: docxContent }],
+          },
+        })),
+      };
+
+      const mockDetector = {
+        isDocument: mock((path: string) => path.endsWith(".docx")),
+        detect: mock(() => "docx" as const),
+        getExtractor: mock(() => mockExtractor),
+      };
+
+      const mockDocChunker = {
+        chunkDocument: mock((_result: unknown, relativePath: string, repo: string) => [
+          {
+            content: docxContent,
+            startLine: 1,
+            endLine: 1,
+            filePath: relativePath,
+            id: `${repo}:${relativePath}:0`,
+            repository: repo,
+            chunkIndex: 0,
+            totalChunks: 1,
+            metadata: {
+              extension: ".docx",
+              language: "unknown",
+              fileSizeBytes: docxContent.length,
+              contentHash: "def456",
+              fileModifiedAt: new Date(),
+              documentType: "docx",
+            },
+          },
+        ]),
+      };
+
+      const docPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        mockDetector as never,
+        mockDocChunker as never
+      );
+
+      const changes: FileChange[] = [{ path: docxFile, status: "modified" }];
+      const options = { ...baseOptions, localPath: testDir };
+      const result = await docPipeline.processChanges(changes, options);
+
+      expect(result.stats.filesModified).toBe(1);
+      // Old chunks should be deleted first
+      expect(mockStorageClient.deleteDocumentsByFilePrefix).toHaveBeenCalledWith(
+        "test_collection",
+        "test-repo",
+        docxFile
+      );
+      // Document pipeline should be used
+      expect(mockExtractor.extract).toHaveBeenCalledTimes(1);
+      expect(mockDocChunker.chunkDocument).toHaveBeenCalledTimes(1);
+      // Stored with document_type metadata
+      const upsertCall = (mockStorageClient.upsertDocuments as ReturnType<typeof mock>).mock
+        .calls[0] as [string, Array<{ metadata: Record<string, unknown> }>];
+      expect(upsertCall[1][0].metadata["document_type"]).toBe("docx");
+    });
+  });
 });

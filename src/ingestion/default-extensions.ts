@@ -33,6 +33,9 @@ export const DEFAULT_EXTENSIONS = [
   ".cpp",
   ".c",
   ".h",
+  // Documents
+  ".pdf",
+  ".docx",
   // Documentation
   ".md",
   ".txt",

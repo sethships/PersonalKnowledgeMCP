@@ -36,7 +36,7 @@ export const SemanticSearchArgsSchema = z
       .min(1, "Query cannot be empty")
       .max(1000, "Query exceeds maximum length of 1000 characters"),
 
-    limit: z
+    limit: z.coerce
       .number()
       .int("Limit must be an integer")
       .min(1, "Limit must be at least 1")
@@ -44,7 +44,7 @@ export const SemanticSearchArgsSchema = z
       .optional()
       .default(10),
 
-    threshold: z
+    threshold: z.coerce
       .number()
       .min(0.0, "Threshold must be between 0.0 and 1.0")
       .max(1.0, "Threshold must be between 0.0 and 1.0")
@@ -158,7 +158,7 @@ export const SearchDocumentsArgsSchema = z
 
     folder: z.string().trim().min(1, "Folder name cannot be empty").optional(),
 
-    limit: z
+    limit: z.coerce
       .number()
       .int("Limit must be an integer")
       .min(1, "Limit must be at least 1")
@@ -166,7 +166,7 @@ export const SearchDocumentsArgsSchema = z
       .optional()
       .default(10),
 
-    threshold: z
+    threshold: z.coerce
       .number()
       .min(0.0, "Threshold must be between 0.0 and 1.0")
       .max(1.0, "Threshold must be between 0.0 and 1.0")
@@ -268,7 +268,7 @@ export const GetDependenciesArgsSchema = z
       .min(1, "Repository name cannot be empty")
       .max(200, "Repository name exceeds maximum length of 200 characters"),
 
-    depth: z
+    depth: z.coerce
       .number()
       .int("Depth must be an integer")
       .min(1, "Depth must be at least 1")
@@ -372,7 +372,7 @@ export const GetDependentsArgsSchema = z
       .max(200, "Repository name exceeds maximum length of 200 characters")
       .optional(),
 
-    depth: z
+    depth: z.coerce
       .number()
       .int("Depth must be an integer")
       .min(1, "Depth must be at least 1")
@@ -544,7 +544,7 @@ export const FindPathArgsSchema = z
       .min(1, "Repository name cannot be empty")
       .max(200, "Repository name exceeds maximum length of 200 characters"),
 
-    max_hops: z
+    max_hops: z.coerce
       .number()
       .int("max_hops must be an integer")
       .min(1, "max_hops must be at least 1")
@@ -682,13 +682,13 @@ export const SearchImagesArgsSchema = z
       })
       .optional(),
 
-    min_width: z
+    min_width: z.coerce
       .number()
       .int("min_width must be an integer")
       .min(1, "min_width must be at least 1")
       .optional(),
 
-    min_height: z
+    min_height: z.coerce
       .number()
       .int("min_height must be an integer")
       .min(1, "min_height must be at least 1")
@@ -696,7 +696,7 @@ export const SearchImagesArgsSchema = z
 
     filename_pattern: z.string().trim().min(1, "filename_pattern cannot be empty").optional(),
 
-    limit: z
+    limit: z.coerce
       .number()
       .int("Limit must be an integer")
       .min(1, "Limit must be at least 1")

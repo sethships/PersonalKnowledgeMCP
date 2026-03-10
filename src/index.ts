@@ -50,6 +50,8 @@ import { resolveGitHubPAT } from "./services/github-pat-resolver.js";
 import { DocumentSearchServiceImpl } from "./services/document-search-service.js";
 import { FolderWatcherService } from "./services/folder-watcher-service.js";
 import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
+import { DocumentTypeDetector } from "./documents/DocumentTypeDetector.js";
+import { DocumentChunker } from "./documents/DocumentChunker.js";
 
 // Initialize logger at application startup
 initializeLogger({
@@ -292,13 +294,19 @@ async function main(): Promise<void> {
           logger.debug("Graph ingestion service initialized for incremental updates");
         }
 
-        // Create incremental update pipeline
+        // Create document processing dependencies for incremental pipeline
+        const documentTypeDetector = new DocumentTypeDetector();
+        const documentChunker = new DocumentChunker();
+
+        // Create incremental update pipeline (with document support)
         const updatePipeline = new IncrementalUpdatePipeline(
           fileChunker,
           embeddingProvider,
           chromaClient,
           getComponentLogger("services:incremental-update-pipeline"),
-          graphIngestionService
+          graphIngestionService,
+          documentTypeDetector,
+          documentChunker
         );
 
         // Create completeness checker
