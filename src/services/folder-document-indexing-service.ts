@@ -73,6 +73,9 @@ import {
  * ```
  */
 export class FolderDocumentIndexingService {
+  /** Maximum file size to read for content hash checking (100 MB) */
+  private static readonly MAX_HASH_FILE_SIZE = 100 * 1024 * 1024;
+
   /** Lazy-initialized logger */
   private _logger: Logger | null = null;
 
@@ -286,7 +289,7 @@ export class FolderDocumentIndexingService {
    *
    * @returns BatchProcessor callback function
    */
-  createBatchProcessor(): (changes: DetectedChange[]) => Promise<BatchProcessorResult> {
+  private createBatchProcessor(): (changes: DetectedChange[]) => Promise<BatchProcessorResult> {
     return async (changes: DetectedChange[]): Promise<BatchProcessorResult> => {
       const startTime = Date.now();
       let totalProcessed = 0;
@@ -517,11 +520,26 @@ export class FolderDocumentIndexingService {
     relativePath: string
   ): Promise<ContentHashCheckResult> {
     try {
-      // Step 1: Read file and compute hash
-      const content = await Bun.file(absolutePath).text();
-      const computedHash = createHash("sha256").update(content).digest("hex");
+      // Step 1: Check file size before reading (guard against OOM for large files)
+      const file = Bun.file(absolutePath);
+      const fileSize = file.size;
+      if (fileSize > FolderDocumentIndexingService.MAX_HASH_FILE_SIZE) {
+        this.logger.warn(
+          {
+            path: relativePath,
+            sizeBytes: fileSize,
+            maxBytes: FolderDocumentIndexingService.MAX_HASH_FILE_SIZE,
+          },
+          "File exceeds maximum size for content hash check, skipping hash comparison"
+        );
+        return { unchanged: false, computedHash: "", storedHash: null };
+      }
 
-      // Step 2: Query ChromaDB for existing chunks
+      // Step 2: Read file as raw bytes and compute hash (binary-safe for PDF/DOCX)
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const computedHash = createHash("sha256").update(buffer).digest("hex");
+
+      // Step 3: Query ChromaDB for existing chunks
       let storedHash: string | null = null;
       try {
         const existingDocs = await this.storageClient.getDocumentsByMetadata(collectionName, {
@@ -540,7 +558,7 @@ export class FolderDocumentIndexingService {
         );
       }
 
-      // Step 3: Compare hashes
+      // Step 4: Compare hashes
       const unchanged = storedHash !== null && storedHash === computedHash;
 
       return { unchanged, computedHash, storedHash };
@@ -591,12 +609,18 @@ export class FolderDocumentIndexingService {
    */
   private resolveIncludeExtensions(folder: WatchedFolder): string[] {
     if (folder.includePatterns && folder.includePatterns.length > 0) {
-      // Convert glob patterns like "*.md" to extensions like ".md"
+      // Convert glob patterns like "*.md", "**/*.md" to extensions like ".md"
       const extensions: string[] = [];
       for (const pattern of folder.includePatterns) {
-        const match = pattern.match(/^\*(\.\w+)$/);
-        if (match && match[1]) {
+        // Match patterns ending in *.ext (covers *.md, **/*.md, src/**/*.txt, etc.)
+        const match = pattern.match(/\*(\.\w+)$/);
+        if (match?.[1]) {
           extensions.push(match[1]);
+        } else {
+          this.logger.warn(
+            { pattern },
+            "Could not extract file extension from include pattern; pattern will be ignored for extension filtering"
+          );
         }
       }
       // Fall back to defaults if no valid extensions extracted
