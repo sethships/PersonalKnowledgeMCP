@@ -141,3 +141,13 @@ export type {
   OcrInput,
 } from "./ocr-types.js";
 export { DEFAULT_OCR_CONFIG, OCR_SUPPORTED_EXTENSIONS } from "./ocr-constants.js";
+
+// PDF page-to-image converter
+export { PdfPageToImageConverter } from "./PdfPageToImageConverter.js";
+export type {
+  PdfImageConverterConfig,
+  PdfPageImage,
+  PdfImageProgress,
+  PdfImageProgressCallback,
+} from "./pdf-image-types.js";
+export { DEFAULT_PDF_IMAGE_CONFIG, PDF_DPI_BASE } from "./pdf-image-constants.js";
