@@ -706,6 +706,79 @@ describe("semantic_search Tool", () => {
       expect(metadataAsAny["document_matches"]).toBeUndefined();
     });
 
+    it("should include document metadata fields in code-only response when present", async () => {
+      const docCodeResult: SearchResponse = {
+        results: [
+          {
+            file_path: "docs/guide.pdf",
+            repository: "my-docs",
+            content_snippet: "Chapter 1: Getting Started",
+            similarity_score: 0.88,
+            chunk_index: 0,
+            metadata: {
+              file_extension: ".pdf",
+              file_size_bytes: 50000,
+              indexed_at: "2025-06-01T00:00:00Z",
+              document_type: "pdf",
+              document_title: "User Guide",
+              document_author: "John Smith",
+              section_heading: "Getting Started",
+              page_number: 3,
+            },
+          },
+        ],
+        metadata: {
+          total_matches: 1,
+          query_time_ms: 100,
+          embedding_time_ms: 50,
+          search_time_ms: 50,
+          repositories_searched: ["my-docs"],
+        },
+      };
+
+      mockSearchService.setMockResponse(docCodeResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "getting started",
+        include_documents: false,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as SemanticSearchResponse;
+
+      const item = responseData.results[0]!;
+      const meta = item.metadata as Record<string, unknown>;
+      expect(meta["document_type"]).toBe("pdf");
+      expect(meta["document_title"]).toBe("User Guide");
+      expect(meta["document_author"]).toBe("John Smith");
+      expect(meta["section_heading"]).toBe("Getting Started");
+      expect(meta["page_number"]).toBe(3);
+    });
+
+    it("should omit document metadata fields when not present in code-only response", async () => {
+      mockSearchService.setMockResponse(codeResult);
+      const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
+
+      const result = await handler({
+        query: "authentication",
+        include_documents: false,
+      });
+
+      const responseData = JSON.parse(
+        (result.content[0] as TextContent).text
+      ) as SemanticSearchResponse;
+
+      const meta = responseData.results[0]!.metadata as Record<string, unknown>;
+      expect(meta["document_type"]).toBeUndefined();
+      expect(meta["document_title"]).toBeUndefined();
+      expect(meta["document_author"]).toBeUndefined();
+      expect(meta["section_heading"]).toBeUndefined();
+      expect(meta["page_number"]).toBeUndefined();
+    });
+
     it("should not call DocumentSearchService when include_documents=false", async () => {
       const handler = createSemanticSearchHandler(mockSearchService, mockDocSearchService);
 

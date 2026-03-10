@@ -321,7 +321,7 @@ async function main(): Promise<void> {
           { completenessChecker }
         );
 
-        // Create rate limiter (5-minute cooldown by default)
+        // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
         rateLimiter = new MCPRateLimiter();
 
         // Create job tracker (1-hour retention, 100 max jobs by default)
