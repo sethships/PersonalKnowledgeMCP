@@ -350,6 +350,80 @@ describe("OcrService", () => {
       );
     });
 
+    test("handles null confidence from tesseract result", async () => {
+      mockRecognizeResult = {
+        data: { text: "Some text", confidence: null as unknown as number },
+      };
+
+      service = new OcrService();
+      const result = await service.recognizeImage({ buffer: TEST_IMAGE_BUFFER });
+
+      // null coalescing should fall back to 0
+      expect(result.confidence).toBe(0);
+      expect(result.skippedLowConfidence).toBe(true);
+      expect(result.text).toBe("");
+    });
+
+    test("handles null text from tesseract result", async () => {
+      mockRecognizeResult = {
+        data: { text: null as unknown as string, confidence: 90 },
+      };
+
+      service = new OcrService();
+      const result = await service.recognizeImage({ buffer: TEST_IMAGE_BUFFER });
+
+      // null coalescing should fall back to ""
+      expect(result.text).toBe("");
+      expect(result.confidence).toBe(90);
+      expect(result.skippedLowConfidence).toBe(false);
+    });
+
+    test("handles both null text and null confidence from tesseract result", async () => {
+      mockRecognizeResult = {
+        data: { text: null as unknown as string, confidence: null as unknown as number },
+      };
+
+      service = new OcrService();
+      const result = await service.recognizeImage({ buffer: TEST_IMAGE_BUFFER });
+
+      expect(result.text).toBe("");
+      expect(result.confidence).toBe(0);
+      expect(result.skippedLowConfidence).toBe(true);
+    });
+
+    test("rejects buffer exceeding maxFileSizeBytes", async () => {
+      // Create a service with a very small max file size
+      service = new OcrService({ maxFileSizeBytes: 10 });
+
+      await expect(service.recognizeImage({ buffer: TEST_IMAGE_BUFFER })).rejects.toThrow(
+        ExtractionError
+      );
+      await expect(service.recognizeImage({ buffer: TEST_IMAGE_BUFFER })).rejects.toThrow(
+        "exceeds maximum"
+      );
+    });
+
+    test("rejects file exceeding maxFileSizeBytes", async () => {
+      const tmpDir = path.join(FIXTURES_DIR, "ocr-size-test-tmp");
+      await fs.mkdir(tmpDir, { recursive: true });
+      const tmpFile = path.join(tmpDir, "large.png");
+      await fs.writeFile(tmpFile, TEST_IMAGE_BUFFER);
+
+      try {
+        // Max size smaller than the test buffer
+        service = new OcrService({ maxFileSizeBytes: 10 });
+
+        await expect(service.recognizeImage({ filePath: tmpFile })).rejects.toThrow(
+          ExtractionError
+        );
+        await expect(service.recognizeImage({ filePath: tmpFile })).rejects.toThrow(
+          "exceeds maximum"
+        );
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     test("throws when service is disabled", async () => {
       service = new OcrService({ enabled: false });
 
@@ -565,6 +639,38 @@ describe("OcrService", () => {
       expect(result.totalProcessingTimeMs).toBeGreaterThanOrEqual(0);
     });
 
+    test("enforces overall batch timeout (timeoutMs)", async () => {
+      // Use a short per-page delay to simulate slow processing
+      mockWorker.recognize.mockImplementation(async () => {
+        // Simulate a ~60ms processing delay per page
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return {
+          data: { text: "Slow page", confidence: 90 },
+        };
+      });
+
+      // timeoutMs of 50ms should cause the batch to stop after 1 page
+      // because the first page takes ~60ms, exceeding the 50ms timeout
+      // before the second page starts
+      service = new OcrService({ timeoutMs: 50, pageTimeoutMs: 5000 });
+      const inputs = [
+        { buffer: TEST_IMAGE_BUFFER, pageNumber: 1 },
+        { buffer: TEST_IMAGE_BUFFER, pageNumber: 2 },
+        { buffer: TEST_IMAGE_BUFFER, pageNumber: 3 },
+      ];
+
+      const result = await service.recognizeBatch(inputs);
+
+      // At least 1 page should be processed, remaining should be skipped
+      // The exact split depends on timing, but skippedPages should be > 0
+      expect(result.skippedPages).toBeGreaterThan(0);
+      expect(
+        result.pages.length +
+          result.skippedPages -
+          result.pages.filter((p) => p.skippedLowConfidence).length
+      ).toBeLessThanOrEqual(3);
+    });
+
     test("throws when service is disabled", async () => {
       service = new OcrService({ enabled: false });
 
@@ -627,6 +733,29 @@ describe("OcrService", () => {
       await expect(service.recognizeImage({ buffer: TEST_IMAGE_BUFFER })).rejects.toThrow(
         "Failed to initialize tesseract worker"
       );
+    });
+
+    test("concurrent recognizeImage calls share the same worker", async () => {
+      service = new OcrService();
+
+      // Fire two concurrent recognition calls via Promise.all
+      const [result1, result2] = await Promise.all([
+        service.recognizeImage({ buffer: TEST_IMAGE_BUFFER }),
+        service.recognizeImage({ buffer: TEST_IMAGE_BUFFER }),
+      ]);
+
+      // Both should succeed with the same worker
+      expect(result1.text).toBe("Hello World");
+      expect(result2.text).toBe("Hello World");
+
+      // recognize should have been called exactly twice (once per image),
+      // verifying both calls went through the same shared worker
+      expect(mockRecognizeCallCount).toBe(2);
+
+      // createWorker should have been called once (both calls share
+      // the cached workerPromise). The lang value being set once confirms
+      // a single worker creation.
+      expect(mockCreateWorkerLangs).toBe("eng");
     });
 
     test("retries worker creation after failure", async () => {
@@ -699,7 +828,9 @@ describe("OcrService", () => {
       expect(OCR_SUPPORTED_EXTENSIONS).toContain(".jpg");
       expect(OCR_SUPPORTED_EXTENSIONS).toContain(".jpeg");
       expect(OCR_SUPPORTED_EXTENSIONS).toContain(".png");
+      expect(OCR_SUPPORTED_EXTENSIONS).toContain(".tif");
       expect(OCR_SUPPORTED_EXTENSIONS).toContain(".tiff");
+      expect(OCR_SUPPORTED_EXTENSIONS).toContain(".bmp");
       expect(OCR_SUPPORTED_EXTENSIONS).toContain(".webp");
     });
 

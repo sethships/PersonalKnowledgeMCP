@@ -60,4 +60,12 @@ export const DEFAULT_OCR_CONFIG: Readonly<Required<OcrConfig>> = {
  * );
  * ```
  */
-export const OCR_SUPPORTED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".tiff", ".webp"] as const;
+export const OCR_SUPPORTED_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".tif",
+  ".tiff",
+  ".bmp",
+  ".webp",
+] as const;

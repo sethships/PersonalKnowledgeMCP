@@ -31,8 +31,9 @@ export interface OcrConfig extends ExtractorConfig {
   /**
    * Whether OCR processing is enabled.
    *
-   * When false, OcrService methods return empty results without
-   * attempting recognition.
+   * When false, OcrService methods throw ExtractionError
+   * rather than attempting recognition. Callers should check
+   * `isEnabled()` before calling recognition methods.
    *
    * @default true
    */

@@ -123,7 +123,7 @@ export class OcrService {
   /**
    * Get the current OCR configuration.
    *
-   * @returns Frozen copy of the resolved configuration
+   * @returns Read-only typed reference to the resolved configuration
    */
   getConfig(): Readonly<Required<OcrConfig>> {
     return this.config;
@@ -185,6 +185,18 @@ export class OcrService {
     for (let i = 0; i < totalPages; i++) {
       // Enforce maxPagesPerDocument limit
       if (i >= this.config.maxPagesPerDocument) {
+        skippedPages += totalPages - i;
+        break;
+      }
+
+      // Enforce overall batch timeout (timeoutMs from ExtractorConfig)
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= this.config.timeoutMs) {
+        const log = this.getLogger();
+        log.warn(
+          { elapsedMs: elapsed, timeoutMs: this.config.timeoutMs, processedPages: i, totalPages },
+          "OCR batch processing timed out, skipping remaining pages"
+        );
         skippedPages += totalPages - i;
         break;
       }
@@ -325,7 +337,7 @@ export class OcrService {
       }, this.config.pageTimeoutMs);
 
       this.ensureWorker()
-        .then((worker) => worker.recognize(buffer as Buffer))
+        .then((worker) => worker.recognize(Buffer.from(buffer)))
         .then((result) => {
           clearTimeout(timeoutId);
           if (settled) return;
@@ -373,20 +385,39 @@ export class OcrService {
   /**
    * Resolve an OcrInput to a buffer.
    *
+   * Enforces maxFileSizeBytes when reading from file path. For buffer inputs,
+   * the size check is applied against the provided buffer length.
+   *
    * @param input - Input with buffer or file path
    * @returns Image data as buffer
    * @throws {ExtractionError} If neither buffer nor filePath is provided,
-   *   or if the file cannot be read
+   *   if the file cannot be read, or if the file exceeds maxFileSizeBytes
    */
   private async resolveInputBuffer(input: OcrInput): Promise<Buffer | Uint8Array> {
     if (input.buffer) {
+      if (input.buffer.length > this.config.maxFileSizeBytes) {
+        throw new ExtractionError(
+          `Image buffer size ${input.buffer.length} bytes exceeds maximum ${this.config.maxFileSizeBytes} bytes`
+        );
+      }
       return input.buffer;
     }
 
     if (input.filePath) {
       try {
+        // Check file size before reading to avoid loading oversized files into memory
+        const stat = await fs.stat(input.filePath);
+        if (stat.size > this.config.maxFileSizeBytes) {
+          throw new ExtractionError(
+            `Image file size ${stat.size} bytes exceeds maximum ${this.config.maxFileSizeBytes} bytes`,
+            { filePath: input.filePath }
+          );
+        }
         return await fs.readFile(input.filePath);
       } catch (error) {
+        if (error instanceof ExtractionError) {
+          throw error;
+        }
         throw new ExtractionError(`Cannot read image file: ${input.filePath}`, {
           filePath: input.filePath,
           cause: error instanceof Error ? error : undefined,
