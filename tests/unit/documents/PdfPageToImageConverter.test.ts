@@ -224,8 +224,34 @@ describe("PdfPageToImageConverter", () => {
       const converter = new PdfPageToImageConverter();
       const config = converter.getConfig();
 
-      // Config should be readonly - TypeScript enforces this, but verify at runtime
-      expect(Object.isFrozen(config) || typeof config === "object").toBe(true);
+      // Config should be frozen at runtime (Object.freeze applied in constructor)
+      expect(Object.isFrozen(config)).toBe(true);
+    });
+
+    test("throws ExtractionError for zero dpiResolution", () => {
+      expect(() => new PdfPageToImageConverter({ dpiResolution: 0 })).toThrow(ExtractionError);
+      expect(() => new PdfPageToImageConverter({ dpiResolution: 0 })).toThrow(
+        /dpiResolution must be positive/
+      );
+    });
+
+    test("throws ExtractionError for negative dpiResolution", () => {
+      expect(() => new PdfPageToImageConverter({ dpiResolution: -1 })).toThrow(ExtractionError);
+    });
+
+    test("throws ExtractionError for zero maxPagesPerDocument", () => {
+      expect(() => new PdfPageToImageConverter({ maxPagesPerDocument: 0 })).toThrow(
+        ExtractionError
+      );
+      expect(() => new PdfPageToImageConverter({ maxPagesPerDocument: 0 })).toThrow(
+        /maxPagesPerDocument must be positive/
+      );
+    });
+
+    test("throws ExtractionError for negative maxPagesPerDocument", () => {
+      expect(() => new PdfPageToImageConverter({ maxPagesPerDocument: -5 })).toThrow(
+        ExtractionError
+      );
     });
   });
 
@@ -479,8 +505,9 @@ describe("PdfPageToImageConverter", () => {
       const converter = new PdfPageToImageConverter({ timeoutMs: 0 });
       const results = await converter.convertAllPages(TEST_PDF_BUFFER);
 
-      // Should have stopped early due to timeout
-      expect(results.length).toBeLessThan(100);
+      // With timeoutMs: 0, the elapsed check triggers at the start of the first iteration
+      // so no pages should be rendered (or at most 1 if timing is very tight).
+      expect(results.length).toBeLessThanOrEqual(1);
     });
 
     test("per-page failure does not abort batch", async () => {
