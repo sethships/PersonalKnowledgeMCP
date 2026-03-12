@@ -232,7 +232,13 @@ describe("Tool Registry", () => {
       expect(parsed.message).toContain("not configured");
     });
 
-    it("uses real handlers when all update dependencies are provided", () => {
+    it("legacy two-arg signature also registers stub update tools", () => {
+      const registry = createToolRegistry(createMockSearchService(), createMockRepositoryService());
+      expect(registry["trigger_incremental_update"]).toBeDefined();
+      expect(registry["get_update_status"]).toBeDefined();
+    });
+
+    it("uses real handlers when all update dependencies are provided", async () => {
       const updateDeps = createMockUpdateDeps();
       const registry = createToolRegistry({
         searchService: createMockSearchService(),
@@ -249,6 +255,12 @@ describe("Tool Registry", () => {
       const statusEntry = getRegistryEntry(registry, "get_update_status");
       expect(triggerEntry.definition.name).toBe("trigger_incremental_update");
       expect(statusEntry.definition.name).toBe("get_update_status");
+
+      // Verify real handler does not return service_unavailable stub
+      const result = await triggerEntry.handler({ repository: "test-repo" });
+      const text = getTextContent(result.content);
+      const parsed = JSON.parse(text);
+      expect(parsed.error).not.toBe("service_unavailable");
     });
   });
 });

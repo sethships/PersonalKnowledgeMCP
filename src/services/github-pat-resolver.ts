@@ -59,7 +59,7 @@ export async function readPATFromEnvFile(envFilePath?: string): Promise<string |
     const file = Bun.file(filePath);
     const exists = await file.exists();
     if (!exists) {
-      getLogger().info({ path: filePath }, ".env file not found, skipping .env PAT source");
+      getLogger().debug({ path: filePath }, ".env file not found, skipping .env PAT source");
       return null;
     }
 

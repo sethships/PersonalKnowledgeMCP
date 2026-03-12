@@ -115,7 +115,7 @@ export class PersonalKnowledgeMCPServer {
         serverName: config.name,
         version: config.version,
         toolCount: Object.keys(this.toolRegistry).length,
-        adminToolsEnabled: !!optionalDeps?.updateCoordinator,
+        updateToolsMode: optionalDeps?.updateCoordinator ? "active" : "stub",
       },
       "MCP server initialized"
     );

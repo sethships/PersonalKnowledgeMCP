@@ -313,7 +313,7 @@ async function main(): Promise<void> {
 
     const envPath = `${process.cwd()}/.env`;
     logger.info({ envPath }, "Resolving GitHub PAT");
-    const resolvedPat = await resolveGitHubPAT();
+    const resolvedPat = await resolveGitHubPAT({ envFilePath: envPath });
     const githubPat = resolvedPat?.token;
     if (resolvedPat) {
       logger.info({ source: resolvedPat.source }, "GitHub PAT resolved");
@@ -378,7 +378,7 @@ async function main(): Promise<void> {
       } catch (error) {
         // Incremental updates are optional - log warning but don't fail server startup
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.info(
+        logger.warn(
           { error: errorMsg },
           "Incremental update initialization failed - MCP update tools will be unavailable"
         );
