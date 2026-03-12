@@ -69,6 +69,35 @@ export interface ToolRegistryDependencies {
   imageSearchService?: ImageSearchService;
   /** Optional: ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+  /** Optional: Human-readable reason why update tools are unavailable */
+  updateToolsUnavailableReason?: string;
+}
+
+/**
+ * Creates a stub tool handler that returns a service_unavailable error.
+ *
+ * Used when update tools are registered but their dependencies (GitHub PAT,
+ * update coordinator, etc.) are not available.
+ *
+ * @param toolName - Name of the tool (for error message context)
+ * @param reason - Human-readable reason why the tool is unavailable
+ * @returns ToolHandler that always returns an error response
+ */
+export function createUnavailableToolHandler(toolName: string, reason: string): ToolHandler {
+  return () =>
+    Promise.resolve({
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            success: false,
+            error: "service_unavailable",
+            message: `${toolName} is currently unavailable: ${reason}`,
+          }),
+        },
+      ],
+      isError: true,
+    });
 }
 
 /**
@@ -133,7 +162,7 @@ export function createToolRegistry(
     },
   };
 
-  // Conditionally add administrative tools when all dependencies are provided
+  // Always register update tools — use real handlers when deps are available, stubs otherwise
   if (deps.updateCoordinator && deps.rateLimiter && deps.jobTracker) {
     registry["trigger_incremental_update"] = {
       definition: triggerIncrementalUpdateToolDefinition,
@@ -150,6 +179,20 @@ export function createToolRegistry(
       handler: createGetUpdateStatusHandler({
         jobTracker: deps.jobTracker,
       }),
+    };
+  } else {
+    const reason =
+      deps.updateToolsUnavailableReason ||
+      "Required dependencies (GitHub PAT, update coordinator) are not configured";
+
+    registry["trigger_incremental_update"] = {
+      definition: triggerIncrementalUpdateToolDefinition,
+      handler: createUnavailableToolHandler("trigger_incremental_update", reason),
+    };
+
+    registry["get_update_status"] = {
+      definition: getUpdateStatusToolDefinition,
+      handler: createUnavailableToolHandler("get_update_status", reason),
     };
   }
 

@@ -100,6 +100,7 @@ export class PersonalKnowledgeMCPServer {
         documentSearchService: optionalDeps.documentSearchService,
         imageSearchService: optionalDeps.imageSearchService,
         listWatchedFoldersService: optionalDeps.listWatchedFoldersService,
+        updateToolsUnavailableReason: optionalDeps.updateToolsUnavailableReason,
       });
     } else {
       // Legacy path - only core tools
