@@ -309,8 +309,11 @@ async function main(): Promise<void> {
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
     let jobTracker: JobTracker | undefined;
+    let updateToolsUnavailableReason: string | undefined;
 
-    const resolvedPat = await resolveGitHubPAT();
+    const envPath = `${process.cwd()}/.env`;
+    logger.info({ envPath }, "Resolving GitHub PAT");
+    const resolvedPat = await resolveGitHubPAT({ envFilePath: envPath });
     const githubPat = resolvedPat?.token;
     if (resolvedPat) {
       logger.info({ source: resolvedPat.source }, "GitHub PAT resolved");
@@ -374,16 +377,19 @@ async function main(): Promise<void> {
         logger.info("Incremental update dependencies initialized - MCP update tools enabled");
       } catch (error) {
         // Incremental updates are optional - log warning but don't fail server startup
+        const errorMsg = error instanceof Error ? error.message : String(error);
         logger.warn(
-          { error: error instanceof Error ? error.message : String(error) },
+          { error: errorMsg },
           "Incremental update initialization failed - MCP update tools will be unavailable"
         );
         updateCoordinator = undefined;
         rateLimiter = undefined;
         jobTracker = undefined;
+        updateToolsUnavailableReason = `Initialization failed: ${errorMsg}`;
       }
     } else {
-      logger.debug("GITHUB_PAT not set - MCP incremental update tools disabled");
+      logger.info("GITHUB_PAT not set - MCP incremental update tools disabled");
+      updateToolsUnavailableReason = "GITHUB_PAT is not configured";
     }
 
     // Step 6: Create MCP server
@@ -405,6 +411,7 @@ async function main(): Promise<void> {
         jobTracker,
         documentSearchService,
         listWatchedFoldersService,
+        updateToolsUnavailableReason,
       }
     );
 

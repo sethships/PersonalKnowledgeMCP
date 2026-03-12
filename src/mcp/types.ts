@@ -152,6 +152,9 @@ export interface MCPServerOptionalDeps {
 
   /** ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+
+  /** Human-readable reason why update tools are unavailable (stub mode) */
+  updateToolsUnavailableReason?: string;
 }
 
 /**
