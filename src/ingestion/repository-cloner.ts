@@ -461,9 +461,9 @@ export class RepositoryCloner {
       throw new ValidationError("Repository URL cannot be empty", "url");
     }
 
-    // Accept HTTPS or SSH git URLs for any host
-    const httpsPattern = /^https?:\/\/[\w.-]+(\/[\w./-]+)+(?:\.git)?$/i;
-    const sshPattern = /^git@[\w.-]+:[\w./-]+(?:\.git)?$/i;
+    // Accept HTTPS or SSH git URLs for any host; require at least owner/repo (two path segments)
+    const httpsPattern = /^https:\/\/[\w.-]+\/[\w][\w.-]*\/[\w][\w.-]*(?:\.git)?$/i;
+    const sshPattern = /^git@[\w.-]+:[\w][\w.-]*\/[\w][\w.-]*(?:\.git)?$/i;
 
     if (!httpsPattern.test(trimmedUrl) && !sshPattern.test(trimmedUrl)) {
       throw new ValidationError(
@@ -508,6 +508,11 @@ export class RepositoryCloner {
    * @returns URL with authentication credentials if PAT is configured, otherwise original URL
    */
   private buildAuthenticatedUrl(url: string): string {
+    // SSH URLs use key-based auth — no PAT injection needed
+    if (url.startsWith("git@")) {
+      return url;
+    }
+
     try {
       const parsed = new URL(url);
 

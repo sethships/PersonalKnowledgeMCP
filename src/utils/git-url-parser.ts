@@ -64,7 +64,7 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
   const trimmedUrl = url.trim();
 
   // Try HTTPS format: https://<host>/owner/repo(.git)?
-  const httpsPattern = /^https?:\/\/([\w.-]+)\/([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/i;
+  const httpsPattern = /^https:\/\/([\w.-]+)\/([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/i;
   const httpsMatch = trimmedUrl.match(httpsPattern);
 
   if (httpsMatch) {
@@ -76,7 +76,7 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
       repo = repo.substring(0, repo.length - 4);
     }
 
-    if (owner && repo) {
+    if (host && owner && repo) {
       return {
         owner,
         repo,
@@ -99,7 +99,7 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
       repo = repo.substring(0, repo.length - 4);
     }
 
-    if (owner && repo) {
+    if (host && owner && repo) {
       return {
         owner,
         repo,

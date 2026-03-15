@@ -10,9 +10,15 @@
 
 import simpleGit from "simple-git";
 import { parseGitHubUrl } from "../utils/git-url-parser.js";
+import { isLocalPath } from "../utils/path-utils.js";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
-import type { GitHubClient, CommitComparison } from "./github-client-types.js";
+import type {
+  GitHubClient,
+  CommitComparison,
+  CommitInfo,
+  FileChange,
+} from "./github-client-types.js";
 import type {
   RepositoryMetadataService,
   RepositoryInfo,
@@ -24,7 +30,6 @@ import { GitHubNotFoundError } from "./github-client-errors.js";
 import type {
   CoordinatorConfig,
   CoordinatorResult,
-  GitHubRepoInfo,
 } from "./incremental-update-coordinator-types.js";
 import type { IndexCompletenessChecker } from "./index-completeness-checker.js";
 import type { CompletenessCheckResult } from "./index-completeness-types.js";
@@ -253,7 +258,7 @@ export class IncrementalUpdateCoordinator {
       const parsedUrl = parseGitHubUrl(repo.url);
       const isGitHub = parsedUrl?.isGitHub === true;
 
-      let headCommit: import("./github-client-types.js").CommitInfo;
+      let headCommit: CommitInfo;
       let comparison: CommitComparison;
 
       if (isGitHub && parsedUrl) {
@@ -419,7 +424,7 @@ export class IncrementalUpdateCoordinator {
 
       // Step 7: Update local clone (git pull).
       // Skipped for local-path repos — the directory is managed by the user, not cloned.
-      if (!this.isLocalPathUrl(repo.url)) {
+      if (!isLocalPath(repo.url)) {
         await this.updateLocalClone(repo.localPath, repo.branch);
         logger.info(
           { repository: repositoryName, localPath: repo.localPath },
@@ -707,79 +712,6 @@ export class IncrementalUpdateCoordinator {
   }
 
   /**
-   * Parse GitHub owner and repository name from URL.
-   *
-   * Handles both HTTPS and SSH URL formats:
-   * - HTTPS: `https://github.com/owner/repo.git`
-   * - SSH: `git@github.com:owner/repo.git`
-   *
-   * @param url - GitHub repository URL
-   * @returns Parsed owner and repo name
-   * @throws {Error} If URL format is invalid or cannot be parsed
-   *
-   * @example
-   * ```typescript
-   * parseGitHubUrl("https://github.com/user/my-api.git")
-   * // Returns: { owner: "user", repo: "my-api" }
-   *
-   * parseGitHubUrl("git@github.com:user/my-api.git")
-   * // Returns: { owner: "user", repo: "my-api" }
-   * ```
-   */
-  private parseGitHubUrl(url: string): GitHubRepoInfo {
-    // Handle HTTPS format: https://github.com/owner/repo.git
-    const httpsMatch = url.match(/github\.com[/:]([\w.-]+)\/([\w.-]+)(\.git)?$/);
-    if (httpsMatch && httpsMatch[1] && httpsMatch[2]) {
-      return {
-        owner: httpsMatch[1],
-        repo: httpsMatch[2].replace(/\.git$/, ""),
-      };
-    }
-
-    // Handle SSH format: git@github.com:owner/repo.git
-    const sshMatch = url.match(/git@github\.com:([\w.-]+)\/([\w.-]+)(\.git)?$/);
-    if (sshMatch && sshMatch[1] && sshMatch[2]) {
-      return {
-        owner: sshMatch[1],
-        repo: sshMatch[2].replace(/\.git$/, ""),
-      };
-    }
-
-    throw new Error(
-      `Cannot parse GitHub URL: ${url}. Expected format: https://github.com/owner/repo.git or git@github.com:owner/repo.git`
-    );
-  }
-
-  /**
-   * Update local repository clone via git pull.
-   *
-   * Performs `git pull origin <branch>` on the local clone to sync with
-   * remote repository before processing changes.
-   *
-   * Uses custom git pull implementation if provided (for testing),
-   * otherwise uses simple-git.
-   *
-   * @param localPath - Absolute path to local repository clone
-   * @param branch - Branch name to pull
-   * @throws {GitPullError} If git pull fails (conflicts, network issues, etc.)
-   *
-   * @example
-   * ```typescript
-   * await updateLocalClone("/repos/my-api", "main");
-   * ```
-   */
-  /**
-   * Detect whether a stored URL is actually a local filesystem path.
-   */
-  private isLocalPathUrl(url: string): boolean {
-    if (!url) return false;
-    const s = url.trim();
-    return (
-      /^[A-Za-z]:[/\\]/.test(s) || s.startsWith("/") || s.startsWith("./") || s.startsWith("../")
-    );
-  }
-
-  /**
    * Build a CommitComparison using local git operations instead of the GitHub API.
    *
    * Used for non-GitHub hosts and local-path repositories. For remote repos the
@@ -794,13 +726,13 @@ export class IncrementalUpdateCoordinator {
     repoUrl: string,
     logger: Logger
   ): Promise<{
-    headCommit: import("./github-client-types.js").CommitInfo;
+    headCommit: CommitInfo;
     comparison: CommitComparison;
   } | null> {
     const git = simpleGit(localPath);
 
     // For remote (non-local-path) repos, fetch to get latest remote state
-    if (!this.isLocalPathUrl(repoUrl)) {
+    if (!isLocalPath(repoUrl)) {
       try {
         await git.fetch(["origin", branch, "--depth", "100"]);
         logger.debug({ localPath, branch }, "Fetched latest from remote for change detection");
@@ -812,8 +744,9 @@ export class IncrementalUpdateCoordinator {
       }
     }
 
-    // Get current HEAD SHA (after fetch for remote repos)
-    const headSha = (await git.revparse(["HEAD"])).trim();
+    // For remote repos, read the fetched remote branch tip; for local paths read HEAD
+    const headRef = isLocalPath(repoUrl) ? "HEAD" : `origin/${branch}`;
+    const headSha = (await git.revparse([headRef])).trim();
 
     if (headSha === lastIndexedCommitSha) {
       return null; // No changes
@@ -822,7 +755,7 @@ export class IncrementalUpdateCoordinator {
     // Get commit metadata for the new HEAD
     const logResult = await git.log({ from: headSha, to: headSha, maxCount: 1 });
     const latestLog = logResult.latest;
-    const headCommit: import("./github-client-types.js").CommitInfo = {
+    const headCommit: CommitInfo = {
       sha: headSha,
       message: latestLog?.message ?? "",
       author: latestLog?.author_name ?? "",
@@ -834,16 +767,25 @@ export class IncrementalUpdateCoordinator {
     try {
       diffOutput = await git.diff(["--name-status", lastIndexedCommitSha, headSha]);
     } catch {
-      // If the base commit is no longer reachable (shallow clone / history rewrite),
-      // treat everything as modified to force a full rescan.
+      // Base commit not reachable (shallow clone or history rewrite).
+      // List all tracked files and mark them as modified to force a full rescan.
       logger.warn(
         { localPath, lastIndexedCommitSha },
-        "Base commit not reachable; marking all tracked files as modified"
+        "Base commit not reachable; listing all tracked files as modified for full rescan"
       );
-      diffOutput = "";
+      try {
+        const lsFilesOutput = await git.raw(["ls-files"]);
+        diffOutput = lsFilesOutput
+          .split("\n")
+          .filter((f) => f.trim())
+          .map((f) => `M\t${f.trim()}`)
+          .join("\n");
+      } catch {
+        diffOutput = "";
+      }
     }
 
-    const files: import("./github-client-types.js").FileChange[] = [];
+    const files: FileChange[] = [];
     for (const line of diffOutput.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -888,6 +830,19 @@ export class IncrementalUpdateCoordinator {
     return { headCommit, comparison };
   }
 
+  /**
+   * Update local repository clone via git pull.
+   *
+   * Performs `git pull origin <branch>` on the local clone to sync with
+   * remote repository before processing changes.
+   *
+   * Uses custom git pull implementation if provided (for testing),
+   * otherwise uses simple-git.
+   *
+   * @param localPath - Absolute path to local repository clone
+   * @param branch - Branch name to pull
+   * @throws {GitPullError} If git pull fails (conflicts, network issues, etc.)
+   */
   private async updateLocalClone(localPath: string, branch: string): Promise<void> {
     this.logger.debug({ localPath, branch }, "Updating local clone via git pull");
 

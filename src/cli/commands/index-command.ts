@@ -26,16 +26,7 @@ export interface IndexCommandOptions {
 }
 
 import { resolve, normalize, basename } from "node:path";
-
-/**
- * Detect whether a string is a local filesystem path.
- */
-function isLocalPath(urlOrPath: string): boolean {
-  const s = urlOrPath.trim();
-  return (
-    /^[A-Za-z]:[/\\]/.test(s) || s.startsWith("/") || s.startsWith("./") || s.startsWith("../")
-  );
-}
+import { isLocalPath } from "../../utils/path-utils.js";
 
 /**
  * Extract repository name from URL or local path.

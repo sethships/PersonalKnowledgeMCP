@@ -9,7 +9,8 @@
  */
 
 import { resolve, basename, normalize } from "node:path";
-import { access } from "node:fs/promises";
+import { stat } from "node:fs/promises";
+import { isLocalPath } from "../utils/path-utils.js";
 import simpleGit from "simple-git";
 import type { Logger } from "pino";
 import type { RepositoryCloner } from "../ingestion/repository-cloner.js";
@@ -240,13 +241,17 @@ export class IngestionService {
 
       let cloneResult: CloneResult;
 
-      if (this.isLocalPath(url)) {
+      if (isLocalPath(url)) {
         // Local path — validate it exists and is a git repo, then use in-place
         const resolvedPath = normalize(resolve(url));
 
         try {
-          await access(resolvedPath);
-        } catch {
+          const pathStat = await stat(resolvedPath);
+          if (!pathStat.isDirectory()) {
+            throw new IngestionError(`Local path is not a directory: ${resolvedPath}`, false);
+          }
+        } catch (err) {
+          if (err instanceof IngestionError) throw err;
           throw new IngestionError(
             `Local path does not exist or is not accessible: ${resolvedPath}`,
             false
@@ -934,31 +939,13 @@ export class IngestionService {
    * @param url - URL to validate
    * @throws {IngestionError} If URL is invalid
    */
-  /**
-   * Detect whether a string is a local filesystem path rather than a remote URL.
-   *
-   * Recognises absolute paths (Unix / and Windows drive letters) and relative
-   * paths beginning with ./ or ../
-   */
-  private isLocalPath(urlOrPath: string): boolean {
-    if (!urlOrPath) return false;
-    const s = urlOrPath.trim();
-    // Windows absolute: C:\... or C:/...
-    if (/^[A-Za-z]:[/\\]/.test(s)) return true;
-    // Unix absolute
-    if (s.startsWith("/")) return true;
-    // Relative
-    if (s.startsWith("./") || s.startsWith("../") || s === "." || s === "..") return true;
-    return false;
-  }
-
   private validateUrl(url: string): void {
     if (!url || typeof url !== "string") {
       throw new IngestionError("Invalid repository URL: must be a non-empty string", false);
     }
 
     // Local paths are valid — validated later when we check the directory exists
-    if (this.isLocalPath(url)) return;
+    if (isLocalPath(url)) return;
 
     // Check for common Git URL patterns:
     // 1. HTTPS or SSH URL ending with .git
@@ -985,7 +972,7 @@ export class IngestionService {
    * @throws {IngestionError} If name cannot be extracted
    */
   private extractRepositoryName(url: string): string {
-    if (this.isLocalPath(url)) {
+    if (isLocalPath(url)) {
       // Use the directory name of the resolved path
       const name = basename(normalize(resolve(url)));
       if (!name || name === "." || name === "..") {
