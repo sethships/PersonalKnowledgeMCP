@@ -8,6 +8,10 @@
  * @module services/ingestion-service
  */
 
+import { resolve, basename, normalize } from "node:path";
+import { stat } from "node:fs/promises";
+import { isLocalPath } from "../utils/path-utils.js";
+import simpleGit from "simple-git";
 import type { Logger } from "pino";
 import type { RepositoryCloner } from "../ingestion/repository-cloner.js";
 import type { CloneResult, FileInfo, FileChunk } from "../ingestion/types.js";
@@ -183,7 +187,7 @@ export class IngestionService {
     try {
       // Pre-flight checks
       this.validateUrl(url);
-      repositoryName = this.extractRepositoryName(url);
+      repositoryName = options.name || this.extractRepositoryName(url);
       collectionName = this.sanitizeCollectionName(repositoryName);
 
       this.logger.info("Starting indexing operation", {
@@ -223,7 +227,7 @@ export class IngestionService {
         }
       }
 
-      // Phase 1: Clone repository
+      // Phase 1: Clone repository (or resolve local path)
       this.updateProgress(
         {
           phase: "cloning",
@@ -235,17 +239,60 @@ export class IngestionService {
         options
       );
 
-      const cloneResult = await this.repositoryCloner.clone(url, {
-        branch: options.branch,
-        fetchLatest: options.force, // Fetch latest when force reindexing
-      });
-      clonePath = cloneResult.path; // Store for cleanup if needed
+      let cloneResult: CloneResult;
 
-      this.logger.info("Repository cloned", {
-        repository: repositoryName,
-        path: cloneResult.path,
-        branch: cloneResult.branch,
-      });
+      if (isLocalPath(url)) {
+        // Local path — validate it exists and is a git repo, then use in-place
+        const resolvedPath = normalize(resolve(url));
+
+        try {
+          const pathStat = await stat(resolvedPath);
+          if (!pathStat.isDirectory()) {
+            throw new IngestionError(`Local path is not a directory: ${resolvedPath}`, false);
+          }
+        } catch (err) {
+          if (err instanceof IngestionError) throw err;
+          throw new IngestionError(
+            `Local path does not exist or is not accessible: ${resolvedPath}`,
+            false
+          );
+        }
+
+        const git = simpleGit(resolvedPath);
+
+        let branch = options.branch ?? "unknown";
+        let commitSha: string | undefined;
+
+        try {
+          branch = options.branch ?? (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+          commitSha = (await git.revparse(["HEAD"])).trim();
+        } catch {
+          this.logger.warn({ resolvedPath }, "Could not read git metadata from local path");
+        }
+
+        cloneResult = { path: resolvedPath, name: repositoryName, branch, commitSha };
+        // Do not set clonePath — we must not clean up a local directory on failure
+
+        this.logger.info("Using local repository path", {
+          repository: repositoryName,
+          path: resolvedPath,
+          branch,
+          commitSha,
+        });
+      } else {
+        const remote = await this.repositoryCloner.clone(url, {
+          branch: options.branch,
+          fetchLatest: options.force, // Fetch latest when force reindexing
+        });
+        clonePath = remote.path; // Store for cleanup if needed
+        cloneResult = remote;
+
+        this.logger.info("Repository cloned", {
+          repository: repositoryName,
+          path: cloneResult.path,
+          branch: cloneResult.branch,
+        });
+      }
 
       // Phase 2: Scan files
       this.updateProgress(
@@ -897,15 +944,17 @@ export class IngestionService {
       throw new IngestionError("Invalid repository URL: must be a non-empty string", false);
     }
 
-    // Check for common Git URL patterns
-    // Matches either:
-    // 1. URLs ending with .git (https://... or git@...)
-    // 2. URLs containing github/gitlab/bitbucket (https://... or git@...)
+    // Local paths are valid — validated later when we check the directory exists
+    if (isLocalPath(url)) return;
+
+    // Check for common Git URL patterns:
+    // 1. HTTPS or SSH URL ending with .git
+    // 2. HTTPS or SSH URL containing known hosting keywords
     const gitUrlPattern =
-      /^(https?:\/\/|git@).+\.git$|^(https?:\/\/|git@).*(github|gitlab|bitbucket)/i;
+      /^(https?:\/\/|git@).+\.git$|^(https?:\/\/|git@).*(github|gitlab|gitea|bitbucket)/i;
     if (!gitUrlPattern.test(url)) {
       throw new IngestionError(
-        `Invalid repository URL format: ${url}. Expected Git URL (https or git@).`,
+        `Invalid repository URL format: ${url}. Expected a Git URL (https:// or git@) or a local path.`,
         false
       );
     }
@@ -923,6 +972,18 @@ export class IngestionService {
    * @throws {IngestionError} If name cannot be extracted
    */
   private extractRepositoryName(url: string): string {
+    if (isLocalPath(url)) {
+      // Use the directory name of the resolved path
+      const name = basename(normalize(resolve(url)));
+      if (!name || name === "." || name === "..") {
+        throw new IngestionError(
+          `Cannot extract repository name from local path: ${url}. Use --name to specify explicitly.`,
+          false
+        );
+      }
+      return name;
+    }
+
     const match = url.match(/[/:]([^/:]+?)(\.git)?$/);
     if (!match || !match[1]) {
       throw new IngestionError(`Cannot extract repository name from URL: ${url}`, false);

@@ -25,13 +25,26 @@ export interface IndexCommandOptions {
   provider?: string;
 }
 
+import { resolve, normalize, basename } from "node:path";
+import { isLocalPath } from "../../utils/path-utils.js";
+
 /**
- * Extract repository name from URL
+ * Extract repository name from URL or local path.
  *
- * @param url - Git repository URL
+ * @param url - Git repository URL or local path
  * @returns Repository name
  */
 function extractRepositoryName(url: string): string {
+  if (isLocalPath(url)) {
+    const name = basename(normalize(resolve(url)));
+    if (!name || name === "." || name === "..") {
+      throw new Error(
+        "Could not extract repository name from local path. Please use --name to specify explicitly."
+      );
+    }
+    return name;
+  }
+
   // Remove trailing .git
   const cleanUrl = url.endsWith(".git") ? url.slice(0, -4) : url;
 
@@ -57,20 +70,23 @@ function extractRepositoryName(url: string): string {
 }
 
 /**
- * Validate repository URL format
+ * Validate repository URL or local path format.
  *
- * @param url - Git repository URL
+ * @param url - Git repository URL or local filesystem path
  * @returns True if valid, throws otherwise
  */
 function validateUrl(url: string): boolean {
-  // Basic validation - ensure it looks like a Git URL
+  // Local paths are accepted — the ingestion service validates existence
+  if (isLocalPath(url)) return true;
+
+  // Basic validation - ensure it looks like a Git URL for any host
   const gitUrlPattern = /^(https?:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+\.git$/i;
   const gitUrlWithoutExtPattern = /^(https?:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+$/i;
 
   if (!gitUrlPattern.test(url) && !gitUrlWithoutExtPattern.test(url)) {
     throw new Error(
-      "Invalid repository URL format.\n" +
-        "Expected format: https://github.com/user/repo.git or git@github.com:user/repo.git"
+      "Invalid repository URL or path format.\n" +
+        "Expected: https://<host>/owner/repo.git, git@<host>:owner/repo.git, or a local path."
     );
   }
 
@@ -115,6 +131,7 @@ export async function indexCommand(
   try {
     // Index repository with progress callback
     const result = await deps.ingestionService.indexRepository(url, {
+      name: options.name,
       branch: options.branch,
       force: options.force,
       onProgress: (progress) => {

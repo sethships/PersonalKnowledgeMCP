@@ -249,6 +249,7 @@ export async function initializeDependencies(
     const repositoryCloner = new RepositoryCloner({
       clonePath: config.ingestion.clonePath,
       githubPat: Bun.env["GITHUB_PAT"],
+      gitPat: Bun.env["GIT_PAT"],
     });
     const fileScanner = new FileScanner();
     const fileChunker = new FileChunker();
