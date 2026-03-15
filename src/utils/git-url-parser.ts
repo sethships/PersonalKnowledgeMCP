@@ -1,12 +1,12 @@
 /**
  * Git URL Parser Utility
  *
- * Extracts owner and repository name from GitHub URLs for API calls.
- * Supports both HTTPS and SSH URL formats.
+ * Extracts owner and repository name from Git URLs for API calls.
+ * Supports both HTTPS and SSH URL formats for any git host.
  */
 
 /**
- * Parsed GitHub URL result
+ * Parsed Git URL result
  */
 export interface ParsedGitHubUrl {
   /**
@@ -20,35 +20,40 @@ export interface ParsedGitHubUrl {
   repo: string;
 
   /**
-   * Whether the URL is a GitHub URL
+   * Whether the URL is a GitHub.com URL
    */
   isGitHub: boolean;
+
+  /**
+   * The git host hostname (e.g. "github.com", "gitlab.com")
+   */
+  host: string;
 }
 
 /**
- * Parse a Git URL to extract owner and repository name
+ * Parse a Git URL to extract owner and repository name.
  *
- * Supports the following GitHub URL formats:
+ * Supports the following URL formats for any git host:
  * - HTTPS: https://github.com/owner/repo
- * - HTTPS with .git: https://github.com/owner/repo.git
+ * - HTTPS with .git: https://gitlab.com/owner/repo.git
  * - SSH: git@github.com:owner/repo
- * - SSH with .git: git@github.com:owner/repo.git
+ * - SSH with .git: git@gitlab.com:owner/repo.git
  *
- * Returns null for non-GitHub URLs or malformed URLs.
+ * Returns null for malformed URLs that do not match expected patterns.
  *
  * @param url - Git repository URL
- * @returns Parsed GitHub URL information, or null if not a valid GitHub URL
+ * @returns Parsed git URL information, or null if not a valid git URL
  *
  * @example
  * ```typescript
  * parseGitHubUrl('https://github.com/user/repo.git')
- * // Returns: { owner: 'user', repo: 'repo', isGitHub: true }
+ * // Returns: { owner: 'user', repo: 'repo', isGitHub: true, host: 'github.com' }
  *
  * parseGitHubUrl('https://gitlab.com/user/repo')
- * // Returns: null (not GitHub)
+ * // Returns: { owner: 'user', repo: 'repo', isGitHub: false, host: 'gitlab.com' }
  *
  * parseGitHubUrl('git@github.com:org/project.git')
- * // Returns: { owner: 'org', repo: 'project', isGitHub: true }
+ * // Returns: { owner: 'org', repo: 'project', isGitHub: true, host: 'github.com' }
  * ```
  */
 export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
@@ -58,16 +63,15 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
 
   const trimmedUrl = url.trim();
 
-  // Try HTTPS format: https://github.com/owner/repo(.git)?
-  // Matches: username/repo-name followed by optional .git
-  const httpsPattern = /^https:\/\/github\.com\/([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/;
+  // Try HTTPS format: https://<host>/owner/repo(.git)?
+  const httpsPattern = /^https?:\/\/([\w.-]+)\/([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/i;
   const httpsMatch = trimmedUrl.match(httpsPattern);
 
   if (httpsMatch) {
-    const owner = httpsMatch[1];
-    let repo = httpsMatch[2];
+    const host = httpsMatch[1];
+    const owner = httpsMatch[2];
+    let repo = httpsMatch[3];
 
-    // Strip .git suffix if present (regex allows dots, so it might be captured)
     if (repo && repo.endsWith(".git")) {
       repo = repo.substring(0, repo.length - 4);
     }
@@ -76,20 +80,21 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
       return {
         owner,
         repo,
-        isGitHub: true,
+        isGitHub: host === "github.com",
+        host,
       };
     }
   }
 
-  // Try SSH format: git@github.com:owner/repo(.git)?
-  const sshPattern = /^git@github\.com:([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/;
+  // Try SSH format: git@<host>:owner/repo(.git)?
+  const sshPattern = /^git@([\w.-]+):([\w][\w.-]*[\w])\/([\w][\w.-]*[\w])(?:\.git)?$/i;
   const sshMatch = trimmedUrl.match(sshPattern);
 
   if (sshMatch) {
-    const owner = sshMatch[1];
-    let repo = sshMatch[2];
+    const host = sshMatch[1];
+    const owner = sshMatch[2];
+    let repo = sshMatch[3];
 
-    // Strip .git suffix if present (regex allows dots, so it might be captured)
     if (repo && repo.endsWith(".git")) {
       repo = repo.substring(0, repo.length - 4);
     }
@@ -98,11 +103,12 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
       return {
         owner,
         repo,
-        isGitHub: true,
+        isGitHub: host === "github.com",
+        host,
       };
     }
   }
 
-  // Not a recognized GitHub URL format
+  // Not a recognized git URL format
   return null;
 }

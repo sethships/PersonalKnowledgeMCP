@@ -443,7 +443,9 @@ export class RepositoryCloner {
   }
 
   /**
-   * Validate that a URL is a valid GitHub repository URL.
+   * Validate that a URL is a valid Git repository URL.
+   *
+   * Accepts HTTPS and SSH URLs for any git host (GitHub, GitLab, Gitea, etc.).
    *
    * @param url - URL to validate
    * @throws {ValidationError} If the URL is invalid
@@ -459,13 +461,13 @@ export class RepositoryCloner {
       throw new ValidationError("Repository URL cannot be empty", "url");
     }
 
-    // Pattern: https://github.com/{owner}/{repo}(.git)?
-    // Owner/repo must start and end with alphanumeric, can contain .-_ in middle
-    const pattern = /^https:\/\/github\.com\/[\w][\w.-]*[\w]\/[\w][\w.-]*[\w](\.git)?$/;
+    // Accept HTTPS or SSH git URLs for any host
+    const httpsPattern = /^https?:\/\/[\w.-]+(\/[\w./-]+)+(?:\.git)?$/i;
+    const sshPattern = /^git@[\w.-]+:[\w./-]+(?:\.git)?$/i;
 
-    if (!pattern.test(trimmedUrl)) {
+    if (!httpsPattern.test(trimmedUrl) && !sshPattern.test(trimmedUrl)) {
       throw new ValidationError(
-        `Invalid GitHub repository URL format. Expected: https://github.com/owner/repo`,
+        `Invalid Git repository URL format. Expected: https://<host>/owner/repo or git@<host>:owner/repo`,
         "url"
       );
     }
@@ -494,26 +496,31 @@ export class RepositoryCloner {
   }
 
   /**
-   * Build authenticated URL with GitHub PAT if configured.
+   * Build authenticated URL with PAT if configured.
+   *
+   * Supports GitHub PAT (x-oauth-basic) and generic git PAT (token-only basic auth)
+   * for non-GitHub hosts such as GitLab and Gitea.
    *
    * SECURITY: This method NEVER logs the PAT token. The URL returned contains
    * credentials but is only used internally for cloning.
    *
-   * @param url - Original GitHub URL
+   * @param url - Original repository URL
    * @returns URL with authentication credentials if PAT is configured, otherwise original URL
    */
   private buildAuthenticatedUrl(url: string): string {
-    if (!this.config.githubPat) {
-      return url;
-    }
-
     try {
       const parsed = new URL(url);
 
-      if (parsed.hostname === "github.com") {
-        // Format: https://{PAT}:x-oauth-basic@github.com/owner/repo.git
+      if (parsed.hostname === "github.com" && this.config.githubPat) {
+        // GitHub: https://{PAT}:x-oauth-basic@github.com/owner/repo.git
         parsed.username = this.config.githubPat;
         parsed.password = "x-oauth-basic";
+      } else if (parsed.hostname !== "github.com" && this.config.gitPat) {
+        // Generic git host (GitLab, Gitea, etc.): https://{token}:@host/owner/repo.git
+        parsed.username = this.config.gitPat;
+        parsed.password = "";
+      } else {
+        return url;
       }
 
       // Return authenticated URL (never logged)

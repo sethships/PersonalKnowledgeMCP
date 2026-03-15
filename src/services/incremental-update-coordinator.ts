@@ -9,6 +9,7 @@
  */
 
 import simpleGit from "simple-git";
+import { parseGitHubUrl } from "../utils/git-url-parser.js";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { GitHubClient, CommitComparison } from "./github-client-types.js";
@@ -247,107 +248,156 @@ export class IncrementalUpdateCoordinator {
         "Update marked as in-progress"
       );
 
-      // Step 2: Parse GitHub owner/repo from URL
-      const { owner, repo: repoName } = this.parseGitHubUrl(repo.url);
+      // Step 2-5: Detect changes — via GitHub API for github.com repos,
+      // or via local git diff for all other hosts and local paths.
+      const parsedUrl = parseGitHubUrl(repo.url);
+      const isGitHub = parsedUrl?.isGitHub === true;
 
-      logger.debug(
-        { operation: "coordinator_parse_url", owner, repo: repoName, branch: repo.branch },
-        "Parsed GitHub repository info"
-      );
+      let headCommit: import("./github-client-types.js").CommitInfo;
+      let comparison: CommitComparison;
 
-      // Step 3: Fetch HEAD commit from GitHub API
-      const headCommit = await this.githubClient.getHeadCommit(
-        owner,
-        repoName,
-        repo.branch,
-        correlationId
-      );
-
-      logger.info(
-        {
-          repository: repositoryName,
-          headSha: headCommit.sha.substring(0, 7),
-          message: headCommit.message,
-        },
-        "Fetched HEAD commit from GitHub"
-      );
-
-      // Step 4: Compare with last indexed commit (short-circuit if no changes)
-      if (repo.lastIndexedCommitSha === headCommit.sha) {
-        const durationMs = Date.now() - startTime;
-        logger.info(
-          { repository: repositoryName, durationMs },
-          "No changes detected - repository is up-to-date"
-        );
+      if (isGitHub && parsedUrl) {
+        const { owner, repo: repoName } = parsedUrl;
 
         logger.debug(
-          { repository: repositoryName, localPath: repo.localPath },
-          "Skipping git pull - no changes detected. Local clone was not updated."
+          { operation: "coordinator_parse_url", owner, repo: repoName, branch: repo.branch },
+          "Parsed GitHub repository info"
         );
 
-        // Run completeness check even when no changes (catches pre-existing drift)
-        const noChangesCompletenessCheck = await this.runCompletenessCheck(repositoryName, logger);
-
-        // Note: inProgressFlagSet remains true, so the finally block will clear the
-        // updateInProgress flag. This ensures consistent cleanup even for early returns.
-        return {
-          status: "no_changes",
-          commitSha: headCommit.sha,
-          commitMessage: headCommit.message,
-          stats: {
-            filesAdded: 0,
-            filesModified: 0,
-            filesDeleted: 0,
-            chunksUpserted: 0,
-            chunksDeleted: 0,
-            durationMs: 0,
-          },
-          errors: [],
-          durationMs,
-          completenessCheck: noChangesCompletenessCheck,
-        };
-      }
-
-      // Step 5: Detect force push and change threshold
-      let comparison: CommitComparison;
-      try {
-        comparison = await this.githubClient.compareCommits(
+        // Fetch HEAD commit from GitHub API
+        headCommit = await this.githubClient.getHeadCommit(
           owner,
           repoName,
-          repo.lastIndexedCommitSha,
-          headCommit.sha,
+          repo.branch,
           correlationId
         );
 
         logger.info(
           {
             repository: repositoryName,
-            baseSha: comparison.baseSha.substring(0, 7),
-            headSha: comparison.headSha.substring(0, 7),
-            totalCommits: comparison.totalCommits,
-            filesChanged: comparison.files.length,
+            headSha: headCommit.sha.substring(0, 7),
+            message: headCommit.message,
           },
-          "Compared commits"
+          "Fetched HEAD commit from GitHub"
         );
-      } catch (error) {
-        // Force push detected - base commit not found
-        if (error instanceof GitHubNotFoundError) {
-          logger.warn(
+
+        // Short-circuit if no changes
+        if (repo.lastIndexedCommitSha === headCommit.sha) {
+          const durationMs = Date.now() - startTime;
+          logger.info(
+            { repository: repositoryName, durationMs },
+            "No changes detected - repository is up-to-date"
+          );
+
+          const noChangesCompletenessCheck = await this.runCompletenessCheck(
+            repositoryName,
+            logger
+          );
+          return {
+            status: "no_changes",
+            commitSha: headCommit.sha,
+            commitMessage: headCommit.message,
+            stats: {
+              filesAdded: 0,
+              filesModified: 0,
+              filesDeleted: 0,
+              chunksUpserted: 0,
+              chunksDeleted: 0,
+              durationMs: 0,
+            },
+            errors: [],
+            durationMs,
+            completenessCheck: noChangesCompletenessCheck,
+          };
+        }
+
+        // Detect force push and get changed file list via GitHub API
+        try {
+          comparison = await this.githubClient.compareCommits(
+            owner,
+            repoName,
+            repo.lastIndexedCommitSha,
+            headCommit.sha,
+            correlationId
+          );
+
+          logger.info(
             {
               repository: repositoryName,
-              lastIndexedSha: repo.lastIndexedCommitSha.substring(0, 7),
-              currentHeadSha: headCommit.sha.substring(0, 7),
+              baseSha: comparison.baseSha.substring(0, 7),
+              headSha: comparison.headSha.substring(0, 7),
+              totalCommits: comparison.totalCommits,
+              filesChanged: comparison.files.length,
             },
-            "Force push detected - base commit not found"
+            "Compared commits via GitHub API"
           );
-          throw new ForcePushDetectedError(
-            repositoryName,
-            repo.lastIndexedCommitSha,
-            headCommit.sha
-          );
+        } catch (error) {
+          if (error instanceof GitHubNotFoundError) {
+            logger.warn(
+              {
+                repository: repositoryName,
+                lastIndexedSha: repo.lastIndexedCommitSha.substring(0, 7),
+              },
+              "Force push detected - base commit not found"
+            );
+            throw new ForcePushDetectedError(
+              repositoryName,
+              repo.lastIndexedCommitSha,
+              headCommit.sha
+            );
+          }
+          throw error;
         }
-        // Re-throw other errors
-        throw error;
+      } else {
+        // Non-GitHub host or local path — use local git operations for change detection
+        const localResult = await this.buildLocalGitComparison(
+          repo.localPath,
+          repo.branch,
+          repo.lastIndexedCommitSha,
+          repo.url,
+          logger
+        );
+
+        if (!localResult) {
+          // No changes detected
+          const durationMs = Date.now() - startTime;
+          logger.info(
+            { repository: repositoryName, durationMs },
+            "No changes detected - repository is up-to-date"
+          );
+          const noChangesCompletenessCheck = await this.runCompletenessCheck(
+            repositoryName,
+            logger
+          );
+          return {
+            status: "no_changes",
+            commitSha: repo.lastIndexedCommitSha,
+            commitMessage: "up-to-date",
+            stats: {
+              filesAdded: 0,
+              filesModified: 0,
+              filesDeleted: 0,
+              chunksUpserted: 0,
+              chunksDeleted: 0,
+              durationMs: 0,
+            },
+            errors: [],
+            durationMs,
+            completenessCheck: noChangesCompletenessCheck,
+          };
+        }
+
+        headCommit = localResult.headCommit;
+        comparison = localResult.comparison;
+
+        logger.info(
+          {
+            repository: repositoryName,
+            headSha: headCommit.sha.substring(0, 7),
+            filesChanged: comparison.files.length,
+          },
+          "Detected changes via local git diff"
+        );
       }
 
       // Step 6: Check change threshold (>500 files triggers full re-index)
@@ -367,10 +417,17 @@ export class IncrementalUpdateCoordinator {
         );
       }
 
-      // Step 7: Update local clone (git pull)
-      await this.updateLocalClone(repo.localPath, repo.branch);
-
-      logger.info({ repository: repositoryName, localPath: repo.localPath }, "Updated local clone");
+      // Step 7: Update local clone (git pull).
+      // Skipped for local-path repos — the directory is managed by the user, not cloned.
+      if (!this.isLocalPathUrl(repo.url)) {
+        await this.updateLocalClone(repo.localPath, repo.branch);
+        logger.info(
+          { repository: repositoryName, localPath: repo.localPath },
+          "Updated local clone"
+        );
+      } else {
+        logger.debug({ repository: repositoryName }, "Skipping git pull — local path repository");
+      }
 
       // Step 8: Process changes via pipeline
       const pipelineResult = await this.updatePipeline.processChanges(comparison.files, {
@@ -711,6 +768,126 @@ export class IncrementalUpdateCoordinator {
    * await updateLocalClone("/repos/my-api", "main");
    * ```
    */
+  /**
+   * Detect whether a stored URL is actually a local filesystem path.
+   */
+  private isLocalPathUrl(url: string): boolean {
+    if (!url) return false;
+    const s = url.trim();
+    return (
+      /^[A-Za-z]:[/\\]/.test(s) || s.startsWith("/") || s.startsWith("./") || s.startsWith("../")
+    );
+  }
+
+  /**
+   * Build a CommitComparison using local git operations instead of the GitHub API.
+   *
+   * Used for non-GitHub hosts and local-path repositories. For remote repos the
+   * clone is fetched first so the local state reflects the remote HEAD.
+   *
+   * @returns `null` when there are no new changes, otherwise the head commit and comparison.
+   */
+  private async buildLocalGitComparison(
+    localPath: string,
+    branch: string,
+    lastIndexedCommitSha: string,
+    repoUrl: string,
+    logger: Logger
+  ): Promise<{
+    headCommit: import("./github-client-types.js").CommitInfo;
+    comparison: CommitComparison;
+  } | null> {
+    const git = simpleGit(localPath);
+
+    // For remote (non-local-path) repos, fetch to get latest remote state
+    if (!this.isLocalPathUrl(repoUrl)) {
+      try {
+        await git.fetch(["origin", branch, "--depth", "100"]);
+        logger.debug({ localPath, branch }, "Fetched latest from remote for change detection");
+      } catch (err) {
+        logger.warn(
+          { localPath, branch, err },
+          "git fetch failed; comparing against current local HEAD"
+        );
+      }
+    }
+
+    // Get current HEAD SHA (after fetch for remote repos)
+    const headSha = (await git.revparse(["HEAD"])).trim();
+
+    if (headSha === lastIndexedCommitSha) {
+      return null; // No changes
+    }
+
+    // Get commit metadata for the new HEAD
+    const logResult = await git.log({ from: headSha, to: headSha, maxCount: 1 });
+    const latestLog = logResult.latest;
+    const headCommit: import("./github-client-types.js").CommitInfo = {
+      sha: headSha,
+      message: latestLog?.message ?? "",
+      author: latestLog?.author_name ?? "",
+      date: latestLog?.date ?? new Date().toISOString(),
+    };
+
+    // Get changed files between last indexed commit and new HEAD
+    let diffOutput: string;
+    try {
+      diffOutput = await git.diff(["--name-status", lastIndexedCommitSha, headSha]);
+    } catch {
+      // If the base commit is no longer reachable (shallow clone / history rewrite),
+      // treat everything as modified to force a full rescan.
+      logger.warn(
+        { localPath, lastIndexedCommitSha },
+        "Base commit not reachable; marking all tracked files as modified"
+      );
+      diffOutput = "";
+    }
+
+    const files: import("./github-client-types.js").FileChange[] = [];
+    for (const line of diffOutput.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      const parts = trimmed.split(/\t+/);
+      const statusCode = parts[0]?.charAt(0);
+
+      if (!statusCode || !parts[1]) continue;
+
+      const status =
+        statusCode === "A"
+          ? "added"
+          : statusCode === "D"
+            ? "deleted"
+            : statusCode === "R"
+              ? "renamed"
+              : "modified";
+
+      if (status === "renamed" && parts[2]) {
+        files.push({ path: parts[2], status, previousPath: parts[1] });
+      } else {
+        files.push({ path: parts[1], status: status as "added" | "modified" | "deleted" });
+      }
+    }
+
+    // Count commits between base and head (best-effort)
+    let totalCommits = 1;
+    try {
+      const logBetween = await git.log({ from: lastIndexedCommitSha, to: headSha });
+      totalCommits = logBetween.total;
+    } catch {
+      // ignore
+    }
+
+    const comparison: CommitComparison = {
+      baseSha: lastIndexedCommitSha,
+      headSha,
+      totalCommits,
+      files,
+    };
+
+    return { headCommit, comparison };
+  }
+
   private async updateLocalClone(localPath: string, branch: string): Promise<void> {
     this.logger.debug({ localPath, branch }, "Updating local clone via git pull");
 
