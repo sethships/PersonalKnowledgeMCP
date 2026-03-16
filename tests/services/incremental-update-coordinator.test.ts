@@ -562,7 +562,9 @@ describe("IncrementalUpdateCoordinator", () => {
       await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(apiError);
     });
 
-    it("should handle invalid GitHub URL format", async () => {
+    it("should handle non-GitHub URL by falling back to local git (fails if local path invalid)", async () => {
+      // Non-GitHub URLs (single segment, no owner/repo) now fall through to local git.
+      // When the local path does not exist, simple-git throws accordingly.
       const invalidRepo: RepositoryInfo = {
         ...testRepo,
         url: "https://invalid-url.com/repo",
@@ -571,7 +573,7 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
-        /Cannot parse GitHub URL/
+        /does not exist|Cannot use simple-git/
       );
     });
 
