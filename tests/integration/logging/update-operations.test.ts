@@ -397,7 +397,7 @@ describe("Update Operations Logging Integration", () => {
       expect(messages).toContain("Starting incremental update");
       expect(messages).toContain("Repository metadata loaded");
       expect(messages).toContain("Fetched HEAD commit from GitHub");
-      expect(messages).toContain("Compared commits");
+      expect(messages).toContain("Compared commits via GitHub API");
       expect(messages).toContain("Updated local clone");
       expect(messages).toContain("Pipeline processing completed");
       expect(messages).toContain("Incremental update completed");
