@@ -80,8 +80,8 @@ function validateUrl(url: string): boolean {
   if (isLocalPath(url)) return true;
 
   // Basic validation - ensure it looks like a Git URL for any host
-  const gitUrlPattern = /^(https?:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+\.git$/i;
-  const gitUrlWithoutExtPattern = /^(https?:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+$/i;
+  const gitUrlPattern = /^(https:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+\.git$/i;
+  const gitUrlWithoutExtPattern = /^(https:\/\/|git@)[\w\-.]+(\/|:)[\w\-./]+$/i;
 
   if (!gitUrlPattern.test(url) && !gitUrlWithoutExtPattern.test(url)) {
     throw new Error(

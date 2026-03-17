@@ -256,9 +256,34 @@ describe("parseGitHubUrl", () => {
       expect(result).toBeNull();
     });
 
-    it("should return null for owner/repo names ending with special char", () => {
+    it("should parse owner/repo names ending with hyphen", () => {
       const result = parseGitHubUrl("https://github.com/user-/repo.git");
-      expect(result).toBeNull();
+      expect(result).toEqual({
+        owner: "user-",
+        repo: "repo",
+        isGitHub: true,
+        host: "github.com",
+      });
+    });
+
+    it("should parse single-character owner and repo names", () => {
+      const result = parseGitHubUrl("https://github.com/x/y");
+      expect(result).toEqual({
+        owner: "x",
+        repo: "y",
+        isGitHub: true,
+        host: "github.com",
+      });
+    });
+
+    it("should parse single-character owner and repo names via SSH", () => {
+      const result = parseGitHubUrl("git@github.com:x/y.git");
+      expect(result).toEqual({
+        owner: "x",
+        repo: "y",
+        isGitHub: true,
+        host: "github.com",
+      });
     });
   });
 });

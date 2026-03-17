@@ -9,6 +9,7 @@
  */
 
 import simpleGit from "simple-git";
+import type { SimpleGit } from "simple-git";
 import { parseGitHubUrl } from "../utils/git-url-parser.js";
 import { isLocalPath } from "../utils/path-utils.js";
 import type { Logger } from "pino";
@@ -116,6 +117,11 @@ export class IncrementalUpdateCoordinator {
   private readonly completenessChecker?: IndexCompletenessChecker;
 
   /**
+   * Optional factory for creating SimpleGit instances (for testing).
+   */
+  private readonly simpleGitFactory?: (path: string) => SimpleGit;
+
+  /**
    * Create an incremental update coordinator.
    *
    * @param githubClient - GitHub API client for commit detection
@@ -130,12 +136,22 @@ export class IncrementalUpdateCoordinator {
     config: CoordinatorConfig & {
       customGitPull?: (localPath: string, branch: string) => Promise<void>;
       completenessChecker?: IndexCompletenessChecker;
+      simpleGitFactory?: (path: string) => SimpleGit;
     } = {}
   ) {
     this.changeFileThreshold = config.changeFileThreshold ?? 500;
     this.updateHistoryLimit = config.updateHistoryLimit ?? 20;
     this.customGitPull = config.customGitPull;
     this.completenessChecker = config.completenessChecker;
+    this.simpleGitFactory = config.simpleGitFactory;
+  }
+
+  /**
+   * Create a SimpleGit instance for the given path.
+   * Uses injected factory if provided (for testing), otherwise uses simpleGit directly.
+   */
+  private createGit(path: string): SimpleGit {
+    return this.simpleGitFactory ? this.simpleGitFactory(path) : simpleGit(path);
   }
 
   /**
@@ -729,11 +745,14 @@ export class IncrementalUpdateCoordinator {
     headCommit: CommitInfo;
     comparison: CommitComparison;
   } | null> {
-    const git = simpleGit(localPath);
+    const git = this.createGit(localPath);
 
     // For remote (non-local-path) repos, fetch to get latest remote state
     if (!isLocalPath(repoUrl)) {
       try {
+        // Fetch with depth 100: covers most incremental update windows.
+        // When the base commit falls outside this depth (e.g., very infrequent updates),
+        // the diff will fail and the catch block below falls back to a full file rescan.
         await git.fetch(["origin", branch, "--depth", "100"]);
         logger.debug({ localPath, branch }, "Fetched latest from remote for change detection");
       } catch (err) {
@@ -753,7 +772,7 @@ export class IncrementalUpdateCoordinator {
     }
 
     // Get commit metadata for the new HEAD
-    const logResult = await git.log({ from: headSha, to: headSha, maxCount: 1 });
+    const logResult = await git.log([headSha, "-1"]);
     const latestLog = logResult.latest;
     const headCommit: CommitInfo = {
       sha: headSha,
@@ -771,7 +790,7 @@ export class IncrementalUpdateCoordinator {
       // List all tracked files and mark them as modified to force a full rescan.
       logger.warn(
         { localPath, lastIndexedCommitSha },
-        "Base commit not reachable; listing all tracked files as modified for full rescan"
+        "Base commit unreachable (shallow clone depth exceeded), falling back to full file rescan"
       );
       try {
         const lsFilesOutput = await git.raw(["ls-files"]);
@@ -855,7 +874,7 @@ export class IncrementalUpdateCoordinator {
       }
 
       // Otherwise use simple-git
-      const git = simpleGit(localPath);
+      const git = this.createGit(localPath);
 
       // Perform git pull origin <branch>
       const result = await git.pull("origin", branch);

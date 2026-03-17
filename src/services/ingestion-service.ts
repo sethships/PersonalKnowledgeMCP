@@ -947,12 +947,12 @@ export class IngestionService {
     // Local paths are valid — validated later when we check the directory exists
     if (isLocalPath(url)) return;
 
-    // Check for common Git URL patterns:
-    // 1. HTTPS or SSH URL ending with .git
-    // 2. HTTPS or SSH URL containing known hosting keywords
-    const gitUrlPattern =
-      /^(https?:\/\/|git@).+\.git$|^(https?:\/\/|git@).*(github|gitlab|gitea|bitbucket)/i;
-    if (!gitUrlPattern.test(url)) {
+    // Structural validation: require owner/repo path segments
+    // HTTPS: https://<host>/<owner>/<repo>[.git]
+    const httpsPattern = /^https:\/\/[\w.-]+\/[\w][\w.-]*\/[\w][\w.-]*(?:\.git)?$/i;
+    // SSH: git@<host>:<owner>/<repo>[.git]
+    const sshPattern = /^git@[\w.-]+:[\w][\w.-]*\/[\w][\w.-]*(?:\.git)?$/i;
+    if (!httpsPattern.test(url) && !sshPattern.test(url)) {
       throw new IngestionError(
         `Invalid repository URL format: ${url}. Expected a Git URL (https:// or git@) or a local path.`,
         false

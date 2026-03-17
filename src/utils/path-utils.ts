@@ -21,6 +21,14 @@ export function isLocalPath(urlOrPath: string): boolean {
   // Unix absolute
   if (s.startsWith("/")) return true;
   // Relative
-  if (s.startsWith("./") || s.startsWith("../") || s === "." || s === "..") return true;
+  if (
+    s.startsWith("./") ||
+    s.startsWith(".\\") ||
+    s.startsWith("../") ||
+    s.startsWith("..\\") ||
+    s === "." ||
+    s === ".."
+  )
+    return true;
   return false;
 }

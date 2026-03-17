@@ -20,6 +20,8 @@ describe("isLocalPath", () => {
   it("should detect relative paths", () => {
     expect(isLocalPath("./relative/path")).toBe(true);
     expect(isLocalPath("../parent/path")).toBe(true);
+    expect(isLocalPath(".\\my-repo")).toBe(true);
+    expect(isLocalPath("..\\my-repo")).toBe(true);
     expect(isLocalPath(".")).toBe(true);
     expect(isLocalPath("..")).toBe(true);
   });
