@@ -265,6 +265,10 @@ export type {
   ValidatedGlobPattern,
 } from "./folder-watcher-validation.js";
 
+// WatchedFolderStore exports
+export { WatchedFolderStoreImpl } from "./watched-folder-store.js";
+export type { WatchedFolderStoreService } from "./watched-folder-store.js";
+
 // ChangeDetectionService exports
 export { ChangeDetectionService } from "./change-detection-service.js";
 export type {

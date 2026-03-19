@@ -231,8 +231,8 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       const testFilePath = path.join(testFolder.path, "test.md");
       await fs.promises.writeFile(testFilePath, "test content");
 
-      // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Wait for debounce + chokidar awaitWriteFinish stabilityThreshold (100ms each) + OS overhead
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       expect(events.length).toBeGreaterThanOrEqual(1);
       expect(events.some((e) => e.type === "add")).toBe(true);
@@ -467,6 +467,62 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
     });
   });
 
+  describe("pauseWatching", () => {
+    it("should pause an active watcher", async () => {
+      await service.startWatching(testFolder);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+    });
+
+    it("should be a no-op if already paused", async () => {
+      await service.startWatching(testFolder);
+      await service.pauseWatching(testFolder.id);
+      // Should not throw
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+    });
+
+    it("should throw FolderNotWatchedError for non-existent folder", () => {
+      expect(service.pauseWatching("non-existent")).rejects.toThrow(FolderNotWatchedError);
+    });
+  });
+
+  describe("resumeWatching", () => {
+    it("should resume a paused watcher", async () => {
+      await service.startWatching(testFolder);
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+
+      await service.resumeWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+    });
+
+    it("should be a no-op if already active", async () => {
+      await service.startWatching(testFolder);
+      // Should not throw
+      await service.resumeWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+    });
+
+    it("should throw FolderNotWatchedError for non-existent folder", () => {
+      expect(service.resumeWatching("non-existent")).rejects.toThrow(FolderNotWatchedError);
+    });
+  });
+
+  describe("error retry config", () => {
+    it("should accept retry config options", () => {
+      const serviceWithRetry = new FolderWatcherService({
+        maxRetries: 5,
+        retryDelayMs: 500,
+        retryMaxDelayMs: 10000,
+      });
+      // Service created successfully with retry config
+      expect(serviceWithRetry).toBeDefined();
+    });
+  });
+
   describe("Types export", () => {
     it("should export default config", async () => {
       const { DEFAULT_FOLDER_WATCHER_CONFIG } =
@@ -476,6 +532,9 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.usePolling).toBe(false);
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.pollInterval).toBe(100);
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.emitExistingFiles).toBe(false);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.maxRetries).toBe(3);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryDelayMs).toBe(1000);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryMaxDelayMs).toBe(30000);
     });
   });
 });
