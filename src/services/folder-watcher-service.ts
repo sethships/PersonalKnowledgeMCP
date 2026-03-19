@@ -40,7 +40,7 @@ import {
  * Internal state for a watcher
  */
 interface WatcherState {
-  watcher: FSWatcher;
+  watcher: FSWatcher | null;
   folder: WatchedFolder;
   status: WatcherStatus;
   filesWatched: number;
@@ -48,6 +48,8 @@ interface WatcherState {
   error?: string;
   includeMatcher: ((path: string) => boolean) | null;
   excludeMatcher: ((path: string) => boolean) | null;
+  retryCount: number;
+  retryTimer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -191,6 +193,7 @@ export class FolderWatcherService {
       lastEventAt: null,
       includeMatcher,
       excludeMatcher,
+      retryCount: 0,
     };
 
     // Register event handlers
@@ -222,16 +225,23 @@ export class FolderWatcherService {
     // Clean up debounce timers for this folder
     this.cleanupFolderTimers(folderId);
 
-    // Close watcher with timeout to prevent hanging
-    await Promise.race([
-      state.watcher.close(),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
-          resolve();
-        }, 2000);
-      }),
-    ]);
+    // Only close watcher if not already paused
+    if (state.watcher) {
+      await Promise.race([
+        state.watcher.close(),
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
+            resolve();
+          }, 2000);
+        }),
+      ]);
+    }
+
+    // Clear any pending retry timer
+    if (state.retryTimer) {
+      clearTimeout(state.retryTimer);
+    }
 
     // Remove from map
     this.watchers.delete(folderId);
@@ -255,16 +265,23 @@ export class FolderWatcherService {
     // Close all watchers with individual timeouts to prevent hanging
     const closePromises: Promise<void>[] = [];
     for (const [folderId, state] of this.watchers.entries()) {
-      const closeWithTimeout = Promise.race([
-        state.watcher.close(),
-        new Promise<void>((resolve) => {
-          setTimeout(() => {
-            this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
-            resolve();
-          }, 2000);
-        }),
-      ]);
-      closePromises.push(closeWithTimeout);
+      // Clear retry timer if any
+      if (state.retryTimer) {
+        clearTimeout(state.retryTimer);
+      }
+      // Only close if not paused (watcher is null when paused)
+      if (state.watcher) {
+        const closeWithTimeout = Promise.race([
+          state.watcher.close(),
+          new Promise<void>((resolve) => {
+            setTimeout(() => {
+              this.logger.warn({ folderId }, "Watcher close timed out, forcing cleanup");
+              resolve();
+            }, 2000);
+          }),
+        ]);
+        closePromises.push(closeWithTimeout);
+      }
     }
 
     // Use allSettled to ensure we don't hang on individual failures
@@ -274,6 +291,73 @@ export class FolderWatcherService {
     this.watchers.clear();
 
     this.logger.info("All folder watchers stopped");
+  }
+
+  /**
+   * Pause watching a folder without removing it from the watcher map
+   *
+   * Closes the underlying file system watcher but retains all state so
+   * the watcher can be resumed later without re-providing the folder config.
+   *
+   * @param folderId - ID of the folder to pause
+   * @throws {FolderNotWatchedError} If folder is not being watched
+   */
+  async pauseWatching(folderId: string): Promise<void> {
+    const state = this.watchers.get(folderId);
+    if (!state) {
+      throw new FolderNotWatchedError(folderId);
+    }
+    if (state.status === "paused") {
+      return; // no-op
+    }
+
+    this.logger.info({ folderId }, "Pausing folder watcher");
+
+    // Clean up timers for this folder
+    this.cleanupFolderTimers(folderId);
+
+    // Close watcher with timeout
+    if (state.watcher) {
+      await Promise.race([
+        state.watcher.close(),
+        new Promise<void>((resolve) => setTimeout(() => resolve(), 2000)),
+      ]);
+    }
+
+    state.watcher = null;
+    state.status = "paused";
+    this.logger.info({ folderId }, "Folder watcher paused");
+  }
+
+  /**
+   * Resume watching a previously paused folder
+   *
+   * Creates a new file system watcher for the folder and restores active status.
+   *
+   * @param folderId - ID of the folder to resume
+   * @throws {FolderNotWatchedError} If folder is not being watched
+   */
+  async resumeWatching(folderId: string): Promise<void> {
+    const state = this.watchers.get(folderId);
+    if (!state) {
+      throw new FolderNotWatchedError(folderId);
+    }
+    if (state.status === "active") {
+      return; // no-op
+    }
+
+    this.logger.info({ folderId }, "Resuming folder watcher");
+
+    // Re-verify folder still exists before recreating watcher
+    await this.verifyFolderAccess(state.folder.path);
+
+    const newWatcher = await this.createWatcher(state.folder, state.excludeMatcher);
+    this.setupWatcherEvents(newWatcher, state.folder, state);
+    state.watcher = newWatcher;
+    state.status = "active";
+    state.retryCount = 0;
+
+    this.logger.info({ folderId }, "Folder watcher resumed");
   }
 
   // ===========================================================================
@@ -524,12 +608,71 @@ export class FolderWatcherService {
     watcher.on("error", (err: unknown) => {
       const error = err instanceof Error ? err : new Error(String(err));
       this.logger.error({ folderId: folder.id, error: error.message }, "Watcher error");
-      state.status = "error";
       state.error = error.message;
-      this.emitError(
-        new WatcherOperationError(folder.id, "watch", error.message, true, error),
-        folder.id
-      );
+
+      if (state.retryCount < this.config.maxRetries) {
+        state.status = "error";
+        const delay = Math.min(
+          this.config.retryDelayMs * Math.pow(2, state.retryCount),
+          this.config.retryMaxDelayMs
+        );
+        state.retryCount++;
+        this.logger.warn(
+          { folderId: folder.id, attempt: state.retryCount, delayMs: delay },
+          "Scheduling watcher retry"
+        );
+        state.retryTimer = setTimeout(() => {
+          state.retryTimer = undefined;
+          // Attempt to close old watcher (may already be broken)
+          const oldWatcher = state.watcher;
+          if (oldWatcher) {
+            try {
+              void oldWatcher.close();
+            } catch {
+              /* ignore */
+            }
+          }
+          state.watcher = null;
+          this.createWatcher(state.folder, state.excludeMatcher)
+            .then((newWatcher) => {
+              this.setupWatcherEvents(newWatcher, state.folder, state);
+              state.watcher = newWatcher;
+              state.status = "active";
+              state.error = undefined;
+              state.retryCount = 0;
+              this.logger.info({ folderId: folder.id }, "Watcher recovered after retry");
+            })
+            .catch((retryError) => {
+              state.status = "error";
+              state.error = retryError instanceof Error ? retryError.message : String(retryError);
+              this.logger.error(
+                { folderId: folder.id, error: state.error },
+                "Watcher retry failed"
+              );
+              this.emitError(
+                new WatcherOperationError(
+                  folder.id,
+                  "retry",
+                  state.error,
+                  false,
+                  retryError instanceof Error ? retryError : undefined
+                ),
+                folder.id
+              );
+            });
+        }, delay);
+      } else {
+        // Max retries exceeded
+        state.status = "error";
+        this.logger.error(
+          { folderId: folder.id, maxRetries: this.config.maxRetries },
+          "Watcher max retries exceeded"
+        );
+        this.emitError(
+          new WatcherOperationError(folder.id, "watch", error.message, true, error),
+          folder.id
+        );
+      }
     });
   }
 

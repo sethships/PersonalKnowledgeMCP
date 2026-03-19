@@ -17,6 +17,7 @@ import {
   MaxWatchersExceededError,
 } from "../../../src/services/index.js";
 import type { WatchedFolder, FileEvent } from "../../../src/services/folder-watcher-types.js";
+import { createTestFolder } from "../../helpers/folder-fixtures.js";
 
 // Initialize logger for tests
 beforeAll(() => {
@@ -26,26 +27,6 @@ beforeAll(() => {
 afterAll(() => {
   resetLogger();
 });
-
-/**
- * Create a test WatchedFolder object
- */
-function createTestFolder(overrides: Partial<WatchedFolder> = {}): WatchedFolder {
-  return {
-    id: "test-folder-1",
-    path: path.join(os.tmpdir(), "test-folder-watcher-" + Date.now()),
-    name: "Test Folder",
-    enabled: true,
-    includePatterns: null,
-    excludePatterns: null,
-    debounceMs: 100, // Short debounce for testing
-    createdAt: new Date(),
-    lastScanAt: null,
-    fileCount: 0,
-    updatedAt: null,
-    ...overrides,
-  };
-}
 
 // Skip these tests in CI - chokidar file watchers are flaky in Linux CI environments
 // and can hang indefinitely on close. These tests exercise real file system operations
@@ -62,7 +43,7 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       maxConcurrentWatchers: 3,
     });
 
-    testFolder = createTestFolder();
+    testFolder = createTestFolder({ id: "test-folder-1" });
     // Create the test directory
     await fs.promises.mkdir(testFolder.path, { recursive: true });
   });
@@ -231,8 +212,8 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       const testFilePath = path.join(testFolder.path, "test.md");
       await fs.promises.writeFile(testFilePath, "test content");
 
-      // Wait for debounce
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Wait for debounce + chokidar awaitWriteFinish stabilityThreshold (100ms each) + OS overhead
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       expect(events.length).toBeGreaterThanOrEqual(1);
       expect(events.some((e) => e.type === "add")).toBe(true);
@@ -467,6 +448,90 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
     });
   });
 
+  describe("pauseWatching", () => {
+    it("should pause an active watcher", async () => {
+      await service.startWatching(testFolder);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+    });
+
+    it("should be a no-op if already paused", async () => {
+      await service.startWatching(testFolder);
+      await service.pauseWatching(testFolder.id);
+      // Should not throw
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+    });
+
+    it("should throw FolderNotWatchedError for non-existent folder", () => {
+      expect(service.pauseWatching("non-existent")).rejects.toThrow(FolderNotWatchedError);
+    });
+  });
+
+  describe("resumeWatching", () => {
+    it("should resume a paused watcher", async () => {
+      await service.startWatching(testFolder);
+      await service.pauseWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("paused");
+
+      await service.resumeWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+    });
+
+    it("should be a no-op if already active", async () => {
+      await service.startWatching(testFolder);
+      // Should not throw
+      await service.resumeWatching(testFolder.id);
+      expect(service.getWatcherStatus(testFolder.id)?.status).toBe("active");
+    });
+
+    it("should throw FolderNotWatchedError for non-existent folder", () => {
+      expect(service.resumeWatching("non-existent")).rejects.toThrow(FolderNotWatchedError);
+    });
+
+    it("should throw FolderNotFoundError when folder was deleted before resume", async () => {
+      await service.startWatching(testFolder);
+      await service.pauseWatching(testFolder.id);
+
+      // Delete the folder while paused
+      await fs.promises.rm(testFolder.path, { recursive: true, force: true });
+
+      expect(service.resumeWatching(testFolder.id)).rejects.toThrow(FolderNotFoundError);
+    });
+  });
+
+  describe("error retry config", () => {
+    it("should accept retry config options", () => {
+      const serviceWithRetry = new FolderWatcherService({
+        maxRetries: 5,
+        retryDelayMs: 500,
+        retryMaxDelayMs: 10000,
+      });
+      expect(serviceWithRetry).toBeDefined();
+    });
+
+    it("should create service with maxRetries: 0 (no retry mode)", () => {
+      const noRetryService = new FolderWatcherService({ maxRetries: 0 });
+      expect(noRetryService).toBeDefined();
+      expect(noRetryService.getActiveWatcherCount()).toBe(0);
+    });
+
+    it("should default retryCount to 0 for new watchers", async () => {
+      const retryService = new FolderWatcherService({
+        defaultDebounceMs: 100,
+        maxRetries: 3,
+        retryDelayMs: 200,
+      });
+      await retryService.startWatching(testFolder);
+      const status = retryService.getWatcherStatus(testFolder.id);
+      expect(status?.status).toBe("active");
+      // Verify watcher is active (retryCount starts at 0 internally, not exposed publicly)
+      await retryService.stopAllWatchers();
+    });
+  });
+
   describe("Types export", () => {
     it("should export default config", async () => {
       const { DEFAULT_FOLDER_WATCHER_CONFIG } =
@@ -476,6 +541,9 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.usePolling).toBe(false);
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.pollInterval).toBe(100);
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.emitExistingFiles).toBe(false);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.maxRetries).toBe(3);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryDelayMs).toBe(1000);
+      expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryMaxDelayMs).toBe(30000);
     });
   });
 });

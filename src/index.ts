@@ -49,6 +49,7 @@ import { RelationshipExtractor } from "./graph/extraction/RelationshipExtractor.
 import { resolveGitHubPAT } from "./services/github-pat-resolver.js";
 import { DocumentSearchServiceImpl } from "./services/document-search-service.js";
 import { FolderWatcherService } from "./services/folder-watcher-service.js";
+import { WatchedFolderStoreImpl } from "./services/watched-folder-store.js";
 import { ChangeDetectionService } from "./services/change-detection-service.js";
 import { FolderDocumentIndexingService } from "./services/folder-document-indexing-service.js";
 import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
@@ -262,6 +263,33 @@ async function main(): Promise<void> {
     const folderWatcherService = new FolderWatcherService();
     const listWatchedFoldersService = new ListWatchedFoldersServiceImpl(folderWatcherService);
 
+    // Initialize watched folder store for persistence
+    const watchedFolderStore = WatchedFolderStoreImpl.getInstance(config.data.path);
+
+    // Auto-start watchers from persisted store
+    const storedFolders = await watchedFolderStore.listFolders();
+    const enabledFolders = storedFolders.filter((f) => f.enabled);
+    if (enabledFolders.length > 0) {
+      logger.info({ count: enabledFolders.length }, "Restoring watched folders from store");
+      for (const folder of enabledFolders) {
+        try {
+          await folderWatcherService.startWatching(folder);
+          logger.info({ folderId: folder.id, path: folder.path }, "Restored watcher from store");
+        } catch (error) {
+          logger.warn(
+            {
+              folderId: folder.id,
+              path: folder.path,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "Failed to restore watcher - skipping"
+          );
+        }
+      }
+    } else {
+      logger.debug("No watched folders to restore from store");
+    }
+
     // Create change detection service wrapping folder watcher
     const changeDetectionService = new ChangeDetectionService(folderWatcherService);
 
@@ -286,6 +314,10 @@ async function main(): Promise<void> {
     // TODO(#383): registerFolder() is called by the folder management MCP tools
     // (e.g., watch_folder) when users add folders. This is expected incremental delivery —
     // the service is wired up but folders are registered on-demand via MCP tool invocations.
+
+    // TODO(#386): Pass watchedFolderStore to the watch_folder / stop_watching MCP tool handlers
+    // so that folders added/removed at runtime are persisted and survive restarts.
+    // Currently the store is used only for boot-time restore (read-only at runtime).
 
     // Wire change detection → folder document indexing
     changeDetectionService.onDetectedChange((change) => {
@@ -414,6 +446,15 @@ async function main(): Promise<void> {
         updateToolsUnavailableReason,
       }
     );
+
+    // Register folder watcher shutdown hook (must run before change detection dispose).
+    // Pre-shutdown hooks execute in registration order (FIFO). This hook MUST be
+    // registered before the change detection hook to prevent chokidar events from
+    // being emitted into a disposed ChangeDetectionService during shutdown.
+    mcpServer.registerPreShutdownHook(async () => {
+      logger.info("Stopping all folder watchers");
+      await folderWatcherService.stopAllWatchers();
+    });
 
     // Register folder document indexing shutdown hook
     mcpServer.registerPreShutdownHook(async () => {

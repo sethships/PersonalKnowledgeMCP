@@ -155,6 +155,11 @@ export interface FileEvent {
 
 /**
  * Status of a folder watcher
+ *
+ * - "active": Watcher is running and monitoring for changes
+ * - "paused": Watcher is suspended; state is retained for resumption
+ * - "error": Watcher encountered an error (may be retrying)
+ * - "stopped": Reserved for future use (e.g., explicit stop without removal)
  */
 export type WatcherStatus = "active" | "paused" | "error" | "stopped";
 
@@ -255,6 +260,24 @@ export interface FolderWatcherConfig {
    * @default false
    */
   emitExistingFiles?: boolean;
+
+  /**
+   * Maximum number of retry attempts on watcher error
+   * @default 3
+   */
+  maxRetries?: number;
+
+  /**
+   * Initial delay in milliseconds before first retry (doubles with each attempt)
+   * @default 1000
+   */
+  retryDelayMs?: number;
+
+  /**
+   * Maximum delay cap in milliseconds for retry backoff
+   * @default 30000
+   */
+  retryMaxDelayMs?: number;
 }
 
 /**
@@ -266,4 +289,7 @@ export const DEFAULT_FOLDER_WATCHER_CONFIG: Required<FolderWatcherConfig> = {
   usePolling: false,
   pollInterval: 100,
   emitExistingFiles: false,
+  maxRetries: 3,
+  retryDelayMs: 1000,
+  retryMaxDelayMs: 30000,
 };
