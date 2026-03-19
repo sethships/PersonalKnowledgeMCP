@@ -15,6 +15,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { createGraphShutdownHandler } from "../../../src/cli/utils/dependency-init.js";
+import type { GraphStorageAdapter } from "../../../src/graph/adapters/types.js";
 
 // Test the provider resolution priority logic conceptually
 // These are behavioral specifications that document expected behavior
@@ -143,31 +145,42 @@ describe("Provider Resolution Priority (Design Specification)", () => {
   });
 });
 
-// Document graceful shutdown behavior
-describe("Graceful Shutdown (Design Specification)", () => {
+// Test the exported createGraphShutdownHandler helper directly
+describe("Graceful Shutdown (createGraphShutdownHandler)", () => {
+  /**
+   * Creates a minimal mock GraphStorageAdapter for shutdown tests.
+   * Only the `disconnect` method is relevant; all other methods throw if called.
+   */
+  function createMockAdapter(
+    disconnectImpl: () => Promise<void> = async () => {}
+  ): GraphStorageAdapter {
+    const notImplemented = (): never => {
+      throw new Error("not implemented in mock");
+    };
+    return {
+      connect: notImplemented,
+      disconnect: disconnectImpl,
+      healthCheck: notImplemented,
+      runQuery: notImplemented,
+      upsertNode: notImplemented,
+      deleteNode: notImplemented,
+      createRelationship: notImplemented,
+      deleteRelationship: notImplemented,
+      traverse: notImplemented,
+      analyzeDependencies: notImplemented,
+      getContext: notImplemented,
+    };
+  }
+
   it("cleanupDone flag prevents double-disconnect", async () => {
-    // Simulates the beforeExit handler registered in initializeDependencies.
-    // The cleanupDone guard must ensure disconnect() is called at most once
-    // even when beforeExit fires multiple times (which Node/Bun may do).
-
     let disconnectCallCount = 0;
-    const fakeDisconnect = async (): Promise<void> => {
+    const adapter = createMockAdapter(async () => {
       disconnectCallCount++;
-    };
+    });
 
-    let cleanupDone = false;
-    const shutdown = async (): Promise<void> => {
-      if (!cleanupDone) {
-        cleanupDone = true;
-        try {
-          await fakeDisconnect();
-        } catch {
-          // suppress
-        }
-      }
-    };
+    const shutdown = createGraphShutdownHandler(adapter);
 
-    // Simulate beforeExit firing twice
+    // Call twice — disconnect must only fire once
     await shutdown();
     await shutdown();
 
@@ -175,52 +188,27 @@ describe("Graceful Shutdown (Design Specification)", () => {
   });
 
   it("disconnect errors are suppressed so they do not mask successful commands", async () => {
-    // When disconnect() throws, the shutdown handler must swallow the error.
-    // This ensures the process exits cleanly (code 0) even if cleanup fails.
-
-    let cleanupDone = false;
-    const fakeDisconnect = async (): Promise<void> => {
+    const adapter = createMockAdapter(async () => {
       throw new Error("connection already closed");
-    };
+    });
 
-    const shutdown = async (): Promise<void> => {
-      if (!cleanupDone) {
-        cleanupDone = true;
-        try {
-          await fakeDisconnect();
-        } catch {
-          // suppress
-        }
-      }
-    };
+    const shutdown = createGraphShutdownHandler(adapter);
 
-    // Must not throw
+    // Must not throw — error is swallowed internally
     await shutdown();
-    // If we reach here without throwing, the error was suppressed correctly
+    // Reaching here confirms no exception propagated
   });
 
-  it("handler is only registered when graphAdapter is available", () => {
-    // The beforeExit registration is guarded by `if (graphAdapter)`.
-    // When graphAdapter is undefined (graph DB not configured), no handler
-    // is registered and the process exits normally without cleanup overhead.
+  it("handler calls disconnect on the provided adapter", async () => {
+    let disconnected = false;
+    const adapter = createMockAdapter(async () => {
+      disconnected = true;
+    });
 
-    const graphAdapterPresent = { disconnect: async () => {} };
-    const graphAdapterAbsent = undefined;
+    const shutdown = createGraphShutdownHandler(adapter);
+    await shutdown();
 
-    // Simulate the conditional guard
-    let handlerRegistered = false;
-    const registerIfPresent = (adapter: typeof graphAdapterPresent | undefined): void => {
-      if (adapter) {
-        handlerRegistered = true;
-      }
-    };
-
-    registerIfPresent(graphAdapterPresent);
-    expect(handlerRegistered).toBe(true);
-
-    handlerRegistered = false;
-    registerIfPresent(graphAdapterAbsent);
-    expect(handlerRegistered).toBe(false);
+    expect(disconnected).toBe(true);
   });
 });
 
