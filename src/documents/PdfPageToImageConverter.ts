@@ -132,14 +132,27 @@ export class PdfPageToImageConverter {
    * @param config - Converter configuration (missing fields use defaults)
    */
   constructor(config?: PdfImageConverterConfig) {
-    this.config = {
-      dpiResolution: config?.dpiResolution ?? DEFAULT_PDF_IMAGE_CONFIG.dpiResolution,
-      maxPagesPerDocument:
-        config?.maxPagesPerDocument ?? DEFAULT_PDF_IMAGE_CONFIG.maxPagesPerDocument,
-      pageTimeoutMs: config?.pageTimeoutMs ?? DEFAULT_PDF_IMAGE_CONFIG.pageTimeoutMs,
-      maxFileSizeBytes: config?.maxFileSizeBytes ?? DEFAULT_PDF_IMAGE_CONFIG.maxFileSizeBytes,
-      timeoutMs: config?.timeoutMs ?? DEFAULT_PDF_IMAGE_CONFIG.timeoutMs,
-    };
+    const dpiResolution = config?.dpiResolution ?? DEFAULT_PDF_IMAGE_CONFIG.dpiResolution;
+    const maxPagesPerDocument =
+      config?.maxPagesPerDocument ?? DEFAULT_PDF_IMAGE_CONFIG.maxPagesPerDocument;
+    const pageTimeoutMs = config?.pageTimeoutMs ?? DEFAULT_PDF_IMAGE_CONFIG.pageTimeoutMs;
+    const maxFileSizeBytes = config?.maxFileSizeBytes ?? DEFAULT_PDF_IMAGE_CONFIG.maxFileSizeBytes;
+    const timeoutMs = config?.timeoutMs ?? DEFAULT_PDF_IMAGE_CONFIG.timeoutMs;
+
+    if (dpiResolution <= 0) {
+      throw new ExtractionError(`dpiResolution must be positive, got ${dpiResolution}`);
+    }
+    if (maxPagesPerDocument <= 0) {
+      throw new ExtractionError(`maxPagesPerDocument must be positive, got ${maxPagesPerDocument}`);
+    }
+
+    this.config = Object.freeze({
+      dpiResolution,
+      maxPagesPerDocument,
+      pageTimeoutMs,
+      maxFileSizeBytes,
+      timeoutMs,
+    });
   }
 
   /**
@@ -284,6 +297,10 @@ export class PdfPageToImageConverter {
    * or discard each page before the next is rendered. Useful for large
    * documents where holding all images in memory is not desirable.
    *
+   * Unlike convertAllPages which catches per-page rendering errors and continues
+   * processing, this iterator propagates per-page errors to the caller. Consumers
+   * should wrap the for-await loop in try/catch for graceful degradation.
+   *
    * @param pdfBuffer - PDF file data
    * @yields Rendered page images one at a time
    * @throws {ExtractionError} If the PDF cannot be loaded
@@ -335,7 +352,13 @@ export class PdfPageToImageConverter {
   private async loadDocument(buffer: Buffer | Uint8Array): Promise<PDFDocumentProxy> {
     const pdfjs = await ensurePdfjs();
     try {
-      const data = new Uint8Array(buffer);
+      // pdfjs-dist accepts Uint8Array directly; Buffer is a Uint8Array subclass.
+      // Only copy when the buffer is a view into a larger ArrayBuffer to avoid
+      // doubling peak memory usage for large PDFs (up to 50MB configured max).
+      const data =
+        buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength
+          ? buffer
+          : new Uint8Array(buffer);
       const doc = await pdfjs.getDocument({ data }).promise;
       return doc;
     } catch (error) {
