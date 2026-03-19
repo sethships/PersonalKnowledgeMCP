@@ -100,6 +100,28 @@ export interface CliDependencies {
 }
 
 /**
+ * Creates a reusable beforeExit/signal shutdown handler for a graph adapter.
+ * The returned function is idempotent — calling it multiple times disconnects only once.
+ * Exported for testability.
+ *
+ * @param adapter - The graph adapter to disconnect on shutdown
+ * @returns Async shutdown function suitable for use as a process event handler
+ */
+export function createGraphShutdownHandler(adapter: GraphStorageAdapter): () => Promise<void> {
+  let cleanupDone = false;
+  return async (): Promise<void> => {
+    if (!cleanupDone) {
+      cleanupDone = true;
+      try {
+        await adapter.disconnect();
+      } catch {
+        // Suppress cleanup errors — don't let disconnect failure mask a successful command
+      }
+    }
+  };
+}
+
+/**
  * Initialize all dependencies for CLI commands
  *
  * This mirrors the initialization pattern from src/index.ts but with
@@ -338,6 +360,28 @@ export async function initializeDependencies(
         { adapter: adapterType },
         `${envVar} not set - Graph database features disabled`
       );
+    }
+
+    // Register graceful shutdown handler for graph adapter
+    // FalkorDB/ioredis holds an open TCP socket; without explicit close the socket
+    // is forcefully torn down on process exit, causing ioredis to emit an error
+    // that becomes exit code 1 or 9. `beforeExit` supports async callbacks, so
+    // the disconnect promise completes before the process fully exits.
+    // SIGINT/SIGTERM handlers cover Ctrl+C and kill signals, which do NOT trigger
+    // beforeExit. After cleanup, the signal is re-raised so the process exits with
+    // the correct signal-based exit code.
+    if (graphAdapter) {
+      const shutdown = createGraphShutdownHandler(graphAdapter);
+      process.on("beforeExit", () => void shutdown());
+
+      const signalHandler = (signal: string): void => {
+        void shutdown().finally(() => {
+          process.removeListener(signal, signalHandler);
+          process.kill(process.pid, signal);
+        });
+      };
+      process.once("SIGINT", () => signalHandler("SIGINT"));
+      process.once("SIGTERM", () => signalHandler("SIGTERM"));
     }
 
     // Step 13: Initialize incremental update pipeline (with optional graph ingestion service)

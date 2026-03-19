@@ -15,6 +15,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { createGraphShutdownHandler } from "../../../src/cli/utils/dependency-init.js";
+import type { GraphStorageAdapter } from "../../../src/graph/adapters/types.js";
 
 // Test the provider resolution priority logic conceptually
 // These are behavioral specifications that document expected behavior
@@ -140,6 +142,73 @@ describe("Provider Resolution Priority (Design Specification)", () => {
 
       expect(providerInfo).toBeUndefined();
     });
+  });
+});
+
+// Test the exported createGraphShutdownHandler helper directly
+describe("Graceful Shutdown (createGraphShutdownHandler)", () => {
+  /**
+   * Creates a minimal mock GraphStorageAdapter for shutdown tests.
+   * Only the `disconnect` method is relevant; all other methods throw if called.
+   */
+  function createMockAdapter(
+    disconnectImpl: () => Promise<void> = async () => {}
+  ): GraphStorageAdapter {
+    const notImplemented = (): never => {
+      throw new Error("not implemented in mock");
+    };
+    return {
+      connect: notImplemented,
+      disconnect: disconnectImpl,
+      healthCheck: notImplemented,
+      runQuery: notImplemented,
+      upsertNode: notImplemented,
+      deleteNode: notImplemented,
+      createRelationship: notImplemented,
+      deleteRelationship: notImplemented,
+      traverse: notImplemented,
+      analyzeDependencies: notImplemented,
+      getContext: notImplemented,
+    };
+  }
+
+  it("cleanupDone flag prevents double-disconnect", async () => {
+    let disconnectCallCount = 0;
+    const adapter = createMockAdapter(async () => {
+      disconnectCallCount++;
+    });
+
+    const shutdown = createGraphShutdownHandler(adapter);
+
+    // Call twice — disconnect must only fire once
+    await shutdown();
+    await shutdown();
+
+    expect(disconnectCallCount).toBe(1);
+  });
+
+  it("disconnect errors are suppressed so they do not mask successful commands", async () => {
+    const adapter = createMockAdapter(async () => {
+      throw new Error("connection already closed");
+    });
+
+    const shutdown = createGraphShutdownHandler(adapter);
+
+    // Must not throw — error is swallowed internally
+    await shutdown();
+    // Reaching here confirms no exception propagated
+  });
+
+  it("handler calls disconnect on the provided adapter", async () => {
+    let disconnected = false;
+    const adapter = createMockAdapter(async () => {
+      disconnected = true;
+    });
+
+    const shutdown = createGraphShutdownHandler(adapter);
+    await shutdown();
+
+    expect(disconnected).toBe(true);
   });
 });
 
