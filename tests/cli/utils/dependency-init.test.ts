@@ -143,6 +143,87 @@ describe("Provider Resolution Priority (Design Specification)", () => {
   });
 });
 
+// Document graceful shutdown behavior
+describe("Graceful Shutdown (Design Specification)", () => {
+  it("cleanupDone flag prevents double-disconnect", async () => {
+    // Simulates the beforeExit handler registered in initializeDependencies.
+    // The cleanupDone guard must ensure disconnect() is called at most once
+    // even when beforeExit fires multiple times (which Node/Bun may do).
+
+    let disconnectCallCount = 0;
+    const fakeDisconnect = async (): Promise<void> => {
+      disconnectCallCount++;
+    };
+
+    let cleanupDone = false;
+    const shutdown = async (): Promise<void> => {
+      if (!cleanupDone) {
+        cleanupDone = true;
+        try {
+          await fakeDisconnect();
+        } catch {
+          // suppress
+        }
+      }
+    };
+
+    // Simulate beforeExit firing twice
+    await shutdown();
+    await shutdown();
+
+    expect(disconnectCallCount).toBe(1);
+  });
+
+  it("disconnect errors are suppressed so they do not mask successful commands", async () => {
+    // When disconnect() throws, the shutdown handler must swallow the error.
+    // This ensures the process exits cleanly (code 0) even if cleanup fails.
+
+    let cleanupDone = false;
+    const fakeDisconnect = async (): Promise<void> => {
+      throw new Error("connection already closed");
+    };
+
+    const shutdown = async (): Promise<void> => {
+      if (!cleanupDone) {
+        cleanupDone = true;
+        try {
+          await fakeDisconnect();
+        } catch {
+          // suppress
+        }
+      }
+    };
+
+    // Must not throw
+    await shutdown();
+    // If we reach here without throwing, the error was suppressed correctly
+  });
+
+  it("handler is only registered when graphAdapter is available", () => {
+    // The beforeExit registration is guarded by `if (graphAdapter)`.
+    // When graphAdapter is undefined (graph DB not configured), no handler
+    // is registered and the process exits normally without cleanup overhead.
+
+    const graphAdapterPresent = { disconnect: async () => {} };
+    const graphAdapterAbsent = undefined;
+
+    // Simulate the conditional guard
+    let handlerRegistered = false;
+    const registerIfPresent = (adapter: typeof graphAdapterPresent | undefined): void => {
+      if (adapter) {
+        handlerRegistered = true;
+      }
+    };
+
+    registerIfPresent(graphAdapterPresent);
+    expect(handlerRegistered).toBe(true);
+
+    handlerRegistered = false;
+    registerIfPresent(graphAdapterAbsent);
+    expect(handlerRegistered).toBe(false);
+  });
+});
+
 // Document expected error messages
 describe("Error Messages (Design Specification)", () => {
   it("should describe unavailable provider error format", () => {

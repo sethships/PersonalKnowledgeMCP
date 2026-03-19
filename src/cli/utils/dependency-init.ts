@@ -340,6 +340,27 @@ export async function initializeDependencies(
       );
     }
 
+    // Register graceful shutdown handler for graph adapter
+    // FalkorDB/ioredis holds an open TCP socket; without explicit close the socket
+    // is forcefully torn down on process exit, causing ioredis to emit an error
+    // that becomes exit code 1 or 9. `beforeExit` supports async callbacks, so
+    // the disconnect promise completes before the process fully exits.
+    if (graphAdapter) {
+      let cleanupDone = false;
+      const capturedAdapter = graphAdapter;
+      const shutdown = async (): Promise<void> => {
+        if (!cleanupDone) {
+          cleanupDone = true;
+          try {
+            await capturedAdapter.disconnect();
+          } catch {
+            // Suppress cleanup errors — don't let disconnect failure mask a successful command
+          }
+        }
+      };
+      process.on("beforeExit", () => void shutdown());
+    }
+
     // Step 13: Initialize incremental update pipeline (with optional graph ingestion service)
     const updatePipeline = new IncrementalUpdatePipeline(
       fileChunker,
