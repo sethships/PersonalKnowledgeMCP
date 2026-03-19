@@ -562,7 +562,9 @@ describe("IncrementalUpdateCoordinator", () => {
       await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(apiError);
     });
 
-    it("should handle invalid GitHub URL format", async () => {
+    it("should handle non-GitHub URL by falling back to local git (fails if local path invalid)", async () => {
+      // Non-GitHub URLs (single segment, no owner/repo) now fall through to local git.
+      // When the local path does not exist, simple-git throws accordingly.
       const invalidRepo: RepositoryInfo = {
         ...testRepo,
         url: "https://invalid-url.com/repo",
@@ -571,7 +573,7 @@ describe("IncrementalUpdateCoordinator", () => {
 
       // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(coordinator.updateRepository("test-repo")).rejects.toThrow(
-        /Cannot parse GitHub URL/
+        /does not exist|Cannot use simple-git/
       );
     });
 
@@ -1384,6 +1386,205 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(historyEntry.skippedFileCount).toBe(0);
         expect(historyEntry.eligibleFileCount).toBe(3);
       }
+    });
+  });
+
+  describe("non-GitHub and local path updates (buildLocalGitComparison)", () => {
+    const HEAD_SHA = "def456abc123def456abc123def456abc123def4";
+
+    /** Build a minimal SimpleGit mock for a given set of return values. */
+    function makeGitMock(overrides: {
+      fetchResult?: unknown;
+      fetchError?: Error;
+      revparseResult?: string;
+      logLatest?: { message: string; author_name: string; date: string } | null;
+      diffResult?: string;
+      diffError?: Error;
+      rawResult?: string;
+      logBetweenTotal?: number;
+    }) {
+      return {
+        fetch: mock(async (_args: string[]) => {
+          if (overrides.fetchError) throw overrides.fetchError;
+          return overrides.fetchResult ?? {};
+        }),
+        revparse: mock(async (_args: string[]) => overrides.revparseResult ?? HEAD_SHA),
+        log: mock(async (argsOrOpts: unknown) => {
+          // Single-commit lookup: git.log([sha, "-1"])
+          if (Array.isArray(argsOrOpts)) {
+            return {
+              latest: overrides.logLatest ?? {
+                message: "chore: update",
+                author_name: "Dev",
+                date: "2025-01-01T00:00:00.000Z",
+              },
+              total: 1,
+              all: [],
+              hash: HEAD_SHA,
+            };
+          }
+          // Range lookup: git.log({ from, to })
+          return { total: overrides.logBetweenTotal ?? 2, latest: null, all: [], hash: "" };
+        }),
+        diff: mock(async (_args: string[]) => {
+          if (overrides.diffError) throw overrides.diffError;
+          return overrides.diffResult ?? "";
+        }),
+        raw: mock(async (_args: string[]) => overrides.rawResult ?? ""),
+        pull: mock(async () => ({ summary: { changes: 0, insertions: 0, deletions: 0 } })),
+      };
+    }
+
+    it("(a) should complete a successful non-GitHub (GitLab) update", async () => {
+      const gitLabRepo: RepositoryInfo = {
+        ...testRepo,
+        url: "https://gitlab.com/owner/repo.git",
+        localPath: "/repos/gitlab-repo",
+      };
+      mockRepositoryService.getRepository = mock(async () => gitLabRepo);
+
+      const mockGit = makeGitMock({
+        diffResult: "M\tsrc/updated.ts\nA\tsrc/added.ts\nD\tsrc/removed.ts\n",
+        logBetweenTotal: 3,
+      });
+      const gitFactory = mock((_path: string) => mockGit);
+
+      const nonGitHubCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          simpleGitFactory: gitFactory as unknown as (
+            path: string
+          ) => import("simple-git").SimpleGit,
+        }
+      );
+
+      const result = await nonGitHubCoordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      // fetch should be called (non-local-path repo)
+      expect(mockGit.fetch.mock.calls.length).toBeGreaterThan(0);
+      // revparse should use origin/main (not HEAD)
+      const revparseArg = mockGit.revparse.mock.calls[0]?.[0];
+      expect(revparseArg?.[0]).toContain("origin/");
+    });
+
+    it("(b) should skip git pull and use HEAD for local path repos", async () => {
+      const localRepo: RepositoryInfo = {
+        ...testRepo,
+        url: "/local/path/to/repo",
+        localPath: "/local/path/to/repo",
+      };
+      mockRepositoryService.getRepository = mock(async () => localRepo);
+
+      const mockGit = makeGitMock({
+        diffResult: "M\tsrc/file.ts\n",
+      });
+      const customPull = mock(async () => {});
+      const gitFactory = mock((_path: string) => mockGit);
+
+      const localCoordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: customPull,
+          simpleGitFactory: gitFactory as unknown as (
+            path: string
+          ) => import("simple-git").SimpleGit,
+        }
+      );
+
+      const result = await localCoordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      // fetch should NOT be called for local-path repos
+      expect(mockGit.fetch.mock.calls.length).toBe(0);
+      // revparse should use HEAD (not origin/branch)
+      const revparseArg = mockGit.revparse.mock.calls[0]?.[0];
+      expect(revparseArg?.[0]).toBe("HEAD");
+      // git pull (customGitPull) should NOT be called for local-path repos
+      expect(customPull.mock.calls.length).toBe(0);
+    });
+
+    it("(c) should fall back to ls-files when base commit is unreachable", async () => {
+      const gitLabRepo: RepositoryInfo = {
+        ...testRepo,
+        url: "https://gitlab.com/owner/repo.git",
+        localPath: "/repos/gitlab-repo",
+      };
+      mockRepositoryService.getRepository = mock(async () => gitLabRepo);
+
+      const mockGit = makeGitMock({
+        diffError: new Error("fatal: unknown object abc123"),
+        rawResult: "src/a.ts\nsrc/b.ts\nsrc/c.ts\n",
+      });
+      const gitFactory = mock((_path: string) => mockGit);
+
+      const coordinator2 = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          simpleGitFactory: gitFactory as unknown as (
+            path: string
+          ) => import("simple-git").SimpleGit,
+        }
+      );
+
+      const result = await coordinator2.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      // ls-files fallback: all 3 files treated as modified
+      const pipelineCalls = (mockUpdatePipeline.processChanges as ReturnType<typeof mock>).mock
+        .calls;
+      const changes = pipelineCalls[pipelineCalls.length - 1]?.[0] as
+        | { path: string; status: string }[]
+        | undefined;
+      expect(changes?.length).toBe(3);
+      expect(changes?.every((f) => f.status === "modified")).toBe(true);
+    });
+
+    it("(d) should parse renamed files from diff output", async () => {
+      const gitLabRepo: RepositoryInfo = {
+        ...testRepo,
+        url: "https://gitlab.com/owner/repo.git",
+        localPath: "/repos/gitlab-repo",
+      };
+      mockRepositoryService.getRepository = mock(async () => gitLabRepo);
+
+      const mockGit = makeGitMock({
+        diffResult: "R\tsrc/old-name.ts\tsrc/new-name.ts\n",
+      });
+      const gitFactory = mock((_path: string) => mockGit);
+
+      const coordinator3 = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          simpleGitFactory: gitFactory as unknown as (
+            path: string
+          ) => import("simple-git").SimpleGit,
+        }
+      );
+
+      const result = await coordinator3.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      const pipelineCalls = (mockUpdatePipeline.processChanges as ReturnType<typeof mock>).mock
+        .calls;
+      const changes = pipelineCalls[pipelineCalls.length - 1]?.[0] as
+        | { path: string; status: string; previousPath?: string }[]
+        | undefined;
+      expect(changes?.length).toBe(1);
+      expect(changes?.[0]?.status).toBe("renamed");
+      expect(changes?.[0]?.path).toBe("src/new-name.ts");
+      expect(changes?.[0]?.previousPath).toBe("src/old-name.ts");
     });
   });
 });

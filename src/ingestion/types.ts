@@ -108,6 +108,14 @@ export interface RepositoryClonerConfig {
   githubPat?: string;
 
   /**
+   * Generic Git Personal Access Token for non-GitHub hosts (e.g., GitLab, Gitea).
+   *
+   * Used as HTTP basic auth token: https://<token>:@<host>/owner/repo.git
+   * Takes precedence over githubPat for non-GitHub hosts.
+   */
+  gitPat?: string;
+
+  /**
    * Timeout for clone operations in milliseconds.
    *
    * If a clone operation exceeds this timeout, it will be aborted.

@@ -91,14 +91,14 @@ describe("RepositoryCloner", () => {
       }).toThrow(ValidationError);
     });
 
-    test("should reject URL with wrong domain", () => {
+    test("should accept GitLab URL (any git host now supported)", async () => {
       const url = "https://gitlab.com/user/repo";
-      expect(async () => {
-        await cloner.clone(url);
-      }).toThrow(ValidationError);
+      const result = await cloner.clone(url);
+      expect(result.name).toBe("repo");
     });
 
-    test("should reject malformed URL", () => {
+    test("should reject URL with only one path segment", () => {
+      // Single-segment paths like https://host/user (no repo) are invalid
       const url = "https://github.com/user";
       expect(async () => {
         await cloner.clone(url);

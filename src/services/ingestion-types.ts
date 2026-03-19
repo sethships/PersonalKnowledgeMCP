@@ -12,6 +12,12 @@
  */
 export interface IndexOptions {
   /**
+   * Override the repository name derived from the URL or local path.
+   * Useful when indexing a local path that should be stored under a specific name.
+   */
+  name?: string;
+
+  /**
    * Branch to clone (defaults to repository's default branch)
    */
   branch?: string;
