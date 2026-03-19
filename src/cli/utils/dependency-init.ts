@@ -37,6 +37,8 @@ import { EntityExtractor } from "../../graph/extraction/EntityExtractor.js";
 import { RelationshipExtractor } from "../../graph/extraction/RelationshipExtractor.js";
 import { DocumentChunker } from "../../documents/DocumentChunker.js";
 import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
+import { WatchedFolderStoreImpl } from "../../services/watched-folder-store.js";
+import type { WatchedFolderStoreService } from "../../services/watched-folder-store.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -96,6 +98,10 @@ export interface CliDependencies {
   graphAdapter?: GraphStorageAdapter;
   /** Optional graph ingestion service for incremental graph updates (only if graph adapter is configured) */
   graphIngestionService?: GraphIngestionService;
+  /** Watched folder store for managing document folder registrations */
+  folderStore: WatchedFolderStoreService;
+  /** File scanner for directory traversal (used by documents index command) */
+  fileScanner: FileScanner;
   logger: Logger;
 }
 
@@ -399,10 +405,14 @@ export async function initializeDependencies(
       "Incremental update pipeline initialized"
     );
 
-    // Step 14: Initialize completeness checker (uses existing FileScanner)
+    // Step 14: Initialize watched folder store (singleton)
+    const folderStore = WatchedFolderStoreImpl.getInstance(config.data.path);
+    logger.debug("Watched folder store initialized");
+
+    // Step 15: Initialize completeness checker (uses existing FileScanner)
     const completenessChecker = new IndexCompletenessChecker(fileScanner);
 
-    // Step 15: Initialize incremental update coordinator
+    // Step 16: Initialize incremental update coordinator
     const updateHistoryLimit = parseNonNegativeIntEnv("UPDATE_HISTORY_LIMIT", 20);
     const changeFileThreshold = parseNonNegativeIntEnv("CHANGE_FILE_THRESHOLD", 500);
 
@@ -433,6 +443,8 @@ export async function initializeDependencies(
       tokenService,
       graphAdapter,
       graphIngestionService,
+      folderStore,
+      fileScanner,
       logger,
     };
   } catch (error) {

@@ -17,6 +17,7 @@
  * - providers: Manage embedding providers (status, setup)
  * - models: Manage embedding model cache (list, status, validate, clear, path, import)
  * - tables: Manage extracted tables (list)
+ * - documents: Manage document folders (index)
  */
 
 import "dotenv/config";
@@ -54,6 +55,7 @@ import {
   modelsImportCommand,
 } from "./commands/models-command.js";
 import { tablesListCommand, tablesExportCommand } from "./commands/tables-command.js";
+import { documentsIndexCommand } from "./commands/documents-index-command.js";
 import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
@@ -83,6 +85,7 @@ import {
   ModelsImportCommandOptionsSchema,
   TablesListCommandOptionsSchema,
   TablesExportCommandOptionsSchema,
+  DocumentsIndexCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -592,6 +595,33 @@ tablesProgram
       const validatedOptions = TablesExportCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await tablesExportCommand(tableId, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Documents command group
+const documentsProgram = program.command("documents").description("Manage document folders");
+
+// Documents index subcommand
+documentsProgram
+  .command("index")
+  .description("Index a local folder of documents (PDF, DOCX, Markdown, TXT, images)")
+  .argument("<folder-path>", "Local folder path to index")
+  .option("-r, --recursive", "Index subdirectories (default: top-level only)")
+  .option(
+    "-t, --types <types>",
+    "Comma-separated types to include: pdf,docx,md,txt,image (default: all)"
+  )
+  .option("--dry-run", "Show what would be indexed without actually indexing")
+  .option("-f, --force", "Re-index even if folder is already registered")
+  .option("-n, --name <name>", "Display name for the folder (default: folder basename)")
+  .option("-p, --provider <provider>", "Embedding provider (openai, transformersjs, local, ollama)")
+  .action(async (folderPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = DocumentsIndexCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies({ provider: validatedOptions.provider });
+      await documentsIndexCommand(folderPath, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

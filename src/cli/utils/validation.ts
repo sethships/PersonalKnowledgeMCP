@@ -633,3 +633,32 @@ export const TablesExportCommandOptionsSchema = z.object({
  * Inferred TypeScript type for tables export command
  */
 export type ValidatedTablesExportOptions = z.infer<typeof TablesExportCommandOptionsSchema>;
+
+// ============================================================================
+// Documents Index Command Validation Schema
+// ============================================================================
+
+/**
+ * Schema for documents index command options
+ *
+ * Validates options for indexing a local folder of documents (PDF, DOCX, MD, TXT, images).
+ */
+export const DocumentsIndexCommandOptionsSchema = z.object({
+  recursive: z.boolean().optional(),
+  types: z.string().optional(),
+  dryRun: z.boolean().optional(),
+  force: z.boolean().optional(),
+  name: z.string().optional(),
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .refine((val) => !val || VALID_PROVIDERS.includes(val as (typeof VALID_PROVIDERS)[number]), {
+      message: "Invalid provider. Valid values: openai, transformersjs, local, ollama",
+    }),
+});
+
+/**
+ * Inferred TypeScript type for documents index command
+ */
+export type ValidatedDocumentsIndexOptions = z.infer<typeof DocumentsIndexCommandOptionsSchema>;
