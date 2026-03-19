@@ -81,7 +81,9 @@ function buildMockDeps(overrides?: {
     githubClient: {} as any,
     updateCoordinator: {} as any,
     tokenService: {} as any,
-    chromaClient: {} as any,
+    chromaClient: {
+      deleteCollection: vi.fn().mockResolvedValue(undefined),
+    } as any,
     embeddingProvider: {} as any,
     logger: {
       info: vi.fn(),
@@ -177,6 +179,37 @@ describe("Documents Index Command", () => {
 
       expect(processChanges).toHaveBeenCalledTimes(1);
     });
+
+    it("should call deleteCollection before re-indexing when --force on existing folder", async () => {
+      const existingFolder: WatchedFolder = {
+        id: "existing-id",
+        path: VALID_FOLDER,
+        name: "tests",
+        enabled: true,
+        includePatterns: null,
+        excludePatterns: null,
+        debounceMs: 2000,
+        createdAt: new Date(),
+        lastScanAt: null,
+        fileCount: 0,
+        updatedAt: null,
+      };
+
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      const processChanges = vi.fn().mockResolvedValue(makeUpdateResult(1));
+      const scanFiles = vi.fn().mockResolvedValue([makeFileInfo("README.md")]);
+      const deps = buildMockDeps({
+        listFolders: vi.fn().mockResolvedValue([existingFolder]),
+        processChanges,
+        scanFiles,
+      });
+      (deps.chromaClient as any).deleteCollection = deleteCollection;
+
+      await documentsIndexCommand(VALID_FOLDER, { force: true }, deps);
+
+      expect(deleteCollection).toHaveBeenCalledTimes(1);
+      expect(deleteCollection).toHaveBeenCalledWith(`folder_existing-id`);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -189,14 +222,16 @@ describe("Documents Index Command", () => {
         .fn()
         .mockResolvedValue([makeFileInfo("notes.md"), makeFileInfo("report.pdf", ".pdf")]);
       const processChanges = vi.fn();
-      const deps = buildMockDeps({ scanFiles, processChanges });
+      const addFolder = vi.fn().mockResolvedValue(undefined);
+      const deps = buildMockDeps({ scanFiles, processChanges, addFolder });
 
       await expect(
         documentsIndexCommand(VALID_FOLDER, { dryRun: true }, deps)
       ).resolves.toBeUndefined();
 
-      // Should NOT have called processChanges
+      // Should NOT have called processChanges or persisted the folder
       expect(processChanges).not.toHaveBeenCalled();
+      expect(addFolder).not.toHaveBeenCalled();
     });
 
     it("should show no files message in dry-run when folder is empty", async () => {
@@ -381,9 +416,10 @@ describe("Documents Index Command", () => {
   describe("Folder name", () => {
     it("should default name to folder basename", async () => {
       const addFolder = vi.fn().mockResolvedValue(undefined);
+      // scanFiles returns [] so processChanges is never needed, but addFolder is still called
       const deps = buildMockDeps({ addFolder });
 
-      await documentsIndexCommand(VALID_FOLDER, { dryRun: true }, deps);
+      await documentsIndexCommand(VALID_FOLDER, {}, deps);
 
       expect(addFolder).toHaveBeenCalledTimes(1);
       const savedFolder = (addFolder as Mock<any>).mock.calls[0]?.[0] as WatchedFolder;
@@ -394,9 +430,10 @@ describe("Documents Index Command", () => {
 
     it("should use --name option when provided", async () => {
       const addFolder = vi.fn().mockResolvedValue(undefined);
+      // scanFiles returns [] so processChanges is never needed, but addFolder is still called
       const deps = buildMockDeps({ addFolder });
 
-      await documentsIndexCommand(VALID_FOLDER, { dryRun: true, name: "My Docs" }, deps);
+      await documentsIndexCommand(VALID_FOLDER, { name: "My Docs" }, deps);
 
       expect(addFolder).toHaveBeenCalledTimes(1);
       const savedFolder = (addFolder as Mock<any>).mock.calls[0]?.[0] as WatchedFolder;

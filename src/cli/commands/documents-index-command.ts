@@ -9,7 +9,7 @@
 /* eslint-disable no-console */
 
 import chalk from "chalk";
-import { resolve, basename } from "node:path";
+import { resolve, basename, posix } from "node:path";
 import { stat } from "node:fs/promises";
 import ora from "ora";
 import type { CliDependencies } from "../utils/dependency-init.js";
@@ -140,14 +140,15 @@ export async function documentsIndexCommand(
     );
   }
 
-  // 5. Register or retrieve folder
+  // 5. Prepare folder record (registration is deferred until after dry-run check)
   let folder: WatchedFolder;
+  let isNewFolder = false;
 
   if (existingFolder) {
     // Re-use existing folder record (force mode)
     folder = existingFolder;
   } else {
-    // Create new folder record
+    // Create new folder record — will be persisted after dry-run guard
     const folderId = crypto.randomUUID();
     folder = {
       id: folderId,
@@ -162,7 +163,7 @@ export async function documentsIndexCommand(
       fileCount: 0,
       updatedAt: null,
     };
-    await deps.folderStore.addFolder(folder);
+    isNewFolder = true;
   }
 
   // 6. Scan files via FileScanner with document extensions
@@ -184,7 +185,7 @@ export async function documentsIndexCommand(
   // 7. Post-filter: if not --recursive, keep only top-level files
   const filteredFiles = options.recursive
     ? scannedFiles
-    : scannedFiles.filter((f) => !f.relativePath.includes("/") && !f.relativePath.includes("\\"));
+    : scannedFiles.filter((f) => posix.dirname(f.relativePath.replace(/\\/g, "/")) === ".");
 
   // 8. If --dry-run: display file list and exit
   if (options.dryRun) {
@@ -213,6 +214,11 @@ export async function documentsIndexCommand(
     return;
   }
 
+  // Register new folder now that we are past the dry-run guard
+  if (isNewFolder) {
+    await deps.folderStore.addFolder(folder);
+  }
+
   if (filteredFiles.length === 0) {
     spinner.warn(chalk.yellow("No matching files found"));
     console.log(chalk.gray(`  Folder: ${absolutePath}`));
@@ -235,7 +241,16 @@ export async function documentsIndexCommand(
   const repositoryName = `folder-${folder.id}`;
   const collectionName = `folder_${folder.id}`;
 
-  // 11. Call IncrementalUpdatePipeline.processChanges()
+  // 11. If re-indexing with --force, clear stale chunks from the previous index
+  if (existingFolder && options.force) {
+    try {
+      await deps.chromaClient.deleteCollection(collectionName);
+    } catch {
+      // Collection may not exist yet — safe to ignore
+    }
+  }
+
+  // 12. Call IncrementalUpdatePipeline.processChanges()
   let result;
   try {
     result = await deps.updatePipeline.processChanges(changes, {
@@ -250,7 +265,7 @@ export async function documentsIndexCommand(
     throw error;
   }
 
-  // 12. Update fileCount and lastScanAt in store
+  // 13. Update fileCount and lastScanAt in store
   const updatedFolder: WatchedFolder = {
     ...folder,
     fileCount: filteredFiles.length,
@@ -259,7 +274,7 @@ export async function documentsIndexCommand(
   };
   await deps.folderStore.updateFolder(updatedFolder);
 
-  // 13. Display success summary
+  // 14. Display success summary
   const durationSec = (result.stats.durationMs / 1000).toFixed(1);
   const hasErrors = result.errors.length > 0;
 
