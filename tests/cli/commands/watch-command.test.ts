@@ -257,6 +257,10 @@ describe("Watch Commands", () => {
   // =========================================================================
 
   describe("watchRemoveCommand", () => {
+    // Note: All tests use { force: true } to bypass the interactive confirmation prompt.
+    // The confirmAction readline path is not covered here because testing readline interaction
+    // is non-trivial with Bun's test runner. This is a known coverage gap (~2-3 uncovered lines).
+
     it("should remove folder with --force", async () => {
       const folder = createTestFolder();
       const removeFolder = vi.fn().mockResolvedValue(undefined);

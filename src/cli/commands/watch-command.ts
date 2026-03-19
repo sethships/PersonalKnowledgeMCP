@@ -91,6 +91,11 @@ export interface WatchResumeOptions {
 export interface WatchRescanOptions {
   full?: boolean;
   json?: boolean;
+  /**
+   * Embedding provider override.
+   * Consumed at the CLI wiring layer (index.ts) to initialize the embedding provider;
+   * not used within this command function directly.
+   */
   provider?: string;
 }
 
@@ -117,8 +122,8 @@ async function resolveFolderByNameOrPath(
 ): Promise<WatchedFolder> {
   const folders = await deps.folderStore.listFolders();
 
-  // 1. Exact name match
-  const byName = folders.find((f) => f.name === nameOrPath);
+  // 1. Exact name match (case-insensitive for UX consistency with partial matching)
+  const byName = folders.find((f) => f.name.toLowerCase() === nameOrPath.toLowerCase());
   if (byName) return byName;
 
   // 2. Exact path match (resolve to absolute)
@@ -439,8 +444,16 @@ export async function watchRescanCommand(
     try {
       await deps.chromaClient.deleteCollection(collectionName);
       deleteSpinner.succeed(chalk.green("Existing collection deleted"));
-    } catch {
-      deleteSpinner.info(chalk.gray("No existing collection to delete"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.toLowerCase().includes("not found") ||
+        message.toLowerCase().includes("does not exist")
+      ) {
+        deleteSpinner.info(chalk.gray("No existing collection to delete"));
+      } else {
+        deleteSpinner.warn(chalk.yellow(`Could not delete collection: ${message}`));
+      }
     }
   }
 
