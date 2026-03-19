@@ -9,34 +9,42 @@
  */
 
 import { join } from "path";
+import { rename, unlink } from "fs/promises";
 import type { Logger } from "pino";
+import { z } from "zod";
 import { getComponentLogger } from "../logging/index.js";
 import type { WatchedFolder } from "./folder-watcher-types.js";
 
 /**
- * JSON file format for persisted watched folders
+ * Zod schema for the serialized form of a WatchedFolder (ISO date strings instead of Date objects)
  */
-interface WatchedFolderStoreFile {
-  version: string;
-  folders: WatchedFolderSerialized[];
-}
+const WatchedFolderSerializedSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  includePatterns: z.array(z.string()).nullable(),
+  excludePatterns: z.array(z.string()).nullable(),
+  debounceMs: z.number(),
+  createdAt: z.string(),
+  lastScanAt: z.string().nullable(),
+  fileCount: z.number(),
+  updatedAt: z.string().nullable(),
+});
 
 /**
- * Serialized form of WatchedFolder with ISO date strings instead of Date objects
+ * Zod schema for the JSON store file format
  */
-interface WatchedFolderSerialized {
-  id: string;
-  path: string;
-  name: string;
-  enabled: boolean;
-  includePatterns: string[] | null;
-  excludePatterns: string[] | null;
-  debounceMs: number;
-  createdAt: string;
-  lastScanAt: string | null;
-  fileCount: number;
-  updatedAt: string | null;
-}
+const WatchedFolderStoreFileSchema = z.object({
+  version: z.string(),
+  folders: z.array(WatchedFolderSerializedSchema),
+});
+
+/** Inferred type for the serialized folder record */
+type WatchedFolderSerialized = z.infer<typeof WatchedFolderSerializedSchema>;
+
+/** Inferred type for the store file format */
+type WatchedFolderStoreFile = z.infer<typeof WatchedFolderStoreFileSchema>;
 
 /**
  * Service interface for persisting watched folder configurations
@@ -84,6 +92,11 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
    * In-memory cache of folders
    */
   private folderCache: WatchedFolder[] | null = null;
+
+  /**
+   * Serialized promise queue to prevent concurrent read-modify-write races
+   */
+  private writeQueue: Promise<void> = Promise.resolve();
 
   /**
    * Private constructor enforces singleton pattern
@@ -147,49 +160,39 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
   /**
    * Add a new folder to the store
    *
+   * If a folder with the same ID already exists, it is updated (upsert behavior).
+   * All writes are serialized via the write queue to prevent concurrent modification.
+   *
    * @param folder - Folder configuration to persist
    */
   async addFolder(folder: WatchedFolder): Promise<void> {
-    const folders = await this.loadFolders();
-    folders.push(folder);
-    await this.saveFolders(folders);
-    this.logger.info({ folderId: folder.id, path: folder.path }, "Folder added to store");
+    this.writeQueue = this.writeQueue.then(() => this.addFolderInternal(folder));
+    await this.writeQueue;
   }
 
   /**
    * Update an existing folder configuration
    *
+   * All writes are serialized via the write queue to prevent concurrent modification.
+   *
    * @param folder - Updated folder configuration (matched by id)
    */
   async updateFolder(folder: WatchedFolder): Promise<void> {
-    const folders = await this.loadFolders();
-    const index = folders.findIndex((f) => f.id === folder.id);
-    if (index === -1) {
-      this.logger.warn({ folderId: folder.id }, "Folder not found for update - adding instead");
-      folders.push(folder);
-    } else {
-      folders[index] = folder;
-    }
-    await this.saveFolders(folders);
-    this.logger.info({ folderId: folder.id }, "Folder updated in store");
+    this.writeQueue = this.writeQueue.then(() => this.updateFolderInternal(folder));
+    await this.writeQueue;
   }
 
   /**
    * Remove a folder from the store
    *
    * No-op if the folder doesn't exist (does not throw).
+   * All writes are serialized via the write queue to prevent concurrent modification.
    *
    * @param folderId - ID of the folder to remove
    */
   async removeFolder(folderId: string): Promise<void> {
-    const folders = await this.loadFolders();
-    const filtered = folders.filter((f) => f.id !== folderId);
-    if (filtered.length === folders.length) {
-      this.logger.debug({ folderId }, "Folder not found for removal - no-op");
-      return;
-    }
-    await this.saveFolders(filtered);
-    this.logger.info({ folderId }, "Folder removed from store");
+    this.writeQueue = this.writeQueue.then(() => this.removeFolderInternal(folderId));
+    await this.writeQueue;
   }
 
   /**
@@ -222,7 +225,62 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
   }
 
   // ===========================================================================
-  // Private Methods
+  // Private Methods — Write Queue Internals
+  // ===========================================================================
+
+  /**
+   * Internal add logic (called within the serialized write queue)
+   */
+  private async addFolderInternal(folder: WatchedFolder): Promise<void> {
+    const folders = await this.loadFolders();
+    if (folders.some((f) => f.id === folder.id)) {
+      this.logger.warn(
+        { folderId: folder.id },
+        "Folder already exists in store - updating instead"
+      );
+      const index = folders.findIndex((f) => f.id === folder.id);
+      folders[index] = folder;
+      await this.saveFolders(folders);
+      this.logger.info({ folderId: folder.id }, "Folder updated in store (via addFolder upsert)");
+      return;
+    }
+    folders.push(folder);
+    await this.saveFolders(folders);
+    this.logger.info({ folderId: folder.id, path: folder.path }, "Folder added to store");
+  }
+
+  /**
+   * Internal update logic (called within the serialized write queue)
+   */
+  private async updateFolderInternal(folder: WatchedFolder): Promise<void> {
+    const folders = await this.loadFolders();
+    const index = folders.findIndex((f) => f.id === folder.id);
+    if (index === -1) {
+      this.logger.warn({ folderId: folder.id }, "Folder not found for update - adding instead");
+      folders.push(folder);
+    } else {
+      folders[index] = folder;
+    }
+    await this.saveFolders(folders);
+    this.logger.info({ folderId: folder.id }, "Folder updated in store");
+  }
+
+  /**
+   * Internal remove logic (called within the serialized write queue)
+   */
+  private async removeFolderInternal(folderId: string): Promise<void> {
+    const folders = await this.loadFolders();
+    const filtered = folders.filter((f) => f.id !== folderId);
+    if (filtered.length === folders.length) {
+      this.logger.debug({ folderId }, "Folder not found for removal - no-op");
+      return;
+    }
+    await this.saveFolders(filtered);
+    this.logger.info({ folderId }, "Folder removed from store");
+  }
+
+  // ===========================================================================
+  // Private Methods — Storage I/O
   // ===========================================================================
 
   /**
@@ -248,7 +306,7 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
 
       const content = await file.text();
       const parsed: unknown = JSON.parse(content);
-      const storeFile = parsed as WatchedFolderStoreFile;
+      const storeFile = WatchedFolderStoreFileSchema.parse(parsed);
 
       const folders = (storeFile.folders || []).map((s) => this.deserializeFolder(s));
       this.folderCache = folders;
@@ -286,8 +344,7 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
       await Bun.write(tempPath, content);
 
       // Atomic rename (use Node.js fs for rename as Bun doesn't expose it)
-      const fsPromises = await import("fs/promises");
-      await fsPromises.rename(tempPath, this.filePath);
+      await rename(tempPath, this.filePath);
 
       // Update cache
       this.folderCache = [...folders];
@@ -296,8 +353,7 @@ export class WatchedFolderStoreImpl implements WatchedFolderStoreService {
     } catch (error) {
       // Attempt to clean up temp file
       try {
-        const fsPromises = await import("fs/promises");
-        await fsPromises.unlink(tempPath);
+        await unlink(tempPath);
       } catch {
         // Ignore cleanup errors
       }

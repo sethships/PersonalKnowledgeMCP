@@ -348,6 +348,9 @@ export class FolderWatcherService {
 
     this.logger.info({ folderId }, "Resuming folder watcher");
 
+    // Re-verify folder still exists before recreating watcher
+    await this.verifyFolderAccess(state.folder.path);
+
     const newWatcher = await this.createWatcher(state.folder, state.excludeMatcher);
     this.setupWatcherEvents(newWatcher, state.folder, state);
     state.watcher = newWatcher;
@@ -636,6 +639,7 @@ export class FolderWatcherService {
               state.watcher = newWatcher;
               state.status = "active";
               state.error = undefined;
+              state.retryCount = 0;
               this.logger.info({ folderId: folder.id }, "Watcher recovered after retry");
             })
             .catch((retryError) => {

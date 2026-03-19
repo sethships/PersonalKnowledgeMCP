@@ -10,7 +10,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 import { WatchedFolderStoreImpl } from "../../../src/services/watched-folder-store.js";
-import type { WatchedFolder } from "../../../src/services/folder-watcher-types.js";
+import { createTestFolder } from "../../helpers/folder-fixtures.js";
 
 // Initialize logger for tests
 beforeAll(() => {
@@ -20,26 +20,6 @@ beforeAll(() => {
 afterAll(() => {
   resetLogger();
 });
-
-/**
- * Create a test WatchedFolder object
- */
-function createTestFolder(overrides: Partial<WatchedFolder> = {}): WatchedFolder {
-  return {
-    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    path: "/tmp/test-folder",
-    name: "Test Folder",
-    enabled: true,
-    includePatterns: ["*.md", "*.txt"],
-    excludePatterns: ["node_modules/**"],
-    debounceMs: 2000,
-    createdAt: new Date("2026-01-15T10:00:00.000Z"),
-    lastScanAt: new Date("2026-01-15T12:00:00.000Z"),
-    fileCount: 42,
-    updatedAt: new Date("2026-01-15T11:00:00.000Z"),
-    ...overrides,
-  };
-}
 
 describe("WatchedFolderStoreImpl", () => {
   let tmpDir: string;
@@ -86,6 +66,21 @@ describe("WatchedFolderStoreImpl", () => {
       expect(content.version).toBe("1.0");
       expect(content.folders).toHaveLength(1);
       expect(content.folders[0].id).toBe("add-test-1");
+    });
+
+    it("should upsert when adding a folder with an existing ID", async () => {
+      const store = WatchedFolderStoreImpl.getInstance(tmpDir);
+      const folder = createTestFolder({ id: "upsert-test-1", name: "Original" });
+      await store.addFolder(folder);
+
+      // Add the same ID again with different name
+      const duplicate = { ...folder, name: "Updated via Upsert" };
+      await store.addFolder(duplicate);
+
+      // Should not create a duplicate
+      const all = await store.listFolders();
+      expect(all).toHaveLength(1);
+      expect(all[0]?.name).toBe("Updated via Upsert");
     });
   });
 
@@ -261,6 +256,57 @@ describe("WatchedFolderStoreImpl", () => {
       if (!loaded) throw new Error("loaded should not be null");
       expect(loaded.lastScanAt).toBeNull();
       expect(loaded.updatedAt).toBeNull();
+    });
+  });
+
+  describe("cache invalidation", () => {
+    it("should re-read from disk after invalidateCache", async () => {
+      const store = WatchedFolderStoreImpl.getInstance(tmpDir);
+      const folder = createTestFolder({ id: "cache-test-1", name: "Before" });
+      await store.addFolder(folder);
+
+      // Directly modify the file on disk (bypassing cache)
+      const filePath = path.join(tmpDir, "watched-folders.json");
+      const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      raw.folders[0].name = "After Direct Edit";
+      fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+      // Without invalidation, cache still has "Before"
+      const cached = await store.getFolder("cache-test-1");
+      expect(cached?.name).toBe("Before");
+
+      // After invalidation, reads from disk
+      store.invalidateCache();
+      const fresh = await store.getFolder("cache-test-1");
+      expect(fresh?.name).toBe("After Direct Edit");
+    });
+  });
+
+  describe("error handling", () => {
+    it("should throw on corrupted JSON file", async () => {
+      const store = WatchedFolderStoreImpl.getInstance(tmpDir);
+      // Write invalid JSON to the store file
+      const filePath = path.join(tmpDir, "watched-folders.json");
+      fs.writeFileSync(filePath, "{ this is not valid json }");
+
+      // Invalidate cache so it reads from disk
+      store.invalidateCache();
+
+      expect(store.listFolders()).rejects.toThrow();
+    });
+
+    it("should throw on invalid schema (missing required fields)", async () => {
+      const store = WatchedFolderStoreImpl.getInstance(tmpDir);
+      // Write JSON that parses but fails schema validation
+      const filePath = path.join(tmpDir, "watched-folders.json");
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({ version: "1.0", folders: [{ id: "x" }] }) // missing required fields
+      );
+
+      store.invalidateCache();
+
+      expect(store.listFolders()).rejects.toThrow();
     });
   });
 });

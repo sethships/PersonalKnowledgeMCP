@@ -155,6 +155,11 @@ export interface FileEvent {
 
 /**
  * Status of a folder watcher
+ *
+ * - "active": Watcher is running and monitoring for changes
+ * - "paused": Watcher is suspended; state is retained for resumption
+ * - "error": Watcher encountered an error (may be retrying)
+ * - "stopped": Reserved for future use (e.g., explicit stop without removal)
  */
 export type WatcherStatus = "active" | "paused" | "error" | "stopped";
 

@@ -315,6 +315,10 @@ async function main(): Promise<void> {
     // (e.g., watch_folder) when users add folders. This is expected incremental delivery —
     // the service is wired up but folders are registered on-demand via MCP tool invocations.
 
+    // TODO(#386): Pass watchedFolderStore to the watch_folder / stop_watching MCP tool handlers
+    // so that folders added/removed at runtime are persisted and survive restarts.
+    // Currently the store is used only for boot-time restore (read-only at runtime).
+
     // Wire change detection → folder document indexing
     changeDetectionService.onDetectedChange((change) => {
       try {
@@ -443,7 +447,10 @@ async function main(): Promise<void> {
       }
     );
 
-    // Register folder watcher shutdown hook (must run before change detection dispose)
+    // Register folder watcher shutdown hook (must run before change detection dispose).
+    // Pre-shutdown hooks execute in registration order (FIFO). This hook MUST be
+    // registered before the change detection hook to prevent chokidar events from
+    // being emitted into a disposed ChangeDetectionService during shutdown.
     mcpServer.registerPreShutdownHook(async () => {
       logger.info("Stopping all folder watchers");
       await folderWatcherService.stopAllWatchers();
