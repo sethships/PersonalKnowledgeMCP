@@ -18,6 +18,7 @@
  * - models: Manage embedding model cache (list, status, validate, clear, path, import)
  * - tables: Manage extracted tables (list)
  * - documents: Manage document folders (index)
+ * - watch: Manage watched folders (add, list, remove, pause, resume, rescan)
  */
 
 import "dotenv/config";
@@ -57,6 +58,14 @@ import {
 import { tablesListCommand, tablesExportCommand } from "./commands/tables-command.js";
 import { documentsIndexCommand } from "./commands/documents-index-command.js";
 import {
+  watchAddCommand,
+  watchListCommand,
+  watchRemoveCommand,
+  watchPauseCommand,
+  watchResumeCommand,
+  watchRescanCommand,
+} from "./commands/watch-command.js";
+import {
   IndexCommandOptionsSchema,
   SearchCommandOptionsSchema,
   StatusCommandOptionsSchema,
@@ -86,6 +95,12 @@ import {
   TablesListCommandOptionsSchema,
   TablesExportCommandOptionsSchema,
   DocumentsIndexCommandOptionsSchema,
+  WatchAddCommandOptionsSchema,
+  WatchListCommandOptionsSchema,
+  WatchRemoveCommandOptionsSchema,
+  WatchPauseCommandOptionsSchema,
+  WatchResumeCommandOptionsSchema,
+  WatchRescanCommandOptionsSchema,
 } from "./utils/validation.js";
 
 const program = new Command();
@@ -622,6 +637,108 @@ documentsProgram
       const validatedOptions = DocumentsIndexCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies({ provider: validatedOptions.provider });
       await documentsIndexCommand(folderPath, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch command group
+const watchProgram = program.command("watch").description("Manage watched folders");
+
+// Watch add subcommand
+watchProgram
+  .command("add")
+  .description("Register a folder for watching and indexing")
+  .argument("<folderPath>", "Local folder path to watch")
+  .option("-n, --name <name>", "Custom name for the folder")
+  .option("-j, --json", "Output as JSON")
+  .action(async (folderPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchAddCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await watchAddCommand(folderPath, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch list subcommand
+watchProgram
+  .command("list")
+  .description("Display all watched folders with status")
+  .option("-j, --json", "Output as JSON")
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchListCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await watchListCommand(validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch remove subcommand
+watchProgram
+  .command("remove")
+  .description("Unregister a watched folder")
+  .argument("<nameOrPath>", "Folder name or path to remove")
+  .option("-f, --force", "Skip confirmation prompt")
+  .option("-j, --json", "Output as JSON")
+  .action(async (nameOrPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchRemoveCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await watchRemoveCommand(nameOrPath, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch pause subcommand
+watchProgram
+  .command("pause")
+  .description("Disable watching without removing registration")
+  .argument("<nameOrPath>", "Folder name or path to pause")
+  .option("-j, --json", "Output as JSON")
+  .action(async (nameOrPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchPauseCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await watchPauseCommand(nameOrPath, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch resume subcommand
+watchProgram
+  .command("resume")
+  .description("Re-enable a paused watched folder")
+  .argument("<nameOrPath>", "Folder name or path to resume")
+  .option("-j, --json", "Output as JSON")
+  .action(async (nameOrPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchResumeCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await watchResumeCommand(nameOrPath, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Watch rescan subcommand
+watchProgram
+  .command("rescan")
+  .description("Manually trigger re-indexing for a watched folder")
+  .argument("<nameOrPath>", "Folder name or path to rescan")
+  .option("--full", "Delete existing index and perform full re-index")
+  .option("-p, --provider <provider>", "Embedding provider (openai, transformersjs, local, ollama)")
+  .option("-j, --json", "Output as JSON")
+  .action(async (nameOrPath: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = WatchRescanCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies({ provider: validatedOptions.provider });
+      await watchRescanCommand(nameOrPath, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }
