@@ -137,16 +137,26 @@ export function createRemoveSpinner(repositoryName: string): Ora {
  * @param spinner - Ora spinner instance
  * @param success - Whether the operation succeeded
  * @param deletedFiles - Whether local files were deleted
+ * @param graphDeleted - Whether graph data was deleted from FalkorDB
  */
-export function completeRemoveSpinner(spinner: Ora, success: boolean, deletedFiles: boolean): void {
+export function completeRemoveSpinner(
+  spinner: Ora,
+  success: boolean,
+  deletedFiles: boolean,
+  graphDeleted?: boolean
+): void {
   if (success) {
-    let message = chalk.green("Repository removed successfully!");
+    let message =
+      chalk.green("Repository removed successfully!") +
+      "\n  • Vector embeddings deleted from ChromaDB" +
+      "\n  • Repository metadata removed";
+    if (graphDeleted) {
+      message += "\n  • Graph data deleted from FalkorDB";
+    }
     if (deletedFiles) {
-      message +=
-        "\n  • Vector embeddings deleted from ChromaDB\n  • Repository metadata removed\n  • Local repository files deleted";
+      message += "\n  • Local repository files deleted";
     } else {
-      message +=
-        "\n  • Vector embeddings deleted from ChromaDB\n  • Repository metadata removed\n  • Local repository files preserved";
+      message += "\n  • Local repository files preserved";
     }
     spinner.succeed(message);
   } else {

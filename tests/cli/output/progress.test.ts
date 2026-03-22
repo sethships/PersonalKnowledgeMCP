@@ -413,6 +413,49 @@ describe("CLI Progress Indicators", () => {
       // Spinner should be stopped after failure
       expect(spinner.isSpinning).toBe(false);
     });
+
+    it("should include graph data line when graphDeleted is true", () => {
+      // Capture the text set on succeed by checking spinner state after call
+      let succeededWith = "";
+      const originalSucceed = spinner.succeed.bind(spinner);
+      spinner.succeed = (text?: string): Ora => {
+        succeededWith = text ?? "";
+        return originalSucceed(text);
+      };
+
+      completeRemoveSpinner(spinner, true, false, true);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(succeededWith).toContain("Graph data deleted from FalkorDB");
+    });
+
+    it("should not include graph data line when graphDeleted is false", () => {
+      let succeededWith = "";
+      const originalSucceed = spinner.succeed.bind(spinner);
+      spinner.succeed = (text?: string): Ora => {
+        succeededWith = text ?? "";
+        return originalSucceed(text);
+      };
+
+      completeRemoveSpinner(spinner, true, false, false);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(succeededWith).not.toContain("Graph data deleted from FalkorDB");
+    });
+
+    it("should not include graph data line when graphDeleted is omitted", () => {
+      let succeededWith = "";
+      const originalSucceed = spinner.succeed.bind(spinner);
+      spinner.succeed = (text?: string): Ora => {
+        succeededWith = text ?? "";
+        return originalSucceed(text);
+      };
+
+      completeRemoveSpinner(spinner, true, false);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(succeededWith).not.toContain("Graph data deleted from FalkorDB");
+    });
   });
 
   describe("Integration scenarios", () => {
