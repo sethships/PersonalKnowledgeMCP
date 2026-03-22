@@ -662,3 +662,73 @@ export const DocumentsIndexCommandOptionsSchema = z.object({
  * Inferred TypeScript type for documents index command
  */
 export type ValidatedDocumentsIndexOptions = z.infer<typeof DocumentsIndexCommandOptionsSchema>;
+
+// ============================================================================
+// Watch Command Validation Schemas
+// ============================================================================
+
+/**
+ * Schema for watch add command options
+ *
+ * Validates options for registering a folder for watching and indexing.
+ */
+export const WatchAddCommandOptionsSchema = z.object({
+  name: z.string().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for watch list command options
+ */
+export const WatchListCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for watch remove command options
+ */
+export const WatchRemoveCommandOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for watch pause command options
+ */
+export const WatchPauseCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for watch resume command options
+ */
+export const WatchResumeCommandOptionsSchema = z.object({
+  json: z.boolean().optional(),
+});
+
+/**
+ * Schema for watch rescan command options
+ *
+ * Validates options for manually triggering a re-index of a watched folder.
+ */
+export const WatchRescanCommandOptionsSchema = z.object({
+  full: z.boolean().optional(),
+  json: z.boolean().optional(),
+  provider: z
+    .string()
+    .optional()
+    .transform((val) => val?.toLowerCase())
+    .refine((val) => !val || VALID_PROVIDERS.includes(val as (typeof VALID_PROVIDERS)[number]), {
+      message: "Invalid provider. Valid values: openai, transformersjs, local, ollama",
+    }),
+});
+
+/**
+ * Inferred TypeScript types for watch commands
+ */
+export type ValidatedWatchAddOptions = z.infer<typeof WatchAddCommandOptionsSchema>;
+export type ValidatedWatchListOptions = z.infer<typeof WatchListCommandOptionsSchema>;
+export type ValidatedWatchRemoveOptions = z.infer<typeof WatchRemoveCommandOptionsSchema>;
+export type ValidatedWatchPauseOptions = z.infer<typeof WatchPauseCommandOptionsSchema>;
+export type ValidatedWatchResumeOptions = z.infer<typeof WatchResumeCommandOptionsSchema>;
+export type ValidatedWatchRescanOptions = z.infer<typeof WatchRescanCommandOptionsSchema>;

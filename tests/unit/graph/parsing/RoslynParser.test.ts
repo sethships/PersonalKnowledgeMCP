@@ -74,6 +74,15 @@ describe("RoslynParser", () => {
 
     // Create parser instance
     parser = new RoslynParser();
+
+    // Pre-warm the dotnet build cache when .NET is available.
+    // `dotnet run` compiles the analyzer project on first invocation, which can
+    // take 30-60s — longer than the parser's 30s timeout. A dummy parse here
+    // triggers the compile in beforeAll (no timeout limit) so that all
+    // subsequent test calls hit the already-built binary and run in <1s.
+    if (dotNetAvailableSync) {
+      await parser.parseFile("// warmup", "warmup.cs").catch(() => {});
+    }
   });
 
   afterAll(() => {

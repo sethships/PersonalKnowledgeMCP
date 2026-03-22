@@ -865,6 +865,76 @@ Check the health of all required services.
 pk-mcp health
 ```
 
+#### watch add - Register a Watched Folder
+
+Register a local folder for watching and indexing.
+
+```bash
+pk-mcp watch add <folder-path> [options]
+```
+
+**Options:**
+- `-n, --name <name>` - Custom folder name (defaults to folder basename)
+- `--json` - Output as JSON
+
+#### watch list - List Watched Folders
+
+Display all watched folders with status.
+
+```bash
+pk-mcp watch list [options]
+```
+
+**Options:**
+- `--json` - Output as JSON
+
+#### watch remove - Remove a Watched Folder
+
+Unregister a watched folder.
+
+```bash
+pk-mcp watch remove <name-or-path> [options]
+```
+
+**Options:**
+- `-f, --force` - Skip confirmation prompt
+- `--json` - Output as JSON
+
+#### watch pause - Pause a Watched Folder
+
+Disable watching without removing registration.
+
+```bash
+pk-mcp watch pause <name-or-path> [options]
+```
+
+**Options:**
+- `--json` - Output as JSON
+
+#### watch resume - Resume a Watched Folder
+
+Re-enable a paused watched folder.
+
+```bash
+pk-mcp watch resume <name-or-path> [options]
+```
+
+**Options:**
+- `--json` - Output as JSON
+
+#### watch rescan - Rescan a Watched Folder
+
+Manually trigger re-indexing for a watched folder.
+
+```bash
+pk-mcp watch rescan <name-or-path> [options]
+```
+
+**Options:**
+- `--full` - Delete existing collection and perform a full re-index
+- `--provider <provider>` - Embedding provider (openai, transformersjs, ollama)
+- `--json` - Output as JSON
+
 ### CLI Configuration
 
 The CLI uses the same environment variables as the MCP server:
