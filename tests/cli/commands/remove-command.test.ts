@@ -150,6 +150,26 @@ describe("Remove Command", () => {
       expect(mockRemoveRepository).toHaveBeenCalledWith("test-repo");
       expect(mockDeleteRepositoryData).toHaveBeenCalledWith("test-repo");
     });
+
+    it("should call deleteRepositoryData and succeed even when deleteFiles is requested but path does not exist", async () => {
+      mockGetRepository.mockResolvedValue({
+        name: "test-repo",
+        localPath: "/nonexistent/path",
+      });
+
+      const mockDeleteRepositoryData = vi.fn().mockResolvedValue(undefined);
+      const depsWithGraph = {
+        ...mockDeps,
+        graphIngestionService: {
+          deleteRepositoryData: mockDeleteRepositoryData,
+        },
+      } as unknown as CliDependencies;
+
+      await removeCommand("test-repo", { force: true, deleteFiles: true }, depsWithGraph);
+
+      expect(mockRemoveRepository).toHaveBeenCalledWith("test-repo");
+      expect(mockDeleteRepositoryData).toHaveBeenCalledWith("test-repo");
+    });
   });
 
   describe("remove with graph adapter (failure)", () => {
@@ -170,6 +190,34 @@ describe("Remove Command", () => {
       // Should not throw
       await expect(
         removeCommand("test-repo", { force: true }, depsWithGraph)
+      ).resolves.toBeUndefined();
+
+      expect(mockRemoveRepository).toHaveBeenCalledWith("test-repo");
+      expect(mockDeleteRepositoryData).toHaveBeenCalledWith("test-repo");
+    });
+
+    it("should still attempt file deletion when graph deletion fails", async () => {
+      // localPath doesn't exist on disk so rm is skipped,
+      // but control flow reaches the file-deletion branch
+      mockGetRepository.mockResolvedValue({
+        name: "test-repo",
+        localPath: "/nonexistent/path",
+      });
+
+      const mockDeleteRepositoryData = vi
+        .fn()
+        .mockRejectedValue(new Error("FalkorDB connection refused"));
+
+      const depsWithGraph = {
+        ...mockDeps,
+        graphIngestionService: {
+          deleteRepositoryData: mockDeleteRepositoryData,
+        },
+      } as unknown as CliDependencies;
+
+      // Should not throw - graph failure is best-effort
+      await expect(
+        removeCommand("test-repo", { force: true, deleteFiles: true }, depsWithGraph)
       ).resolves.toBeUndefined();
 
       expect(mockRemoveRepository).toHaveBeenCalledWith("test-repo");
