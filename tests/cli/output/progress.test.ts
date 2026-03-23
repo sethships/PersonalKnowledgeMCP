@@ -15,6 +15,17 @@ import {
   completeRemoveSpinner,
 } from "../../../src/cli/output/progress.js";
 
+/** Returns a getter that captures the text passed to spinner.succeed */
+function captureSucceedText(spinner: Ora): () => string {
+  let captured = "";
+  const original = spinner.succeed.bind(spinner);
+  spinner.succeed = (text?: string): Ora => {
+    captured = text ?? "";
+    return original(text);
+  };
+  return () => captured;
+}
+
 describe("CLI Progress Indicators", () => {
   describe("createIndexSpinner", () => {
     it("should create a spinner with the repository name", () => {
@@ -412,6 +423,33 @@ describe("CLI Progress Indicators", () => {
 
       // Spinner should be stopped after failure
       expect(spinner.isSpinning).toBe(false);
+    });
+
+    it("should include graph data line when graphDeleted is true", () => {
+      const getSucceededWith = captureSucceedText(spinner);
+
+      completeRemoveSpinner(spinner, true, false, true);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(getSucceededWith()).toContain("Graph data deleted from FalkorDB");
+    });
+
+    it("should not include graph data line when graphDeleted is false", () => {
+      const getSucceededWith = captureSucceedText(spinner);
+
+      completeRemoveSpinner(spinner, true, false, false);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(getSucceededWith()).not.toContain("Graph data deleted from FalkorDB");
+    });
+
+    it("should not include graph data line when graphDeleted is omitted", () => {
+      const getSucceededWith = captureSucceedText(spinner);
+
+      completeRemoveSpinner(spinner, true, false);
+
+      expect(spinner.isSpinning).toBe(false);
+      expect(getSucceededWith()).not.toContain("Graph data deleted from FalkorDB");
     });
   });
 

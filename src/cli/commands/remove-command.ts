@@ -51,6 +51,9 @@ export async function removeCommand(
     console.log("This will delete:");
     console.log("  • Vector embeddings from ChromaDB");
     console.log("  • Repository metadata");
+    if (deps.graphIngestionService) {
+      console.log("  • Graph data from FalkorDB");
+    }
     if (options.deleteFiles) {
       console.log("  • Local repository files");
     }
@@ -70,6 +73,21 @@ export async function removeCommand(
   try {
     // Remove from ingestion service (deletes ChromaDB collection and metadata)
     await deps.ingestionService.removeRepository(repositoryName);
+
+    // Delete graph data if graph service is available (best-effort)
+    let graphDeleted = false;
+    if (deps.graphIngestionService) {
+      try {
+        await deps.graphIngestionService.deleteRepositoryData(repositoryName);
+        graphDeleted = true;
+      } catch (error) {
+        spinner.warn(
+          chalk.yellow(`Repository removed, but failed to delete graph data from FalkorDB`) +
+            "\n  " +
+            chalk.gray(error instanceof Error ? error.message : String(error))
+        );
+      }
+    }
 
     // Delete local files if requested
     let filesDeleted = false;
@@ -102,7 +120,7 @@ export async function removeCommand(
     }
 
     // Complete spinner with success
-    completeRemoveSpinner(spinner, true, filesDeleted);
+    completeRemoveSpinner(spinner, true, filesDeleted, graphDeleted);
   } catch (error) {
     // Complete spinner with failure
     completeRemoveSpinner(spinner, false, false);
