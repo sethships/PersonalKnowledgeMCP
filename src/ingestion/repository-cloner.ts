@@ -130,7 +130,7 @@ export class RepositoryCloner {
     const startTime = Date.now();
 
     // Step 1: Validate URL
-    this.validateGitHubUrl(url);
+    this.validateGitUrl(url);
 
     // Step 2: Extract or use provided repository name
     const repoName = options.name || this.extractRepoName(url);
@@ -450,7 +450,7 @@ export class RepositoryCloner {
    * @param url - URL to validate
    * @throws {ValidationError} If the URL is invalid
    */
-  private validateGitHubUrl(url: string): void {
+  private validateGitUrl(url: string): void {
     if (!url || typeof url !== "string") {
       throw new ValidationError("Repository URL cannot be empty", "url");
     }

@@ -14,7 +14,7 @@ import {
   createMetricsTable,
   type RepositoryDisplayInfo,
 } from "../output/formatters.js";
-import { parseGitHubUrl } from "../../utils/git-url-parser.js";
+import { parseGitUrl } from "../../utils/git-url-parser.js";
 import type { RepositoryInfo } from "../../repositories/types.js";
 import { calculateAggregateMetrics } from "../../services/metrics-calculator.js";
 
@@ -147,7 +147,7 @@ async function checkRepositoryUpdates(
   for (const repo of repositories) {
     try {
       // Parse GitHub URL to extract owner/repo
-      const parsed = parseGitHubUrl(repo.url);
+      const parsed = parseGitUrl(repo.url);
 
       // If not a GitHub URL, mark as unknown
       if (!parsed) {

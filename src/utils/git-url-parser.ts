@@ -8,7 +8,7 @@
 /**
  * Parsed Git URL result
  */
-export interface ParsedGitHubUrl {
+export interface ParsedGitUrl {
   /**
    * Repository owner (user or organization)
    */
@@ -46,17 +46,17 @@ export interface ParsedGitHubUrl {
  *
  * @example
  * ```typescript
- * parseGitHubUrl('https://github.com/user/repo.git')
+ * parseGitUrl('https://github.com/user/repo.git')
  * // Returns: { owner: 'user', repo: 'repo', isGitHub: true, host: 'github.com' }
  *
- * parseGitHubUrl('https://gitlab.com/user/repo')
+ * parseGitUrl('https://gitlab.com/user/repo')
  * // Returns: { owner: 'user', repo: 'repo', isGitHub: false, host: 'gitlab.com' }
  *
- * parseGitHubUrl('git@github.com:org/project.git')
+ * parseGitUrl('git@github.com:org/project.git')
  * // Returns: { owner: 'org', repo: 'project', isGitHub: true, host: 'github.com' }
  * ```
  */
-export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
+export function parseGitUrl(url: string): ParsedGitUrl | null {
   if (!url || typeof url !== "string") {
     return null;
   }

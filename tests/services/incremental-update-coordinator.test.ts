@@ -594,7 +594,7 @@ describe("IncrementalUpdateCoordinator", () => {
     });
   });
 
-  describe("parseGitHubUrl", () => {
+  describe("parseGitUrl", () => {
     it("should parse HTTPS URL without .git suffix", async () => {
       const repoWithoutGit: RepositoryInfo = {
         ...testRepo,
