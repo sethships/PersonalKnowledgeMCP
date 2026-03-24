@@ -28,5 +28,5 @@ export {
 export type { RetryConfig, RetryOptions } from "./retry.js";
 
 // Git URL parsing utilities
-export { parseGitHubUrl } from "./git-url-parser.js";
-export type { ParsedGitHubUrl } from "./git-url-parser.js";
+export { parseGitUrl } from "./git-url-parser.js";
+export type { ParsedGitUrl } from "./git-url-parser.js";

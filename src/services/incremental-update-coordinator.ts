@@ -10,7 +10,7 @@
 
 import simpleGit from "simple-git";
 import type { SimpleGit } from "simple-git";
-import { parseGitHubUrl } from "../utils/git-url-parser.js";
+import { parseGitUrl } from "../utils/git-url-parser.js";
 import { isLocalPath } from "../utils/path-utils.js";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
@@ -271,7 +271,7 @@ export class IncrementalUpdateCoordinator {
 
       // Step 2-5: Detect changes — via GitHub API for github.com repos,
       // or via local git diff for all other hosts and local paths.
-      const parsedUrl = parseGitHubUrl(repo.url);
+      const parsedUrl = parseGitUrl(repo.url);
       const isGitHub = parsedUrl?.isGitHub === true;
 
       let headCommit: CommitInfo;
