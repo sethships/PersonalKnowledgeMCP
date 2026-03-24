@@ -474,9 +474,9 @@ export class RepositoryCloner {
   }
 
   /**
-   * Extract repository name from GitHub URL.
+   * Extract repository name from a git repository URL.
    *
-   * @param url - GitHub repository URL
+   * @param url - Git repository URL
    * @returns Repository name
    * @throws {ValidationError} If the repository name cannot be extracted
    *

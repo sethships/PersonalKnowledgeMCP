@@ -146,10 +146,10 @@ async function checkRepositoryUpdates(
 
   for (const repo of repositories) {
     try {
-      // Parse GitHub URL to extract owner/repo
+      // Parse git URL to extract owner/repo
       const parsed = parseGitUrl(repo.url);
 
-      // If not a GitHub URL, mark as unknown
+      // If not a parseable git URL, mark as unknown
       if (!parsed) {
         displayRepos.push({
           ...repo,

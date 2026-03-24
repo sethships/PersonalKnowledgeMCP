@@ -1688,7 +1688,7 @@ const semanticSearchSchema = z.object({
 **URL Validation for Repository Cloning:**
 
 ```typescript
-function validateGitHubUrl(url: string): boolean {
+function validateGitUrl(url: string): boolean {
   const pattern = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\.git)?$/;
   return pattern.test(url);
 }

@@ -446,7 +446,7 @@ class IncrementalUpdateCoordinator {
     }
 
     // 2. Parse owner/repo from URL
-    const { owner, repo } = parseGitHubUrl(repoInfo.url);
+    const { owner, repo } = parseGitUrl(repoInfo.url);
 
     // 3. Get current HEAD commit (primary branch only)
     const headCommit = await this.githubClient.getHeadCommit(owner, repo, repoInfo.branch);
