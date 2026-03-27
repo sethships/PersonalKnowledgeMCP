@@ -55,20 +55,55 @@ beforeAll(async () => {
     const docXml = await zip.file("word/document.xml")?.async("string");
     console.error("[DIAGNOSTIC] mammoth.extractRawText returned empty string");
     console.error("[DIAGNOSTIC] mammoth.convertToHtml value:", JSON.stringify(htmlResult.value));
-    console.error(
-      "[DIAGNOSTIC] mammoth.extractRawText messages:",
-      JSON.stringify(textResult.messages)
-    );
-    console.error(
-      "[DIAGNOSTIC] mammoth.convertToHtml messages:",
-      JSON.stringify(htmlResult.messages)
-    );
-    console.error(
-      "[DIAGNOSTIC] document.xml content (first 500 chars):",
-      docXml?.substring(0, 500)
-    );
+    console.error("[DIAGNOSTIC] document.xml FULL content:", JSON.stringify(docXml));
     console.error("[DIAGNOSTIC] DOCX file size:", simpleBuffer.length);
     console.error("[DIAGNOSTIC] ZIP file list:", Object.keys(zip.files).join(", "));
+
+    // Test @xmldom/xmldom directly to check namespace handling
+    const { DOMParser } = await import("@xmldom/xmldom");
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(docXml!, "text/xml");
+    const root = xmlDoc.documentElement;
+    console.error("[DIAGNOSTIC] xmldom root tagName:", root?.tagName);
+    console.error("[DIAGNOSTIC] xmldom root namespaceURI:", root?.namespaceURI);
+    console.error("[DIAGNOSTIC] xmldom root localName:", root?.localName);
+    console.error("[DIAGNOSTIC] xmldom root childNodes count:", root?.childNodes?.length);
+
+    // Check first w:body element
+    const bodyElements = xmlDoc.getElementsByTagNameNS(
+      "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "body"
+    );
+    console.error("[DIAGNOSTIC] w:body elements found:", bodyElements?.length);
+    if (bodyElements?.length > 0) {
+      const body = bodyElements[0]!;
+      console.error("[DIAGNOSTIC] w:body childNodes count:", body.childNodes?.length);
+      // Check for w:p elements
+      const pElements = xmlDoc.getElementsByTagNameNS(
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "p"
+      );
+      console.error("[DIAGNOSTIC] w:p elements found:", pElements?.length);
+      // Check for w:t elements
+      const tElements = xmlDoc.getElementsByTagNameNS(
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "t"
+      );
+      console.error("[DIAGNOSTIC] w:t elements found:", tElements?.length);
+      if (tElements?.length > 0) {
+        console.error(
+          "[DIAGNOSTIC] first w:t textContent:",
+          JSON.stringify(tElements[0]!.textContent)
+        );
+      }
+    }
+
+    // Also test mammoth with path-based input
+    const pathResult = await mammoth.default.extractRawText({ path: simpleDocxPath });
+    console.error(
+      "[DIAGNOSTIC] mammoth path-based result:",
+      JSON.stringify(pathResult.value.substring(0, 200))
+    );
   }
 });
 
