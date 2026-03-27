@@ -1,7 +1,7 @@
 /**
  * Isolated tests for PdfExtractor and DocxExtractor timeout behavior.
  *
- * Uses mock.module() to inject delayed-resolving promises for pdf-parse and mammoth,
+ * Uses mock.module() to inject delayed-resolving promises for pdf-parse and jszip,
  * ensuring the ExtractionTimeoutError code path is exercised deterministically.
  * Placed in tests/isolated/ because mock.module replaces modules globally.
  *
@@ -25,12 +25,6 @@ let pdfParseDelayMs = 0;
 /** Tracks the mock's pending setTimeout so it can be cleared after each test. */
 let pdfParsePendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Mutable delay controlling how long the mocked mammoth calls take. */
-let mammothDelayMs = 0;
-
-/** Tracks the mock's pending setTimeouts so they can be cleared after each test. */
-let mammothPendingTimers: ReturnType<typeof setTimeout>[] = [];
-
 // Mock pdf-parse to return a delayed-resolving promise.
 // PdfExtractor uses lazy `await import("pdf-parse/lib/pdf-parse.js")` with CJS/ESM
 // interop that picks `m.default` when it's a function, which matches our mock shape.
@@ -44,47 +38,21 @@ void mock.module("pdf-parse/lib/pdf-parse.js", () => ({
     }),
 }));
 
-// Mock mammoth to return delayed-resolving promises
-// `void` prefix satisfies ESLint's no-floating-promises rule (mock.module returns a Promise).
-void mock.module("mammoth", () => ({
-  default: {
-    convertToHtml: () =>
-      new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          resolve({ value: "", messages: [] });
-        }, mammothDelayMs);
-        mammothPendingTimers.push(timer);
-      }),
-    extractRawText: () =>
-      new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          resolve({ value: "", messages: [] });
-        }, mammothDelayMs);
-        mammothPendingTimers.push(timer);
-      }),
-  },
-}));
-
 // Dynamic imports after mock setup
 const { PdfExtractor } = await import("../../src/documents/extractors/PdfExtractor.js");
-const { DocxExtractor } = await import("../../src/documents/extractors/DocxExtractor.js");
 const { ExtractionTimeoutError } = await import("../../src/documents/errors.js");
 const { createTestPdfFiles } = await import("../fixtures/documents/pdf-fixtures.js");
-const { createTestDocxFiles } = await import("../fixtures/documents/docx-fixtures.js");
 
 let fixtureDir: string;
 let pdfDir: string;
-let docxDir: string;
 
 beforeAll(async () => {
   fixtureDir = path.join(os.tmpdir(), `extractor-timeout-test-${Date.now()}`);
   await fs.mkdir(fixtureDir, { recursive: true });
 
   await createTestPdfFiles(fixtureDir);
-  await createTestDocxFiles(fixtureDir);
 
   pdfDir = path.join(fixtureDir, "pdf");
-  docxDir = path.join(fixtureDir, "docx");
 });
 
 afterAll(async () => {
@@ -97,7 +65,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   pdfParseDelayMs = 0;
-  mammothDelayMs = 0;
 });
 
 afterEach(() => {
@@ -105,10 +72,6 @@ afterEach(() => {
     clearTimeout(pdfParsePendingTimer);
     pdfParsePendingTimer = null;
   }
-  for (const timer of mammothPendingTimers) {
-    clearTimeout(timer);
-  }
-  mammothPendingTimers = [];
 });
 
 describe("PdfExtractor timeout (isolated)", () => {
@@ -134,25 +97,6 @@ describe("PdfExtractor timeout (isolated)", () => {
   });
 });
 
-describe("DocxExtractor timeout (isolated)", () => {
-  test("throws ExtractionTimeoutError deterministically when mammoth is slow", async () => {
-    expect.assertions(5);
-
-    // Make mock mammoth delay 200ms — well over the 50ms timeout but quick to clean up
-    mammothDelayMs = 200;
-
-    const extractor = new DocxExtractor({ timeoutMs: 50 });
-    const filePath = path.join(docxDir, "simple.docx");
-
-    try {
-      await extractor.extract(filePath);
-    } catch (error) {
-      expect(error).toBeInstanceOf(ExtractionTimeoutError);
-      const timeoutError = error as InstanceType<typeof ExtractionTimeoutError>;
-      expect(timeoutError.code).toBe("EXTRACTION_TIMEOUT");
-      expect(timeoutError.timeoutMs).toBe(50);
-      expect(timeoutError.retryable).toBe(true);
-      expect(timeoutError.filePath).toBe(filePath);
-    }
-  });
-});
+// NOTE: DocxExtractor timeout test was removed — DocxExtractor no longer uses mammoth
+// (replaced with direct JSZip + @xmldom/xmldom parsing). The timeout behavior is tested
+// deterministically in tests/unit/documents/extractors.test.ts with a 1ms timeout.
