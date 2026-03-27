@@ -41,6 +41,35 @@ beforeAll(async () => {
   await createTestPdfFiles(FIXTURES_DIR);
   await createTestDocxFiles(FIXTURES_DIR);
   await createTestImageFiles(FIXTURES_DIR);
+
+  // Diagnostic: verify mammoth can extract content from the generated DOCX fixtures.
+  // If this fails, there is a runtime/environment issue with mammoth (e.g., CI runner change).
+  const mammoth = await import("mammoth");
+  const simpleDocxPath = path.join(DOCX_DIR, "simple.docx");
+  const simpleBuffer = await fs.readFile(simpleDocxPath);
+  const textResult = await mammoth.default.extractRawText({ buffer: simpleBuffer });
+  const htmlResult = await mammoth.default.convertToHtml({ buffer: simpleBuffer });
+  if (textResult.value.length === 0) {
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(simpleBuffer);
+    const docXml = await zip.file("word/document.xml")?.async("string");
+    console.error("[DIAGNOSTIC] mammoth.extractRawText returned empty string");
+    console.error("[DIAGNOSTIC] mammoth.convertToHtml value:", JSON.stringify(htmlResult.value));
+    console.error(
+      "[DIAGNOSTIC] mammoth.extractRawText messages:",
+      JSON.stringify(textResult.messages)
+    );
+    console.error(
+      "[DIAGNOSTIC] mammoth.convertToHtml messages:",
+      JSON.stringify(htmlResult.messages)
+    );
+    console.error(
+      "[DIAGNOSTIC] document.xml content (first 500 chars):",
+      docXml?.substring(0, 500)
+    );
+    console.error("[DIAGNOSTIC] DOCX file size:", simpleBuffer.length);
+    console.error("[DIAGNOSTIC] ZIP file list:", Object.keys(zip.files).join(", "));
+  }
 });
 
 describe("Test fixtures", () => {
