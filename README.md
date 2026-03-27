@@ -1123,61 +1123,6 @@ ChromaDB supports optional token-based authentication to secure the vector datab
    docker compose --profile default up -d
    ```
 
-## Roadmap
-
-### Phase 1: Core MCP + Vector Search (Complete)
-- MCP service with semantic_search and list_indexed_repositories tools
-- ChromaDB vector storage
-- OpenAI embedding generation
-- GitHub repository cloning and indexing
-- Private repository support via PAT
-- CLI commands (index, search, status, remove, update, update-all, history)
-- Incremental updates with change detection
-- 90% test coverage
-- Query response <500ms (p95)
-
-### Phase 2: Code Intelligence + Multi-Provider Embeddings (Complete)
-- **Local Embeddings** - Transformers.js (zero-config) and Ollama (GPU) support
-- **Multi-Provider Architecture** - Pluggable embedding providers with per-repository configuration
-- **Provider CLI Commands** - Status, setup, and provider selection
-
-### Phase 3: Multi-Instance + Containerization (Complete)
-- **Docker Compose Hardening** - Production-ready container configuration
-- **Multi-Transport MCP** - HTTP/SSE transport alongside stdio for cross-client support
-- **Bearer Token Authentication** - Secure HTTP endpoints with CLI management
-- **Multi-Instance Architecture** - Private/Work/Public security tier isolation
-- **Rate Limiting** - Configurable per-minute/per-hour limits
-- **CORS Support** - Browser client compatibility
-
-### Phase 4: Enterprise Features + Automation (Framework Ready)
-- **OpenID Connect (OIDC)** - Microsoft Entra ID, Auth0, Okta integration framework
-- **User Mapping** - Claim-based instance access control
-- **PostgreSQL** - Configured in Docker Compose for document store
-- **Kubernetes Deployment** - Helm charts prepared
-
-### Phase 5: Knowledge Graph Search (Complete)
-- **FalkorDB Integration** - Graph database for code dependency analysis (Apache 2.0 licensed)
-- **AST Parsing** - Tree-sitter integration for 12 languages + Roslyn for C#
-- **Graph MCP Tools** - get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
-- **Entity Extraction** - Functions, classes, interfaces, and relationships from code
-- **Graph Schema Migrations** - CLI commands for database setup
-- **Incremental Graph Updates** - Graph extraction integrated with update pipeline
-- **Graph Query Metrics** - Performance monitoring and statistics
-
-### Phase 6: Unstructured Document Ingestion (Planned)
-- PDF document ingestion and text extraction
-- Microsoft Word (.docx) document support
-- Local folder watching with automatic re-indexing
-- Image metadata extraction
-- Markdown file processing with frontmatter support
-
-See [Phase 6 PRD](docs/pm/Phase6-Document-Ingestion-PRD.md) for detailed requirements.
-
-### Future Roadmap
-- Automated update pipelines with GitHub webhooks
-- Azure DevOps repository integration
-- Cloud storage integration (OneDrive, Google Drive)
-
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
@@ -1206,20 +1151,21 @@ Development workflow:
 
 ## Code Statistics
 
-Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules, dist, .bun-cache, coverage, data):
+Generated with [cloc](https://github.com/AlDanial/cloc) v2.06 (excluding node_modules, dist, .bun-cache, coverage, data):
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 350 | 18,212 | 30,712 | 82,144 |
-| Markdown | 53 | 7,271 | 9 | 23,418 |
-| YAML | 68 | 332 | 580 | 3,188 |
-| JSON | 14 | 5 | 0 | 2,529 |
-| Bourne Shell | 9 | 479 | 527 | 1,956 |
+| TypeScript | 500 | 27,034 | 45,373 | 122,663 |
+| Markdown | 72 | 9,422 | 9 | 29,588 |
+| YAML | 68 | 332 | 588 | 3,185 |
+| JSON | 14 | 5 | 0 | 2,548 |
+| Bourne Shell | 10 | 479 | 527 | 1,958 |
 | PowerShell | 4 | 399 | 281 | 1,232 |
 | C# | 9 | 219 | 315 | 1,022 |
 | Go | 1 | 38 | 40 | 154 |
 | Rust | 1 | 42 | 47 | 150 |
 | Java | 3 | 28 | 58 | 104 |
+| SQL | 4 | 77 | 213 | 94 |
 | Text | 3 | 31 | 0 | 91 |
 | PHP | 1 | 22 | 70 | 87 |
 | C++ | 1 | 22 | 15 | 65 |
@@ -1230,9 +1176,8 @@ Generated with [cloc](https://github.com/AlDanial/cloc) (excluding node_modules,
 | Ruby | 1 | 10 | 20 | 35 |
 | JavaScript | 2 | 7 | 9 | 33 |
 | XML | 2 | 0 | 0 | 27 |
-| TOML | 1 | 11 | 17 | 14 |
-| SQL | 1 | 3 | 16 | 9 |
-| **SUM** | **536** | **27,220** | **32,851** | **116,473** |
+| TOML | 1 | 12 | 20 | 15 |
+| **SUM** | **710** | **38,268** | **47,721** | **163,297** |
 
 ## License
 
