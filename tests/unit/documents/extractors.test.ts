@@ -104,6 +104,62 @@ beforeAll(async () => {
       "[DIAGNOSTIC] mammoth path-based result:",
       JSON.stringify(pathResult.value.substring(0, 200))
     );
+
+    // Test underscore.js _.forEach over childNodes (used by mammoth's XML reader)
+    const underscore = (await import("underscore")).default as {
+      forEach: (list: unknown, fn: (item: Node) => void) => void;
+    };
+    const children: string[] = [];
+    underscore.forEach(root?.childNodes, (child: Node) => {
+      children.push(`nodeType=${child.nodeType}, name=${child.nodeName}`);
+    });
+    console.error("[DIAGNOSTIC] underscore forEach over childNodes:", JSON.stringify(children));
+    console.error("[DIAGNOSTIC] childNodes.length:", root?.childNodes?.length);
+    console.error("[DIAGNOSTIC] childNodes[0]:", root?.childNodes?.[0]?.nodeName);
+
+    // Test mammoth's internal XML reader directly
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-call
+      const mammothXmlReader = (await import("mammoth/lib/xml/index.js")) as {
+        readString: (
+          xml: string,
+          nsMap: Record<string, string>
+        ) => Promise<{ name?: string; children?: Array<{ name?: string; children?: unknown[] }> }>;
+      };
+      const namespaceMap = {
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main": "w",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships": "r",
+      };
+      const mammothParsed = await mammothXmlReader.readString(docXml ?? "", namespaceMap);
+      console.error("[DIAGNOSTIC] mammoth readString result type:", typeof mammothParsed);
+      console.error("[DIAGNOSTIC] mammoth readString result name:", mammothParsed?.name);
+      console.error(
+        "[DIAGNOSTIC] mammoth readString children count:",
+        mammothParsed?.children?.length
+      );
+      if (mammothParsed?.children && mammothParsed.children.length > 0) {
+        const body = mammothParsed.children.find((c) => c.name === "w:body");
+        console.error("[DIAGNOSTIC] w:body found in mammoth tree:", !!body);
+        console.error("[DIAGNOSTIC] w:body children:", body?.children?.length);
+      }
+    } catch (e) {
+      console.error("[DIAGNOSTIC] mammoth internal reader error:", (e as Error).message);
+    }
+
+    // Test mammoth's DOMParser wrapper directly
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-call
+      const mammothXmldom = (await import("mammoth/lib/xml/xmldom.js")) as {
+        parseFromString: (s: string) => Document;
+      };
+      const mammothDoc = mammothXmldom.parseFromString(docXml ?? "");
+      console.error(
+        "[DIAGNOSTIC] mammoth DOMParser tagName:",
+        mammothDoc?.documentElement?.tagName
+      );
+    } catch (e) {
+      console.error("[DIAGNOSTIC] mammoth DOMParser threw:", (e as Error).message);
+    }
   }
 });
 
