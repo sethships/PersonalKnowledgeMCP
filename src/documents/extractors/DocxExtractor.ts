@@ -1,14 +1,13 @@
 /**
- * Microsoft Word DOCX document extractor using mammoth.
+ * Microsoft Word DOCX document extractor using JSZip and @xmldom/xmldom.
  *
- * Extracts text content and metadata from DOCX files. Preserves document
- * structure including headings, lists, and paragraphs. Extracts Dublin Core
- * metadata from docProps/core.xml when available.
+ * Extracts text content and metadata from DOCX files by directly parsing
+ * the OOXML structure. Preserves document structure including headings,
+ * lists, and paragraphs. Extracts Dublin Core metadata from docProps/core.xml.
  *
  * @module documents/extractors/DocxExtractor
  */
 
-import mammoth from "mammoth";
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { DOCUMENT_EXTENSIONS, DEFAULT_EXTRACTOR_CONFIG } from "../constants.js";
@@ -43,6 +42,9 @@ export interface DocxExtractorConfig extends ExtractorConfig {
 
 /** OLE2 Compound Document signature for legacy .doc files */
 const OLE2_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+
+/** OOXML Word Processing namespace URI */
+const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /** Dublin Core Elements namespace URI */
 const DC_NS = "http://purl.org/dc/elements/1.1/";
@@ -86,9 +88,9 @@ function getLogger(): ReturnType<typeof getComponentLogger> {
 /**
  * Extracts text content and metadata from DOCX documents.
  *
- * Uses mammoth library for text extraction. Converts DOCX structure to
- * plain text while optionally preserving basic formatting. Extracts
- * Dublin Core metadata from docProps/core.xml when present.
+ * Directly parses OOXML structure using JSZip and @xmldom/xmldom for
+ * reliable cross-platform text extraction. Extracts Dublin Core metadata
+ * from docProps/core.xml when present.
  *
  * @extends {BaseExtractor<Required<DocxExtractorConfig>, ExtractionResult>}
  *
@@ -199,7 +201,8 @@ export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, 
   /**
    * Extract content from DOCX with timeout protection.
    *
-   * Uses mammoth.convertToHtml for structured HTML and mammoth.extractRawText for plain text.
+   * Directly parses word/document.xml from the DOCX ZIP using JSZip and @xmldom/xmldom.
+   * Extracts plain text from w:t elements and builds HTML from heading styles.
    *
    * @param buffer - DOCX file buffer
    * @param filePath - Path to the file (for error context)
@@ -211,15 +214,12 @@ export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, 
     buffer: Buffer,
     filePath: string
   ): Promise<{ html: string; text: string }> {
-    let settled = false;
-
     return new Promise((resolve, reject) => {
+      let settled = false;
+
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
-        // NOTE: In-flight mammoth operations continue in background after timeout.
-        // Neither mammoth nor the JS runtime provides a cancellation mechanism.
-        // Consider worker threads for isolation if this becomes a production issue.
         reject(
           new ExtractionTimeoutError(
             `DOCX extraction timed out after ${this.config.timeoutMs}ms`,
@@ -229,56 +229,175 @@ export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, 
         );
       }, this.config.timeoutMs);
 
-      const input = { buffer };
-
-      // NOTE: Both calls independently parse the DOCX ZIP. For large documents,
-      // this doubles CPU/memory usage. If profiling reveals this as a bottleneck,
-      // consider using only convertToHtml and stripping HTML tags for plain text.
-      Promise.all([mammoth.convertToHtml(input), mammoth.extractRawText(input)])
-        .then(([htmlResult, textResult]) => {
+      this.extractFromZip(buffer, filePath)
+        .then((result) => {
           clearTimeout(timeoutId);
           if (settled) return;
           settled = true;
-
-          // Log any warnings from mammoth
-          const allMessages = [...htmlResult.messages, ...textResult.messages];
-          const warnings = allMessages.filter(
-            (m): m is { type: "warning"; message: string } => m.type === "warning"
-          );
-          if (warnings.length > 0) {
-            this.getLogger().warn(
-              { filePath, warnings: warnings.map((w) => w.message) },
-              "Mammoth extraction produced warnings"
-            );
-          }
-
-          resolve({
-            html: htmlResult.value,
-            text: textResult.value,
-          });
+          resolve(result);
         })
         .catch((error: Error) => {
           clearTimeout(timeoutId);
           if (settled) return;
           settled = true;
-
           reject(
-            new ExtractionError(`Failed to extract DOCX content: ${error.message}`, {
-              filePath,
-              cause: error,
-            })
+            error instanceof ExtractionError
+              ? error
+              : new ExtractionError(`Failed to extract DOCX content: ${error.message}`, {
+                  filePath,
+                  cause: error,
+                })
           );
         });
     });
   }
 
   /**
-   * Parse HTML output from mammoth to extract section/heading information.
+   * Extract text and HTML from the DOCX ZIP by parsing word/document.xml directly.
+   *
+   * Walks the OOXML DOM tree to extract text from w:t elements and detect
+   * paragraph styles (headings) for section parsing.
+   *
+   * @param buffer - DOCX file buffer
+   * @param filePath - Path to the file (for error context)
+   * @returns Plain text and HTML representation
+   */
+  private async extractFromZip(
+    buffer: Buffer,
+    filePath: string
+  ): Promise<{ html: string; text: string }> {
+    const zip = await JSZip.loadAsync(buffer);
+    const docXmlFile = zip.file("word/document.xml");
+
+    if (!docXmlFile) {
+      throw new ExtractionError("DOCX archive missing word/document.xml", { filePath });
+    }
+
+    const docXml = await docXmlFile.async("string");
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(docXml, "text/xml");
+
+    const textParts: string[] = [];
+    const htmlParts: string[] = [];
+
+    // Find w:body element
+    const bodyElements = doc.getElementsByTagNameNS(W_NS, "body");
+    if (bodyElements.length === 0) {
+      return { html: "", text: "" };
+    }
+
+    const body = bodyElements[0]!;
+
+    // Walk w:p (paragraph) elements inside body
+    for (let i = 0; i < body.childNodes.length; i++) {
+      const node = body.childNodes[i]! as Element;
+      if (node.nodeType !== 1) continue; // Skip non-element nodes
+      if (node.localName !== "p" || node.namespaceURI !== W_NS) continue;
+
+      const paragraphText = this.extractParagraphText(node);
+      if (paragraphText.length === 0) continue;
+
+      // Detect heading style from w:pPr > w:pStyle
+      const headingLevel = this.getHeadingLevel(node);
+
+      textParts.push(paragraphText);
+
+      if (headingLevel > 0) {
+        htmlParts.push(`<h${headingLevel}>${this.escapeHtml(paragraphText)}</h${headingLevel}>`);
+      } else {
+        htmlParts.push(`<p>${this.escapeHtml(paragraphText)}</p>`);
+      }
+    }
+
+    return {
+      text: textParts.join("\n"),
+      html: htmlParts.join(""),
+    };
+  }
+
+  /**
+   * Extract text content from a w:p (paragraph) element.
+   *
+   * Concatenates all w:t text elements within w:r runs.
+   *
+   * @param paragraph - The w:p DOM element
+   * @returns Concatenated text content
+   */
+  private extractParagraphText(paragraph: Node): string {
+    const texts: string[] = [];
+    this.walkTextNodes(paragraph, texts);
+    return texts.join("");
+  }
+
+  /**
+   * Recursively walk DOM nodes to collect w:t text content.
+   *
+   * @param node - Current DOM node
+   * @param texts - Accumulator for text content
+   */
+  private walkTextNodes(node: Node, texts: string[]): void {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      const child = node.childNodes[i]!;
+      if (child.nodeType === 1) {
+        // Element node — cast to Element for namespace/localName access
+        const el = child as Element;
+        if (el.localName === "t" && el.namespaceURI === W_NS) {
+          texts.push(el.textContent ?? "");
+        } else {
+          this.walkTextNodes(child, texts);
+        }
+      }
+    }
+  }
+
+  /**
+   * Detect heading level from paragraph style.
+   *
+   * Looks for w:pPr > w:pStyle with val matching "Heading1" through "Heading6".
+   *
+   * @param paragraph - The w:p DOM element
+   * @returns Heading level (1-6) or 0 if not a heading
+   */
+  private getHeadingLevel(paragraph: Node): number {
+    for (let i = 0; i < paragraph.childNodes.length; i++) {
+      const child = paragraph.childNodes[i]! as Element;
+      if (child.nodeType === 1 && child.localName === "pPr" && child.namespaceURI === W_NS) {
+        for (let j = 0; j < child.childNodes.length; j++) {
+          const pprChild = child.childNodes[j]! as Element;
+          if (
+            pprChild.nodeType === 1 &&
+            pprChild.localName === "pStyle" &&
+            pprChild.namespaceURI === W_NS
+          ) {
+            const styleVal = pprChild.getAttributeNS(W_NS, "val");
+            const match = styleVal?.match(/^Heading(\d)$/i);
+            if (match) {
+              return parseInt(match[1]!, 10);
+            }
+          }
+        }
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * Escape HTML special characters.
+   *
+   * @param text - Raw text to escape
+   * @returns HTML-safe string
+   */
+  private escapeHtml(text: string): string {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /**
+   * Parse HTML output to extract section/heading information.
    *
    * Maps heading positions in HTML to their corresponding positions in plain text.
    *
-   * @param html - HTML output from mammoth.convertToHtml
-   * @param text - Plain text output from mammoth.extractRawText
+   * @param html - HTML with heading tags from extractFromZip
+   * @param text - Plain text content
    * @returns Array of SectionInfo objects
    */
   private parseSections(html: string, text: string): SectionInfo[] {
@@ -355,7 +474,7 @@ export class DocxExtractor extends BaseExtractor<Required<DocxExtractorConfig>, 
   /**
    * Parse Dublin Core XML from docProps/core.xml using namespace-aware DOM parsing.
    *
-   * Uses @xmldom/xmldom (transitive dependency via mammoth) for proper namespace
+   * Uses @xmldom/xmldom for proper namespace
    * handling. Supports any namespace prefix for Dublin Core elements, not just
    * the conventional dc:/dcterms: prefixes.
    *
