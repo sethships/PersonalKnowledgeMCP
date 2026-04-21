@@ -22,7 +22,7 @@ import { initializeLogger } from "../../../src/logging/index.js";
 interface SyncSuccessResponse {
   success: true;
   repository: string;
-  status: "updated" | "no_changes";
+  status: "updated" | "no_changes" | "incomplete" | "drift_detected";
   files_added: number;
   files_modified: number;
   files_deleted: number;
@@ -36,6 +36,7 @@ interface SyncSuccessResponse {
   completeness_eligible_files?: number;
   completeness_missing_files?: number;
   completeness_divergence_percent?: number;
+  recovery_hint?: string;
 }
 
 /**
@@ -260,5 +261,100 @@ describe("trigger_incremental_update - Completeness Fields", () => {
     expect(response.completeness_status).toBe("error");
     expect(response.completeness_indexed_files).toBe(100);
     expect(response.completeness_eligible_files).toBe(0);
+  });
+
+  describe("drift_detected status", () => {
+    it("surfaces drift_detected with recovery_hint and preserved completeness fields", async () => {
+      const driftResult: CoordinatorResult = {
+        status: "drift_detected",
+        commitSha: "7eee88b05bfc0ea6748be4954f1e8f986133782b",
+        commitMessage: "up-to-date",
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 0,
+        },
+        errors: [],
+        durationMs: 120,
+        completenessCheck: {
+          status: "incomplete",
+          indexedFileCount: 89,
+          eligibleFileCount: 424,
+          missingFileCount: 335,
+          divergencePercent: 79,
+          durationMs: 142,
+        },
+      };
+
+      const mockCoordinator = {
+        updateRepository: mock(async () => driftResult),
+      } as unknown as IncrementalUpdateCoordinator;
+
+      const handler = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockCoordinator,
+        rateLimiter: new MCPRateLimiter({ cooldownMs: 0 }),
+        jobTracker: new JobTracker(),
+      });
+
+      const callResult = await handler({ repository: "test-repo" });
+
+      expect(callResult.isError).toBe(false);
+      const response = parseResponse(callResult.content);
+
+      expect(response.status).toBe("drift_detected");
+      expect(response.recovery_hint).toBeDefined();
+      expect(response.recovery_hint).toContain("--force");
+      expect(response.recovery_hint).toContain("test-repo");
+      // Completeness payload must be carried through so callers can inspect it
+      expect(response.completeness_status).toBe("incomplete");
+      expect(response.completeness_missing_files).toBe(335);
+    });
+
+    it("does not emit recovery_hint for non-drift statuses", async () => {
+      const noChangesResult: CoordinatorResult = {
+        status: "no_changes",
+        commitSha: "abc123",
+        commitMessage: "existing commit",
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 0,
+          durationMs: 0,
+        },
+        errors: [],
+        durationMs: 50,
+        completenessCheck: {
+          status: "complete",
+          indexedFileCount: 100,
+          eligibleFileCount: 100,
+          missingFileCount: 0,
+          divergencePercent: 0,
+          durationMs: 20,
+        },
+      };
+
+      const mockCoordinator = {
+        updateRepository: mock(async () => noChangesResult),
+      } as unknown as IncrementalUpdateCoordinator;
+
+      const handler = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockCoordinator,
+        rateLimiter: new MCPRateLimiter({ cooldownMs: 0 }),
+        jobTracker: new JobTracker(),
+      });
+
+      const callResult = await handler({ repository: "test-repo" });
+      const response = parseResponse(callResult.content);
+
+      expect(response.status).toBe("no_changes");
+      expect(response.recovery_hint).toBeUndefined();
+    });
   });
 });

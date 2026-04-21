@@ -314,8 +314,22 @@ export class IncrementalUpdateCoordinator {
             repositoryName,
             logger
           );
+          const isDrift = noChangesCompletenessCheck?.status === "incomplete";
+          if (isDrift && noChangesCompletenessCheck) {
+            logger.warn(
+              {
+                operation: "coordinator_drift_detected",
+                repository: repositoryName,
+                indexedFileCount: noChangesCompletenessCheck.indexedFileCount,
+                eligibleFileCount: noChangesCompletenessCheck.eligibleFileCount,
+                missingFileCount: noChangesCompletenessCheck.missingFileCount,
+                divergencePercent: noChangesCompletenessCheck.divergencePercent,
+              },
+              "Drift detected: HEAD SHA matches tracked commit but index is incomplete; recommend forced re-index"
+            );
+          }
           return {
-            status: "no_changes",
+            status: isDrift ? "drift_detected" : "no_changes",
             commitSha: headCommit.sha,
             commitMessage: headCommit.message,
             stats: {
@@ -390,8 +404,22 @@ export class IncrementalUpdateCoordinator {
             repositoryName,
             logger
           );
+          const isDrift = noChangesCompletenessCheck?.status === "incomplete";
+          if (isDrift && noChangesCompletenessCheck) {
+            logger.warn(
+              {
+                operation: "coordinator_drift_detected",
+                repository: repositoryName,
+                indexedFileCount: noChangesCompletenessCheck.indexedFileCount,
+                eligibleFileCount: noChangesCompletenessCheck.eligibleFileCount,
+                missingFileCount: noChangesCompletenessCheck.missingFileCount,
+                divergencePercent: noChangesCompletenessCheck.divergencePercent,
+              },
+              "Drift detected: HEAD SHA matches tracked commit but index is incomplete; recommend forced re-index"
+            );
+          }
           return {
-            status: "no_changes",
+            status: isDrift ? "drift_detected" : "no_changes",
             commitSha: repo.lastIndexedCommitSha,
             commitMessage: "up-to-date",
             stats: {
