@@ -11,6 +11,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import { describe, it, expect, beforeEach, mock } from "bun:test";
+import type { SimpleGit } from "simple-git";
 import { IncrementalUpdateCoordinator } from "../../src/services/incremental-update-coordinator.js";
 import { initializeLogger } from "../../src/logging/index.js";
 import type {
@@ -381,6 +382,164 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
       expect(result.status).toBe("updated");
       // Completeness check should be undefined since repo not found on re-fetch
       expect(result.completenessCheck).toBeUndefined();
+    });
+  });
+
+  describe("drift detection on no_changes short-circuit", () => {
+    // Builds a GitHubClient whose HEAD SHA matches the tracked lastIndexedCommitSha,
+    // which is what drives the `no_changes` short-circuit path.
+    const buildSameHeadClient = (): GitHubClient => ({
+      getHeadCommit: mock(async () => sameHeadCommit),
+      compareCommits: mock(async () => comparison),
+      healthCheck: mock(async () => true),
+    });
+
+    it("GitHub path: returns drift_detected when completeness is incomplete", async () => {
+      const incompleteChecker = {
+        checkCompleteness: mock(async () => incompleteResult),
+      } as unknown as IndexCompletenessChecker;
+
+      const coordinator = new IncrementalUpdateCoordinator(
+        buildSameHeadClient(),
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          completenessChecker: incompleteChecker,
+        }
+      );
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("drift_detected");
+      expect(result.completenessCheck).toBeDefined();
+      expect(result.completenessCheck!.status).toBe("incomplete");
+      expect(result.completenessCheck!.missingFileCount).toBe(335);
+      expect(result.commitSha).toBe(sameHeadCommit.sha);
+      // The pipeline must not have run — this is a short-circuit path
+      expect(mockUpdatePipeline.processChanges).not.toHaveBeenCalled();
+    });
+
+    it("GitHub path: returns no_changes when completeness is complete (regression guard)", async () => {
+      const coordinator = new IncrementalUpdateCoordinator(
+        buildSameHeadClient(),
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          completenessChecker: mockCompletenessChecker,
+        }
+      );
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("no_changes");
+      expect(result.completenessCheck!.status).toBe("complete");
+    });
+
+    it("GitHub path: returns no_changes when completeness errors (don't escalate on infra failures)", async () => {
+      const errorChecker = {
+        checkCompleteness: mock(
+          async (): Promise<CompletenessCheckResult> => ({
+            status: "error",
+            indexedFileCount: 100,
+            eligibleFileCount: 0,
+            missingFileCount: 0,
+            divergencePercent: 0,
+            durationMs: 5,
+            errorMessage: "File scan failed",
+          })
+        ),
+      } as unknown as IndexCompletenessChecker;
+
+      const coordinator = new IncrementalUpdateCoordinator(
+        buildSameHeadClient(),
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          completenessChecker: errorChecker,
+        }
+      );
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("no_changes");
+      expect(result.completenessCheck!.status).toBe("error");
+    });
+
+    it("GitHub path: returns no_changes when completeness checker is not configured", async () => {
+      const coordinator = new IncrementalUpdateCoordinator(
+        buildSameHeadClient(),
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          // No completenessChecker — drift detection must not fire
+        }
+      );
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("no_changes");
+      expect(result.completenessCheck).toBeUndefined();
+    });
+
+    it("local-git path: returns drift_detected when SHA matches and completeness is incomplete", async () => {
+      const baseSha = "abc123def456abc123def456abc123def456abc1";
+      const localRepo: RepositoryInfo = {
+        ...testRepo,
+        name: "local-repo",
+        url: "C:/local/path/to/repo",
+        localPath: "C:/local/path/to/repo",
+        lastIndexedCommitSha: baseSha,
+      };
+
+      const localRepoService: RepositoryMetadataService = {
+        listRepositories: mock(async () => [localRepo]),
+        getRepository: mock(async (name: string) => (name === "local-repo" ? localRepo : null)),
+        updateRepository: mock(async () => {}),
+        removeRepository: mock(async () => {}),
+      };
+
+      // simple-git stub: revparse returns same SHA, so buildLocalGitComparison returns null
+      // which drives the local-git no_changes short-circuit.
+      const revparse = mock((_args: string[]) => Promise.resolve(baseSha));
+      const mockGit = {
+        revparse,
+        fetch: mock(() => Promise.resolve()),
+        log: mock(() => Promise.resolve({ latest: null, total: 0, all: [] })),
+        diff: mock(() => Promise.resolve("")),
+        raw: mock(() => Promise.resolve("")),
+        pull: mock(() =>
+          Promise.resolve({ files: [], insertions: {}, deletions: {}, summary: {} })
+        ),
+      };
+
+      const incompleteChecker = {
+        checkCompleteness: mock(async () => incompleteResult),
+      } as unknown as IndexCompletenessChecker;
+
+      const coordinator = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        localRepoService,
+        mockUpdatePipeline,
+        {
+          customGitPull: mock(async () => {}),
+          completenessChecker: incompleteChecker,
+          simpleGitFactory: () => mockGit as unknown as SimpleGit,
+        }
+      );
+
+      const result = await coordinator.updateRepository("local-repo");
+
+      expect(result.status).toBe("drift_detected");
+      expect(result.completenessCheck!.status).toBe("incomplete");
+      // Local path must use HEAD (not origin/<branch>) and must not fetch.
+      expect(revparse).toHaveBeenCalledWith(["HEAD"]);
+      expect(mockGit.fetch).not.toHaveBeenCalled();
+      // commitSha in the local-git no_changes path reports the tracked SHA
+      expect(result.commitSha).toBe(baseSha);
     });
   });
 });

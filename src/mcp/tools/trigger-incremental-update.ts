@@ -65,7 +65,7 @@ interface TriggerUpdateArgs {
 interface SyncSuccessResponse {
   success: true;
   repository: string;
-  status: "updated" | "no_changes" | "incomplete";
+  status: "updated" | "no_changes" | "incomplete" | "drift_detected";
   files_added: number;
   files_modified: number;
   files_deleted: number;
@@ -88,6 +88,8 @@ interface SyncSuccessResponse {
   completeness_eligible_files?: number;
   completeness_missing_files?: number;
   completeness_divergence_percent?: number;
+  // Populated only when status === "drift_detected" to guide callers toward recovery
+  recovery_hint?: string;
 }
 
 /**
@@ -195,6 +197,7 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   const statusMap: Record<string, SyncSuccessResponse["status"]> = {
     no_changes: "no_changes",
     incomplete: "incomplete",
+    drift_detected: "drift_detected",
   };
   const response: SyncSuccessResponse = {
     success: true,
@@ -213,6 +216,12 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   }
   if (result.commitMessage) {
     response.commit_message = result.commitMessage;
+  }
+
+  if (result.status === "drift_detected") {
+    response.recovery_hint =
+      `Index drift detected: HEAD SHA matches the tracked commit but the index is incomplete. ` +
+      `Run 'bun run cli update ${repository} --force' to re-index and recover.`;
   }
 
   // Include graph statistics if available

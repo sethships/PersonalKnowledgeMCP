@@ -26,6 +26,7 @@ import {
   SAMPLE_UPDATED_RESULT,
   SAMPLE_UPDATED_WITH_ERRORS_RESULT,
   SAMPLE_FAILED_RESULT,
+  SAMPLE_DRIFT_DETECTED_RESULT,
   TEST_COMMIT_SHAS,
 } from "../../fixtures/incremental-update-fixtures.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
@@ -176,6 +177,66 @@ describe("Update Repository Command", () => {
       // Note: JSON output uses commitRange (from formatUpdateResultJson), not commitSha
       expect(jsonOutput.commitRange).toBeDefined();
       expect(jsonOutput.stats).toBeDefined();
+    });
+  });
+
+  describe("Incremental update - Drift detected", () => {
+    it("should throw and include recovery guidance in message", async () => {
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(SAMPLE_DRIFT_DETECTED_RESULT);
+
+      const options: UpdateCommandOptions = {};
+
+      await expect(updateRepositoryCommand("test-repo", options, mockDeps)).rejects.toThrow(
+        /Drift detected/
+      );
+      await expect(updateRepositoryCommand("test-repo", options, mockDeps)).rejects.toThrow(
+        /--force/
+      );
+    });
+
+    it("should print divergence counts and --force recovery hint", async () => {
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(SAMPLE_DRIFT_DETECTED_RESULT);
+
+      const options: UpdateCommandOptions = {};
+
+      try {
+        await updateRepositoryCommand("test-repo", options, mockDeps);
+      } catch {
+        /* expected to throw */
+      }
+
+      // Missing file count surfaced to the user
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("335"));
+      // Recovery hint uses --force
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("--force"));
+    });
+
+    it("should emit drift_detected status in JSON mode and still throw", async () => {
+      mockGetRepository.mockResolvedValue(sampleRepo);
+      mockUpdateRepository.mockResolvedValue(SAMPLE_DRIFT_DETECTED_RESULT);
+
+      const options: UpdateCommandOptions = { json: true };
+
+      try {
+        await updateRepositoryCommand("test-repo", options, mockDeps);
+      } catch {
+        /* expected to throw */
+      }
+
+      const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
+        try {
+          JSON.parse(call[0]);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+
+      expect(jsonCalls.length).toBeGreaterThan(0);
+      const jsonOutput = JSON.parse(jsonCalls[0]![0]);
+      expect(jsonOutput.status).toBe("drift_detected");
     });
   });
 

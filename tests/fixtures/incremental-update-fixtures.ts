@@ -258,6 +258,30 @@ export const SAMPLE_FAILED_RESULT: CoordinatorResult = {
 };
 
 /**
+ * Sample coordinator result - Drift detected
+ *
+ * Tracked SHA matches HEAD but the completeness check flags the index as
+ * incomplete, so an incremental update cannot self-heal. Mirrors the
+ * Muzehub-code reproduction in issue #547.
+ */
+export const SAMPLE_DRIFT_DETECTED_RESULT: CoordinatorResult = {
+  status: "drift_detected",
+  commitSha: TEST_COMMIT_SHAS.head,
+  commitMessage: "up-to-date",
+  stats: SAMPLE_NO_CHANGES_STATS,
+  errors: [],
+  durationMs: 180,
+  completenessCheck: {
+    status: "incomplete",
+    indexedFileCount: 89,
+    eligibleFileCount: 424,
+    missingFileCount: 335,
+    divergencePercent: 79,
+    durationMs: 142,
+  },
+};
+
+/**
  * Helper: Create mock GitHub commit comparison response
  *
  * @param base - Base commit SHA

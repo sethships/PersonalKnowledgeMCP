@@ -251,6 +251,47 @@ export async function updateRepositoryCommand(
       return;
     }
 
+    // Handle drift detected: HEAD SHA matches the tracked commit but the index
+    // is incomplete, so an incremental update cannot self-heal. Surface the
+    // discrepancy and exit non-zero so CI/cron workflows don't silently pass.
+    if (result.status === "drift_detected") {
+      spinner.warn(chalk.yellow(`⚠ Drift detected for ${repositoryName}`));
+
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            formatUpdateResultJson(repositoryName, result, repo.lastIndexedCommitSha),
+            null,
+            2
+          )
+        );
+      } else {
+        console.log(
+          chalk.yellow(`  The tracked commit matches HEAD, but the index is missing content.`)
+        );
+        const completeness = result.completenessCheck;
+        if (completeness) {
+          console.log(`  ${chalk.gray("Indexed files:")} ${completeness.indexedFileCount}`);
+          console.log(
+            `  ${chalk.gray("Eligible files on disk:")} ${completeness.eligibleFileCount}`
+          );
+          console.log(
+            `  ${chalk.gray("Missing:")} ${completeness.missingFileCount} (${completeness.divergencePercent}%)`
+          );
+        }
+        console.log(
+          chalk.cyan(
+            `\n  To recover: ${chalk.bold(`bun run cli update ${repositoryName} --force`)}`
+          )
+        );
+      }
+
+      throw new Error(
+        `Drift detected for '${repositoryName}': tracked SHA matches HEAD but index is incomplete. ` +
+          `Re-run with --force to re-index.`
+      );
+    }
+
     // Handle updated status
     if (result.status === "updated") {
       spinner.succeed(chalk.green(`✓ Updated ${repositoryName}`));

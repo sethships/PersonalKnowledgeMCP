@@ -45,12 +45,20 @@ export interface CoordinatorConfig {
  * Result status for an incremental update operation.
  *
  * Indicates the outcome of the update attempt:
- * - `no_changes`: HEAD commit matches last indexed commit, no action taken
+ * - `no_changes`: HEAD commit matches last indexed commit and the index is healthy; no action taken
  * - `updated`: Incremental update completed successfully (includes partial success)
  * - `failed`: Update failed with errors (all files failed)
  * - `incomplete`: Eligible files existed but all were filtered out; SHA not advanced
+ * - `drift_detected`: HEAD commit matches last indexed commit but the completeness check
+ *   reports the index is incomplete (chunks missing relative to files on disk). The tracked
+ *   SHA has drifted ahead of what is actually indexed; a forced re-index is required to recover.
  */
-export type CoordinatorStatus = "no_changes" | "updated" | "failed" | "incomplete";
+export type CoordinatorStatus =
+  | "no_changes"
+  | "updated"
+  | "failed"
+  | "incomplete"
+  | "drift_detected";
 
 /**
  * Complete result of an incremental update operation.
