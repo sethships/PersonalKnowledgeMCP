@@ -93,6 +93,18 @@ function createUpdateAllTable(results: UpdateResult[]): InstanceType<typeof Tabl
         chalk.gray("-"),
         `${result.durationMs}ms`,
       ]);
+    } else if (result.status === "drift_detected") {
+      const missing = result.completenessCheck?.missingFileCount ?? "?";
+      const pct = result.completenessCheck?.divergencePercent ?? "?";
+      const commit = result.commitSha ? result.commitSha.substring(0, 7) : "-";
+      table.push([
+        repository,
+        chalk.yellow("Drift"),
+        commit,
+        chalk.yellow(`${missing} missing (${pct}%)`),
+        chalk.gray("-"),
+        `${result.durationMs}ms`,
+      ]);
     } else if (result.status === "updated") {
       const commitRange = result.commitSha ? result.commitSha.substring(0, 7) : "-";
       table.push([
@@ -159,6 +171,12 @@ export async function updateAllCommand(
       // Stop spinner based on result
       if (result.status === "no_changes") {
         spinner.info(chalk.cyan(`${repo.name} is already up-to-date`));
+      } else if (result.status === "drift_detected") {
+        spinner.warn(
+          chalk.yellow(
+            `${repo.name} drift detected — run 'pk-mcp update ${repo.name} --force' to recover`
+          )
+        );
       } else if (result.status === "updated") {
         if (result.errors.length > 0) {
           spinner.warn(chalk.yellow(`${repo.name} updated with ${result.errors.length} warnings`));
@@ -183,11 +201,14 @@ export async function updateAllCommand(
   // Display summary
   console.log(); // Blank line
 
+  const drifted = results.filter((r) => r.result?.status === "drift_detected").length;
+
   if (options.json) {
     const summary = {
       total: results.length,
       updated: results.filter((r) => r.result?.status === "updated").length,
       current: results.filter((r) => r.result?.status === "no_changes").length,
+      drift_detected: drifted,
       failed: results.filter((r) => r.error || r.result?.status === "failed").length,
     };
 
@@ -201,6 +222,7 @@ export async function updateAllCommand(
             error: r.error,
             stats: r.result?.stats,
             durationMs: r.result?.durationMs,
+            completenessCheck: r.result?.completenessCheck,
           })),
         },
         null,
@@ -219,8 +241,18 @@ export async function updateAllCommand(
     const summaryParts: string[] = [];
     if (updated > 0) summaryParts.push(chalk.green(`${updated} updated`));
     if (current > 0) summaryParts.push(chalk.cyan(`${current} current`));
+    if (drifted > 0) summaryParts.push(chalk.yellow(`${drifted} drift_detected`));
     if (failed > 0) summaryParts.push(chalk.red(`${failed} failed`));
 
     console.log(chalk.bold("Summary: ") + summaryParts.join(", "));
+  }
+
+  // Exit non-zero if any drift was detected so CI workflows catch it.
+  // This mirrors the single-repo `update <name>` command's throw-on-drift.
+  if (drifted > 0) {
+    throw new Error(
+      `Drift detected in ${drifted} repository/repositories. ` +
+        `Re-run each with 'pk-mcp update <repo> --force' to re-index.`
+    );
   }
 }

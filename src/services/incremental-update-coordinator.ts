@@ -314,20 +314,10 @@ export class IncrementalUpdateCoordinator {
             repositoryName,
             logger
           );
+          // runCompletenessCheck already emits a structured warn on `incomplete`,
+          // so don't log a second line here. The returned status below is what
+          // callers act on.
           const isDrift = noChangesCompletenessCheck?.status === "incomplete";
-          if (isDrift && noChangesCompletenessCheck) {
-            logger.warn(
-              {
-                operation: "coordinator_drift_detected",
-                repository: repositoryName,
-                indexedFileCount: noChangesCompletenessCheck.indexedFileCount,
-                eligibleFileCount: noChangesCompletenessCheck.eligibleFileCount,
-                missingFileCount: noChangesCompletenessCheck.missingFileCount,
-                divergencePercent: noChangesCompletenessCheck.divergencePercent,
-              },
-              "Drift detected: HEAD SHA matches tracked commit but index is incomplete; recommend forced re-index"
-            );
-          }
           return {
             status: isDrift ? "drift_detected" : "no_changes",
             commitSha: headCommit.sha,
@@ -404,20 +394,10 @@ export class IncrementalUpdateCoordinator {
             repositoryName,
             logger
           );
+          // runCompletenessCheck already emits a structured warn on `incomplete`,
+          // so don't log a second line here. The returned status below is what
+          // callers act on.
           const isDrift = noChangesCompletenessCheck?.status === "incomplete";
-          if (isDrift && noChangesCompletenessCheck) {
-            logger.warn(
-              {
-                operation: "coordinator_drift_detected",
-                repository: repositoryName,
-                indexedFileCount: noChangesCompletenessCheck.indexedFileCount,
-                eligibleFileCount: noChangesCompletenessCheck.eligibleFileCount,
-                missingFileCount: noChangesCompletenessCheck.missingFileCount,
-                divergencePercent: noChangesCompletenessCheck.divergencePercent,
-              },
-              "Drift detected: HEAD SHA matches tracked commit but index is incomplete; recommend forced re-index"
-            );
-          }
           return {
             status: isDrift ? "drift_detected" : "no_changes",
             commitSha: repo.lastIndexedCommitSha,

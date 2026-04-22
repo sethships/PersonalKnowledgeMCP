@@ -187,12 +187,16 @@ describe("Update Repository Command", () => {
 
       const options: UpdateCommandOptions = {};
 
-      await expect(updateRepositoryCommand("test-repo", options, mockDeps)).rejects.toThrow(
-        /Drift detected/
-      );
-      await expect(updateRepositoryCommand("test-repo", options, mockDeps)).rejects.toThrow(
-        /--force/
-      );
+      let err: unknown;
+      try {
+        await updateRepositoryCommand("test-repo", options, mockDeps);
+      } catch (e) {
+        err = e;
+      }
+
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/Drift detected/);
+      expect((err as Error).message).toMatch(/--force/);
     });
 
     it("should print divergence counts and --force recovery hint", async () => {

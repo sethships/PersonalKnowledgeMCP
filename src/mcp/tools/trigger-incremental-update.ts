@@ -22,6 +22,7 @@ import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
 import type { MCPRateLimiter } from "../rate-limiter.js";
 import type { JobTracker } from "../job-tracker.js";
+import { buildDriftRecoveryHint } from "./utils/drift-recovery-hint.js";
 
 /**
  * Timeout for update operations (10 minutes)
@@ -219,9 +220,7 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   }
 
   if (result.status === "drift_detected") {
-    response.recovery_hint =
-      `Index drift detected: HEAD SHA matches the tracked commit but the index is incomplete. ` +
-      `Run 'bun run cli update ${repository} --force' to re-index and recover.`;
+    response.recovery_hint = buildDriftRecoveryHint(repository);
   }
 
   // Include graph statistics if available

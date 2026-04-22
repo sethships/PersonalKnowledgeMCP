@@ -202,6 +202,34 @@ Triggers an incremental update for a repository.
 }
 ```
 
+**Response (Drift Detected):**
+```json
+{
+  "status": "drift_detected",
+  "repository": "my-api",
+  "commit_sha": "7eee88b",
+  "commit_message": "up-to-date",
+  "completeness_status": "incomplete",
+  "completeness_indexed_files": 89,
+  "completeness_eligible_files": 424,
+  "completeness_missing_files": 335,
+  "completeness_divergence_percent": 79,
+  "recovery_hint": "Index drift detected: HEAD SHA matches the tracked commit but the index is incomplete. Run 'bun run cli update my-api --force' to re-index and recover."
+}
+```
+
+When `drift_detected` is returned, the tracked SHA matches HEAD but the index is
+incomplete — incremental updates cannot self-heal this state. Trigger a forced
+re-index via `pk-mcp update <repo> --force` (or the equivalent API call).
+
+**CI workflow guidance:**
+- Workflows using the `pk-mcp update <repo>` or `pk-mcp update --all` CLI wrappers will
+  exit non-zero automatically when drift is detected — no extra handling needed.
+- Workflows calling the HTTP API directly should check `status === "drift_detected"`
+  and alert (e.g., file an issue, page on-call, open a follow-up PR). Do not swallow
+  drift responses with `continue-on-error: true` — that re-creates the original
+  failure mode.
+
 ## Error Handling
 
 ### Retry on Failure
