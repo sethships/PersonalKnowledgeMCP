@@ -96,21 +96,31 @@ function createMockIngestionService(
 // Helper to create mock update coordinator
 function createMockUpdateCoordinator(
   options: {
-    status?: "updated" | "no_changes" | "failed";
+    status?: "updated" | "no_changes" | "failed" | "drift_detected";
     stats?: { filesAdded: number; filesModified: number; filesDeleted: number };
     errors?: string[];
+    completenessCheck?: {
+      status: "complete" | "incomplete" | "error";
+      indexedFileCount: number;
+      eligibleFileCount: number;
+      missingFileCount: number;
+      divergencePercent: number;
+      durationMs: number;
+    };
   } = {}
 ): IncrementalUpdateCoordinator {
   const {
     status = "updated",
     stats = { filesAdded: 5, filesModified: 3, filesDeleted: 1 },
     errors = [],
+    completenessCheck,
   } = options;
   return {
     updateRepository: mock(async () => ({
       status,
       stats,
       errors,
+      ...(completenessCheck ? { completenessCheck } : {}),
     })),
   } as unknown as IncrementalUpdateCoordinator;
 }
@@ -289,6 +299,47 @@ describe("executeRecovery", () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain("up-to-date");
+    });
+
+    it("should report drift as unsuccessful recovery and guide user to --force", async () => {
+      const repo = createMockRepo({ name: "drifted-repo" });
+      const info = createMockInterruptedInfo({
+        repositoryName: "drifted-repo",
+        repository: repo,
+      });
+      const strategy: RecoveryStrategy = {
+        type: "resume",
+        reason: "Test resume",
+        canAutoRecover: true,
+      };
+      const deps: RecoveryDependencies = {
+        repositoryService: createMockRepositoryService([repo]),
+        ingestionService: createMockIngestionService(),
+        updateCoordinator: createMockUpdateCoordinator({
+          status: "drift_detected",
+          stats: { filesAdded: 0, filesModified: 0, filesDeleted: 0 },
+          completenessCheck: {
+            status: "incomplete",
+            indexedFileCount: 89,
+            eligibleFileCount: 424,
+            missingFileCount: 335,
+            divergencePercent: 79,
+            durationMs: 142,
+          },
+        }),
+      };
+
+      const result = await executeRecovery(info, strategy, deps);
+
+      // Drift means the coordinator short-circuited on SHA match while the
+      // index is actually incomplete — recovery did NOT succeed.
+      expect(result.success).toBe(false);
+      expect(result.message).toMatch(/drift/i);
+      expect(result.message).toContain("--force");
+      expect(result.message).toContain("335");
+      // Must NOT fall back to full re-index — that's for exceptions, not drift
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(deps.ingestionService.indexRepository).not.toHaveBeenCalled();
     });
 
     it("should fall back to full reindex when resume fails", async () => {

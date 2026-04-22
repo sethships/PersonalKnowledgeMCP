@@ -346,6 +346,34 @@ async function executeResumeRecovery(
       };
     }
 
+    if (result.status === "drift_detected") {
+      // Incremental update cannot self-heal when the tracked SHA matches HEAD
+      // but the index is incomplete. Recovery is not successful — the caller
+      // needs to run a forced re-index.
+      const durationMsFinal = Date.now() - startTime;
+      const missing = result.completenessCheck?.missingFileCount ?? "?";
+      const pct = result.completenessCheck?.divergencePercent ?? "?";
+      logger.warn(
+        {
+          repository: repositoryName,
+          missingFileCount: result.completenessCheck?.missingFileCount,
+          divergencePercent: result.completenessCheck?.divergencePercent,
+          durationMs: durationMsFinal,
+        },
+        "Resume recovery detected index drift — forced re-index required"
+      );
+      return {
+        strategy,
+        success: false,
+        repositoryName,
+        message:
+          `Index drift detected: tracked SHA matches HEAD but index is incomplete ` +
+          `(${missing} files missing, ${pct}%). ` +
+          `Run 'pk-mcp update ${repositoryName} --force' to re-index and recover.`,
+        durationMs: durationMsFinal,
+      };
+    }
+
     // Partial or failed status
     const durationMsFinal = Date.now() - startTime;
     logger.warn(

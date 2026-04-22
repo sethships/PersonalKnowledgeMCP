@@ -11,6 +11,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
+// Note: await-thenable disable needed for `await expect(...).rejects.toThrow()` patterns
+// which return Promises but ESLint's type inference doesn't recognize this properly
+/* eslint-disable @typescript-eslint/await-thenable */
 
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "bun:test";
 import {
@@ -25,6 +28,7 @@ import {
   SAMPLE_UPDATED_RESULT,
   SAMPLE_UPDATED_WITH_ERRORS_RESULT,
   SAMPLE_FAILED_RESULT,
+  SAMPLE_DRIFT_DETECTED_RESULT,
   TEST_COMMIT_SHAS,
 } from "../../fixtures/incremental-update-fixtures.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
@@ -559,6 +563,53 @@ describe("Update All Command", () => {
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("Updating 3 repositories")
       );
+    });
+  });
+
+  describe("Drift detected", () => {
+    it("should render a Drift row, count it in the summary, and throw non-zero", async () => {
+      const repos = [createSampleRepo("drifted-repo"), createSampleRepo("healthy-repo")];
+      mockListRepositories.mockResolvedValue(repos);
+      mockUpdateRepository
+        .mockResolvedValueOnce(SAMPLE_DRIFT_DETECTED_RESULT)
+        .mockResolvedValueOnce(SAMPLE_NO_CHANGES_RESULT);
+
+      const options: UpdateAllCommandOptions = {};
+
+      await expect(updateAllCommand(options, mockDeps)).rejects.toThrow(/Drift detected in 1/);
+
+      // Table contains the missing-file count (column is truncated so we match
+      // just the number, which is unambiguous).
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("335"));
+      // Table shows "Drift" status cell for the drifted repo
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Drift"));
+      // Summary line shows drift_detected count
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("drift_detected"));
+    });
+
+    it("should include drift_detected in JSON summary and still throw", async () => {
+      const repos = [createSampleRepo("drifted-repo")];
+      mockListRepositories.mockResolvedValue(repos);
+      mockUpdateRepository.mockResolvedValue(SAMPLE_DRIFT_DETECTED_RESULT);
+
+      const options: UpdateAllCommandOptions = { json: true };
+
+      await expect(updateAllCommand(options, mockDeps)).rejects.toThrow(/Drift detected/);
+
+      const jsonCalls = consoleLogSpy.mock.calls.filter((call) => {
+        try {
+          JSON.parse(call[0]);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      expect(jsonCalls.length).toBeGreaterThan(0);
+      const parsed = JSON.parse(jsonCalls[0]![0]);
+      expect(parsed.summary.drift_detected).toBe(1);
+      expect(parsed.results[0].status).toBe("drift_detected");
+      expect(parsed.results[0].completenessCheck).toBeDefined();
+      expect(parsed.results[0].completenessCheck.missingFileCount).toBe(335);
     });
   });
 });

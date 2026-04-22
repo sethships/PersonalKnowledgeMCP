@@ -284,4 +284,83 @@ describe("createGetUpdateStatusHandler", () => {
       expect(text).toContain("  ");
     });
   });
+
+  describe("drift_detected job", () => {
+    it("should surface recovery_hint and completeness fields when drift is detected", async () => {
+      const jobId = jobTracker.createJob("test-repo");
+      jobTracker.updateStatus(jobId, "running");
+      jobTracker.complete(
+        jobId,
+        createMockResult({
+          status: "drift_detected",
+          commitSha: "7eee88b05bfc0ea6748be4954f1e8f986133782b",
+          commitMessage: "up-to-date",
+          stats: {
+            filesAdded: 0,
+            filesModified: 0,
+            filesDeleted: 0,
+            chunksUpserted: 0,
+            chunksDeleted: 0,
+            durationMs: 0,
+          },
+          completenessCheck: {
+            status: "incomplete",
+            indexedFileCount: 89,
+            eligibleFileCount: 424,
+            missingFileCount: 335,
+            divergencePercent: 79,
+            durationMs: 142,
+          },
+        })
+      );
+
+      const result = await handler({ job_id: jobId });
+
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(getTextContent(result.content)) as {
+        result: {
+          status: string;
+          recovery_hint?: string;
+          completeness_status?: string;
+          completeness_missing_files?: number;
+          completeness_divergence_percent?: number;
+        };
+      };
+
+      expect(parsed.result.status).toBe("drift_detected");
+      expect(parsed.result.recovery_hint).toBeDefined();
+      expect(parsed.result.recovery_hint).toContain("--force");
+      expect(parsed.result.recovery_hint).toContain("test-repo");
+      expect(parsed.result.completeness_status).toBe("incomplete");
+      expect(parsed.result.completeness_missing_files).toBe(335);
+      expect(parsed.result.completeness_divergence_percent).toBe(79);
+    });
+
+    it("should not emit recovery_hint on non-drift statuses", async () => {
+      const jobId = jobTracker.createJob("test-repo");
+      jobTracker.complete(
+        jobId,
+        createMockResult({
+          status: "no_changes",
+          completenessCheck: {
+            status: "complete",
+            indexedFileCount: 100,
+            eligibleFileCount: 100,
+            missingFileCount: 0,
+            divergencePercent: 0,
+            durationMs: 20,
+          },
+        })
+      );
+
+      const result = await handler({ job_id: jobId });
+      const parsed = JSON.parse(getTextContent(result.content)) as {
+        result: { status: string; recovery_hint?: string; completeness_status?: string };
+      };
+
+      expect(parsed.result.status).toBe("no_changes");
+      expect(parsed.result.recovery_hint).toBeUndefined();
+      expect(parsed.result.completeness_status).toBe("complete");
+    });
+  });
 });

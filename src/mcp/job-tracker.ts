@@ -10,6 +10,7 @@
 import { randomBytes } from "node:crypto";
 import type { CoordinatorResult } from "../services/incremental-update-coordinator-types.js";
 import { getComponentLogger } from "../logging/index.js";
+import { buildDriftRecoveryHint } from "./tools/utils/drift-recovery-hint.js";
 
 /**
  * Status of an update job
@@ -47,7 +48,7 @@ export interface JobResponse {
   started_at: string;
   completed_at?: string;
   result?: {
-    status: string;
+    status: "updated" | "no_changes" | "incomplete" | "drift_detected" | "failed";
     commit_sha?: string;
     commit_message?: string;
     files_added: number;
@@ -65,6 +66,14 @@ export interface JobResponse {
     graph_files_processed?: number;
     graph_files_skipped?: number;
     graph_error_count?: number;
+    // Index completeness check (present when completeness checker is configured)
+    completeness_status?: "complete" | "incomplete" | "error";
+    completeness_indexed_files?: number;
+    completeness_eligible_files?: number;
+    completeness_missing_files?: number;
+    completeness_divergence_percent?: number;
+    // Populated only when status === "drift_detected"
+    recovery_hint?: string;
   };
   error?: string;
 }
@@ -315,6 +324,23 @@ export class JobTracker {
         response.result.graph_files_processed = job.result.stats.graph.graphFilesProcessed;
         response.result.graph_files_skipped = job.result.stats.graph.graphFilesSkipped;
         response.result.graph_error_count = job.result.stats.graph.graphErrors.length;
+      }
+
+      // Include completeness check results if available
+      if (job.result.completenessCheck) {
+        response.result.completeness_status = job.result.completenessCheck.status;
+        response.result.completeness_indexed_files = job.result.completenessCheck.indexedFileCount;
+        response.result.completeness_eligible_files =
+          job.result.completenessCheck.eligibleFileCount;
+        response.result.completeness_missing_files = job.result.completenessCheck.missingFileCount;
+        response.result.completeness_divergence_percent =
+          job.result.completenessCheck.divergencePercent;
+      }
+
+      // Populate recovery_hint only on drift_detected so async callers
+      // polling get_update_status see the same guidance as sync callers
+      if (job.result.status === "drift_detected") {
+        response.result.recovery_hint = buildDriftRecoveryHint(job.repository);
       }
     }
 
