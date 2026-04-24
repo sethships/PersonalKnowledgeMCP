@@ -3,6 +3,11 @@
 > **Note:** This guide is being updated for the FalkorDB migration. Some sections still reference Neo4j.
 > The graph database has been migrated from Neo4j to FalkorDB. See [Migration Guide](graph-database-migration.md) for details.
 > Neo4j-specific backup/restore scripts will be replaced with FalkorDB equivalents in a future update.
+>
+> **Cross-machine migration:** A unified export/import workflow covering all three storage backends
+> (ChromaDB, FalkorDB, and repository metadata) is being designed. See the
+> [Cross-Machine Database Migration PRD](pm/DB-Migration-Feature-PRD.md) for the product-level
+> requirements. Operational content in this file will be updated once that feature ships.
 
 Comprehensive operations runbook for managing Docker services in the Personal Knowledge MCP project. This guide covers daily operations, troubleshooting, backup/restore procedures, upgrades, and monitoring.
 
