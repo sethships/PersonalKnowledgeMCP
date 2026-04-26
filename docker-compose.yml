@@ -140,7 +140,9 @@ services:
       - default
       - all
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host port is configurable via POSTGRES_PORT (default 5432) so it can
+      # be moved off the standard port when other Postgres instances are running.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./init-scripts:/docker-entrypoint-initdb.d:ro
