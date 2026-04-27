@@ -11,6 +11,8 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import {
   TransformersJsEmbeddingProvider,
+  TRANSFORMERSJS_MODEL_DIMENSIONS,
+  getTransformersJsModelDimensions,
   type TransformersJsProviderConfig,
 } from "../../../src/providers/transformersjs-embedding.js";
 import { EmbeddingValidationError } from "../../../src/providers/errors.js";
@@ -275,5 +277,24 @@ describe("TransformersJsEmbeddingProvider - Mock Integration", () => {
 
     const output = await mockPipeline.call("Hello");
     expect(output.data).toBeInstanceOf(Float32Array);
+  });
+});
+
+describe("getTransformersJsModelDimensions", () => {
+  test("returns 384 for all-MiniLM-L6-v2", () => {
+    expect(getTransformersJsModelDimensions("Xenova/all-MiniLM-L6-v2")).toBe(384);
+  });
+
+  test("returns 768 for bge-base-en-v1.5", () => {
+    expect(getTransformersJsModelDimensions("Xenova/bge-base-en-v1.5")).toBe(768);
+  });
+
+  test("returns undefined for unknown model so caller can fall back", () => {
+    expect(getTransformersJsModelDimensions("not-in-table/whatever")).toBeUndefined();
+  });
+
+  test("MODEL_DIMENSIONS table is non-empty and contains the default model", () => {
+    expect(Object.keys(TRANSFORMERSJS_MODEL_DIMENSIONS).length).toBeGreaterThan(0);
+    expect(TRANSFORMERSJS_MODEL_DIMENSIONS["Xenova/all-MiniLM-L6-v2"]).toBe(384);
   });
 });

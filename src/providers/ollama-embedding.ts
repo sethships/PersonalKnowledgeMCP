@@ -16,6 +16,32 @@ import {
 } from "./errors.js";
 
 /**
+ * Output dimensions for popular Ollama embedding models.
+ *
+ * Like Transformers.js, an Ollama model produces a fixed-size vector regardless
+ * of any `dimensions` value the caller passes. The factory uses this to overwrite
+ * a stale env-derived `config.dimensions` with the model's true size before
+ * constructing the provider. Ollama model names may carry a `:tag` suffix
+ * (e.g. `nomic-embed-text:latest`) — `getOllamaModelDimensions` strips it.
+ */
+export const OLLAMA_MODEL_DIMENSIONS: Readonly<Record<string, number>> = {
+  "nomic-embed-text": 768,
+  "mxbai-embed-large": 1024,
+  "all-minilm": 384,
+  "snowflake-arctic-embed": 1024,
+};
+
+/**
+ * Resolve the output dimension for an Ollama model by name (with or without tag).
+ *
+ * @returns The known output dimension, or `undefined` if the model is not in the table.
+ */
+export function getOllamaModelDimensions(modelName: string): number | undefined {
+  const baseName = modelName.split(":")[0] ?? modelName;
+  return OLLAMA_MODEL_DIMENSIONS[baseName];
+}
+
+/**
  * Configuration specific to Ollama embedding provider
  */
 export interface OllamaProviderConfig extends EmbeddingProviderConfig {

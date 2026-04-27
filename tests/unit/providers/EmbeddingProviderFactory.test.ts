@@ -155,6 +155,61 @@ describe("EmbeddingProviderFactory", () => {
 
       expect(() => factory.createProvider(config)).toThrow("openai, transformersjs, ollama");
     });
+
+    // Regression: a stale env-default `EMBEDDING_DIMENSIONS=1536` (an OpenAI shape)
+    // was being passed through to the transformersjs/ollama provider and recorded in
+    // repository metadata, causing search-time dimension-mismatch failures. The factory
+    // must override `config.dimensions` with the model's true output size.
+    test("overrides config.dimensions with model's true size for transformersjs", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 1536, // wrong (OpenAI default leaking through)
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
+      expect(provider.dimensions).toBe(384);
+    });
+
+    test("overrides config.dimensions with model's true size for ollama", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 1536, // wrong
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.dimensions).toBe(768);
+    });
+
+    test("falls back to caller-supplied dimensions for unknown transformersjs model", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "some/custom-model-not-in-table",
+        dimensions: 512,
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+        options: { modelPath: "some/custom-model-not-in-table" },
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider.dimensions).toBe(512);
+    });
   });
 
   describe("listAvailableProviders", () => {

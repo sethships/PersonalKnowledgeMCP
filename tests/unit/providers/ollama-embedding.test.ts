@@ -9,6 +9,8 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import {
   OllamaEmbeddingProvider,
+  OLLAMA_MODEL_DIMENSIONS,
+  getOllamaModelDimensions,
   type OllamaProviderConfig,
 } from "../../../src/providers/ollama-embedding.js";
 import {
@@ -548,5 +550,29 @@ describe("OllamaEmbeddingProvider", () => {
 
       expect(capturedBody.keep_alive).toBe("30m");
     });
+  });
+});
+
+describe("getOllamaModelDimensions", () => {
+  test("returns 768 for nomic-embed-text", () => {
+    expect(getOllamaModelDimensions("nomic-embed-text")).toBe(768);
+  });
+
+  test("returns 1024 for mxbai-embed-large", () => {
+    expect(getOllamaModelDimensions("mxbai-embed-large")).toBe(1024);
+  });
+
+  test("strips :tag suffix before lookup", () => {
+    expect(getOllamaModelDimensions("nomic-embed-text:latest")).toBe(768);
+    expect(getOllamaModelDimensions("nomic-embed-text:v1")).toBe(768);
+  });
+
+  test("returns undefined for unknown model so caller can fall back", () => {
+    expect(getOllamaModelDimensions("not-in-table-model")).toBeUndefined();
+  });
+
+  test("MODEL_DIMENSIONS table is non-empty and contains the default model", () => {
+    expect(Object.keys(OLLAMA_MODEL_DIMENSIONS).length).toBeGreaterThan(0);
+    expect(OLLAMA_MODEL_DIMENSIONS["nomic-embed-text"]).toBe(768);
   });
 });

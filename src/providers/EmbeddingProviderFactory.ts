@@ -11,9 +11,14 @@ import type { EmbeddingProvider, EmbeddingProviderConfig } from "./types.js";
 import { OpenAIEmbeddingProvider, type OpenAIProviderConfig } from "./openai-embedding.js";
 import {
   TransformersJsEmbeddingProvider,
+  getTransformersJsModelDimensions,
   type TransformersJsProviderConfig,
 } from "./transformersjs-embedding.js";
-import { OllamaEmbeddingProvider, type OllamaProviderConfig } from "./ollama-embedding.js";
+import {
+  OllamaEmbeddingProvider,
+  getOllamaModelDimensions,
+  type OllamaProviderConfig,
+} from "./ollama-embedding.js";
 import { EmbeddingValidationError } from "./errors.js";
 
 /**
@@ -276,9 +281,15 @@ export class EmbeddingProviderFactory {
   private createTransformersJsProvider(
     config: EmbeddingProviderConfig
   ): TransformersJsEmbeddingProvider {
+    const modelPath = (config.options?.["modelPath"] as string) || "Xenova/all-MiniLM-L6-v2";
+    // The model produces a fixed-size vector. Override any caller-supplied dimensions
+    // (commonly an OpenAI-shaped 1536 from EMBEDDING_DIMENSIONS env default) with the
+    // model's true output size so downstream metadata is accurate.
+    const trueDimensions = getTransformersJsModelDimensions(modelPath) ?? config.dimensions;
     const transformersConfig: TransformersJsProviderConfig = {
       ...config,
-      modelPath: (config.options?.["modelPath"] as string) || "Xenova/all-MiniLM-L6-v2",
+      dimensions: trueDimensions,
+      modelPath,
       cacheDir: Bun.env["TRANSFORMERS_CACHE"] || undefined,
       quantized: (config.options?.["quantized"] as boolean) || false,
     };
@@ -325,9 +336,14 @@ export class EmbeddingProviderFactory {
       baseUrl = `http://${host}:${port}`;
     }
 
+    const modelName = (config.options?.["modelName"] as string) || "nomic-embed-text";
+    // Same reasoning as transformersjs: override any caller-supplied dimensions
+    // with the model's true output size.
+    const trueDimensions = getOllamaModelDimensions(modelName) ?? config.dimensions;
     const ollamaConfig: OllamaProviderConfig = {
       ...config,
-      modelName: (config.options?.["modelName"] as string) || "nomic-embed-text",
+      dimensions: trueDimensions,
+      modelName,
       baseUrl,
       keepAlive: (config.options?.["keepAlive"] as string) || "5m",
     };

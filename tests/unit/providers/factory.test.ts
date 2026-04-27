@@ -351,11 +351,15 @@ describe("createEmbeddingProvider", () => {
       expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
     });
 
-    test("passes dimensions through to provider", () => {
+    test("uses model's true dimensions even when caller-supplied dimensions differ", () => {
+      // The model produces a fixed-size vector (bge-small-en-v1.5 → 384). The factory
+      // must override a stale or wrong caller-supplied `dimensions` with the model's
+      // real output so downstream metadata is accurate. Regression test for the
+      // dimension-mismatch bug where env-default 1536 leaked into transformersjs metadata.
       const config: EmbeddingProviderConfig = {
         provider: "transformersjs",
         model: "Xenova/bge-small-en-v1.5",
-        dimensions: 768, // Different dimensions
+        dimensions: 768, // wrong on purpose
         batchSize: 32,
         maxRetries: 0,
         timeoutMs: 60000,
@@ -365,7 +369,7 @@ describe("createEmbeddingProvider", () => {
       };
 
       const provider = createEmbeddingProvider(config);
-      expect(provider.dimensions).toBe(768);
+      expect(provider.dimensions).toBe(384);
     });
   });
 
