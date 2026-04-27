@@ -19,11 +19,16 @@ import {
  * Output dimensions for popular Ollama embedding models.
  *
  * Like Transformers.js, an Ollama model produces a fixed-size vector regardless
- * of any `dimensions` value the caller passes. The factory uses this to overwrite
- * a stale env-derived `config.dimensions` with the model's true size before
- * constructing the provider. Ollama model names may carry a `:tag` suffix
- * (e.g. `nomic-embed-text:latest`) — `getOllamaModelDimensions` strips it.
+ * of any `dimensions` value the caller passes. The provider constructor uses
+ * this to overwrite a stale `config.dimensions` (often an OpenAI-shaped 1536
+ * default leaked from `dependency-init.ts` / `index.ts`) with the model's true
+ * size before initializing. Ollama model names may carry a `:tag` suffix (e.g.
+ * `nomic-embed-text:latest`) — `getOllamaModelDimensions` strips it.
  */
+// NOTE: keep this table in sync with the Ollama model registry.
+// Models not listed here fall back to the caller-supplied `config.dimensions`
+// (which is usually wrong — see ADR-0003 / issue #557). Add new entries when
+// users adopt new Ollama embedding models.
 export const OLLAMA_MODEL_DIMENSIONS: Readonly<Record<string, number>> = {
   "nomic-embed-text": 768,
   "mxbai-embed-large": 1024,
@@ -154,7 +159,11 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     this.validateConfig(config);
 
     this.modelId = config.modelName;
-    this.dimensions = config.dimensions;
+    // The model produces a fixed-size vector. Prefer the canonical lookup over
+    // any caller-supplied `dimensions` (which historically leaked the OpenAI
+    // env-default of 1536). Falls back to `config.dimensions` only for models
+    // not yet in the table — see OLLAMA_MODEL_DIMENSIONS.
+    this.dimensions = getOllamaModelDimensions(config.modelName) ?? config.dimensions;
     this.baseUrl = config.baseUrl || "http://localhost:11434";
     this.keepAlive = config.keepAlive || "5m";
     this.timeoutMs = config.timeoutMs;

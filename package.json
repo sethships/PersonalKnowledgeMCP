@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts --outfile dist/index.js --target bun --external chromadb --external @xenova/transformers --external onnxruntime-node --external pdfjs-dist && bun build src/cli/index.ts --outfile dist/cli.js --target bun --external chromadb --external @xenova/transformers --external onnxruntime-node --external pdfjs-dist",
+    "build": "bun build src/index.ts --outfile dist/index.js --target bun --external chromadb --external @xenova/transformers --external onnxruntime-node --external pdfjs-dist --external pdf-parse && bun build src/cli/index.ts --outfile dist/cli.js --target bun --external chromadb --external @xenova/transformers --external onnxruntime-node --external pdfjs-dist --external pdf-parse",
     "dev": "bun --watch src/index.ts",
     "start": "bun run dist/index.js",
     "cli": "bun run dist/cli.js",

@@ -11,14 +11,9 @@ import type { EmbeddingProvider, EmbeddingProviderConfig } from "./types.js";
 import { OpenAIEmbeddingProvider, type OpenAIProviderConfig } from "./openai-embedding.js";
 import {
   TransformersJsEmbeddingProvider,
-  getTransformersJsModelDimensions,
   type TransformersJsProviderConfig,
 } from "./transformersjs-embedding.js";
-import {
-  OllamaEmbeddingProvider,
-  getOllamaModelDimensions,
-  type OllamaProviderConfig,
-} from "./ollama-embedding.js";
+import { OllamaEmbeddingProvider, type OllamaProviderConfig } from "./ollama-embedding.js";
 import { EmbeddingValidationError } from "./errors.js";
 
 /**
@@ -281,14 +276,17 @@ export class EmbeddingProviderFactory {
   private createTransformersJsProvider(
     config: EmbeddingProviderConfig
   ): TransformersJsEmbeddingProvider {
-    const modelPath = (config.options?.["modelPath"] as string) || "Xenova/all-MiniLM-L6-v2";
-    // The model produces a fixed-size vector. Override any caller-supplied dimensions
-    // (commonly an OpenAI-shaped 1536 from EMBEDDING_DIMENSIONS env default) with the
-    // model's true output size so downstream metadata is accurate.
-    const trueDimensions = getTransformersJsModelDimensions(modelPath) ?? config.dimensions;
+    // Fall back to `config.model` so users who set only EMBEDDING_MODEL (without
+    // an explicit `options.modelPath`) get their actual model loaded. Without
+    // this fallback the lookup silently keyed off the hardcoded default and
+    // ignored the user's intent. The provider constructor performs the real
+    // dimension lookup; the caller-supplied `config.dimensions` (typically an
+    // OpenAI-shaped 1536 default leaked from `dependency-init.ts` / `index.ts`)
+    // is overridden there for any model present in the dimensions table.
+    const modelPath =
+      (config.options?.["modelPath"] as string) || config.model || "Xenova/all-MiniLM-L6-v2";
     const transformersConfig: TransformersJsProviderConfig = {
       ...config,
-      dimensions: trueDimensions,
       modelPath,
       cacheDir: Bun.env["TRANSFORMERS_CACHE"] || undefined,
       quantized: (config.options?.["quantized"] as boolean) || false,
@@ -336,13 +334,14 @@ export class EmbeddingProviderFactory {
       baseUrl = `http://${host}:${port}`;
     }
 
-    const modelName = (config.options?.["modelName"] as string) || "nomic-embed-text";
-    // Same reasoning as transformersjs: override any caller-supplied dimensions
-    // with the model's true output size.
-    const trueDimensions = getOllamaModelDimensions(modelName) ?? config.dimensions;
+    // Fall back to `config.model` so users who set only EMBEDDING_MODEL (without
+    // an explicit `options.modelName`) get their actual model loaded. Same
+    // reasoning as the transformersjs path — see that branch for full context.
+    // The provider constructor handles the dimension override.
+    const modelName =
+      (config.options?.["modelName"] as string) || config.model || "nomic-embed-text";
     const ollamaConfig: OllamaProviderConfig = {
       ...config,
-      dimensions: trueDimensions,
       modelName,
       baseUrl,
       keepAlive: (config.options?.["keepAlive"] as string) || "5m",

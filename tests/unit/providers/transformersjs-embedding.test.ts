@@ -232,7 +232,10 @@ describe("TransformersJsEmbeddingProvider", () => {
       const provider = new TransformersJsEmbeddingProvider(bgeConfig);
 
       expect(provider.modelId).toBe("Xenova/bge-small-en-v1.5");
-      expect(provider.dimensions).toBe(768);
+      // The provider constructor looks up the model's true dimension from the
+      // canonical table — bge-small-en-v1.5 is 384, regardless of any wrong
+      // value the fixture/caller may carry. See ADR-0003 / issue #557.
+      expect(provider.dimensions).toBe(384);
     });
   });
 });

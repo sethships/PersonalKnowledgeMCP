@@ -154,6 +154,7 @@ docs/pm/*plan*.md
 
 # Claude Code runtime lock files (e.g. scheduled_tasks.lock for /schedule and /loop)
 .claude/*.lock
+.claude/*.tmp
 
 # Claude Code temporary files
 tmpclaude-*-cwd
