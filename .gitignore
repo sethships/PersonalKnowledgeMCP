@@ -152,6 +152,9 @@ docs/pm/*plan*.md
 # Claude Code MCP configuration (machine-specific paths)
 .claude/mcp.json
 
+# Claude Code runtime lock files (e.g. scheduled_tasks.lock for /schedule and /loop)
+.claude/*.lock
+
 # Claude Code temporary files
 tmpclaude-*-cwd
 
