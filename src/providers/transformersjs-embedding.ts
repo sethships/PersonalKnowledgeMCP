@@ -19,6 +19,43 @@ import { EmbeddingError, EmbeddingValidationError, EmbeddingNetworkError } from 
 const DEFAULT_CACHE_DIR = path.join(os.homedir(), ".cache", "huggingface", "transformers");
 
 /**
+ * Output dimensions for popular Transformers.js embedding models.
+ *
+ * The Transformers.js model produces a fixed-size vector regardless of any
+ * `dimensions` value the caller passes in config. The provider constructor
+ * uses this map to overwrite a stale `config.dimensions` (which often defaults
+ * to an OpenAI-shaped 1536 leaked from `dependency-init.ts` / `index.ts`) with
+ * the model's true output size before initializing.
+ */
+// NOTE: keep this table in sync with the model's HuggingFace metadata.
+// Models not listed here fall back to the caller-supplied `config.dimensions`
+// (which is usually wrong — see ADR-0003 / issue #557). Add new entries when
+// users adopt new HuggingFace embedding models.
+export const TRANSFORMERSJS_MODEL_DIMENSIONS: Readonly<Record<string, number>> = {
+  "Xenova/all-MiniLM-L6-v2": 384,
+  "Xenova/all-MiniLM-L12-v2": 384,
+  "Xenova/bge-small-en-v1.5": 384,
+  "Xenova/bge-base-en-v1.5": 768,
+  "Xenova/bge-large-en-v1.5": 1024,
+  "Xenova/gte-small": 384,
+  "Xenova/gte-base": 768,
+  "Xenova/gte-large": 1024,
+  "Xenova/e5-small-v2": 384,
+  "Xenova/e5-base-v2": 768,
+  "Xenova/e5-large-v2": 1024,
+};
+
+/**
+ * Resolve the output dimension for a Transformers.js model by path.
+ *
+ * @returns The known output dimension, or `undefined` if the model is not in the table.
+ *   Callers should fall back to whatever value the user supplied in that case.
+ */
+export function getTransformersJsModelDimensions(modelPath: string): number | undefined {
+  return TRANSFORMERSJS_MODEL_DIMENSIONS[modelPath];
+}
+
+/**
  * Progress information during model download
  */
 export interface ModelDownloadProgress {
@@ -131,7 +168,11 @@ export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
     this.validateConfig(config);
     this.config = config;
     this.modelId = config.modelPath;
-    this.dimensions = config.dimensions;
+    // The model produces a fixed-size vector. Prefer the canonical lookup over
+    // any caller-supplied `dimensions` (which historically leaked the OpenAI
+    // env-default of 1536). Falls back to `config.dimensions` only for models
+    // not yet in the table — see TRANSFORMERSJS_MODEL_DIMENSIONS.
+    this.dimensions = getTransformersJsModelDimensions(config.modelPath) ?? config.dimensions;
   }
 
   /**

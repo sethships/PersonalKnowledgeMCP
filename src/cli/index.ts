@@ -744,4 +744,14 @@ watchProgram
     }
   });
 
-program.parse();
+// `program.parseAsync()` awaits all async `.action(...)` handlers, so we know
+// every command has finished by the time it resolves. The explicit `exit(0)`
+// is needed because long-lived clients (ChromaDB HTTP keepalive, FalkorDB Redis
+// connection, embedder workers) keep the event loop alive otherwise.
+// Per-command errors are already caught inside each `.action()` and routed through
+// `handleCommandError` (which calls `process.exit(1)`); the catch here is a safety
+// net for parse-time errors and any handler that didn't catch its own throw.
+program
+  .parseAsync()
+  .then(() => process.exit(0))
+  .catch((err: unknown) => handleCommandError(err));

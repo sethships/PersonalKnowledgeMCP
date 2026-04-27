@@ -155,6 +155,137 @@ describe("EmbeddingProviderFactory", () => {
 
       expect(() => factory.createProvider(config)).toThrow("openai, transformersjs, ollama");
     });
+
+    // Regression: a stale env-default `EMBEDDING_DIMENSIONS=1536` (an OpenAI shape)
+    // was being passed through to the transformersjs/ollama provider and recorded in
+    // repository metadata, causing search-time dimension-mismatch failures. The factory
+    // must override `config.dimensions` with the model's true output size.
+    test("overrides config.dimensions with model's true size for transformersjs", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 1536, // wrong (OpenAI default leaking through)
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
+      expect(provider.dimensions).toBe(384);
+    });
+
+    test("overrides config.dimensions with model's true size for ollama", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 1536, // wrong
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.dimensions).toBe(768);
+    });
+
+    test("falls back to caller-supplied dimensions for unknown transformersjs model", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "some/custom-model-not-in-table",
+        dimensions: 512,
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+        options: { modelPath: "some/custom-model-not-in-table" },
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider.dimensions).toBe(512);
+    });
+
+    // Regression: an EMBEDDING_MODEL env var without an accompanying options.modelPath
+    // (or a caller passing a non-default `model` directly) must still hit the dimension
+    // table. The factory is responsible for resolving `modelPath` from options first,
+    // then `config.model`, then the hardcoded default.
+    test("uses model's true dimensions for a non-default transformersjs model via options.modelPath", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "Xenova/bge-base-en-v1.5",
+        dimensions: 1536, // wrong (OpenAI default leaking through)
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+        options: { modelPath: "Xenova/bge-base-en-v1.5" },
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
+      expect(provider.dimensions).toBe(768);
+    });
+
+    test("uses config.model when options.modelPath is absent so EMBEDDING_MODEL env vars work", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "Xenova/bge-base-en-v1.5",
+        dimensions: 1536, // wrong (OpenAI default leaking through)
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+        // No `options` — simulates EMBEDDING_MODEL set without explicit modelPath option.
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
+      expect(provider.dimensions).toBe(768);
+    });
+
+    test("uses model's true dimensions for a non-default ollama model via options.modelName", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "mxbai-embed-large",
+        dimensions: 1536, // wrong (OpenAI default leaking through)
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+        options: { modelName: "mxbai-embed-large" },
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.dimensions).toBe(1024);
+    });
+
+    test("uses config.model when options.modelName is absent so EMBEDDING_MODEL env vars work for ollama", () => {
+      const factory = new EmbeddingProviderFactory();
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "mxbai-embed-large",
+        dimensions: 1536, // wrong
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+        // No `options` — simulates EMBEDDING_MODEL set without explicit modelName option.
+      };
+
+      const provider = factory.createProvider(config);
+
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.dimensions).toBe(1024);
+    });
   });
 
   describe("listAvailableProviders", () => {

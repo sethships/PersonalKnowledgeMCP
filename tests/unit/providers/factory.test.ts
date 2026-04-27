@@ -283,10 +283,14 @@ describe("createEmbeddingProvider", () => {
       expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
     });
 
-    test("uses default model path when not specified in options", () => {
+    test("uses config.model when options.modelPath is absent", () => {
+      // Regression for issue #557: previously the factory ignored `config.model`
+      // and silently fell through to the hardcoded default whenever
+      // `options.modelPath` was missing, defeating EMBEDDING_MODEL env vars.
+      // Now `config.model` takes precedence over the hardcoded default.
       const config: EmbeddingProviderConfig = {
         provider: "transformersjs",
-        model: "default-model",
+        model: "Xenova/bge-small-en-v1.5",
         dimensions: 384,
         batchSize: 32,
         maxRetries: 0,
@@ -295,7 +299,23 @@ describe("createEmbeddingProvider", () => {
 
       const provider = createEmbeddingProvider(config);
       expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
-      // Default model path is Xenova/all-MiniLM-L6-v2
+      expect(provider.modelId).toBe("Xenova/bge-small-en-v1.5");
+    });
+
+    test("falls back to hardcoded default when neither options.modelPath nor config.model resolves", () => {
+      // When `config.model` is the empty string (an unusual but possible state),
+      // the factory falls through to the hardcoded Xenova/all-MiniLM-L6-v2.
+      const config: EmbeddingProviderConfig = {
+        provider: "transformersjs",
+        model: "",
+        dimensions: 384,
+        batchSize: 32,
+        maxRetries: 0,
+        timeoutMs: 60000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
       expect(provider.modelId).toBe("Xenova/all-MiniLM-L6-v2");
     });
 
@@ -351,11 +371,15 @@ describe("createEmbeddingProvider", () => {
       expect(provider).toBeInstanceOf(TransformersJsEmbeddingProvider);
     });
 
-    test("passes dimensions through to provider", () => {
+    test("uses model's true dimensions even when caller-supplied dimensions differ", () => {
+      // The model produces a fixed-size vector (bge-small-en-v1.5 → 384). The factory
+      // must override a stale or wrong caller-supplied `dimensions` with the model's
+      // real output so downstream metadata is accurate. Regression test for the
+      // dimension-mismatch bug where env-default 1536 leaked into transformersjs metadata.
       const config: EmbeddingProviderConfig = {
         provider: "transformersjs",
         model: "Xenova/bge-small-en-v1.5",
-        dimensions: 768, // Different dimensions
+        dimensions: 768, // wrong on purpose
         batchSize: 32,
         maxRetries: 0,
         timeoutMs: 60000,
@@ -365,7 +389,7 @@ describe("createEmbeddingProvider", () => {
       };
 
       const provider = createEmbeddingProvider(config);
-      expect(provider.dimensions).toBe(768);
+      expect(provider.dimensions).toBe(384);
     });
   });
 
@@ -417,10 +441,31 @@ describe("createEmbeddingProvider", () => {
       expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
     });
 
-    test("uses default model name when not specified in options", () => {
+    test("uses config.model when options.modelName is absent", () => {
+      // Regression for issue #557: previously the factory ignored `config.model`
+      // and silently fell through to the hardcoded `nomic-embed-text` whenever
+      // `options.modelName` was missing, defeating EMBEDDING_MODEL env vars.
+      // Now `config.model` takes precedence over the hardcoded default.
       const config: EmbeddingProviderConfig = {
         provider: "ollama",
-        model: "some-model",
+        model: "mxbai-embed-large",
+        dimensions: 1024,
+        batchSize: 32,
+        maxRetries: 3,
+        timeoutMs: 30000,
+      };
+
+      const provider = createEmbeddingProvider(config);
+      expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
+      expect(provider.modelId).toBe("mxbai-embed-large");
+    });
+
+    test("falls back to hardcoded default when neither options.modelName nor config.model resolves", () => {
+      // When `config.model` is the empty string, the factory falls through to
+      // the hardcoded `nomic-embed-text`.
+      const config: EmbeddingProviderConfig = {
+        provider: "ollama",
+        model: "",
         dimensions: 768,
         batchSize: 32,
         maxRetries: 3,
@@ -429,7 +474,6 @@ describe("createEmbeddingProvider", () => {
 
       const provider = createEmbeddingProvider(config);
       expect(provider).toBeInstanceOf(OllamaEmbeddingProvider);
-      // Default model name is nomic-embed-text
       expect(provider.modelId).toBe("nomic-embed-text");
     });
 
