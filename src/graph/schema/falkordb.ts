@@ -3,13 +3,22 @@
  *
  * FalkorDB schema definitions for the knowledge graph.
  *
- * This module defines the constraints and indexes using OpenCypher syntax
- * compatible with FalkorDB (Redis-based graph database).
+ * FalkorDB's Cypher dialect is restricted compared to Neo4j:
  *
- * Key differences from Neo4j 5.x:
- * - Constraint syntax: ON ... ASSERT ... IS UNIQUE (vs FOR ... REQUIRE ... IS UNIQUE)
- * - NODE KEY not supported - file uniqueness enforced at application level
- * - FULLTEXT indexes not supported - use individual indexes instead
+ * - `CREATE CONSTRAINT ...` is **not supported** as a Cypher statement at all.
+ *   FalkorDB exposes constraints through a Redis-side `GRAPH.CONSTRAINT CREATE`
+ *   command, which also requires a supporting exact-match index. Earlier
+ *   versions of this file emitted Neo4j-flavored `CREATE CONSTRAINT name ON
+ *   (n:L) ASSERT ...` strings; FalkorDB rejects those at parse time and the
+ *   server can drop the connection. We therefore omit constraints from the
+ *   schema and rely on application-level uniqueness, which is already enforced
+ *   by `FalkorDBAdapter.generateNodeId()` + `MERGE` upserts on a deterministic
+ *   `id` property.
+ *
+ * - `CREATE INDEX <name> FOR ...` (named-index form) is also rejected.
+ *   FalkorDB only accepts the unnamed form: `CREATE INDEX FOR (n:L) ON (n.p)`.
+ *
+ * - `FULLTEXT INDEX` is not supported.
  *
  * @see {@link file://./../../../docs/architecture/adr/0002-knowledge-graph-architecture.md} ADR-0002
  */
@@ -17,111 +26,102 @@
 import type { SchemaElement } from "./types.js";
 
 // =============================================================================
-// Constraint Definitions (OpenCypher Syntax for FalkorDB)
+// Constraint Definitions
 // =============================================================================
 
 /**
- * Unique constraints for node types
- *
- * These ensure data integrity by preventing duplicate nodes
- * with the same identifying properties.
- *
- * Uses OpenCypher syntax: ON ... ASSERT ... IS UNIQUE
- *
- * Note: NODE KEY constraints are not supported in FalkorDB.
- * File uniqueness (repository + path) is enforced at the application level
- * using a combined `id` property: "File:{repository}:{path}"
+ * FalkorDB does not accept Cypher `CREATE CONSTRAINT` statements. Uniqueness is
+ * enforced at the application layer through deterministic node IDs and `MERGE`
+ * upserts (see `FalkorDBAdapter.generateNodeId`). The properties that would
+ * otherwise be constrained are still indexed below for query performance.
  */
-export const CONSTRAINTS: readonly SchemaElement[] = [
-  {
-    name: "repo_name",
-    type: "constraint",
-    description: "Ensure repository names are unique",
-    cypher: "CREATE CONSTRAINT repo_name ON (r:Repository) ASSERT r.name IS UNIQUE",
-  },
-  // Note: FalkorDB does not support NODE KEY (composite constraints)
-  // File uniqueness is enforced via the `id` property: "File:{repository}:{path}"
-  {
-    name: "file_id",
-    type: "constraint",
-    description: "Ensure file IDs are unique (composite key workaround)",
-    cypher: "CREATE CONSTRAINT file_id ON (f:File) ASSERT f.id IS UNIQUE",
-  },
-  {
-    name: "chunk_id",
-    type: "constraint",
-    description: "Ensure chunk ChromaDB IDs are unique",
-    cypher: "CREATE CONSTRAINT chunk_id ON (c:Chunk) ASSERT c.chromaId IS UNIQUE",
-  },
-  {
-    name: "concept_name",
-    type: "constraint",
-    description: "Ensure concept names are unique",
-    cypher: "CREATE CONSTRAINT concept_name ON (co:Concept) ASSERT co.name IS UNIQUE",
-  },
-] as const;
+export const CONSTRAINTS: readonly SchemaElement[] = [] as const;
 
 // =============================================================================
 // Index Definitions
 // =============================================================================
 
 /**
- * Performance indexes for common query patterns
+ * Performance indexes for common query patterns.
  *
- * These indexes speed up lookups on frequently queried properties.
- * FalkorDB index syntax is compatible with OpenCypher.
+ * Uses the unnamed FalkorDB Cypher form: `CREATE INDEX FOR (n:Label) ON (n.p)`.
+ * The first four entries cover the properties that Neo4j enforces with unique
+ * constraints; here they're plain indexes (uniqueness is enforced at the app
+ * layer — see the module docstring).
  */
 export const INDEXES: readonly SchemaElement[] = [
+  // Indexes that backstop application-enforced uniqueness
+  {
+    name: "repository_name",
+    type: "index",
+    description: "Index Repository.name (uniqueness enforced at application layer)",
+    cypher: "CREATE INDEX FOR (r:Repository) ON (r.name)",
+  },
+  {
+    name: "file_id",
+    type: "index",
+    description: "Index File.id, the deterministic key 'File:{repository}:{path}'",
+    cypher: "CREATE INDEX FOR (f:File) ON (f.id)",
+  },
+  {
+    name: "chunk_id",
+    type: "index",
+    description: "Index Chunk.chromaId for chunk lookups",
+    cypher: "CREATE INDEX FOR (c:Chunk) ON (c.chromaId)",
+  },
+  {
+    name: "concept_name",
+    type: "index",
+    description: "Index Concept.name (uniqueness enforced at application layer)",
+    cypher: "CREATE INDEX FOR (co:Concept) ON (co.name)",
+  },
+  // Performance indexes
   {
     name: "file_extension",
     type: "index",
     description: "Index for filtering files by extension",
-    cypher: "CREATE INDEX file_extension FOR (f:File) ON (f.extension)",
+    cypher: "CREATE INDEX FOR (f:File) ON (f.extension)",
   },
   {
     name: "function_name",
     type: "index",
     description: "Index for looking up functions by name",
-    cypher: "CREATE INDEX function_name FOR (fn:Function) ON (fn.name)",
+    cypher: "CREATE INDEX FOR (fn:Function) ON (fn.name)",
   },
   {
     name: "class_name",
     type: "index",
     description: "Index for looking up classes by name",
-    cypher: "CREATE INDEX class_name FOR (c:Class) ON (c.name)",
+    cypher: "CREATE INDEX FOR (c:Class) ON (c.name)",
   },
   {
     name: "module_name",
     type: "index",
     description: "Index for looking up modules by name",
-    cypher: "CREATE INDEX module_name FOR (m:Module) ON (m.name)",
+    cypher: "CREATE INDEX FOR (m:Module) ON (m.name)",
   },
-  // Additional indexes to compensate for lack of fulltext search
   {
     name: "file_repository",
     type: "index",
     description: "Index for filtering files by repository",
-    cypher: "CREATE INDEX file_repository FOR (f:File) ON (f.repository)",
+    cypher: "CREATE INDEX FOR (f:File) ON (f.repository)",
   },
   {
     name: "function_repository",
     type: "index",
     description: "Index for filtering functions by repository",
-    cypher: "CREATE INDEX function_repository FOR (fn:Function) ON (fn.repository)",
+    cypher: "CREATE INDEX FOR (fn:Function) ON (fn.repository)",
   },
   {
     name: "class_repository",
     type: "index",
     description: "Index for filtering classes by repository",
-    cypher: "CREATE INDEX class_repository FOR (c:Class) ON (c.repository)",
+    cypher: "CREATE INDEX FOR (c:Class) ON (c.repository)",
   },
 ] as const;
 
 /**
- * Full-text indexes for semantic search across entities
- *
  * FalkorDB does not support full-text indexes.
- * This array is empty - use regular indexes for basic filtering.
  */
 export const FULLTEXT_INDEXES: readonly SchemaElement[] = [] as const;
 
@@ -129,9 +129,6 @@ export const FULLTEXT_INDEXES: readonly SchemaElement[] = [] as const;
 // Combined Schema
 // =============================================================================
 
-/**
- * All schema elements combined for iteration
- */
 export const ALL_SCHEMA_ELEMENTS: readonly SchemaElement[] = [
   ...CONSTRAINTS,
   ...INDEXES,
