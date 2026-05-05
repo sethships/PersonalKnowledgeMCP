@@ -341,6 +341,8 @@ export class MigrationRunner {
       /index .* already exists/i,
       /duplicate/i,
       /equivalent .* already exists/i,
+      // FalkorDB phrasing: "Attribute 'name' is already indexed"
+      /already indexed/i,
     ];
 
     return alreadyExistsPatterns.some((pattern) => pattern.test(errorMessage));
@@ -352,15 +354,23 @@ export class MigrationRunner {
    * @param migration - Migration that was applied
    */
   private async recordMigration(migration: SchemaMigration): Promise<void> {
+    // Store appliedAt as an ISO string from JS rather than a server-side
+    // temporal call (Neo4j has datetime(); FalkorDB rejects it as
+    // "Unknown function 'datetime'"). The read path already normalizes string
+    // values via `new Date(...)`. Note: on Neo4j this means `s.appliedAt` is
+    // now a String property, not a Cypher DateTime — server-side temporal
+    // arithmetic (e.g. `WHERE s.appliedAt > datetime() - duration(...)`) on
+    // this property is no longer valid.
     const cypher = `
       MERGE (s:SchemaVersion {version: $version})
       SET s.description = $description,
-          s.appliedAt = datetime()
+          s.appliedAt = $appliedAt
     `;
 
     await this.client.runQuery(cypher, {
       version: migration.version,
       description: migration.description,
+      appliedAt: new Date().toISOString(),
     });
   }
 

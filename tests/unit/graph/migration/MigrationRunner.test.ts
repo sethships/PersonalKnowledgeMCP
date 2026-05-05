@@ -425,7 +425,12 @@ describe("MigrationRunner", () => {
     });
 
     test("should record applied migrations in Neo4j", async () => {
-      const recordedMigrations: Array<{ version: string; description: string }> = [];
+      const recordedMigrations: Array<{
+        version: string;
+        description: string;
+        appliedAt: unknown;
+        cypher: string;
+      }> = [];
       const client = {
         ...createMockClient({ appliedVersions: [] }),
         runQuery: async <T>(cypher: string, params?: Record<string, unknown>): Promise<T[]> => {
@@ -433,6 +438,8 @@ describe("MigrationRunner", () => {
             recordedMigrations.push({
               version: params?.["version"] as string,
               description: params?.["description"] as string,
+              appliedAt: params?.["appliedAt"],
+              cypher,
             });
           }
           if (cypher.includes("SchemaVersion") && cypher.includes("MATCH")) {
@@ -449,8 +456,25 @@ describe("MigrationRunner", () => {
       await runner.migrate();
 
       expect(recordedMigrations).toHaveLength(2);
-      expect(recordedMigrations[0]).toEqual({ version: "1.0.0", description: "Initial schema" });
-      expect(recordedMigrations[1]).toEqual({ version: "1.1.0", description: "Add index" });
+      expect(recordedMigrations[0]!.version).toBe("1.0.0");
+      expect(recordedMigrations[0]!.description).toBe("Initial schema");
+      expect(recordedMigrations[1]!.version).toBe("1.1.0");
+      expect(recordedMigrations[1]!.description).toBe("Add index");
+
+      // Regression guard: appliedAt must be passed as a JS-side ISO string
+      // parameter, not derived from a server-side datetime() call (FalkorDB
+      // rejects datetime() as "Unknown function"). See MigrationRunner.recordMigration.
+      // The ISO_8601 regex pins the exact toISOString() shape so a future
+      // refactor that swaps to Date.toString() (also parseable by `new Date()`)
+      // would still fail the assertion.
+      const ISO_8601_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+      for (const recorded of recordedMigrations) {
+        expect(typeof recorded.appliedAt).toBe("string");
+        expect(recorded.appliedAt as string).toMatch(ISO_8601_UTC);
+        expect(Number.isNaN(new Date(recorded.appliedAt as string).getTime())).toBe(false);
+        expect(recorded.cypher).toContain("$appliedAt");
+        expect(recorded.cypher).not.toContain("datetime()");
+      }
     });
 
     test("should execute all statements in a migration", async () => {
