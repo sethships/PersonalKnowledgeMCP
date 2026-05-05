@@ -83,7 +83,20 @@
 
 ## 2. Component-by-Component Task Breakdown
 
-Tasks are grouped by PR (each targeting <400 LoC of diff per CLAUDE.md). Sizes: S ≤ 100 LoC, M ≤ 300, L ≤ 500, XL > 500 (must be split).
+Tasks are grouped below by PR for engineering granularity. **For delivery, the 8 PRs are bundled into 5 phases** tracked as GitHub issues — see Section 6.1. The PR-level groupings remain the unit of internal sequencing within each phase.
+
+Sizes: S ≤ 100 LoC, M ≤ 300, L ≤ 500, XL > 500 (must be split).
+
+| PR | Phase | Issue |
+| -- | ----- | ----- |
+| PR 1 | A — Foundation | [#564](https://github.com/sethships/PersonalKnowledgeMCP/issues/564) |
+| PR 2 | B — Local folder lifecycle | [#565](https://github.com/sethships/PersonalKnowledgeMCP/issues/565) |
+| PR 3 | B — Local folder lifecycle | [#565](https://github.com/sethships/PersonalKnowledgeMCP/issues/565) |
+| PR 4 | C — User-facing surface | [#566](https://github.com/sethships/PersonalKnowledgeMCP/issues/566) |
+| PR 5 | C — User-facing surface | [#566](https://github.com/sethships/PersonalKnowledgeMCP/issues/566) |
+| PR 6 | D — Document graph | [#567](https://github.com/sethships/PersonalKnowledgeMCP/issues/567) |
+| PR 6b | D — Document graph | [#567](https://github.com/sethships/PersonalKnowledgeMCP/issues/567) |
+| PR 7 | E — ADR + polish | [#568](https://github.com/sethships/PersonalKnowledgeMCP/issues/568) |
 
 ### PR 1 — Data model + manifest plumbing (foundation)
 
@@ -441,45 +454,54 @@ These are explicitly out of scope for v1 and tracked here for future planning. E
 
 ## 6. Sequencing & Parallelization
 
-### 6.1 Critical path
+### 6.1 Consolidated 5-phase delivery
+
+The 8 PRs in Section 2 are **delivered as 5 phases** to give reviewers complete vertical slices. Each phase is tracked by a GitHub issue; PRs cite their phase issue.
+
+| Phase | Issue | Bundles | Approx LoC |
+| ----- | ----- | ------- | ---------- |
+| **A — Foundation** | [#564](https://github.com/sethships/PersonalKnowledgeMCP/issues/564) | PR 1 (data model + manifest) | ~300–400 |
+| **B — Local folder lifecycle** | [#565](https://github.com/sethships/PersonalKnowledgeMCP/issues/565) | PR 2 (initial scan) + PR 3 (change detection + incremental update) | ~700–900 |
+| **C — User-facing surface** | [#566](https://github.com/sethships/PersonalKnowledgeMCP/issues/566) | PR 4 (CLI/MCP registration) + PR 5 (watcher + FolderEventRouter) | ~700–900 |
+| **D — Document graph** | [#567](https://github.com/sethships/PersonalKnowledgeMCP/issues/567) | PR 6 (markdown) + PR 6b (PDF/DOCX) | ~700–1100 |
+| **E — ADR + polish** | [#568](https://github.com/sethships/PersonalKnowledgeMCP/issues/568) | PR 7 (ADR-0007, README, CLI/MCP help) | ~150–300 |
+
+Phases B, C, and D **will exceed the 400-LoC project guideline**. Accepted because shipping each as a single coherent PR delivers a complete reviewable feature slice; reviewers should expect to load the design docs as context.
+
+### 6.2 Critical path
 
 ```
-PR 1 (data model + manifest) ──> PR 2 (initial scan) ──> PR 3 (incremental update)
-                                                              │
-                                                              ├──> PR 4 (CLI/MCP surface)
-                                                              │
-                                                              └──> PR 5 (watcher + router)
-                                  PR 6  (markdown doc-graph) ─────────────┘  (joins after PR 3)
-                                  PR 6b (PDF/DOCX doc-graph) ──────────── ┘  (joins after PR 6)
-                                                                              │
-                                                                              ▼
-                                                                            PR 7 (tests + docs)
+Phase A (#564 — types + manifest)
+   │
+   ├──> Phase B (#565 — lifecycle: scan + update)
+   │       │
+   │       └──> Phase C (#566 — CLI/MCP surface + watcher)
+   │
+   └──> Phase D (#567 — doc-graph: markdown + PDF/DOCX)
+                                 │
+                                 ▼
+                       Phase E (#568 — ADR + polish)
+                       (waits for A–D)
 ```
 
-### 6.2 Parallelizable
+### 6.3 Parallelizable
 
-- **PR 6 (markdown doc-graph)** can start as soon as PR 1 lands. It only depends on `RepositoryInfo.source` for its scoping. The `DocEntityExtractor` itself can be developed and unit-tested against fixture markdown files with no live graph database.
-- **PR 6b (PDF/DOCX doc-graph)** depends on PR 6 only for the shared `Document` node schema. Extractor work itself can be drafted in parallel with PR 6 once the schema (T6.1) is locked in.
-- **PR 4 (CLI)** can be developed in parallel with PR 3, mocking the coordinator initially.
-- **PR 5 (watcher)** depends on PR 3 (needs the coordinator to dispatch into) but can be drafted in parallel.
+- **Phase D (#567)** depends on Phase A only — graph schema additions sit on top of the type discriminator. The extractor is intentionally decoupled from the local-folder concept and can be developed and unit-tested against fixture documents with no live local-folder repo. Can run in parallel with B and C if reviewer bandwidth allows.
+- **Within Phase C**, the watcher (PR 5 work) depends on the coordinator landing in Phase B. The CLI/MCP registration (PR 4 work) can be drafted against a mocked coordinator.
 
-### 6.3 Suggested PR order (single-developer path)
+### 6.4 Suggested execution order (single-developer path)
 
-1. PR 1 — Data model + manifest (foundation, blocks everything)
-2. PR 2 — Local-folder ingestion (initial scan)
-3. PR 3 — Change detection + incremental update coordinator
-4. PR 6.1–6.2 + T6.5 — Doc-graph schema + markdown extractor + shared-parse refactor
-5. PR 4 — CLI + MCP registration tool
-6. PR 6.3–6.4 — Wire markdown doc-graph into ingestion + two-pass mentions
-7. PR 6b — PDF/DOCX entity extractor + ingestion wiring + coverage reporting
-8. PR 5 — Watcher + FolderEventRouter
-9. PR 7 — Tests + ADR + README
+1. Phase A — [#564](https://github.com/sethships/PersonalKnowledgeMCP/issues/564) — Foundation (blocks everything).
+2. Phase B — [#565](https://github.com/sethships/PersonalKnowledgeMCP/issues/565) — Lifecycle: scan + change detection + incremental update.
+3. Phase C — [#566](https://github.com/sethships/PersonalKnowledgeMCP/issues/566) — CLI/MCP surface + watcher.
+4. Phase D — [#567](https://github.com/sethships/PersonalKnowledgeMCP/issues/567) — Markdown + PDF/DOCX doc-graph.
+5. Phase E — [#568](https://github.com/sethships/PersonalKnowledgeMCP/issues/568) — ADR + README + CLI help polish.
 
-**Total: 8 PRs** (PR 1, PR 2, PR 3, PR 4, PR 5, PR 6, PR 6b, PR 7). Each PR independently passes `bun run typecheck` + `bun test` + `bun run build` per the mandatory pre-PR checklist.
+Each phase independently passes `bun run typecheck` + `bun test` + `bun run build` per the mandatory pre-PR checklist.
 
-### 6.4 Estimated total size
+### 6.5 Estimated total size
 
-- Net new code: ~2,900–3,600 LoC across 8 PRs (PDF/DOCX adds ~400 LoC).
+- Net new code: ~2,900–3,600 LoC across 5 phase PRs (PDF/DOCX adds ~400 LoC).
 - Modified code: ~450–650 LoC across existing files (the shared-parse refactor adds modest delta to `MarkdownParser` and `IngestionService`).
 - Test code: ~2,400+ LoC (PDF/DOCX adds ~400 LoC of tests + chunk-coverage regression test).
 

@@ -234,7 +234,19 @@ These are the closed decisions from the product/architect review pass. Each entr
 
 ## 7. Phasing
 
-The user's decision to include watching in v1 collapses the originally proposed v1 / v1.1 split. There is a single v1 deliverable.
+The user's decision to include watching in v1 collapses the originally proposed v1 / v1.1 split. There is a single v1 deliverable, executed as **5 sequential phases** (consolidated from the 8-PR breakdown in the implementation plan to deliver coherent vertical slices per review).
+
+### Execution phases (in order)
+
+| Phase | Issue | Scope | Approx LoC |
+| ----- | ----- | ----- | ---------- |
+| **A — Foundation** | [#564](https://github.com/sethships/PersonalKnowledgeMCP/issues/564) | Data model (`source` discriminator, relaxed `UpdateHistoryEntry`) and `FileManifestStore`. | ~300–400 |
+| **B — Local folder lifecycle** | [#565](https://github.com/sethships/PersonalKnowledgeMCP/issues/565) | Initial scan + manifest build + change detection + incremental update. End-to-end programmatic lifecycle. | ~700–900 |
+| **C — User-facing surface** | [#566](https://github.com/sethships/PersonalKnowledgeMCP/issues/566) | CLI auto-detect + `register_local_folder` MCP tool + watcher + `FolderEventRouter`. | ~700–900 |
+| **D — Document graph** | [#567](https://github.com/sethships/PersonalKnowledgeMCP/issues/567) | Markdown graph (full fidelity) + PDF/DOCX graph (lower fidelity, `confidence: "low"` MENTIONS). | ~700–1100 |
+| **E — ADR + polish** | [#568](https://github.com/sethships/PersonalKnowledgeMCP/issues/568) | ADR-0007, README, `feature-summary.md`, CLI/MCP help text. | ~150–300 |
+
+Phases B, C, and D are expected to exceed the 400-LoC PR guideline, accepted because each phase delivers a complete reviewable vertical slice. Phase D may run in parallel with B and C if reviewer bandwidth allows; sequential execution is the default.
 
 ### v1 (current scope)
 
