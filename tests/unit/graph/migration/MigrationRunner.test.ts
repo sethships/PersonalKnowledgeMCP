@@ -464,9 +464,13 @@ describe("MigrationRunner", () => {
       // Regression guard: appliedAt must be passed as a JS-side ISO string
       // parameter, not derived from a server-side datetime() call (FalkorDB
       // rejects datetime() as "Unknown function"). See MigrationRunner.recordMigration.
+      // The ISO_8601 regex pins the exact toISOString() shape so a future
+      // refactor that swaps to Date.toString() (also parseable by `new Date()`)
+      // would still fail the assertion.
+      const ISO_8601_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
       for (const recorded of recordedMigrations) {
         expect(typeof recorded.appliedAt).toBe("string");
-        expect(() => new Date(recorded.appliedAt as string)).not.toThrow();
+        expect(recorded.appliedAt as string).toMatch(ISO_8601_UTC);
         expect(Number.isNaN(new Date(recorded.appliedAt as string).getTime())).toBe(false);
         expect(recorded.cypher).toContain("$appliedAt");
         expect(recorded.cypher).not.toContain("datetime()");
