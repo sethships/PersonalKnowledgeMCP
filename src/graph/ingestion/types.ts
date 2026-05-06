@@ -139,6 +139,11 @@ export type GraphIngestionPhase =
   | "creating_module_nodes" // Creating Module nodes for imports
   | "creating_relationships" // Creating all relationships
   | "verifying" // Verifying graph integrity
+  // Phase D — document graph (issue #567).
+  | "extracting_documents" // Running DocEntityExtractor / PdfDocxEntityExtractor
+  | "building_symbol_index" // Pulling Function/Class/Module from the graph
+  | "resolving_doc_links" // DocLinkResolver: title > stem > section > symbol
+  | "creating_document_nodes" // Writing Document/Section/ExternalLink + edges
   | "completed"; // Ingestion complete
 
 /**
