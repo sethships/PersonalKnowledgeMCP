@@ -39,6 +39,8 @@ import type { GraphService } from "./services/graph-service-types.js";
 // Incremental update dependencies
 import { FileChunker } from "./ingestion/file-chunker.js";
 import { FileScanner } from "./ingestion/file-scanner.js";
+import { RepositoryCloner } from "./ingestion/repository-cloner.js";
+import { IngestionService } from "./services/ingestion-service.js";
 import { GitHubClientImpl } from "./services/github-client.js";
 import { IncrementalUpdatePipeline } from "./services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "./services/incremental-update-coordinator.js";
@@ -55,6 +57,8 @@ import { FolderWatcherService } from "./services/folder-watcher-service.js";
 import { WatchedFolderStoreImpl } from "./services/watched-folder-store.js";
 import { ChangeDetectionService } from "./services/change-detection-service.js";
 import { FolderDocumentIndexingService } from "./services/folder-document-indexing-service.js";
+import { FolderEventRouter } from "./services/folder-event-router.js";
+import { LocalFolderRepoWatchManager } from "./services/local-folder-repo-watch-manager.js";
 import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
 import { DocumentTypeDetector } from "./documents/DocumentTypeDetector.js";
 import { DocumentChunker } from "./documents/DocumentChunker.js";
@@ -304,6 +308,10 @@ async function main(): Promise<void> {
       logger.debug("No watched folders to restore from store");
     }
 
+    // Phase C (#566 / T5.3): the local-folder watcher restoration loop runs
+    // AFTER the GITHUB_PAT branch below, so the final `localFolderCoordinator`
+    // instance is chosen before any watcher attaches (review H-1).
+
     // Create change detection service wrapping folder watcher
     const changeDetectionService = new ChangeDetectionService(folderWatcherService);
 
@@ -351,12 +359,65 @@ async function main(): Promise<void> {
 
     logger.info("Folder watcher and document indexing services initialized");
 
-    // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
+    // Step 5b: Initialize incremental update dependencies. Git-based update
+    // coordinator + rate limiter + job tracker are PAT-gated below; the
+    // local-folder coordinator (Phase C / #566) is NOT — local folders don't
+    // need GitHub. The PAT branch may overwrite `localFolderCoordinator` with
+    // a graph-aware variant when a graph adapter is configured.
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let localFolderCoordinator: LocalFolderUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
     let jobTracker: JobTracker | undefined;
     let updateToolsUnavailableReason: string | undefined;
+
+    // Phase C: build the local-folder watch manager + router up-front so the
+    // coordinator (constructed below) can delegate watch lifecycle to it. The
+    // router subscribes to `folderWatcherService.onFileEvent` alongside Phase
+    // 6's `ChangeDetectionService`; each subscriber inspects `event.folderId`
+    // and acts only on the namespace it owns.
+    const localFolderWatchManager = new LocalFolderRepoWatchManager(folderWatcherService);
+
+    // Default local-folder coordinator (no graph ingestion) — used when no
+    // GITHUB_PAT is set. The PAT branch below replaces this with a
+    // graph-aware variant when both the PAT and a graph adapter are
+    // configured, preserving the prior Phase B behavior for paying users.
+    localFolderCoordinator = new LocalFolderUpdateCoordinator(
+      repositoryService,
+      folderUpdatePipeline,
+      undefined,
+      undefined,
+      {},
+      localFolderWatchManager
+    );
+
+    // The router closure intentionally references `localFolderCoordinator`
+    // (the let-binding, not a snapshot) so the PAT branch below can replace
+    // the instance with a graph-aware variant and the watcher dispatch picks
+    // up the new coordinator on the next event without re-wiring. The guard
+    // (review M-2) handles the case where the PAT branch's catch sets the
+    // coordinator back to `undefined` mid-session.
+    const folderEventRouter = new FolderEventRouter(repositoryService, async (repo) => {
+      if (!localFolderCoordinator) {
+        logger.warn(
+          { repository: repo.name },
+          "Local-folder watcher dispatch fired with no coordinator wired; dropping event"
+        );
+        return;
+      }
+      try {
+        await localFolderCoordinator.updateRepository(repo.name);
+      } catch (error) {
+        logger.error(
+          {
+            repository: repo.name,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Local-folder watcher dispatch failed"
+        );
+      }
+    });
+    folderWatcherService.onFileEvent(folderEventRouter.asEventHandler());
+    logger.info("FolderEventRouter wired alongside Phase 6 ChangeDetectionService");
 
     const envPath = `${process.cwd()}/.env`;
     logger.info({ envPath }, "Resolving GitHub PAT");
@@ -416,9 +477,16 @@ async function main(): Promise<void> {
         );
 
         // Local-folder coordinator shares the metadata service + pipeline.
+        // Phase C: replaces the no-graph default constructed above so that
+        // local-folder updates triggered via `trigger_incremental_update`
+        // populate the graph when a graph adapter is configured.
         localFolderCoordinator = new LocalFolderUpdateCoordinator(
           repositoryService,
-          updatePipeline
+          updatePipeline,
+          undefined,
+          undefined,
+          {},
+          localFolderWatchManager
         );
 
         // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
@@ -446,6 +514,85 @@ async function main(): Promise<void> {
       updateToolsUnavailableReason = "GITHUB_PAT is not configured";
     }
 
+    // Phase C (#566 / T5.3): restore watchers for local-folder repos that had
+    // `watchEnabled === true` when the server last ran. Runs AFTER the PAT
+    // branch (review H-1) so the final `localFolderCoordinator` instance is
+    // chosen before any watcher attaches — this preserves the invariant that
+    // a graph-aware coordinator (when the PAT branch upgraded it) handles
+    // every restored watcher's update calls. Failures are per-repo logged and
+    // skipped so a single broken path can't block startup.
+    if (localFolderCoordinator) {
+      try {
+        const allRepos = await repositoryService.listRepositories();
+        const watchedLocalFolders = allRepos.filter(
+          (r) => r.source === "local-folder" && r.watchEnabled === true
+        );
+        if (watchedLocalFolders.length > 0) {
+          logger.info(
+            { count: watchedLocalFolders.length },
+            "Restoring local-folder watchers from metadata"
+          );
+          for (const repo of watchedLocalFolders) {
+            try {
+              await localFolderCoordinator.startWatching(repo);
+              logger.info(
+                { repository: repo.name, path: repo.localPath },
+                "Restored local-folder watcher"
+              );
+            } catch (error) {
+              logger.warn(
+                {
+                  repository: repo.name,
+                  path: repo.localPath,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                "Failed to restore local-folder watcher - skipping"
+              );
+            }
+          }
+        } else {
+          logger.debug("No local-folder watchers to restore");
+        }
+      } catch (error) {
+        logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Local-folder watcher restoration query failed - skipping all"
+        );
+      }
+    } else {
+      logger.warn("Local-folder coordinator unavailable - watcher restoration skipped");
+    }
+
+    // Step 5c: Build an IngestionService for the `register_local_folder` tool
+    // (Phase C / #566). This is constructed up-front (independent of the
+    // GITHUB_PAT branch above) because local-folder registration does not
+    // require a remote and has no PAT dependency. The repositoryCloner is
+    // wired in for parity with the type contract; it is never invoked for
+    // local-folder paths because the local branch in `IngestionService.index`
+    // skips it entirely.
+    const registrationFileScanner = new FileScanner();
+    const registrationFileChunker = new FileChunker();
+    const registrationDocChunker = new DocumentChunker();
+    const registrationDocTypeDetector = new DocumentTypeDetector();
+    const registrationRepositoryCloner = new RepositoryCloner({
+      clonePath: Bun.env["CLONE_PATH"] || "./data/repositories",
+      githubPat: Bun.env["GITHUB_PAT"],
+      gitPat: Bun.env["GIT_PAT"],
+    });
+    const ingestionService = new IngestionService(
+      registrationRepositoryCloner,
+      registrationFileScanner,
+      registrationFileChunker,
+      embeddingProvider,
+      chromaClient,
+      repositoryService,
+      {
+        documentChunker: registrationDocChunker,
+        documentTypeDetector: registrationDocTypeDetector,
+      }
+    );
+    logger.debug("Ingestion service initialized for register_local_folder MCP tool");
+
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
     const mcpServer = new PersonalKnowledgeMCPServer(
@@ -466,6 +613,7 @@ async function main(): Promise<void> {
         jobTracker,
         documentSearchService,
         listWatchedFoldersService,
+        ingestionService,
         updateToolsUnavailableReason,
       }
     );
@@ -476,6 +624,10 @@ async function main(): Promise<void> {
     // being emitted into a disposed ChangeDetectionService during shutdown.
     mcpServer.registerPreShutdownHook(async () => {
       logger.info("Stopping all folder watchers");
+      // Cancel pending router debounce timers so we don't keep refs after the
+      // watcher fleet stops — otherwise a stale debounce would fire into a
+      // detached repository service.
+      folderEventRouter.shutdown();
       await folderWatcherService.stopAllWatchers();
     });
 

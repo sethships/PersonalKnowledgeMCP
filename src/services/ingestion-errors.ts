@@ -56,6 +56,31 @@ export class RepositoryAlreadyExistsError extends IngestionError {
 }
 
 /**
+ * Error thrown when a `local-folder` registration attempts to claim an
+ * absolute path that is already registered under a different repository name.
+ *
+ * Distinct from `RepositoryAlreadyExistsError` because the user-visible fix is
+ * different: the user supplied a non-colliding name but the underlying path
+ * is shared. Includes the existing registration's name so the message points
+ * to the conflict directly.
+ */
+export class LocalFolderPathAlreadyRegisteredError extends IngestionError {
+  override name = "LocalFolderPathAlreadyRegisteredError";
+
+  constructor(
+    public readonly absolutePath: string,
+    public readonly existingRepository: string
+  ) {
+    super(
+      `Local folder path '${absolutePath}' is already registered as ` +
+        `repository '${existingRepository}'. Use force: true on the existing ` +
+        `registration to reindex, or unregister it first.`,
+      false
+    );
+  }
+}
+
+/**
  * Error thrown when attempting to start indexing while another
  * indexing operation is in progress
  */

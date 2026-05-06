@@ -57,6 +57,30 @@ export interface IndexOptions {
    * @default "private"
    */
   tier?: "private" | "work" | "public";
+
+  /**
+   * Whether the registered repository should have a filesystem watcher
+   * subscribed after the initial scan completes.
+   *
+   * Only meaningful when the path resolves to a `local-folder` source.
+   * Persisted on `RepositoryInfo.watchEnabled` so the MCP server can restore
+   * active watchers across restarts.
+   *
+   * @default false
+   */
+  watch?: boolean;
+
+  /**
+   * Whether the local-folder watcher should follow filesystem symlinks.
+   *
+   * Only meaningful when the path resolves to a `local-folder` source.
+   * Defaults to `false` for safety. When `true`, chokidar is configured to
+   * follow symlinks but the registration code rejects targets outside the
+   * repository root (depth-cap and TOCTOU-aware via `fs.realpath`).
+   *
+   * @default false
+   */
+  followSymlinks?: boolean;
 }
 
 /**

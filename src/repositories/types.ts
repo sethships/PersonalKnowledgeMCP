@@ -330,6 +330,38 @@ export interface RepositoryInfo {
    * avoid case-collisions across distinct repository names.
    */
   lastManifestId?: string;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Local-folder watcher fields (Phase C)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether a filesystem watcher is currently subscribed to this repository.
+   *
+   * Only meaningful when `source === "local-folder"`. Persisted so that the
+   * MCP server can restore active watchers on startup. Toggled by
+   * `LocalFolderUpdateCoordinator.startWatching` / `stopWatching`.
+   */
+  watchEnabled?: boolean;
+
+  /**
+   * Whether the watcher should follow filesystem symlinks.
+   *
+   * Only meaningful when `source === "local-folder"`. Defaults to `false` for
+   * safety — out-of-repo symlink targets are rejected even when this is set.
+   * The depth cap (8) is enforced by chokidar config at watch start.
+   */
+  followSymlinks?: boolean;
+
+  /**
+   * Per-repository debounce window in milliseconds for the local-folder
+   * watcher. Defaults to 2000 ms when omitted.
+   *
+   * Only meaningful when `source === "local-folder"`. Lets noisy editors
+   * (e.g. saves that touch many sibling files in burst) coalesce into a
+   * single re-index call.
+   */
+  watchDebounceMs?: number;
 }
 
 /**
