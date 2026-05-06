@@ -118,6 +118,25 @@ export const INDEXES: readonly SchemaElement[] = [
     description: "Index for filtering classes by repository",
     cypher: "CREATE INDEX FOR (c:Class) ON (c.repository)",
   },
+  // Document-graph indexes (Phase D / issue #567)
+  {
+    name: "document_id",
+    type: "index",
+    description: "Index Document.id, deterministic key 'Document:{repository}:{path}'",
+    cypher: "CREATE INDEX FOR (d:Document) ON (d.id)",
+  },
+  {
+    name: "document_repository",
+    type: "index",
+    description: "Index for filtering documents by repository",
+    cypher: "CREATE INDEX FOR (d:Document) ON (d.repository)",
+  },
+  {
+    name: "section_documentId",
+    type: "index",
+    description: "Index for resolving Sections back to their owning Document",
+    cypher: "CREATE INDEX FOR (s:Section) ON (s.documentId)",
+  },
 ] as const;
 
 /**

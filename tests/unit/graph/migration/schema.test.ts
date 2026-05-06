@@ -116,8 +116,8 @@ describe("Schema Definitions", () => {
       expect(index?.cypher).toContain("IF NOT EXISTS");
     });
 
-    test("should have exactly 4 indexes", () => {
-      expect(INDEXES.length).toBe(4);
+    test("should have exactly 7 indexes (4 code + 3 document graph)", () => {
+      expect(INDEXES.length).toBe(7);
     });
 
     test("all indexes should be idempotent (IF NOT EXISTS)", () => {
@@ -295,7 +295,9 @@ describe("Adapter-Aware Schema Functions", () => {
     test("should return Neo4j schema for neo4j adapter", () => {
       const schema = getSchemaForAdapter("neo4j");
       expect(schema.constraints.length).toBe(4); // repo_name, file_path, chunk_id, concept_name
-      expect(schema.indexes.length).toBe(4); // file_extension, function_name, class_name, module_name
+      // 4 code indexes (file_extension, function/class/module name) +
+      // 3 document-graph indexes (document_id, document_repository, section_documentId).
+      expect(schema.indexes.length).toBe(7);
       expect(schema.fulltextIndexes.length).toBe(1); // entity_names
 
       // Neo4j uses REQUIRE syntax
@@ -314,8 +316,9 @@ describe("Adapter-Aware Schema Functions", () => {
 
       // 4 backstop indexes for what would have been constraints +
       // 7 performance indexes (file_extension, function/class/module name,
-      // file/function/class repository).
-      expect(schema.indexes.length).toBe(11);
+      // file/function/class repository) +
+      // 3 document-graph indexes (document_id, document_repository, section_documentId).
+      expect(schema.indexes.length).toBe(14);
 
       // FalkorDB only accepts the unnamed Cypher index form.
       for (const index of schema.indexes) {

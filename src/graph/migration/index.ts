@@ -48,6 +48,7 @@ export { MigrationRunner } from "./MigrationRunner.js";
 // =============================================================================
 
 import { migration0001, createMigration0001 } from "./migrations/0001-initial-schema.js";
+import { migration0002, createMigration0002 } from "./migrations/0002-document-graph.js";
 import type { MigrationRunner } from "./MigrationRunner.js";
 import type { GraphAdapterType } from "../adapters/types.js";
 import type { SchemaMigration } from "./types.js";
@@ -57,7 +58,7 @@ import type { SchemaMigration } from "./types.js";
  *
  * @deprecated Since v1.0.0 - Use registerAllMigrations(runner, adapter) for adapter-aware migrations
  */
-export const ALL_MIGRATIONS = [migration0001] as const;
+export const ALL_MIGRATIONS = [migration0001, migration0002] as const;
 
 /**
  * Create adapter-aware migrations
@@ -66,7 +67,7 @@ export const ALL_MIGRATIONS = [migration0001] as const;
  * @returns Array of migrations with adapter-appropriate Cypher syntax
  */
 export function createAllMigrations(adapter: GraphAdapterType): readonly SchemaMigration[] {
-  return [createMigration0001(adapter)] as const;
+  return [createMigration0001(adapter), createMigration0002(adapter)] as const;
 }
 
 /**
