@@ -43,6 +43,7 @@ export function createTestRepositoryInfo(
 
   return {
     name,
+    source: "git-remote",
     url: defaultUrl,
     localPath: defaultLocalPath,
     collectionName: defaultCollectionName,

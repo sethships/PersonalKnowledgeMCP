@@ -247,6 +247,7 @@ describeIntegration("search_documents MCP Tool Integration Tests", () => {
     // Register repository as "ready"
     await repositoryService.updateRepository({
       name: repoName,
+      source: "git-remote",
       url: `file:///test/${repoName}`,
       localPath: path.join(os.tmpdir(), repoName),
       collectionName,

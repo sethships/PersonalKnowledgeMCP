@@ -384,6 +384,7 @@ describe("PersonalKnowledgeMCPServer", () => {
       const mockRepos: RepositoryInfo[] = [
         {
           name: "test-repo",
+          source: "git-remote",
           url: "https://github.com/test/repo",
           localPath: "/path/to/repo",
           collectionName: "repo-test-repo",

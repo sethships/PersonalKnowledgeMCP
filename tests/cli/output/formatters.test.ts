@@ -18,6 +18,7 @@ describe("Formatters", () => {
       const repos: RepositoryInfo[] = [
         {
           name: "test-repo",
+          source: "git-remote",
           url: "https://github.com/user/test-repo.git",
           localPath: "/data/repos/test-repo",
           collectionName: "test-repo",
@@ -86,6 +87,7 @@ describe("Formatters", () => {
       const repos: RepositoryInfo[] = [
         {
           name: "test-repo",
+          source: "git-remote",
           url: "https://github.com/user/test-repo.git",
           localPath: "/data/repos/test-repo",
           collectionName: "test-repo",
