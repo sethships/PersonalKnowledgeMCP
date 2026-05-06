@@ -396,29 +396,26 @@ async function main(): Promise<void> {
     // up the new coordinator on the next event without re-wiring. The guard
     // (review M-2) handles the case where the PAT branch's catch sets the
     // coordinator back to `undefined` mid-session.
-    const folderEventRouter = new FolderEventRouter(
-      repositoryService,
-      async (repo) => {
-        if (!localFolderCoordinator) {
-          logger.warn(
-            { repository: repo.name },
-            "Local-folder watcher dispatch fired with no coordinator wired; dropping event"
-          );
-          return;
-        }
-        try {
-          await localFolderCoordinator.updateRepository(repo.name);
-        } catch (error) {
-          logger.error(
-            {
-              repository: repo.name,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            "Local-folder watcher dispatch failed"
-          );
-        }
+    const folderEventRouter = new FolderEventRouter(repositoryService, async (repo) => {
+      if (!localFolderCoordinator) {
+        logger.warn(
+          { repository: repo.name },
+          "Local-folder watcher dispatch fired with no coordinator wired; dropping event"
+        );
+        return;
       }
-    );
+      try {
+        await localFolderCoordinator.updateRepository(repo.name);
+      } catch (error) {
+        logger.error(
+          {
+            repository: repo.name,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Local-folder watcher dispatch failed"
+        );
+      }
+    });
     folderWatcherService.onFileEvent(folderEventRouter.asEventHandler());
     logger.info("FolderEventRouter wired alongside Phase 6 ChangeDetectionService");
 
@@ -563,9 +560,7 @@ async function main(): Promise<void> {
         );
       }
     } else {
-      logger.warn(
-        "Local-folder coordinator unavailable - watcher restoration skipped"
-      );
+      logger.warn("Local-folder coordinator unavailable - watcher restoration skipped");
     }
 
     // Step 5c: Build an IngestionService for the `register_local_folder` tool

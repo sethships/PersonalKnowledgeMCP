@@ -12,6 +12,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
@@ -72,9 +73,7 @@ function makeIngestionStub(result: IndexResult): IngestionService {
 
 function makeMetadataStub(repo?: RepositoryInfo): RepositoryMetadataService {
   return {
-    getRepository: mock(async (name: string) =>
-      repo && repo.name === name ? repo : null
-    ),
+    getRepository: mock(async (name: string) => (repo && repo.name === name ? repo : null)),
     listRepositories: mock(async () => (repo ? [repo] : [])),
     updateRepository: mock(async () => undefined),
     removeRepository: mock(async () => undefined),

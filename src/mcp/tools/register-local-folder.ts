@@ -93,14 +93,12 @@ export const registerLocalFolderToolDefinition: Tool = {
       },
       name: {
         type: "string",
-        description:
-          "Optional repository name. Defaults to the basename of the resolved path.",
+        description: "Optional repository name. Defaults to the basename of the resolved path.",
       },
       tier: {
         type: "string",
         enum: ["private", "work"],
-        description:
-          "Security tier. Defaults to 'private'. 'public' is refused for local folders.",
+        description: "Security tier. Defaults to 'private'. 'public' is refused for local folders.",
       },
       force: {
         type: "boolean",
@@ -110,8 +108,7 @@ export const registerLocalFolderToolDefinition: Tool = {
       },
       watch: {
         type: "boolean",
-        description:
-          "Start the filesystem watcher after the initial scan. Defaults to true.",
+        description: "Start the filesystem watcher after the initial scan. Defaults to true.",
         default: true,
       },
       followSymlinks: {
@@ -153,11 +150,10 @@ function validateArgs(args: unknown): RegisterArgs {
   return {
     path: path.trim(),
     name: typeof obj["name"] === "string" ? obj["name"].trim() : undefined,
-    tier: tier as RegisterArgs["tier"],
+    tier: tier,
     force: typeof obj["force"] === "boolean" ? obj["force"] : false,
     watch: typeof obj["watch"] === "boolean" ? obj["watch"] : true,
-    followSymlinks:
-      typeof obj["followSymlinks"] === "boolean" ? obj["followSymlinks"] : false,
+    followSymlinks: typeof obj["followSymlinks"] === "boolean" ? obj["followSymlinks"] : false,
     async: typeof obj["async"] === "boolean" ? obj["async"] : false,
   };
 }
@@ -200,8 +196,7 @@ function formatAsyncSuccessResponse(repository: string, jobId: string): TextCont
     async: true,
     job_id: jobId,
     repository,
-    message:
-      "Registration started. Use get_update_status with this job_id to poll for completion.",
+    message: "Registration started. Use get_update_status with this job_id to poll for completion.",
   };
   return { type: "text", text: JSON.stringify(response, null, 2) };
 }

@@ -123,10 +123,7 @@ program
     "--tier <tier>",
     "Security tier: private | work | public (local folders default to private; public is refused for folders)"
   )
-  .option(
-    "--watch",
-    "Enable filesystem watcher after indexing a local folder (default: enabled)"
-  )
+  .option("--watch", "Enable filesystem watcher after indexing a local folder (default: enabled)")
   .option("--no-watch", "Disable filesystem watcher even for local folders")
   .option(
     "--follow-symlinks",

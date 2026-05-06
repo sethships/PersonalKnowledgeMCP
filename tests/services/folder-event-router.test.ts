@@ -38,7 +38,10 @@ function buildEvent(folderId: string): FileEvent {
   };
 }
 
-function buildLocalFolderRepo(name: string, overrides: Partial<RepositoryInfo> = {}): RepositoryInfo {
+function buildLocalFolderRepo(
+  name: string,
+  overrides: Partial<RepositoryInfo> = {}
+): RepositoryInfo {
   return {
     name,
     source: "local-folder",
@@ -161,7 +164,7 @@ describe("FolderEventRouter routing", () => {
 
     await new Promise((r) => setTimeout(r, 30));
 
-    const dispatchedNames = dispatch.mock.calls.map((c) => (c[0] as RepositoryInfo).name).sort();
+    const dispatchedNames = dispatch.mock.calls.map((c) => c[0].name).sort();
     expect(dispatchedNames).toEqual(["a", "b"]);
   });
 

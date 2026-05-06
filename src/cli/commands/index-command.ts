@@ -181,9 +181,7 @@ export async function indexCommand(
   try {
     // Resolve watch default by source: local-folder → true unless --no-watch
     // explicitly disables it; everything else → false.
-    const effectiveWatch = isLocalFolderSource
-      ? options.watch !== false
-      : false;
+    const effectiveWatch = isLocalFolderSource ? options.watch !== false : false;
 
     // Index repository with progress callback
     const result = await deps.ingestionService.indexRepository(url, {

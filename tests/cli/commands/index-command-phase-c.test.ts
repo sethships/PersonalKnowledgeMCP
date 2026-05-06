@@ -13,6 +13,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/await-thenable */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
@@ -55,9 +56,7 @@ describe("Index command — Phase C local-folder flags", () => {
     await mkdir(folderDir, { recursive: true });
     await mkdir(join(gitDir, ".git"), { recursive: true });
 
-    mockIndexRepository = mock(async (_url: string, _opts: any) =>
-      makeIndexResult("auto-name")
-    );
+    mockIndexRepository = mock(async (_url: string, _opts: any) => makeIndexResult("auto-name"));
     deps = {
       ingestionService: { indexRepository: mockIndexRepository },
       repositoryService: { getRepository: mock(async () => null) },
@@ -91,11 +90,7 @@ describe("Index command — Phase C local-folder flags", () => {
   });
 
   it("propagates --tier private and --follow-symlinks on a folder", async () => {
-    await indexCommand(
-      folderDir,
-      { tier: "private", followSymlinks: true },
-      deps
-    );
+    await indexCommand(folderDir, { tier: "private", followSymlinks: true }, deps);
     const opts = mockIndexRepository.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(opts["tier"]).toBe("private");
     expect(opts["followSymlinks"]).toBe(true);
@@ -110,11 +105,7 @@ describe("Index command — Phase C local-folder flags", () => {
 
   it("refuses --follow-symlinks on a git URL", async () => {
     await expect(
-      indexCommand(
-        "https://github.com/user/repo.git",
-        { followSymlinks: true },
-        deps
-      )
+      indexCommand("https://github.com/user/repo.git", { followSymlinks: true }, deps)
     ).rejects.toThrow(/local folders/i);
   });
 });
