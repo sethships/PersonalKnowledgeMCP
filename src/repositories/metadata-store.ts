@@ -164,8 +164,31 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
         "VALIDATION_ERROR"
       );
     }
-    if (!info.url || typeof info.url !== "string") {
-      throw new RepositoryMetadataError("Repository URL is required", "VALIDATION_ERROR");
+    if (
+      info.source !== "git-remote" &&
+      info.source !== "local-git" &&
+      info.source !== "local-folder"
+    ) {
+      throw new RepositoryMetadataError(
+        `Repository source must be one of "git-remote", "local-git", or "local-folder" (got ${JSON.stringify(info.source)})`,
+        "VALIDATION_ERROR"
+      );
+    }
+    // url is required for git-sourced repositories; null is permitted only for "local-folder"
+    if (info.source === "local-folder") {
+      if (info.url !== null && typeof info.url !== "string") {
+        throw new RepositoryMetadataError(
+          "Repository URL must be a string or null for local-folder sources",
+          "VALIDATION_ERROR"
+        );
+      }
+    } else {
+      if (!info.url || typeof info.url !== "string") {
+        throw new RepositoryMetadataError(
+          "Repository URL is required for git-remote and local-git sources",
+          "VALIDATION_ERROR"
+        );
+      }
     }
     if (!info.collectionName || typeof info.collectionName !== "string") {
       throw new RepositoryMetadataError("Collection name is required", "VALIDATION_ERROR");
@@ -428,6 +451,16 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
       // Validate basic structure
       if (!metadata.version || !metadata.repositories) {
         throw new Error("Missing required fields: version or repositories");
+      }
+
+      // Back-compat: synthesize source="git-remote" for any persisted repository
+      // that predates the source discriminator. This must run BEFORE any caller
+      // sees the data so listRepositories() and getRepository() return the
+      // migrated shape.
+      for (const repo of Object.values(metadata.repositories)) {
+        if ((repo as { source?: unknown }).source === undefined) {
+          (repo as RepositoryInfo).source = "git-remote";
+        }
       }
 
       return metadata;

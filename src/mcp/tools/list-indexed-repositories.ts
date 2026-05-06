@@ -19,8 +19,14 @@ import type { ToolHandler } from "../types.js";
 interface IndexedRepositoryResponse {
   /** Unique repository identifier */
   name: string;
-  /** Git clone URL */
-  url: string;
+  /**
+   * Git clone URL.
+   *
+   * `null` when the repository was registered as a `local-folder` source
+   * (no clone URL exists). For `git-remote` and `local-git` sources this is
+   * the original clone URL.
+   */
+  url: string | null;
   /** ChromaDB collection name */
   collection_name: string;
   /** Number of files indexed */

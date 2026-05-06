@@ -1106,6 +1106,9 @@ export class IngestionService {
   }): RepositoryInfo {
     return {
       name: params.name,
+      // Phase A: this factory is only called from the git-clone path.
+      // Phase B will add a parallel local-folder construction site.
+      source: "git-remote",
       url: params.url,
       branch: params.cloneResult.branch,
       localPath: params.cloneResult.path,

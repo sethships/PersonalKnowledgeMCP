@@ -608,6 +608,7 @@ describe("SearchServiceImpl", () => {
 function createMockRepo(name: string, status: "ready" | "indexing" | "error"): RepositoryInfo {
   return {
     name,
+    source: "git-remote",
     url: `https://github.com/test/${name}`,
     localPath: `/tmp/${name}`,
     collectionName: `repo_${name}`,

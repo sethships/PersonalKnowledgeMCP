@@ -319,7 +319,9 @@ export async function graphPopulateAllCommand(
         // Ingest files
         const result = await ingestionService.ingestFiles(files, {
           repository: repo.name,
-          repositoryUrl: repo.url,
+          // Phase A: this command iterates over git-remote and local-git
+          // repos only; Phase B will skip local-folder repos entirely.
+          repositoryUrl: repo.url!,
           force,
           onProgress,
         });

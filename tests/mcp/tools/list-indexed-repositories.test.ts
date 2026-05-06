@@ -76,6 +76,7 @@ function createMockRepo(
 ): RepositoryInfo {
   return {
     name,
+    source: "git-remote",
     url: `https://github.com/user/${name}.git`,
     localPath: `/data/repos/${name}`,
     collectionName: `repo_${name}`,

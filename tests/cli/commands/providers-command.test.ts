@@ -46,6 +46,7 @@ function createMockRepositoryService(
 function createTestRepository(overrides: Partial<RepositoryInfo> = {}): RepositoryInfo {
   return {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/user/test-repo.git",
     localPath: "./data/repos/test-repo",
     collectionName: "repo_test_repo",
@@ -331,6 +332,7 @@ describe("Providers Formatters", () => {
       const repos: RepositoryInfo[] = [
         {
           name: "test-1",
+          source: "git-remote",
           url: "https://github.com/user/test-1.git",
           localPath: "./data/repos/test-1",
           collectionName: "repo_test_1",
@@ -363,6 +365,7 @@ describe("Providers Formatters", () => {
       const repos: RepositoryInfo[] = [
         {
           name: "test-repo",
+          source: "git-remote",
           url: "https://github.com/user/test-repo.git",
           localPath: "./data/repos/test-repo",
           collectionName: "repo_test_repo",

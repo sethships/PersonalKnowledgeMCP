@@ -136,6 +136,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
 
       const repoWithNewFields: RepositoryInfo = {
         name: "new-repo",
+        source: "git-remote",
         url: "https://github.com/test/new.git",
         localPath: "./data/repos/new-repo",
         collectionName: "repo_new_repo",
@@ -170,6 +171,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
 
       const repoWithShaOnly: RepositoryInfo = {
         name: "sha-only-repo",
+        source: "git-remote",
         url: "https://github.com/test/sha-only.git",
         localPath: "./data/repos/sha-only-repo",
         collectionName: "repo_sha_only_repo",
@@ -206,6 +208,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
       // Create repo with new fields
       const original: RepositoryInfo = {
         name: "update-test",
+        source: "git-remote",
         url: "https://github.com/test/update.git",
         localPath: "./data/repos/update-test",
         collectionName: "repo_update_test",
@@ -324,6 +327,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
 
       const newRepo: RepositoryInfo = {
         name: "modern-project",
+        source: "git-remote",
         url: "https://github.com/test/modern-project.git",
         localPath: "./data/repos/modern-project",
         collectionName: "repo_modern_project",
@@ -365,6 +369,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
 
       const repo: RepositoryInfo = {
         name: "json-test",
+        source: "git-remote",
         url: "https://github.com/test/json-test.git",
         localPath: "./data/repos/json-test",
         collectionName: "repo_json_test",
@@ -399,6 +404,7 @@ describe("Backward Compatibility - Incremental Update Fields", () => {
 
       const repo: RepositoryInfo = {
         name: "no-optional",
+        source: "git-remote",
         url: "https://github.com/test/no-optional.git",
         localPath: "./data/repos/no-optional",
         collectionName: "repo_no_optional",

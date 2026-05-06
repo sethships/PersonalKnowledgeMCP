@@ -60,6 +60,7 @@ describe("Graph Populate Command", () => {
 
   const mockRepositoryInfo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/test-repo.git",
     collectionName: "test-repo",
     localPath: "/tmp/test-repo",

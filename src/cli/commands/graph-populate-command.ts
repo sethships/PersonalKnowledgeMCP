@@ -202,7 +202,10 @@ export async function graphPopulateCommand(
 
     const result = await ingestionService.ingestFiles(files, {
       repository: repositoryName,
-      repositoryUrl: repository.url,
+      // url is non-null for git-remote and local-git repos (the only sources
+      // that flow through this CLI command in Phase A). Phase B will branch
+      // on repository.source for local-folder repos.
+      repositoryUrl: repository.url!,
       force,
       onProgress,
     });

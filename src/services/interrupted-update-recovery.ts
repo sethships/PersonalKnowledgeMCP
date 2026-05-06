@@ -425,8 +425,11 @@ async function executeFullReindexRecovery(
   await clearInterruptedUpdateFlag(deps.repositoryService, repositoryName);
   logger.debug({ repository: repositoryName }, "Cleared interrupted update flag");
 
-  // Perform full re-index
-  const result = await deps.ingestionService.indexRepository(repository.url, {
+  // Perform full re-index.
+  // url is non-null for git-remote and local-git sources. Local-folder repos
+  // dispatch through LocalFolderUpdateCoordinator (Phase B) and never reach
+  // this code path.
+  const result = await deps.ingestionService.indexRepository(repository.url!, {
     branch: repository.branch,
     force: true,
   });

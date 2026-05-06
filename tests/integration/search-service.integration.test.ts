@@ -314,6 +314,7 @@ describeIntegration("SearchService Integration Tests", () => {
     it("should handle repository with no indexed chunks", async () => {
       await repositoryService.updateRepository({
         name: "empty-repo",
+        source: "git-remote",
         url: "https://github.com/test/empty",
         localPath: path.join(os.tmpdir(), "empty"),
         collectionName: "repo_empty",
@@ -380,6 +381,7 @@ describeIntegration("SearchService Integration Tests", () => {
     // Add repository metadata
     await repositoryService.updateRepository({
       name: repoName,
+      source: "git-remote",
       url: `https://github.com/test/${repoName}`,
       localPath: path.join(os.tmpdir(), repoName),
       collectionName,

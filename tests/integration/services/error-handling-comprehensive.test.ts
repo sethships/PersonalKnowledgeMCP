@@ -100,6 +100,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
 
       const testRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/owner/test-repo.git",
         localPath: tempDir,
         collectionName: "repo_test_repo",
@@ -181,6 +182,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
 
       const testRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/owner/test-repo.git",
         localPath: tempDir,
         collectionName: "repo_test_repo",
@@ -254,6 +256,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
 
       const baseRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/owner/test-repo.git",
         localPath: tempDir,
         collectionName: "repo_test_repo",
@@ -382,6 +385,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
 
       const testRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/owner/test-repo.git",
         localPath: tempDir,
         collectionName: "repo_test_repo",
@@ -462,6 +466,7 @@ describe("Comprehensive Error Handling Integration Tests", () => {
 
       const testRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/owner/test-repo.git",
         localPath: tempDir,
         collectionName: "repo_test_repo",
