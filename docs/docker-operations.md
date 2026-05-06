@@ -163,7 +163,9 @@ docker volume ls | grep -E "(chromadb|postgres)"
 docker info > /dev/null 2>&1 && echo "Docker OK" || echo "Docker not running"
 
 # Check port availability
-netstat -an | grep -E ":(8000|5432)"
+# Defaults shown; substitute your CHROMA_PORT / POSTGRES_PORT / FALKORDB_PORT
+# values if you have overridden them in .env.
+netstat -an | grep -E ":(8000|5432|6380)"
 
 # Enter container shell
 docker exec -it pk-mcp-chromadb bash
