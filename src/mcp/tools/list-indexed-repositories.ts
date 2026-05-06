@@ -59,6 +59,12 @@ interface IndexedRepositoryResponse {
    * where the local clone path is an internal cache detail.
    */
   local_path?: string;
+  /**
+   * Document formats actually present in the document graph for this
+   * repository. Phase D / issue #567. Presence semantics — empty array (or
+   * field omitted on legacy records) means no documents were encountered.
+   */
+  doc_graph_coverage?: ("markdown" | "pdf" | "docx")[];
 }
 
 /**
@@ -125,6 +131,9 @@ function formatListRepositoriesResponse(
     // exposing it would invite users to edit it (which would race with the
     // next git fetch + reset --hard).
     ...(repo.source !== "git-remote" && repo.localPath && { local_path: repo.localPath }),
+    ...(repo.docGraphCoverage && repo.docGraphCoverage.length > 0 && {
+      doc_graph_coverage: [...repo.docGraphCoverage],
+    }),
   }));
 
   // Calculate summary statistics

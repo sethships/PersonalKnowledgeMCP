@@ -52,6 +52,7 @@ interface ParsedListResponse {
     index_duration_ms: number;
     error_message?: string;
     local_path?: string;
+    doc_graph_coverage?: ("markdown" | "pdf" | "docx")[];
   }>;
   summary: {
     total_repositories: number;
@@ -378,6 +379,29 @@ describe("createListRepositoriesHandler", () => {
       // local-folder + local-git: user supplied the path; surface it.
       expect(folderResp?.local_path).toBe("/Users/dev/notes");
       expect(gitResp?.local_path).toBe("/Users/dev/projects/my-app");
+    });
+
+    it("surfaces doc_graph_coverage when populated and omits it otherwise (Phase D / #567)", async () => {
+      const withDocs = createMockRepo("withdocs", 1, 1, {
+        docGraphCoverage: ["markdown", "pdf"],
+      });
+      const withoutDocs = createMockRepo("nodocs", 1, 1);
+      const emptyArray = createMockRepo("emptyarr", 1, 1, { docGraphCoverage: [] });
+      mockRepositoryService.listRepositories = mock(() =>
+        Promise.resolve([withDocs, withoutDocs, emptyArray])
+      );
+
+      const result = await handler({});
+      const response = parseResponse(getTextContent(result.content));
+
+      const withResp = response.repositories.find((r) => r.name === "withdocs");
+      const noResp = response.repositories.find((r) => r.name === "nodocs");
+      const emptyResp = response.repositories.find((r) => r.name === "emptyarr");
+
+      expect(withResp?.doc_graph_coverage).toEqual(["markdown", "pdf"]);
+      // Omit the field for repos that have no doc-graph data (legacy or empty).
+      expect(noResp).not.toHaveProperty("doc_graph_coverage");
+      expect(emptyResp).not.toHaveProperty("doc_graph_coverage");
     });
   });
 
