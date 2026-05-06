@@ -453,13 +453,41 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
         throw new Error("Missing required fields: version or repositories");
       }
 
-      // Back-compat: synthesize source="git-remote" for any persisted repository
-      // that predates the source discriminator. This must run BEFORE any caller
-      // sees the data so listRepositories() and getRepository() return the
-      // migrated shape.
-      for (const repo of Object.values(metadata.repositories)) {
-        if ((repo as { source?: unknown }).source === undefined) {
-          (repo as RepositoryInfo).source = "git-remote";
+      // Back-compat + defensive read: synthesize source="git-remote" for any
+      // persisted repository that predates the source discriminator (undefined
+      // value), and quarantine any persisted source value that is not one of
+      // the three known discriminators (e.g. produced by a manual edit, a
+      // partial migration, or a future-version downgrade). Both cases run
+      // BEFORE any caller sees the data so listRepositories() and
+      // getRepository() return the migrated shape.
+      //
+      // Spread-replace the entry rather than mutating in place so future
+      // callers that introduce a load-cache cannot observe shared mutable
+      // state (Issue #9 from PR #569 review).
+      const VALID_SOURCES: readonly RepositoryInfo["source"][] = [
+        "git-remote",
+        "local-git",
+        "local-folder",
+      ];
+      for (const [key, repo] of Object.entries(metadata.repositories)) {
+        const persistedSource = (repo as { source?: unknown }).source;
+        if (persistedSource === undefined) {
+          metadata.repositories[key] = {
+            ...(repo as RepositoryInfo),
+            source: "git-remote",
+          };
+        } else if (!VALID_SOURCES.includes(persistedSource as RepositoryInfo["source"])) {
+          this.logger.warn(
+            {
+              repository: (repo as { name?: string }).name ?? key,
+              persistedSource,
+            },
+            "Unknown repository source value on read - quarantining as 'git-remote' for back-compat. Re-index the repository to clean up."
+          );
+          metadata.repositories[key] = {
+            ...(repo as RepositoryInfo),
+            source: "git-remote",
+          };
         }
       }
 

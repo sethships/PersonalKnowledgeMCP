@@ -21,6 +21,30 @@ import { getComponentLogger } from "../logging/index.js";
 import { sanitizeCollectionName } from "../repositories/metadata-store.js";
 
 /**
+ * Schema version literal for persisted manifests.
+ *
+ * Centralized so the TypeScript type, the zod runtime schema, and the on-disk
+ * payload stay in lockstep. When bumping the schema, update only this constant
+ * and the migration logic — the type and schema follow automatically (Issue
+ * #11 from PR #569 review).
+ */
+export const FILE_MANIFEST_VERSION = "1.0" as const;
+export type FileManifestVersion = typeof FILE_MANIFEST_VERSION;
+
+/**
+ * Sentinel `generatedAt` value returned by `loadManifest` for repositories
+ * with no persisted manifest.
+ *
+ * Callers can compare against this value to detect "never persisted" without
+ * incurring a separate "exists" call. Using a fixed Unix-epoch ISO string
+ * guarantees deterministic reads — two consecutive `loadManifest("missing")`
+ * calls produce identical results, which matters for code that derives
+ * `local-<isoDate>` markers from manifest timestamps (Issue #7 from PR #569
+ * review).
+ */
+export const FILE_MANIFEST_EMPTY_GENERATED_AT = "1970-01-01T00:00:00.000Z";
+
+/**
  * Per-file fingerprint record stored in a manifest.
  *
  * Captures enough state to detect content changes without re-hashing every file
@@ -43,8 +67,8 @@ export interface FileManifestEntry {
  * field is a literal `"1.0"` to enable future schema migrations.
  */
 export interface FileManifest {
-  /** Schema version. Always `"1.0"` in this release. */
-  version: "1.0";
+  /** Schema version. Always `"1.0"` in this release (see `FILE_MANIFEST_VERSION`). */
+  version: FileManifestVersion;
   /** Repository name this manifest belongs to (echoed back from caller). */
   repository: string;
   /** ISO 8601 timestamp of when this manifest snapshot was generated. */
@@ -65,7 +89,11 @@ export interface FileManifestStoreService {
    * Load the manifest for a repository.
    *
    * Returns an in-memory empty manifest if the manifest file does not exist;
-   * the empty manifest is NOT written to disk by this call.
+   * the empty manifest is NOT written to disk by this call. The empty
+   * manifest's `generatedAt` is a deterministic sentinel
+   * (`FILE_MANIFEST_EMPTY_GENERATED_AT`, the Unix epoch ISO string) so two
+   * consecutive misses return byte-identical results — callers can compare
+   * against the sentinel to detect "never persisted".
    *
    * @param repository - Repository name (matches `RepositoryInfo.name`).
    */
@@ -101,7 +129,7 @@ const FileManifestEntrySchema = z.object({
 
 /** Zod schema for the persisted manifest file format (validated on read). */
 const FileManifestSchema = z.object({
-  version: z.literal("1.0"),
+  version: z.literal(FILE_MANIFEST_VERSION),
   repository: z.string(),
   generatedAt: z.string(),
   files: z.record(z.string(), FileManifestEntrySchema),
@@ -172,10 +200,32 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
    * Resolve the on-disk path for a repository's manifest file.
    *
    * Uses `sanitizeCollectionName` to produce a filesystem-safe basename
-   * consistent with ChromaDB collection naming.
+   * consistent with ChromaDB collection naming, then suffixes with an 8-char
+   * hash of the original (case-preserved) repository name. The suffix is
+   * required because `sanitizeCollectionName` lowercases and collapses
+   * non-alphanumerics, so two distinct repository names (e.g. `"Foo"` vs
+   * `"foo"`) would otherwise collide on a single manifest file even though
+   * the metadata store treats them as distinct entries.
    */
   public getManifestPath(repository: string): string {
-    return join(this.manifestsDir, `${sanitizeCollectionName(repository)}.json`);
+    const base = sanitizeCollectionName(repository);
+    const suffix = Bun.hash(repository).toString(16).padStart(16, "0").substring(0, 8);
+    return join(this.manifestsDir, `${base}_${suffix}.json`);
+  }
+
+  /**
+   * Compute the stable manifest identifier for a repository.
+   *
+   * Phase B callers MUST persist this exact value in
+   * `RepositoryInfo.lastManifestId` and pass it back to subsequent
+   * `loadManifest`/`saveManifest` calls. The string is opaque — do not parse
+   * it; treat it as a key. Today this is simply the repository name itself,
+   * which is also the cache key used internally; that may change as the
+   * store evolves, so consumers should always go through this method
+   * (Issue #10 from PR #569 review).
+   */
+  public computeManifestId(repository: string): string {
+    return repository;
   }
 
   async loadManifest(repository: string): Promise<FileManifest> {
@@ -220,13 +270,27 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
   }
 
   async saveManifest(repository: string, manifest: FileManifest): Promise<void> {
-    this.writeQueue = this.writeQueue.then(() => this.saveManifestInternal(repository, manifest));
-    await this.writeQueue;
+    const next = this.writeQueue.then(
+      () => this.saveManifestInternal(repository, manifest),
+      // Run regardless of whether the previous queued write succeeded or
+      // failed. The previous failure was already surfaced to its own caller,
+      // and we don't want one bad write to permanently poison the queue
+      // (Issue #4 from PR #569 review).
+      () => this.saveManifestInternal(repository, manifest)
+    );
+    // Keep the queue head a resolved promise so future enqueues stay ordered
+    // but don't re-throw the failure of past tasks.
+    this.writeQueue = next.catch(() => undefined);
+    await next;
   }
 
   async deleteManifest(repository: string): Promise<void> {
-    this.writeQueue = this.writeQueue.then(() => this.deleteManifestInternal(repository));
-    await this.writeQueue;
+    const next = this.writeQueue.then(
+      () => this.deleteManifestInternal(repository),
+      () => this.deleteManifestInternal(repository)
+    );
+    this.writeQueue = next.catch(() => undefined);
+    await next;
   }
 
   private async saveManifestInternal(
@@ -240,7 +304,7 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
     await mkdir(dirname(filePath), { recursive: true });
 
     const payload: FileManifest = {
-      version: "1.0",
+      version: FILE_MANIFEST_VERSION,
       repository,
       generatedAt: manifest.generatedAt,
       files: { ...manifest.files },
@@ -299,12 +363,19 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
   }
 }
 
-/** Construct an empty in-memory manifest for a repository. */
+/**
+ * Construct an empty in-memory manifest for a repository.
+ *
+ * The `generatedAt` field is the deterministic sentinel
+ * `FILE_MANIFEST_EMPTY_GENERATED_AT`, NOT the current time, so two
+ * consecutive `loadManifest` calls for a missing repository return
+ * byte-identical results (Issue #7 from PR #569 review).
+ */
 function emptyManifest(repository: string): FileManifest {
   return {
-    version: "1.0",
+    version: FILE_MANIFEST_VERSION,
     repository,
-    generatedAt: new Date().toISOString(),
+    generatedAt: FILE_MANIFEST_EMPTY_GENERATED_AT,
     files: {},
   };
 }

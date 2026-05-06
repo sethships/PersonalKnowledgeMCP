@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 import {
   FileManifestStoreImpl,
+  FILE_MANIFEST_EMPTY_GENERATED_AT,
   type FileManifest,
   type FileManifestEntry,
 } from "../../../src/services/file-manifest-store.js";
@@ -74,10 +75,29 @@ describe("FileManifestStoreImpl", () => {
   });
 
   describe("getManifestPath", () => {
-    it("uses sanitizeCollectionName for filesystem-safe filenames", () => {
+    it("uses sanitizeCollectionName plus a hash suffix for filesystem-safe filenames", () => {
       const store = FileManifestStoreImpl.getInstance(tmpDir);
       const filePath = store.getManifestPath("My-API");
-      expect(filePath).toBe(path.join(tmpDir, "manifests", "repo_my_api.json"));
+      // Expected shape: <manifestsDir>/repo_my_api_<8-hex-hash>.json. The
+      // hash suffix is required to avoid collisions across case-distinct names
+      // (see "case-distinct names produce distinct manifest files" below).
+      expect(filePath).toMatch(
+        new RegExp(
+          `^${path
+            .join(tmpDir, "manifests", "repo_my_api_")
+            .replace(/\\/g, "\\\\")
+            .replace(/[.*+?^${}()|[\]/]/g, "\\$&")}[0-9a-f]{8}\\.json$`
+        )
+      );
+    });
+
+    it("case-distinct names produce distinct manifest files (Issue #2 regression)", () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+      const upper = store.getManifestPath("Foo");
+      const lower = store.getManifestPath("foo");
+      // sanitizeCollectionName lowercases both to repo_foo, but the hash
+      // suffix is computed over the original name, so the two files diverge.
+      expect(upper).not.toBe(lower);
     });
   });
 
@@ -224,6 +244,13 @@ describe("FileManifestStoreImpl", () => {
     });
 
     it("cleans up the temp file when rename fails (target path is a directory)", async () => {
+      // Cross-platform note: this test relies on `rename(tmp, dir)` rejecting
+      // with both POSIX-family errnos (EISDIR / ENOTDIR / EEXIST) and Windows
+      // errnos (EPERM / EACCES). All of those hit the same catch block in
+      // `saveManifestInternal`, so the cleanup assertion below is platform-
+      // agnostic. If a future runtime ever returns a successful rename here
+      // (Bun's underlying fs changing behavior), this test will silently pass
+      // for the wrong reason — keep an eye on it on first cross-platform CI.
       const store = FileManifestStoreImpl.getInstance(tmpDir);
       const filePath = store.getManifestPath("rename-fail");
 
@@ -338,6 +365,121 @@ describe("FileManifestStoreImpl", () => {
       expect(beta.files["y.ts"]).toEqual(bFile);
       expect(beta.files["x.ts"]).toBeUndefined();
     });
+
+    it("case-distinct repository names persist as distinct manifests on disk (Issue #2 regression)", async () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+      const upperFile: FileManifestEntry = {
+        sha256: "1".repeat(64),
+        sizeBytes: 1,
+        mtimeMs: 1,
+      };
+      const lowerFile: FileManifestEntry = {
+        sha256: "2".repeat(64),
+        sizeBytes: 2,
+        mtimeMs: 2,
+      };
+
+      await store.saveManifest("Foo", buildManifest("Foo", { "a.ts": upperFile }));
+      await store.saveManifest("foo", buildManifest("foo", { "a.ts": lowerFile }));
+
+      // Distinct on-disk files
+      const upperPath = store.getManifestPath("Foo");
+      const lowerPath = store.getManifestPath("foo");
+      expect(upperPath).not.toBe(lowerPath);
+      expect(fs.existsSync(upperPath)).toBe(true);
+      expect(fs.existsSync(lowerPath)).toBe(true);
+
+      // Each load returns the correct payload
+      FileManifestStoreImpl.resetInstance();
+      const reloaded = FileManifestStoreImpl.getInstance(tmpDir);
+      const upper = await reloaded.loadManifest("Foo");
+      const lower = await reloaded.loadManifest("foo");
+
+      expect(upper.files["a.ts"]?.sha256).toBe("1".repeat(64));
+      expect(lower.files["a.ts"]?.sha256).toBe("2".repeat(64));
+    });
+  });
+
+  describe("loadManifest sentinel timestamp (Issue #7)", () => {
+    it("returns the deterministic FILE_MANIFEST_EMPTY_GENERATED_AT sentinel when no manifest exists", async () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+
+      const first = await store.loadManifest("never-saved");
+      const second = await store.loadManifest("never-saved");
+
+      expect(first.generatedAt).toBe(FILE_MANIFEST_EMPTY_GENERATED_AT);
+      expect(second.generatedAt).toBe(FILE_MANIFEST_EMPTY_GENERATED_AT);
+      expect(first.generatedAt).toBe(second.generatedAt);
+    });
+  });
+
+  describe("computeManifestId (Issue #10)", () => {
+    it("returns a stable identifier round-tripped through save/load", async () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+      const id = store.computeManifestId("my-repo");
+      // The identifier MUST work as the lookup key — saving with the repo
+      // name and loading with computeManifestId(name) returns the same data.
+      await store.saveManifest("my-repo", buildManifest("my-repo", {
+        "a.ts": { sha256: "f".repeat(64), sizeBytes: 1, mtimeMs: 1 },
+      }));
+      const loaded = await store.loadManifest(id);
+      expect(loaded.files["a.ts"]?.sha256).toBe("f".repeat(64));
+    });
+  });
+
+  describe("Write-queue resilience (Issue #4)", () => {
+    it("a failed save does not poison the queue for subsequent saves", async () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+
+      // Force the first save to fail by pre-creating a directory at its
+      // destination (same trick used by the rename-fail test).
+      const failPath = store.getManifestPath("queue-fail");
+      fs.mkdirSync(path.dirname(failPath), { recursive: true });
+      fs.mkdirSync(failPath, { recursive: true });
+
+      await expect(
+        store.saveManifest("queue-fail", buildManifest("queue-fail", {}))
+      ).rejects.toThrow();
+
+      // The next save (different repo, different path) MUST succeed even
+      // though the queue head was previously rejected.
+      const okEntry: FileManifestEntry = { sha256: "9".repeat(64), sizeBytes: 1, mtimeMs: 1 };
+      await store.saveManifest(
+        "queue-ok",
+        buildManifest("queue-ok", { "a.ts": okEntry })
+      );
+
+      const reloaded = await store.loadManifest("queue-ok");
+      expect(reloaded.files["a.ts"]).toEqual(okEntry);
+
+      // Clean up the directory we created so afterEach can remove tmpDir
+      fs.rmdirSync(failPath);
+    });
+
+    it("a failed delete does not poison the queue for subsequent deletes", async () => {
+      const store = FileManifestStoreImpl.getInstance(tmpDir);
+
+      // Create a manifest, then make its on-disk path a directory so the
+      // unlink in deleteManifestInternal throws a non-ENOENT error.
+      await store.saveManifest(
+        "del-poison",
+        buildManifest("del-poison", {
+          "a.ts": { sha256: "a".repeat(64), sizeBytes: 1, mtimeMs: 1 },
+        })
+      );
+      const filePath = store.getManifestPath("del-poison");
+      fs.unlinkSync(filePath);
+      fs.mkdirSync(filePath);
+
+      await expect(store.deleteManifest("del-poison")).rejects.toThrow();
+
+      // A subsequent delete on a different (non-existent) repo MUST succeed
+      // (idempotent missing-file path) instead of inheriting the rejection.
+      await expect(store.deleteManifest("never-existed")).resolves.toBeUndefined();
+
+      // Clean up the directory we created so afterEach can remove tmpDir
+      fs.rmdirSync(filePath);
+    });
   });
 });
 
@@ -346,7 +488,7 @@ function buildManifest(
   files: Record<string, FileManifestEntry>
 ): FileManifest {
   return {
-    version: "1.0",
+    version: "1.0" as const,
     repository,
     generatedAt: new Date("2026-05-05T00:00:00.000Z").toISOString(),
     files,
