@@ -10,7 +10,7 @@
 
 import { resolve, basename, normalize, join, sep, relative, posix } from "node:path";
 import { stat, readdir } from "node:fs/promises";
-import { isLocalPath } from "../utils/path-utils.js";
+import { isLocalPath, canonicalizePathForComparison } from "../utils/path-utils.js";
 import simpleGit from "simple-git";
 import { GitignoreFilter } from "../ingestion/gitignore-filter.js";
 import {
@@ -55,6 +55,7 @@ import {
   IndexingInProgressError,
   CollectionCreationError,
   LocalFolderPublicTierRefusedError,
+  LocalFolderPathAlreadyRegisteredError,
   LocalFolderSizeRefusedError,
 } from "./ingestion-errors.js";
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
@@ -286,6 +287,27 @@ export class IngestionService {
         const requestedTier = options.tier ?? "private";
         if (effectiveSource === "local-folder" && requestedTier === "public") {
           throw new LocalFolderPublicTierRefusedError(repositoryName);
+        }
+
+        // Duplicate-path detection (Phase C, T4.2): reject when this absolute
+        // path is already registered under a different name. The name-based
+        // collision check above (line ~239) catches re-registrations with the
+        // same name; this catches the user pointing two distinct names at the
+        // same on-disk folder, which would have two coordinators racing on the
+        // same FileManifest. Skipped under `force: true` because the user is
+        // explicitly asking to reindex the existing entry. Comparison is
+        // canonicalised so different separator/case representations of the
+        // same path collide on Windows (NTFS is case-insensitive).
+        if (effectiveSource === "local-folder" && !options.force) {
+          const canonical = canonicalizePathForComparison(resolvedPath);
+          const allRepos = await this.repositoryService.listRepositories();
+          for (const existing of allRepos) {
+            if (existing.source !== "local-folder") continue;
+            if (existing.name === repositoryName) continue;
+            if (canonicalizePathForComparison(existing.localPath) === canonical) {
+              throw new LocalFolderPathAlreadyRegisteredError(resolvedPath, existing.name);
+            }
+          }
         }
 
         let branch = options.branch ?? "unknown";
@@ -540,6 +562,11 @@ export class IngestionService {
         source: effectiveSource,
         tier: options.tier ?? "private",
         lastManifestId,
+        // Phase C: persist watcher prefs only for local-folder sources so the
+        // MCP server bootstrap can restore active watchers across restarts.
+        watchEnabled: effectiveSource === "local-folder" ? (options.watch ?? false) : undefined,
+        followSymlinks:
+          effectiveSource === "local-folder" ? (options.followSymlinks ?? false) : undefined,
       });
 
       await this.repositoryService.updateRepository(metadata);
@@ -591,10 +618,15 @@ export class IngestionService {
         originalError: error,
       };
 
-      // If error is one of our custom errors, rethrow it
+      // If error is one of our custom errors, rethrow it. The path-collision
+      // error (Phase C) joins this list because the user-corrective fix —
+      // unregister or pass `force` on the existing entry — is identical in
+      // shape to a name collision; both want the typed error surfaced to the
+      // CLI/MCP wrapper rather than the generic `failed` IndexResult.
       if (
         error instanceof RepositoryAlreadyExistsError ||
-        error instanceof IndexingInProgressError
+        error instanceof IndexingInProgressError ||
+        error instanceof LocalFolderPathAlreadyRegisteredError
       ) {
         throw error;
       }
@@ -1219,6 +1251,10 @@ export class IngestionService {
     tier: "private" | "work" | "public";
     /** Manifest pointer set only for `local-folder` sources. */
     lastManifestId?: string;
+    /** Watcher enable flag — only meaningful for `local-folder` sources. */
+    watchEnabled?: boolean;
+    /** Whether the watcher should follow symlinks — only meaningful for `local-folder`. */
+    followSymlinks?: boolean;
   }): RepositoryInfo {
     return {
       name: params.name,
@@ -1248,6 +1284,10 @@ export class IngestionService {
       // Local-folder + multi-tier fields
       tier: params.tier,
       lastManifestId: params.lastManifestId,
+      // Phase C watcher fields — undefined for non-local-folder sources so we
+      // don't lie about watch capability for git repos.
+      watchEnabled: params.watchEnabled,
+      followSymlinks: params.followSymlinks,
     };
   }
 

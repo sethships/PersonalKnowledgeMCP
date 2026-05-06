@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { isLocalPath } from "../../../src/utils/path-utils.js";
+import { resolve, normalize } from "node:path";
+import { isLocalPath, canonicalizePathForComparison } from "../../../src/utils/path-utils.js";
 
 describe("isLocalPath", () => {
   it("should detect Windows absolute paths", () => {
@@ -41,5 +42,35 @@ describe("isLocalPath", () => {
   it("should handle paths with leading/trailing whitespace", () => {
     expect(isLocalPath("  C:\\src\\repo  ")).toBe(true);
     expect(isLocalPath("  /home/user/repo  ")).toBe(true);
+  });
+});
+
+describe("canonicalizePathForComparison", () => {
+  it("collapses redundant segments and resolves to absolute", () => {
+    const noisy = "./a/b/../c/./d";
+    const canonical = canonicalizePathForComparison(noisy);
+    expect(canonical).toBe(
+      process.platform === "win32"
+        ? normalize(resolve(noisy)).toLowerCase()
+        : normalize(resolve(noisy))
+    );
+  });
+
+  it("returns the same string for two equivalent representations of the same path", () => {
+    const a = canonicalizePathForComparison("./foo/bar");
+    const b = canonicalizePathForComparison("./foo/./bar");
+    const c = canonicalizePathForComparison("./foo/baz/../bar");
+    expect(a).toBe(b);
+    expect(a).toBe(c);
+  });
+
+  it("treats case-different paths as equal on Windows and unequal on POSIX", () => {
+    const upper = canonicalizePathForComparison("/Users/Foo/Bar");
+    const lower = canonicalizePathForComparison("/users/foo/bar");
+    if (process.platform === "win32") {
+      expect(upper).toBe(lower);
+    } else {
+      expect(upper).not.toBe(lower);
+    }
   });
 });
