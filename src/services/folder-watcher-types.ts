@@ -74,6 +74,25 @@ export interface WatchedFolder {
    * Last time the folder configuration was updated
    */
   updatedAt: Date | null;
+
+  /**
+   * Whether chokidar should follow symlinks inside the watched folder.
+   *
+   * Optional. When omitted, chokidar's default applies (`true`). Phase 6
+   * watched folders historically inherited the chokidar default; Phase C
+   * (local-folder repos, issue #566) opts in explicitly so the registration
+   * code can set `false` for safety while preserving Phase 6 behavior.
+   */
+  followSymlinks?: boolean;
+
+  /**
+   * Maximum directory recursion depth chokidar should descend.
+   *
+   * Optional. When omitted, chokidar uses unlimited depth (existing Phase 6
+   * behavior). Phase C uses this together with `followSymlinks: true` to cap
+   * symlink chase depth at 8 per the local-folder symlink policy.
+   */
+  depthCap?: number;
 }
 
 /**

@@ -57,6 +57,8 @@ import { FolderWatcherService } from "./services/folder-watcher-service.js";
 import { WatchedFolderStoreImpl } from "./services/watched-folder-store.js";
 import { ChangeDetectionService } from "./services/change-detection-service.js";
 import { FolderDocumentIndexingService } from "./services/folder-document-indexing-service.js";
+import { FolderEventRouter } from "./services/folder-event-router.js";
+import { LocalFolderRepoWatchManager } from "./services/local-folder-repo-watch-manager.js";
 import { ListWatchedFoldersServiceImpl } from "./services/list-watched-folders-service.js";
 import { DocumentTypeDetector } from "./documents/DocumentTypeDetector.js";
 import { DocumentChunker } from "./documents/DocumentChunker.js";
@@ -306,6 +308,12 @@ async function main(): Promise<void> {
       logger.debug("No watched folders to restore from store");
     }
 
+    // Phase C (#566 / T5.3): restore local-folder watchers for repos that
+    // previously had `watchEnabled: true`. We can't do this until the
+    // `folderUpdatePipeline` exists, so the loop runs immediately after the
+    // watch-manager wiring below — see the `restoreLocalFolderWatchers`
+    // call after the FolderEventRouter is constructed.
+
     // Create change detection service wrapping folder watcher
     const changeDetectionService = new ChangeDetectionService(folderWatcherService);
 
@@ -353,12 +361,96 @@ async function main(): Promise<void> {
 
     logger.info("Folder watcher and document indexing services initialized");
 
-    // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
+    // Step 5b: Initialize incremental update dependencies. Git-based update
+    // coordinator + rate limiter + job tracker are PAT-gated below; the
+    // local-folder coordinator (Phase C / #566) is NOT — local folders don't
+    // need GitHub. The PAT branch may overwrite `localFolderCoordinator` with
+    // a graph-aware variant when a graph adapter is configured.
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let localFolderCoordinator: LocalFolderUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
     let jobTracker: JobTracker | undefined;
     let updateToolsUnavailableReason: string | undefined;
+
+    // Phase C: build the local-folder watch manager + router up-front so the
+    // coordinator (constructed below) can delegate watch lifecycle to it. The
+    // router subscribes to `folderWatcherService.onFileEvent` alongside Phase
+    // 6's `ChangeDetectionService`; each subscriber inspects `event.folderId`
+    // and acts only on the namespace it owns.
+    const localFolderWatchManager = new LocalFolderRepoWatchManager(folderWatcherService);
+
+    // Default local-folder coordinator (no graph ingestion) — used when no
+    // GITHUB_PAT is set. The PAT branch below replaces this with a
+    // graph-aware variant when both the PAT and a graph adapter are
+    // configured, preserving the prior Phase B behavior for paying users.
+    localFolderCoordinator = new LocalFolderUpdateCoordinator(
+      repositoryService,
+      folderUpdatePipeline,
+      undefined,
+      undefined,
+      {},
+      localFolderWatchManager
+    );
+
+    const folderEventRouter = new FolderEventRouter(
+      repositoryService,
+      async (repo) => {
+        try {
+          await localFolderCoordinator!.updateRepository(repo.name);
+        } catch (error) {
+          logger.error(
+            {
+              repository: repo.name,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "Local-folder watcher dispatch failed"
+          );
+        }
+      }
+    );
+    folderWatcherService.onFileEvent(folderEventRouter.asEventHandler());
+    logger.info("FolderEventRouter wired alongside Phase 6 ChangeDetectionService");
+
+    // Phase C (#566 / T5.3): restore watchers for local-folder repos that
+    // had `watchEnabled === true` when the server last ran. Failures here
+    // are logged and skipped so a single broken path can't block startup.
+    try {
+      const allRepos = await repositoryService.listRepositories();
+      const watchedLocalFolders = allRepos.filter(
+        (r) => r.source === "local-folder" && r.watchEnabled === true
+      );
+      if (watchedLocalFolders.length > 0) {
+        logger.info(
+          { count: watchedLocalFolders.length },
+          "Restoring local-folder watchers from metadata"
+        );
+        for (const repo of watchedLocalFolders) {
+          try {
+            await localFolderCoordinator.startWatching(repo);
+            logger.info(
+              { repository: repo.name, path: repo.localPath },
+              "Restored local-folder watcher"
+            );
+          } catch (error) {
+            logger.warn(
+              {
+                repository: repo.name,
+                path: repo.localPath,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              "Failed to restore local-folder watcher - skipping"
+            );
+          }
+        }
+      } else {
+        logger.debug("No local-folder watchers to restore");
+      }
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        "Local-folder watcher restoration query failed - skipping all"
+      );
+    }
 
     const envPath = `${process.cwd()}/.env`;
     logger.info({ envPath }, "Resolving GitHub PAT");
@@ -418,9 +510,16 @@ async function main(): Promise<void> {
         );
 
         // Local-folder coordinator shares the metadata service + pipeline.
+        // Phase C: replaces the no-graph default constructed above so that
+        // local-folder updates triggered via `trigger_incremental_update`
+        // populate the graph when a graph adapter is configured.
         localFolderCoordinator = new LocalFolderUpdateCoordinator(
           repositoryService,
-          updatePipeline
+          updatePipeline,
+          undefined,
+          undefined,
+          {},
+          localFolderWatchManager
         );
 
         // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
@@ -509,6 +608,10 @@ async function main(): Promise<void> {
     // being emitted into a disposed ChangeDetectionService during shutdown.
     mcpServer.registerPreShutdownHook(async () => {
       logger.info("Stopping all folder watchers");
+      // Cancel pending router debounce timers so we don't keep refs after the
+      // watcher fleet stops — otherwise a stale debounce would fire into a
+      // detached repository service.
+      folderEventRouter.shutdown();
       await folderWatcherService.stopAllWatchers();
     });
 
