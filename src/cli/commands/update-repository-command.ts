@@ -171,7 +171,9 @@ export async function updateRepositoryCommand(
     }).start();
 
     try {
-      const result = await deps.ingestionService.indexRepository(repo.url, {
+      // url is non-null for git-remote and local-git sources. Phase B will
+      // dispatch to LocalFolderUpdateCoordinator for local-folder repos.
+      const result = await deps.ingestionService.indexRepository(repo.url!, {
         branch: repo.branch,
         force: true,
         onProgress: (progress) => {

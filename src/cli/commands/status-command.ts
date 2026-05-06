@@ -146,8 +146,11 @@ async function checkRepositoryUpdates(
 
   for (const repo of repositories) {
     try {
-      // Parse git URL to extract owner/repo
-      const parsed = parseGitUrl(repo.url);
+      // Parse git URL to extract owner/repo.
+      // url is non-null for git-remote and local-git sources (the only sources
+      // that exist in Phase A). Phase B will branch on `repo.source` and skip
+      // git URL parsing entirely for `local-folder` repos.
+      const parsed = parseGitUrl(repo.url!);
 
       // If not a parseable git URL, mark as unknown
       if (!parsed) {

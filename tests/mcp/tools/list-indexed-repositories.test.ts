@@ -42,7 +42,8 @@ function getTextContent(content: unknown): string {
 interface ParsedListResponse {
   repositories: Array<{
     name: string;
-    url: string;
+    source: "git-remote" | "local-git" | "local-folder";
+    url: string | null;
     collection_name: string;
     file_count: number;
     chunk_count: number;
@@ -76,6 +77,7 @@ function createMockRepo(
 ): RepositoryInfo {
   return {
     name,
+    source: "git-remote",
     url: `https://github.com/user/${name}.git`,
     localPath: `/data/repos/${name}`,
     collectionName: `repo_${name}`,
@@ -176,6 +178,7 @@ describe("createListRepositoriesHandler", () => {
       expect(response.repositories).toHaveLength(1);
       expect(response.repositories[0]).toEqual({
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/user/test-repo.git",
         collection_name: "repo_test-repo",
         file_count: 42,
@@ -320,6 +323,27 @@ describe("createListRepositoriesHandler", () => {
       expect(repo).not.toHaveProperty("branch");
       expect(repo).not.toHaveProperty("includeExtensions");
       expect(repo).not.toHaveProperty("excludePatterns");
+    });
+
+    it("surfaces the source discriminator on the response (Issue #6)", async () => {
+      const remote = createMockRepo("remote-repo", 1, 1, { source: "git-remote" });
+      const local = createMockRepo("local-repo", 1, 1, {
+        source: "local-folder",
+        url: null,
+      });
+      mockRepositoryService.listRepositories = mock(() => Promise.resolve([remote, local]));
+
+      const result = await handler({});
+      expect(result.isError).toBe(false);
+      const response = parseResponse(getTextContent(result.content));
+
+      const remoteResp = response.repositories.find((r) => r.name === "remote-repo");
+      const localResp = response.repositories.find((r) => r.name === "local-repo");
+
+      expect(remoteResp?.source).toBe("git-remote");
+      expect(remoteResp?.url).toBe("https://github.com/user/remote-repo.git");
+      expect(localResp?.source).toBe("local-folder");
+      expect(localResp?.url).toBeNull();
     });
   });
 

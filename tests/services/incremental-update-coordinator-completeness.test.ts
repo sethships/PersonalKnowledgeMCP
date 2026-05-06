@@ -29,6 +29,7 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
   // Test fixture: Repository metadata
   const testRepo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/owner/test-repo.git",
     localPath: "/repos/test-repo",
     collectionName: "repo_test_repo",
@@ -490,6 +491,7 @@ describe("IncrementalUpdateCoordinator - Completeness Integration", () => {
       const localRepo: RepositoryInfo = {
         ...testRepo,
         name: "local-repo",
+        source: "git-remote",
         url: "C:/local/path/to/repo",
         localPath: "C:/local/path/to/repo",
         lastIndexedCommitSha: baseSha,

@@ -19,8 +19,24 @@ import type { ToolHandler } from "../types.js";
 interface IndexedRepositoryResponse {
   /** Unique repository identifier */
   name: string;
-  /** Git clone URL */
-  url: string;
+  /**
+   * Origin of the indexed content.
+   *
+   * - `git-remote`: cloned from a remote git URL.
+   * - `local-git`: a path on the host machine that contains a `.git` directory.
+   * - `local-folder`: a path on the host machine with no git history; tracked
+   *   via per-file content fingerprints. Expect `url` to be `null` for this
+   *   source.
+   */
+  source: "git-remote" | "local-git" | "local-folder";
+  /**
+   * Git clone URL.
+   *
+   * `null` when the repository was registered as a `local-folder` source
+   * (no clone URL exists). For `git-remote` and `local-git` sources this is
+   * the original clone URL.
+   */
+  url: string | null;
   /** ChromaDB collection name */
   collection_name: string;
   /** Number of files indexed */
@@ -86,6 +102,7 @@ function formatListRepositoriesResponse(
   // Map each repository to external API format
   const formattedRepos: IndexedRepositoryResponse[] = repositories.map((repo) => ({
     name: repo.name,
+    source: repo.source,
     url: repo.url,
     collection_name: repo.collectionName,
     file_count: repo.fileCount,

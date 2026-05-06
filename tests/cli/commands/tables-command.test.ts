@@ -71,6 +71,7 @@ function createTableChunk(
 
 const mockRepo: RepositoryInfo = {
   name: "test-repo",
+  source: "git-remote",
   url: "https://github.com/test/test-repo.git",
   collectionName: "repo_test_repo",
   localPath: "/tmp/test-repo",
@@ -87,6 +88,7 @@ const mockRepo: RepositoryInfo = {
 
 const mockRepo2: RepositoryInfo = {
   name: "docs-repo",
+  source: "git-remote",
   url: "https://github.com/test/docs-repo.git",
   collectionName: "repo_docs_repo",
   localPath: "/tmp/docs-repo",

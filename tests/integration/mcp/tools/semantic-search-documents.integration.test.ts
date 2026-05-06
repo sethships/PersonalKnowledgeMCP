@@ -215,6 +215,7 @@ describeIntegration("semantic_search MCP Tool with include_documents Integration
     // Register repository metadata
     await repositoryService.updateRepository({
       name: repoName,
+      source: "git-remote",
       url: `https://github.com/test/${repoName}`,
       localPath: path.join(os.tmpdir(), repoName),
       collectionName,
@@ -287,6 +288,7 @@ describeIntegration("semantic_search MCP Tool with include_documents Integration
     // Document folders are stored as repositories in the metadata service
     await repositoryService.updateRepository({
       name: folderName,
+      source: "git-remote",
       url: `file://${folderName}`,
       localPath: path.join(os.tmpdir(), folderName),
       collectionName,

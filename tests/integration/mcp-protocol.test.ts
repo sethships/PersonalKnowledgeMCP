@@ -401,6 +401,7 @@ describe("MCP Protocol Integration", () => {
       const mockRepos: RepositoryInfo[] = [
         {
           name: "PersonalKnowledgeMCP",
+          source: "git-remote",
           url: "https://github.com/sethb75/PersonalKnowledgeMCP",
           localPath: "/path/to/PersonalKnowledgeMCP",
           collectionName: "repo-personalknowledgemcp",
@@ -415,6 +416,7 @@ describe("MCP Protocol Integration", () => {
         },
         {
           name: "my-api",
+          source: "git-remote",
           url: "https://github.com/user/my-api",
           localPath: "/path/to/my-api",
           collectionName: "repo-my-api",
@@ -486,6 +488,7 @@ describe("MCP Protocol Integration", () => {
     it("should format repository metadata with snake_case fields", async () => {
       const mockRepo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo",
         localPath: "/path/to/test-repo",
         collectionName: "repo-test-repo",
@@ -520,6 +523,7 @@ describe("MCP Protocol Integration", () => {
     it("should include repositories with error status", async () => {
       const mockRepo: RepositoryInfo = {
         name: "failed-repo",
+        source: "git-remote",
         url: "https://github.com/test/failed",
         localPath: "/path/to/failed",
         collectionName: "repo-failed-repo",

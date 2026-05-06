@@ -16,6 +16,7 @@ describe("RepositoryInfo Type", () => {
       // This test validates TypeScript compilation - if it compiles, types are correct
       const repo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/test-repo",
         collectionName: "repo_test_repo",
@@ -50,6 +51,7 @@ describe("RepositoryInfo Type", () => {
       statuses.forEach((status) => {
         const repo: RepositoryInfo = {
           name: "test-repo",
+          source: "git-remote",
           url: "https://github.com/test/repo.git",
           localPath: "./data/repos/test-repo",
           collectionName: "repo_test_repo",
@@ -72,6 +74,7 @@ describe("RepositoryInfo Type", () => {
     test("should allow errorMessage when status is error", () => {
       const repo: RepositoryInfo = {
         name: "failed-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/failed-repo",
         collectionName: "repo_failed_repo",
@@ -93,6 +96,7 @@ describe("RepositoryInfo Type", () => {
     test("should allow omitting errorMessage", () => {
       const repo: RepositoryInfo = {
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/test-repo",
         collectionName: "repo_test_repo",
@@ -116,6 +120,7 @@ describe("RepositoryInfo Type", () => {
       // This validates backward compatibility
       const repo: RepositoryInfo = {
         name: "legacy-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/legacy-repo",
         collectionName: "repo_legacy_repo",
@@ -141,6 +146,7 @@ describe("RepositoryInfo Type", () => {
 
       const repo: RepositoryInfo = {
         name: "active-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/active-repo",
         collectionName: "repo_active_repo",
@@ -166,6 +172,7 @@ describe("RepositoryInfo Type", () => {
       // After initial full index, only SHA is set
       const repo: RepositoryInfo = {
         name: "fresh-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/fresh-repo",
         collectionName: "repo_fresh_repo",
@@ -189,6 +196,7 @@ describe("RepositoryInfo Type", () => {
       // Edge case: count set but timestamp not (shouldn't happen in practice)
       const repo: RepositoryInfo = {
         name: "edge-case-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/edge-case-repo",
         collectionName: "repo_edge_case_repo",
@@ -212,6 +220,7 @@ describe("RepositoryInfo Type", () => {
     test("should handle zero incremental update count", () => {
       const repo: RepositoryInfo = {
         name: "zero-count-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/zero-count-repo",
         collectionName: "repo_zero_count_repo",
@@ -234,6 +243,7 @@ describe("RepositoryInfo Type", () => {
       // Simulate a repository with many incremental updates
       const repo: RepositoryInfo = {
         name: "high-update-repo",
+        source: "git-remote",
         url: "https://github.com/test/repo.git",
         localPath: "./data/repos/high-update-repo",
         collectionName: "repo_high_update_repo",

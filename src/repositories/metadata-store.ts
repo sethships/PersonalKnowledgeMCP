@@ -164,8 +164,31 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
         "VALIDATION_ERROR"
       );
     }
-    if (!info.url || typeof info.url !== "string") {
-      throw new RepositoryMetadataError("Repository URL is required", "VALIDATION_ERROR");
+    if (
+      info.source !== "git-remote" &&
+      info.source !== "local-git" &&
+      info.source !== "local-folder"
+    ) {
+      throw new RepositoryMetadataError(
+        `Repository source must be one of "git-remote", "local-git", or "local-folder" (got ${JSON.stringify(info.source)})`,
+        "VALIDATION_ERROR"
+      );
+    }
+    // url is required for git-sourced repositories; null is permitted only for "local-folder"
+    if (info.source === "local-folder") {
+      if (info.url !== null && typeof info.url !== "string") {
+        throw new RepositoryMetadataError(
+          "Repository URL must be a string or null for local-folder sources",
+          "VALIDATION_ERROR"
+        );
+      }
+    } else {
+      if (!info.url || typeof info.url !== "string") {
+        throw new RepositoryMetadataError(
+          "Repository URL is required for git-remote and local-git sources",
+          "VALIDATION_ERROR"
+        );
+      }
     }
     if (!info.collectionName || typeof info.collectionName !== "string") {
       throw new RepositoryMetadataError("Collection name is required", "VALIDATION_ERROR");
@@ -428,6 +451,44 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
       // Validate basic structure
       if (!metadata.version || !metadata.repositories) {
         throw new Error("Missing required fields: version or repositories");
+      }
+
+      // Back-compat + defensive read: synthesize source="git-remote" for any
+      // persisted repository that predates the source discriminator (undefined
+      // value), and quarantine any persisted source value that is not one of
+      // the three known discriminators (e.g. produced by a manual edit, a
+      // partial migration, or a future-version downgrade). Both cases run
+      // BEFORE any caller sees the data so listRepositories() and
+      // getRepository() return the migrated shape.
+      //
+      // Spread-replace the entry rather than mutating in place so future
+      // callers that introduce a load-cache cannot observe shared mutable
+      // state (Issue #9 from PR #569 review).
+      const VALID_SOURCES: readonly RepositoryInfo["source"][] = [
+        "git-remote",
+        "local-git",
+        "local-folder",
+      ];
+      for (const [key, repo] of Object.entries(metadata.repositories)) {
+        const persistedSource = (repo as { source?: unknown }).source;
+        if (persistedSource === undefined) {
+          metadata.repositories[key] = {
+            ...repo,
+            source: "git-remote",
+          };
+        } else if (!VALID_SOURCES.includes(persistedSource as RepositoryInfo["source"])) {
+          this.logger.warn(
+            {
+              repository: (repo as { name?: string }).name ?? key,
+              persistedSource,
+            },
+            "Unknown repository source value on read - quarantining as 'git-remote' for back-compat. Re-index the repository to clean up."
+          );
+          metadata.repositories[key] = {
+            ...repo,
+            source: "git-remote",
+          };
+        }
       }
 
       return metadata;

@@ -41,6 +41,7 @@ describe("Update Repository Command", () => {
   // Sample repository for testing
   const sampleRepo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/repo.git",
     localPath: "/repos/test-repo",
     branch: "main",

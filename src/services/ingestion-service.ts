@@ -1106,6 +1106,12 @@ export class IngestionService {
   }): RepositoryInfo {
     return {
       name: params.name,
+      // Phase A: distinguish remote clones from local-git paths. Local-folder
+      // sources (no .git) will be added in Phase B via a parallel construction
+      // site. `isLocalPath` mirrors the same gate used in `indexRepository` at
+      // the clone-vs-resolve fork (see ~line 244), so the discriminator we
+      // persist here matches the path that actually produced the index.
+      source: isLocalPath(params.url) ? "local-git" : "git-remote",
       url: params.url,
       branch: params.cloneResult.branch,
       localPath: params.cloneResult.path,
