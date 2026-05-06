@@ -36,7 +36,7 @@ The Personal Knowledge MCP uses Docker Compose to manage containerized storage b
 **Configured (Phase 4):**
 - **PostgreSQL** - Document store for full artifacts
   - Image: `postgres:17.2-alpine` (pinned version)
-  - Port: `127.0.0.1:5432` (localhost only)
+  - Port: `127.0.0.1:${POSTGRES_PORT:-5432}` (localhost only; host port configurable via `POSTGRES_PORT`)
   - Volume: `postgres-data`
   - Resource limits: 2 CPU / 1GB RAM max
   - Health checks enabled (pg_isready)
@@ -168,7 +168,9 @@ docker volume ls | grep -E "(chromadb|postgres)"
 docker info > /dev/null 2>&1 && echo "Docker OK" || echo "Docker not running"
 
 # Check port availability
-netstat -an | grep -E ":(8000|5432)"
+# Defaults shown; substitute your CHROMA_PORT / POSTGRES_PORT / FALKORDB_PORT
+# values if you have overridden them in .env.
+netstat -an | grep -E ":(8000|5432|6380)"
 
 # Enter container shell
 docker exec -it pk-mcp-chromadb bash
@@ -1621,7 +1623,7 @@ secrets:
 **Configuration:**
 - **Image:** `postgres:17.2-alpine` (pinned stable version)
 - **Container Name:** `pk-mcp-postgres`
-- **Port:** `127.0.0.1:5432:5432` (localhost only for security)
+- **Port:** `127.0.0.1:${POSTGRES_PORT:-5432}:5432` (localhost only for security; host port configurable via `POSTGRES_PORT` env var, container always listens on 5432)
 - **Volume:** `postgres-data:/var/lib/postgresql/data`
 - **Init Scripts:** `./init-scripts:/docker-entrypoint-initdb.d:ro`
 - **Network:** `pk-mcp-network` (bridge mode)
