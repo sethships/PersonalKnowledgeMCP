@@ -242,6 +242,48 @@ describe("register_local_folder MCP tool", () => {
       expect(body["error"]).toBe("registration_failed");
       expect(String(body["message"])).toContain("size guardrail");
     });
+
+    it("reports watch_enabled=false when the watcher fails to attach (review C-1)", async () => {
+      // Ingestion succeeds and persists metadata, but the watch-manager
+      // throws (e.g. chokidar EACCES). The response must NOT lie — the user
+      // is told watch_enabled: false so they can intervene.
+      const ingestion = makeIngestionStub(successResult("flaky-watch"));
+      const metadata = makeMetadataStub({
+        name: "flaky-watch",
+        source: "local-folder",
+        url: null,
+        localPath: "C:/flaky",
+        collectionName: "repo_flaky_watch",
+        fileCount: 1,
+        chunkCount: 1,
+        lastIndexedAt: new Date().toISOString(),
+        indexDurationMs: 1,
+        status: "ready",
+        branch: "(local-folder)",
+        includeExtensions: [".ts"],
+        excludePatterns: [],
+        tier: "private",
+      });
+      const coordinator = makeCoordinatorStub();
+      coordinator.startWatching = mock(async () => {
+        throw new Error("chokidar attach failed: EACCES");
+      }) as any;
+
+      const handler = createRegisterLocalFolderHandler({
+        ingestionService: ingestion,
+        localFolderCoordinator: coordinator,
+        repositoryService: metadata,
+      });
+
+      const result = await handler({ path: "C:/flaky", watch: true });
+
+      // Registration itself succeeds (metadata persisted by IngestionService),
+      // but watch_enabled reflects the actual attach result.
+      expect(result.isError).toBe(false);
+      const body = parseTextResponse(result.content as TextContent[]);
+      expect(body["status"]).toBe("registered");
+      expect(body["watch_enabled"]).toBe(false);
+    });
   });
 
   describe("async mode", () => {

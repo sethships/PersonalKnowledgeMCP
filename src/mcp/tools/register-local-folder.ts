@@ -16,6 +16,7 @@
  * @module mcp/tools/register-local-folder
  */
 
+import { basename, normalize, resolve } from "node:path";
 import type { Tool, CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import type { IngestionService } from "../../services/ingestion-service.js";
 import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
@@ -272,9 +273,29 @@ export function createRegisterLocalFolderHandler(
 
     const requestedAsync = validated.async === true && jobTracker !== undefined;
 
+    // Pre-resolve the eventual repository name so async-mode callers can poll
+    // `get_update_status` and see the real name on the JobTracker record (review
+    // H-2 / H-3). Mirrors `IngestionService.extractRepositoryName` for local
+    // paths: explicit `--name` wins; otherwise basename of the resolved path.
+    // If the basename is unrecoverable (e.g. ".." / "."), fall back to
+    // "pending" — the IngestionService call will throw a descriptive error and
+    // the tool surfaces it via formatErrorResponse below.
+    const predictedRepositoryName = (() => {
+      const explicit = validated.name?.trim();
+      if (explicit) return explicit;
+      try {
+        const candidate = basename(normalize(resolve(validated.path)));
+        if (candidate && candidate !== "." && candidate !== "..") return candidate;
+      } catch {
+        // basename/resolve don't typically throw, but be defensive on bad input
+      }
+      return "pending";
+    })();
+
     const runRegistration = async (): Promise<{
       repositoryName: string;
       result: IndexResult;
+      watcherActuallyAttached: boolean;
     }> => {
       const result = await ingestionService.indexRepository(validated.path, {
         name: validated.name,
@@ -289,11 +310,15 @@ export function createRegisterLocalFolderHandler(
       // is wired AND the registration succeeded enough to leave a usable
       // metadata entry. We re-resolve the RepositoryInfo because the
       // coordinator owns watcher lifecycle (it'll persist watchEnabled).
+      // Track ACTUAL attachment so the response can't lie when chokidar
+      // fails to attach (review C-1).
+      let watcherActuallyAttached = false;
       if ((validated.watch ?? true) && localFolderCoordinator && result.status !== "failed") {
         const repo = await repositoryService.getRepository(repositoryName);
         if (repo && repo.source === "local-folder") {
           try {
             await localFolderCoordinator.startWatching(repo);
+            watcherActuallyAttached = true;
           } catch (watchError) {
             log.warn(
               { repository: repositoryName, error: watchError },
@@ -303,15 +328,14 @@ export function createRegisterLocalFolderHandler(
         }
       }
 
-      return { repositoryName, result };
+      return { repositoryName, result, watcherActuallyAttached };
     };
 
     if (requestedAsync && jobTracker) {
-      // Use a placeholder name for the job ID until we know the resolved name;
-      // we then update the job tracker with the real result on completion.
-      const placeholderName =
-        validated.name?.trim() || validated.path.split(/[\\/]/).filter(Boolean).pop() || "pending";
-      const jobId = jobTracker.createJob(placeholderName);
+      // Use the predicted name for the job ID so polling via `get_update_status`
+      // returns the real registered name even before the worker completes
+      // (review H-2 / H-3).
+      const jobId = jobTracker.createJob(predictedRepositoryName);
 
       void (async () => {
         jobTracker.updateStatus(jobId, "running");
@@ -326,13 +350,13 @@ export function createRegisterLocalFolderHandler(
       })();
 
       return {
-        content: [formatAsyncSuccessResponse(placeholderName, jobId)],
+        content: [formatAsyncSuccessResponse(predictedRepositoryName, jobId)],
         isError: false,
       };
     }
 
     try {
-      const { repositoryName, result } = await runRegistration();
+      const { repositoryName, result, watcherActuallyAttached } = await runRegistration();
       const duration = performance.now() - startTime;
       log.info(
         {
@@ -356,7 +380,7 @@ export function createRegisterLocalFolderHandler(
           formatSyncSuccessResponse(
             repositoryName,
             result,
-            (validated.watch ?? true) && localFolderCoordinator !== undefined,
+            watcherActuallyAttached,
             validated.followSymlinks ?? false
           ),
         ],

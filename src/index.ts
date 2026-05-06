@@ -308,11 +308,9 @@ async function main(): Promise<void> {
       logger.debug("No watched folders to restore from store");
     }
 
-    // Phase C (#566 / T5.3): restore local-folder watchers for repos that
-    // previously had `watchEnabled: true`. We can't do this until the
-    // `folderUpdatePipeline` exists, so the loop runs immediately after the
-    // watch-manager wiring below — see the `restoreLocalFolderWatchers`
-    // call after the FolderEventRouter is constructed.
+    // Phase C (#566 / T5.3): the local-folder watcher restoration loop runs
+    // AFTER the GITHUB_PAT branch below, so the final `localFolderCoordinator`
+    // instance is chosen before any watcher attaches (review H-1).
 
     // Create change detection service wrapping folder watcher
     const changeDetectionService = new ChangeDetectionService(folderWatcherService);
@@ -392,11 +390,24 @@ async function main(): Promise<void> {
       localFolderWatchManager
     );
 
+    // The router closure intentionally references `localFolderCoordinator`
+    // (the let-binding, not a snapshot) so the PAT branch below can replace
+    // the instance with a graph-aware variant and the watcher dispatch picks
+    // up the new coordinator on the next event without re-wiring. The guard
+    // (review M-2) handles the case where the PAT branch's catch sets the
+    // coordinator back to `undefined` mid-session.
     const folderEventRouter = new FolderEventRouter(
       repositoryService,
       async (repo) => {
+        if (!localFolderCoordinator) {
+          logger.warn(
+            { repository: repo.name },
+            "Local-folder watcher dispatch fired with no coordinator wired; dropping event"
+          );
+          return;
+        }
         try {
-          await localFolderCoordinator!.updateRepository(repo.name);
+          await localFolderCoordinator.updateRepository(repo.name);
         } catch (error) {
           logger.error(
             {
@@ -410,47 +421,6 @@ async function main(): Promise<void> {
     );
     folderWatcherService.onFileEvent(folderEventRouter.asEventHandler());
     logger.info("FolderEventRouter wired alongside Phase 6 ChangeDetectionService");
-
-    // Phase C (#566 / T5.3): restore watchers for local-folder repos that
-    // had `watchEnabled === true` when the server last ran. Failures here
-    // are logged and skipped so a single broken path can't block startup.
-    try {
-      const allRepos = await repositoryService.listRepositories();
-      const watchedLocalFolders = allRepos.filter(
-        (r) => r.source === "local-folder" && r.watchEnabled === true
-      );
-      if (watchedLocalFolders.length > 0) {
-        logger.info(
-          { count: watchedLocalFolders.length },
-          "Restoring local-folder watchers from metadata"
-        );
-        for (const repo of watchedLocalFolders) {
-          try {
-            await localFolderCoordinator.startWatching(repo);
-            logger.info(
-              { repository: repo.name, path: repo.localPath },
-              "Restored local-folder watcher"
-            );
-          } catch (error) {
-            logger.warn(
-              {
-                repository: repo.name,
-                path: repo.localPath,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              "Failed to restore local-folder watcher - skipping"
-            );
-          }
-        }
-      } else {
-        logger.debug("No local-folder watchers to restore");
-      }
-    } catch (error) {
-      logger.warn(
-        { error: error instanceof Error ? error.message : String(error) },
-        "Local-folder watcher restoration query failed - skipping all"
-      );
-    }
 
     const envPath = `${process.cwd()}/.env`;
     logger.info({ envPath }, "Resolving GitHub PAT");
@@ -545,6 +515,57 @@ async function main(): Promise<void> {
     } else {
       logger.info("GITHUB_PAT not set - MCP incremental update tools disabled");
       updateToolsUnavailableReason = "GITHUB_PAT is not configured";
+    }
+
+    // Phase C (#566 / T5.3): restore watchers for local-folder repos that had
+    // `watchEnabled === true` when the server last ran. Runs AFTER the PAT
+    // branch (review H-1) so the final `localFolderCoordinator` instance is
+    // chosen before any watcher attaches — this preserves the invariant that
+    // a graph-aware coordinator (when the PAT branch upgraded it) handles
+    // every restored watcher's update calls. Failures are per-repo logged and
+    // skipped so a single broken path can't block startup.
+    if (localFolderCoordinator) {
+      try {
+        const allRepos = await repositoryService.listRepositories();
+        const watchedLocalFolders = allRepos.filter(
+          (r) => r.source === "local-folder" && r.watchEnabled === true
+        );
+        if (watchedLocalFolders.length > 0) {
+          logger.info(
+            { count: watchedLocalFolders.length },
+            "Restoring local-folder watchers from metadata"
+          );
+          for (const repo of watchedLocalFolders) {
+            try {
+              await localFolderCoordinator.startWatching(repo);
+              logger.info(
+                { repository: repo.name, path: repo.localPath },
+                "Restored local-folder watcher"
+              );
+            } catch (error) {
+              logger.warn(
+                {
+                  repository: repo.name,
+                  path: repo.localPath,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                "Failed to restore local-folder watcher - skipping"
+              );
+            }
+          }
+        } else {
+          logger.debug("No local-folder watchers to restore");
+        }
+      } catch (error) {
+        logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Local-folder watcher restoration query failed - skipping all"
+        );
+      }
+    } else {
+      logger.warn(
+        "Local-folder coordinator unavailable - watcher restoration skipped"
+      );
     }
 
     // Step 5c: Build an IngestionService for the `register_local_folder` tool

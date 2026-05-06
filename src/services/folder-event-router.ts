@@ -18,6 +18,8 @@
  * @module services/folder-event-router
  */
 
+import { realpath } from "node:fs/promises";
+import { sep } from "node:path";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type { FileEvent } from "./folder-watcher-types.js";
@@ -140,7 +142,56 @@ export class FolderEventRouter {
       return;
     }
 
+    // Out-of-folder symlink rejection (review C-2 / issue #566 acceptance).
+    // chokidar's `followSymlinks: true` will dereference symlinks regardless
+    // of where their target points; the depth cap bounds traversal length but
+    // not geographical scope. Filter at event time by realpath-comparing the
+    // event's absolute path against the repo's real root. This is TOCTOU-aware
+    // because we resolve at the moment the event fires, not at watch-attach.
+    // The check runs only when the user explicitly opted in to symlink
+    // following — when followSymlinks is false (default), chokidar already
+    // skips symlinks, so this filter would only reject false positives.
+    if (repo.followSymlinks === true) {
+      const inside = await this.isEventWithinRepoRoot(repo.localPath, event.absolutePath);
+      if (!inside) {
+        this.logger.warn(
+          {
+            repository: repo.name,
+            eventPath: event.absolutePath,
+            repoRoot: repo.localPath,
+          },
+          "FolderEventRouter: dropping event whose realpath escapes the repo root (out-of-folder symlink target)"
+        );
+        return;
+      }
+    }
+
     this.scheduleDebouncedDispatch(repo);
+  }
+
+  /**
+   * Check whether `eventAbsolutePath` resolves (via realpath) to a location
+   * inside `repoLocalPath`'s real root. Returns false on any realpath failure
+   * — the conservative choice that prevents accidentally indexing files
+   * pointed to by broken or hostile symlinks.
+   */
+  private async isEventWithinRepoRoot(
+    repoLocalPath: string,
+    eventAbsolutePath: string
+  ): Promise<boolean> {
+    try {
+      const [realRoot, realEventPath] = await Promise.all([
+        realpath(repoLocalPath),
+        realpath(eventAbsolutePath),
+      ]);
+      // Append separator to the root so a sibling directory whose name
+      // happens to share a prefix (e.g. /repo and /repo-backup) does not
+      // satisfy the containment check.
+      const normalizedRoot = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
+      return realEventPath === realRoot || realEventPath.startsWith(normalizedRoot);
+    } catch {
+      return false;
+    }
   }
 
   /**
