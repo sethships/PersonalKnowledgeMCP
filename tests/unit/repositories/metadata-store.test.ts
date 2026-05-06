@@ -671,6 +671,31 @@ describe("source discriminator + back-compat round-trip", () => {
       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
     );
   });
+
+  test("quarantines an unknown persisted source value to git-remote on read (Issue #3)", async () => {
+    // Hand-write a repositories.json with a corrupt `source` value that
+    // doesn't match any of the three known discriminators.
+    const corrupt = {
+      version: "1.0",
+      repositories: {
+        "bogus-repo": {
+          ...buildLegacyRepoRecord("bogus-repo"),
+          source: "from-the-future",
+        },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "repositories.json"),
+      JSON.stringify(corrupt, null, 2),
+      "utf-8"
+    );
+
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    // Must not throw — read-side quarantine treats it as git-remote.
+    const reloaded = await store.getRepository("bogus-repo");
+    expect(reloaded).not.toBeNull();
+    expect(reloaded?.source).toBe("git-remote");
+  });
 });
 
 /**

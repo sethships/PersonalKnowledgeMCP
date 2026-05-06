@@ -319,12 +319,15 @@ export interface RepositoryInfo {
   tier?: "private" | "work" | "public";
 
   /**
-   * Pointer to the file-manifest record for this repository.
+   * Opaque pointer to the file-manifest record for this repository.
    *
-   * Only set when `source === "local-folder"`. Identifies the manifest entry
-   * stored by `FileManifestStore` (typically the sanitized repository name used
-   * as the manifest filename). Used by the local-folder change detector to
-   * correlate the registry entry with its persisted per-file fingerprints.
+   * Only set when `source === "local-folder"`. Holds the value returned by
+   * `FileManifestStore.computeManifestId(repo.name)` and is passed back to
+   * `FileManifestStore.loadManifest`/`saveManifest` to correlate the
+   * registry entry with its persisted per-file fingerprints. Treat as
+   * opaque — do not parse it; the store owns the mapping between this
+   * identifier and the on-disk filename, which may include a hash suffix to
+   * avoid case-collisions across distinct repository names.
    */
   lastManifestId?: string;
 }
