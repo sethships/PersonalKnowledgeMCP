@@ -145,13 +145,23 @@ export class GitignoreFilter {
       return true;
     }
 
-    for (const rule of this.rules) {
+    // Git semantics: rules are evaluated from shallowest .gitignore down to
+    // deepest, and the LAST .gitignore with an explicit verdict wins. A
+    // negation (`!keep.txt`) in a nested .gitignore therefore overrides a
+    // matching rule from a shallower one. Walk in reverse (deepest first) and
+    // return as soon as some .gitignore has an explicit opinion on the file.
+    for (let i = this.rules.length - 1; i >= 0; i--) {
+      const rule = this.rules[i]!;
       if (!GitignoreFilter.isWithin(rule.dir, abs)) continue;
       const relToRule = posix.normalize(
         relative(rule.dir, abs).split(sep).join(posix.sep)
       );
       if (!relToRule || relToRule.startsWith("..")) continue;
-      if (rule.ig.ignores(relToRule)) return true;
+      const verdict = rule.ig.test(relToRule);
+      if (verdict.ignored || verdict.unignored) {
+        // unignored=true means a `!pattern` matched — keep the file.
+        return verdict.ignored && !verdict.unignored;
+      }
     }
     return false;
   }
