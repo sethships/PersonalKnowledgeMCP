@@ -20,6 +20,8 @@ import {
   formatElapsedTime,
 } from "./services/interrupted-update-detector.js";
 import { evaluateRecoveryStrategy } from "./services/interrupted-update-recovery.js";
+import { pruneOrphanManifests } from "./services/orphan-manifest-reaper.js";
+import { FileManifestStoreImpl } from "./services/file-manifest-store.js";
 import {
   createHttpApp,
   startHttpServer,
@@ -201,6 +203,17 @@ async function main(): Promise<void> {
     logger.info("Initializing repository metadata service");
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.info("Repository metadata service initialized");
+
+    // Step 4a: Reap orphan FileManifests left behind by crashed registrations.
+    // A `local-folder` registration that crashes between manifest write and
+    // metadata write would otherwise leave a manifest the metadata store has
+    // no knowledge of. Best-effort, non-fatal — boot continues on failure.
+    try {
+      const manifestStore = FileManifestStoreImpl.getInstance(config.data.path);
+      await pruneOrphanManifests(repositoryService, manifestStore);
+    } catch (err) {
+      logger.warn({ err }, "Orphan manifest reaper failed (continuing startup)");
+    }
 
     // Step 4b: Check for interrupted updates from previous service crashes
     logger.debug("Checking for interrupted updates");

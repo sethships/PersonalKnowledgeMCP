@@ -27,14 +27,19 @@
  * @module services/local-folder-change-detector
  */
 
-import { readdir, stat } from "node:fs/promises";
-import { createReadStream } from "node:fs";
-import { createHash } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import { join, relative, sep, posix } from "node:path";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import { GitignoreFilter } from "../ingestion/gitignore-filter.js";
 import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
+import {
+  shouldDescendDir,
+  shouldIncludeFile,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+  type DirEntryLike,
+} from "../ingestion/file-eligibility.js";
+import { streamSha256 } from "../ingestion/sha256-stream.js";
 import {
   FileManifestStoreImpl,
   type FileManifest,
@@ -95,7 +100,7 @@ export class LocalFolderChangeDetector {
     const startMs = Date.now();
     const prior = await this.manifestStore.loadManifest(repo.name);
     const filter = await GitignoreFilter.load(repo.localPath);
-    const extensions = new Set(
+    const extensions: Set<string> = new Set(
       (repo.includeExtensions.length > 0 ? repo.includeExtensions : DEFAULT_EXTENSIONS).map((e) =>
         e.toLowerCase()
       )
@@ -126,7 +131,7 @@ export class LocalFolderChangeDetector {
       // Either added, modified, or paranoid recheck — we need a fresh hash.
       let sha256: string;
       try {
-        sha256 = await this.streamSha256(snap.absPath);
+        sha256 = await streamSha256(snap.absPath);
       } catch (err) {
         // Hash failure (transient I/O, permission flake, etc.) — emit the
         // file as `modified` (or `added` when no prior entry) and DROP it
@@ -190,11 +195,11 @@ export class LocalFolderChangeDetector {
   /**
    * Recursively walk `dir` accumulating per-file snapshots into `out`.
    *
-   * Honors:
-   *   - the `GitignoreFilter` (nested .gitignore rules)
-   *   - the repo's extension whitelist
-   *   - symlinks: NOT followed (mirrors the size-pre-scan policy in
-   *     `IngestionService`; cycle and out-of-tree escape risks)
+   * Eligibility (gitignore, extension whitelist, default exclusions, dotfile
+   * skip, VCS metadata skip, size cap, symlink skip) is delegated to the
+   * shared `shouldDescendDir` / `shouldIncludeFile` predicates so this walk
+   * agrees with `FileScanner` on what counts as an indexable file. See
+   * `src/ingestion/file-eligibility.ts` for the full rule list.
    *
    * @param rootPath - Repository root (used to compute POSIX-relative paths)
    * @param dir - Current directory being walked
@@ -218,52 +223,33 @@ export class LocalFolderChangeDetector {
     }
 
     for (const entry of entries) {
-      if (entry.name === ".git") continue;
       const absPath = join(dir, entry.name);
+      // Symlinks are never followed (cycle / out-of-tree escape).
       if (entry.isSymbolicLink()) continue;
 
       if (entry.isDirectory()) {
-        if (filter.isIgnored(absPath)) continue;
+        if (!shouldDescendDir(absPath, entry.name, filter)) continue;
         await this.walk(rootPath, absPath, filter, extensions, out);
         continue;
       }
 
       if (!entry.isFile()) continue;
-      if (filter.isIgnored(absPath)) continue;
 
-      const dotIdx = entry.name.lastIndexOf(".");
-      const ext = dotIdx >= 0 ? entry.name.substring(dotIdx).toLowerCase() : "";
-      if (!extensions.has(ext)) continue;
-
-      let st;
-      try {
-        st = await stat(absPath);
-      } catch {
-        continue;
-      }
+      const ent: DirEntryLike = { name: entry.name, isDir: false, isSymlink: false };
+      const verdict = await shouldIncludeFile(absPath, ent, {
+        gitignore: filter,
+        extensions,
+        maxSizeBytes: DEFAULT_MAX_FILE_SIZE_BYTES,
+      });
+      if (!verdict.eligible || !verdict.stats) continue;
 
       const relPath = posix.normalize(relative(rootPath, absPath).split(sep).join(posix.sep));
-      out.set(relPath, { absPath, sizeBytes: st.size, mtimeMs: st.mtimeMs });
+      out.set(relPath, {
+        absPath,
+        sizeBytes: verdict.stats.size,
+        mtimeMs: verdict.stats.mtimeMs,
+      });
     }
-  }
-
-  /**
-   * Streaming SHA-256 of a file. Hex digest, 64 lowercase chars.
-   *
-   * Duplicated with `IngestionService.streamSha256` rather than extracted to a
-   * shared util because the two call sites have different lifetimes (one runs
-   * once at registration, the other on every update) and cross-importing
-   * pulled `IngestionService` into the change detector's dependency closure,
-   * which is undesirable.
-   */
-  private async streamSha256(absolutePath: string): Promise<string> {
-    return new Promise<string>((resolveHash, rejectHash) => {
-      const hash = createHash("sha256");
-      const stream = createReadStream(absolutePath);
-      stream.on("data", (chunk: string | Buffer) => hash.update(chunk));
-      stream.on("end", () => resolveHash(hash.digest("hex")));
-      stream.on("error", rejectHash);
-    });
   }
 
   /**

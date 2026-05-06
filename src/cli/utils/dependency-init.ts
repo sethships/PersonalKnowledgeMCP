@@ -40,6 +40,8 @@ import { DocumentChunker } from "../../documents/DocumentChunker.js";
 import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
 import { WatchedFolderStoreImpl } from "../../services/watched-folder-store.js";
 import type { WatchedFolderStoreService } from "../../services/watched-folder-store.js";
+import { FileManifestStoreImpl } from "../../services/file-manifest-store.js";
+import { pruneOrphanManifests } from "../../services/orphan-manifest-reaper.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -266,6 +268,16 @@ export async function initializeDependencies(
     // Step 5: Initialize repository metadata service (singleton)
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.debug("Repository metadata service initialized");
+
+    // Step 5a: Reap orphan FileManifests (PR #573 review M-2). Best-effort —
+    // a failure here doesn't block CLI bootstrap. Mirrors the wiring in
+    // src/index.ts so MCP boot and CLI boot share the same hygiene.
+    try {
+      const manifestStore = FileManifestStoreImpl.getInstance(config.data.path);
+      await pruneOrphanManifests(repositoryService, manifestStore);
+    } catch (err) {
+      logger.warn({ err }, "Orphan manifest reaper failed (continuing CLI bootstrap)");
+    }
 
     // Step 6: Initialize search service
     const searchService = new SearchServiceImpl(

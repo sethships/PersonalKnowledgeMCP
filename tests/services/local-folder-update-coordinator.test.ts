@@ -320,6 +320,34 @@ describe("LocalFolderUpdateCoordinator", () => {
 
     const result = await coord.updateRepository("wrongSource");
     expect(result.status).toBe("failed");
+    expect(result.errors[0]?.error).toContain("not 'local-folder'");
+    expect(pipeline.processChanges).not.toHaveBeenCalled();
+  });
+
+  it("throws ConcurrentUpdateError when updateInProgress is already true", async () => {
+    // Repo metadata is seeded with an active update flag; the coordinator's
+    // pre-check at the top of updateRepository must reject before touching the
+    // pipeline. PR #573 review TEST-2 (concurrent-update guard).
+    const repo: RepositoryInfo = {
+      ...makeRepo("locked", testDir),
+      updateInProgress: true,
+      updateStartedAt: new Date(Date.now() - 60_000).toISOString(),
+    };
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => emptyUpdateResult()),
+    } as unknown as IncrementalUpdatePipeline;
+    const detector = new LocalFolderChangeDetector(store);
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    let caught: unknown;
+    try {
+      await coord.updateRepository("locked");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect((caught as Error).message).toMatch(/already in progress/i);
     expect(pipeline.processChanges).not.toHaveBeenCalled();
   });
 });

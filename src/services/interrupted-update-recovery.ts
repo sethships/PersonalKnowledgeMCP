@@ -160,7 +160,28 @@ export async function evaluateRecoveryStrategy(
   // misroute local-folder repos through `executeFullReindexRecovery` (which
   // would then crash on `repo.url!`). Always recommend resume; the coordinator
   // will pick up where the manifest left off.
+  //
+  // Stale-recovery warning (PR #573 review M-5): when the in-progress flag
+  // has been set longer than `STALE_UPDATE_THRESHOLD_MS`, the manifest is
+  // still safe to resume against (the coordinator only advances it on
+  // successful pipeline runs), but the user should know they've potentially
+  // lost weeks of unfinished work. Surface the elapsed time both via a
+  // `warn`-level log AND in the strategy `reason` so it shows up in any
+  // recovery report the user reads.
   if (repository.source === "local-folder") {
+    const isStale = elapsedMs > STALE_UPDATE_THRESHOLD_MS;
+    if (isStale) {
+      const elapsed = formatElapsedTime(elapsedMs);
+      logger.warn(
+        { repository: repositoryName, elapsedMs, elapsed },
+        "Local-folder update interrupted >24h ago — resume is safe (manifest preserved) but review changes after recovery"
+      );
+      return {
+        type: "resume",
+        reason: `local-folder repos resume via FileManifest. Note: update interrupted ${elapsed} ago — review changes carefully after recovery.`,
+        canAutoRecover: true,
+      };
+    }
     logger.info(
       { repository: repositoryName },
       "Local-folder source — recommending resume via LocalFolderUpdateCoordinator"

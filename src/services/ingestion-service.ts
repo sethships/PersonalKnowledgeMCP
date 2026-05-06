@@ -10,11 +10,16 @@
 
 import { resolve, basename, normalize, join, sep, relative, posix } from "node:path";
 import { stat, readdir } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { isLocalPath } from "../utils/path-utils.js";
 import simpleGit from "simple-git";
 import { GitignoreFilter } from "../ingestion/gitignore-filter.js";
+import {
+  shouldDescendDir,
+  shouldIncludeFile,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+  type DirEntryLike,
+} from "../ingestion/file-eligibility.js";
+import { streamSha256 } from "../ingestion/sha256-stream.js";
 import {
   FileManifestStoreImpl,
   type FileManifest,
@@ -415,6 +420,13 @@ export class IngestionService {
         batchSize: this.FILE_BATCH_SIZE,
       });
 
+      // Accumulator for files that completed the full chunk → embed → store
+      // pipeline (PR #573 review M-3). Only these get fingerprinted in the
+      // initial FileManifest for `local-folder` repos; files that errored out
+      // are deliberately omitted so the next incremental update treats them
+      // as "added" and retries.
+      const processedRelativePaths: string[] = [];
+
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
         const batch = fileBatches[batchIndex];
         if (!batch) continue; // Skip if batch is undefined (shouldn't happen)
@@ -455,6 +467,7 @@ export class IngestionService {
           stats.embeddingsGenerated += batchResult.embeddingsGenerated;
           stats.documentsStored += batchResult.documentsStored;
           errors.push(...batchResult.errors);
+          processedRelativePaths.push(...batchResult.processedRelativePaths);
         } catch (batchError) {
           // Log batch error but continue with next batch
           this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed, continuing...`, {
@@ -511,7 +524,8 @@ export class IngestionService {
         lastManifestId = await this.writeInitialFileManifest(
           repositoryName,
           cloneResult.path,
-          fileInfos
+          fileInfos,
+          new Set(processedRelativePaths)
         );
       }
 
@@ -758,9 +772,17 @@ export class IngestionService {
       embeddingsGenerated: 0,
       documentsStored: 0,
       errors: [],
+      processedRelativePaths: [],
     };
 
     const allChunks: InternalChunk[] = [];
+
+    // Track relative paths whose chunks made it into `allChunks`. We only
+    // promote these to `processedRelativePaths` after the embed + store phases
+    // succeed for the whole batch — partial pipeline success is reported as
+    // "no files indexed" so the manifest writer doesn't fingerprint files
+    // whose chunks never reached ChromaDB (PR #573 review M-3).
+    const chunkedRelativePaths: string[] = [];
 
     // Phase 1: Chunk files
     context.onProgress("chunking", {
@@ -780,6 +802,7 @@ export class IngestionService {
           allChunks.push(...docChunks);
           result.filesProcessed++;
           result.chunksCreated += docChunks.length;
+          chunkedRelativePaths.push(fileInfo.relativePath);
         } else {
           // Existing code path: read as text → FileChunker
           const content = await Bun.file(fileInfo.absolutePath).text();
@@ -787,6 +810,7 @@ export class IngestionService {
           allChunks.push(...this.convertFileChunksToInternal(chunks));
           result.filesProcessed++;
           result.chunksCreated += chunks.length;
+          chunkedRelativePaths.push(fileInfo.relativePath);
         }
       } catch (error) {
         // Individual file error - log and continue
@@ -890,6 +914,11 @@ export class IngestionService {
 
     await this.storageClient.addDocuments(collectionName, documents);
     result.documentsStored = documents.length;
+
+    // Storage succeeded — every file whose chunks landed in `allChunks` is
+    // now durably persisted. Promote them to `processedRelativePaths` so the
+    // initial-manifest writer fingerprints only what's actually indexed.
+    result.processedRelativePaths = [...chunkedRelativePaths];
 
     this.logger.debug("Batch processed successfully", {
       batchIndex: context.batchIndex,
@@ -1240,41 +1269,63 @@ export class IngestionService {
   }
 
   /**
-   * Pre-scan a `local-folder` candidate, counting files and bytes after
-   * applying nested `.gitignore` and the user's extension whitelist, and
-   * enforce soft-warn / hard-refuse thresholds.
+   * Default soft / hard guardrail thresholds for `local-folder` registration.
    *
-   * Soft warn (logged + surfaced via progress event):
-   *   - more than 10,000 files OR more than 1 GiB total.
-   * Hard refuse (throws `LocalFolderSizeRefusedError`):
-   *   - more than 100,000 files OR more than 10 GiB total.
-   * `options.force === true` bypasses the hard refusal.
+   * Soft thresholds (`>10K` files OR `>1 GiB`) only log a warning. Hard
+   * thresholds (`>100K` files OR `>10 GiB`) throw `LocalFolderSizeRefusedError`
+   * unless `options.force === true`.
    *
-   * Symlinks are NOT followed during this estimate (lstat-only), so a folder
-   * that includes a link to `/etc` doesn't pad the count and a link loop can't
-   * cause a hang. Walk cost is dominated by readdir + lstat which are cheap
-   * relative to the chunk + embed work the guardrail is protecting against.
+   * Exposed as a static field so unit tests can construct an `IngestionService`
+   * and pass tiny limits via {@link enforceLocalFolderSizeGuardrails}'s
+   * `thresholds` argument without fixturing 100K files (PR #573 review TEST-1).
    */
-  private async enforceLocalFolderSizeGuardrails(
+  static readonly LOCAL_FOLDER_SIZE_THRESHOLDS = {
+    softFileLimit: 10_000,
+    softByteLimit: 1_073_741_824, // 1 GiB
+    hardFileLimit: 100_000,
+    hardByteLimit: 10_737_418_240, // 10 GiB
+  } as const;
+
+  /**
+   * Pre-scan a `local-folder` candidate, counting files and bytes after
+   * applying the same eligibility predicate `FileScanner` will use during the
+   * actual scan, and enforce soft-warn / hard-refuse thresholds.
+   *
+   * Eligibility (gitignore, extension whitelist, default exclusions, dotfile
+   * skip, VCS metadata skip, size cap, symlink skip) is delegated to
+   * `shouldDescendDir` / `shouldIncludeFile` so the guardrail counts the same
+   * files the scanner would index — fixing the H-2 divergence in PR #573.
+   *
+   * `thresholds` is overridable for tests; production callers should leave it
+   * undefined to pick up {@link LOCAL_FOLDER_SIZE_THRESHOLDS}. Soft warn is
+   * also returned via `softWarn: true` in the result so callers can assert
+   * without log inspection.
+   */
+  async enforceLocalFolderSizeGuardrails(
     repositoryName: string,
     rootPath: string,
-    options: IndexOptions
-  ): Promise<void> {
-    const SOFT_FILE_LIMIT = 10_000;
-    const SOFT_BYTE_LIMIT = 1_073_741_824; // 1 GiB
-    const HARD_FILE_LIMIT = 100_000;
-    const HARD_BYTE_LIMIT = 10_737_418_240; // 10 GiB
+    options: IndexOptions,
+    thresholds: {
+      softFileLimit: number;
+      softByteLimit: number;
+      hardFileLimit: number;
+      hardByteLimit: number;
+    } = IngestionService.LOCAL_FOLDER_SIZE_THRESHOLDS
+  ): Promise<{ fileCount: number; totalBytes: number; softWarn: boolean }> {
+    const { softFileLimit, softByteLimit, hardFileLimit, hardByteLimit } = thresholds;
 
     const filter = await GitignoreFilter.load(rootPath);
-    const extensions =
+    const extensions: Set<string> =
       options.includeExtensions && options.includeExtensions.length > 0
         ? new Set(options.includeExtensions.map((e) => e.toLowerCase()))
         : new Set(DEFAULT_EXTENSIONS.map((e) => e.toLowerCase()));
 
     let fileCount = 0;
     let totalBytes = 0;
+    let aborted = false;
 
     const walk = async (dir: string): Promise<void> => {
+      if (aborted) return;
       let entries;
       try {
         entries = await readdir(dir, { withFileTypes: true });
@@ -1282,63 +1333,77 @@ export class IngestionService {
         return;
       }
       for (const entry of entries) {
-        if (entry.name === ".git") continue;
+        if (aborted) return;
         const abs = join(dir, entry.name);
-        // Symlinks: skip outright. Do not stat() the target (cycle / outside-root risk).
+        // Symlinks are never followed (cycle / out-of-tree escape).
         if (entry.isSymbolicLink()) continue;
 
         if (entry.isDirectory()) {
-          if (filter.isIgnored(abs)) continue;
+          if (!shouldDescendDir(abs, entry.name, filter)) continue;
           await walk(abs);
-        } else if (entry.isFile()) {
-          if (filter.isIgnored(abs)) continue;
-          const ext = "." + (entry.name.split(".").pop() ?? "").toLowerCase();
-          if (!extensions.has(ext)) continue;
-          try {
-            const st = await stat(abs);
-            fileCount++;
-            totalBytes += st.size;
-          } catch {
-            continue;
-          }
-          // Early exit on hard refusal (avoids walking the rest of a 200K-file folder).
-          if (!options.force && (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)) {
-            return;
-          }
+          continue;
+        }
+
+        if (!entry.isFile()) continue;
+
+        const ent: DirEntryLike = { name: entry.name, isDir: false, isSymlink: false };
+        const verdict = await shouldIncludeFile(abs, ent, {
+          gitignore: filter,
+          extensions,
+          maxSizeBytes: DEFAULT_MAX_FILE_SIZE_BYTES,
+        });
+        if (!verdict.eligible || !verdict.stats) continue;
+
+        fileCount++;
+        totalBytes += verdict.stats.size;
+
+        // Early exit on hard refusal (avoids walking the rest of a huge folder).
+        if (!options.force && (fileCount > hardFileLimit || totalBytes > hardByteLimit)) {
+          aborted = true;
+          return;
         }
       }
     };
 
     await walk(rootPath);
 
-    if (!options.force && (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)) {
+    if (!options.force && (fileCount > hardFileLimit || totalBytes > hardByteLimit)) {
       throw new LocalFolderSizeRefusedError(
         repositoryName,
         fileCount,
         totalBytes,
-        HARD_FILE_LIMIT,
-        HARD_BYTE_LIMIT
+        hardFileLimit,
+        hardByteLimit
       );
     }
-    if (fileCount > SOFT_FILE_LIMIT || totalBytes > SOFT_BYTE_LIMIT) {
+    const softWarn = fileCount > softFileLimit || totalBytes > softByteLimit;
+    if (softWarn) {
       this.logger.warn(
         {
           repository: repositoryName,
           rootPath,
           fileCount,
           totalBytes,
-          softFileLimit: SOFT_FILE_LIMIT,
-          softByteLimit: SOFT_BYTE_LIMIT,
+          softFileLimit,
+          softByteLimit,
         },
         "Local folder exceeds soft size guardrail; proceeding because under the hard refusal threshold or force=true was set"
       );
     }
+    return { fileCount, totalBytes, softWarn };
   }
 
   /**
    * Compute per-file fingerprints for a freshly-scanned local-folder repo and
    * persist a `FileManifest` so a future incremental update has a baseline to
    * diff against.
+   *
+   * Only files in `processedPaths` (POSIX-relative) are fingerprinted. Files
+   * whose chunks failed to embed/store are omitted so the NEXT incremental
+   * update sees them as `added` and retries — without this, a partial-success
+   * first index would silently lose those files from the index forever
+   * (PR #573 review M-3). Pass `undefined` to fingerprint all `fileInfos`
+   * (used by tests / call paths that have no per-file outcome to filter on).
    *
    * SHA-256 is computed via streaming so files larger than the chunker's
    * normal cap (which they shouldn't be, but a manifest is a different
@@ -1350,14 +1415,21 @@ export class IngestionService {
   private async writeInitialFileManifest(
     repositoryName: string,
     rootPath: string,
-    fileInfos: FileInfo[]
+    fileInfos: FileInfo[],
+    processedPaths?: ReadonlySet<string>
   ): Promise<string> {
     const store = FileManifestStoreImpl.getInstance();
     const files: Record<string, FileManifestEntry> = {};
 
     for (const info of fileInfos) {
+      // Skip files that didn't make it through the full pipeline. `info.relativePath`
+      // is already POSIX-normalized (FileScanner.normalizeToPosix), matching the
+      // form `processFileBatch` records into `processedRelativePaths`.
+      if (processedPaths && !processedPaths.has(info.relativePath)) {
+        continue;
+      }
       try {
-        const sha256 = await this.streamSha256(info.absolutePath);
+        const sha256 = await streamSha256(info.absolutePath);
         const st = await stat(info.absolutePath);
         // Manifest keys are POSIX-normalized relative paths so cross-platform
         // diffs stay deterministic. fileInfos already uses POSIX separators
@@ -1386,20 +1458,5 @@ export class IngestionService {
     };
     await store.saveManifest(repositoryName, manifest);
     return store.computeManifestId(repositoryName);
-  }
-
-  /**
-   * Streaming SHA-256 of a file's contents. Hex digest, lowercase, 64 chars.
-   */
-  private async streamSha256(absolutePath: string): Promise<string> {
-    return new Promise<string>((resolveHash, rejectHash) => {
-      const hash = createHash("sha256");
-      const stream = createReadStream(absolutePath);
-      stream.on("data", (chunk: string | Buffer) => {
-        hash.update(chunk);
-      });
-      stream.on("end", () => resolveHash(hash.digest("hex")));
-      stream.on("error", rejectHash);
-    });
   }
 }

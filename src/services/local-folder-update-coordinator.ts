@@ -104,6 +104,24 @@ export class LocalFolderUpdateCoordinator {
       }
 
       // Concurrent-update guard mirrors the git coordinator (line 253).
+      //
+      // TOCTOU caveat (PR #573 review M-4): the read here and the write below
+      // (`updateInProgress: true`) are separate operations. The MCP path is
+      // safe because `JobTracker` and the rate limiter dedupe concurrent
+      // invocations before they reach the coordinator. Direct callers (CLI
+      // `pk-mcp update`, recovery) carry a small race risk: two concurrent
+      // CLI invocations could both observe `updateInProgress=false`, both
+      // proceed to set it to `true`, and then race the metadata writes at
+      // line ~273. Manifest writes are serialized per-repo via the
+      // `FileManifestStoreImpl` write queue so the index itself stays
+      // consistent; the only observable effect is the LATER of the two
+      // metadata writes overwriting the earlier one.
+      //
+      // TODO(local-folder-toctou): replace with an atomic
+      // `RepositoryMetadataService.compareAndSetUpdateInProgress(name, false)`
+      // once the metadata store grows that primitive. Tracked as a follow-up
+      // issue separate from this PR — the CLI risk is low (single-user
+      // workflow) and the MCP path is already safe.
       if (repo.updateInProgress && repo.updateStartedAt) {
         throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
       }
