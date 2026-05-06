@@ -78,6 +78,7 @@ export type {
 // =============================================================================
 
 export { DocEntityExtractor } from "./DocEntityExtractor.js";
+export { PdfDocxEntityExtractor } from "./PdfDocxEntityExtractor.js";
 export { DocLinkResolver, documentId } from "./DocLinkResolver.js";
 
 export type {

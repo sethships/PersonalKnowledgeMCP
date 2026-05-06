@@ -137,7 +137,7 @@ describe("DocLinkResolver — wikilink precedence", () => {
     const mentions = out.edges.filter((e) => e.type === "MENTIONS");
     expect(mentions).toHaveLength(1);
     expect(mentions[0]!.toId).toBe("Class:AuthService");
-    expect(mentions[0]!.properties?.confidence).toBe("high");
+    expect(mentions[0]!.properties?.["confidence"]).toBe("high");
   });
 
   it("logs unresolved wikilinks at debug level", () => {
