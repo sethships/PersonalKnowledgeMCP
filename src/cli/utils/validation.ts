@@ -16,6 +16,12 @@ const VALID_PROVIDERS = ["openai", "transformersjs", "transformers", "local", "o
 
 /**
  * Schema for index command options
+ *
+ * Phase C (#566) extends the schema with local-folder registration flags:
+ * `--tier`, `--watch`/`--no-watch`, and `--follow-symlinks`. These are only
+ * meaningful when the path resolves to a non-git folder; they are passed
+ * through to `IngestionService.indexRepository` which enforces the
+ * source-specific semantics (e.g. refusing `--tier public` on a local folder).
  */
 export const IndexCommandOptionsSchema = z.object({
   name: z.string().optional(),
@@ -28,6 +34,14 @@ export const IndexCommandOptionsSchema = z.object({
     .refine((val) => !val || VALID_PROVIDERS.includes(val as (typeof VALID_PROVIDERS)[number]), {
       message: "Invalid provider. Valid values: openai, transformersjs, local, ollama",
     }),
+  tier: z
+    .enum(["private", "work", "public"])
+    .optional()
+    .describe("Security tier (local-folder default: private; public refused for folders)"),
+  // Commander surfaces `--no-watch` as `watch: false`; absence is `watch: undefined`.
+  // The handler treats `undefined` as "default by source" — true for local-folder.
+  watch: z.boolean().optional(),
+  followSymlinks: z.boolean().optional(),
 });
 
 /**

@@ -12,6 +12,7 @@ import type { GraphService } from "../services/graph-service-types.js";
 import type { DocumentSearchService } from "../services/document-search-types.js";
 import type { ImageSearchService } from "../services/image-search-types.js";
 import type { ListWatchedFoldersService } from "../services/list-watched-folders-types.js";
+import type { IngestionService } from "../services/ingestion-service.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -161,6 +162,12 @@ export interface MCPServerOptionalDeps {
 
   /** ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+
+  /**
+   * IngestionService for the `register_local_folder` tool (Phase C / #566).
+   * When omitted the tool is not registered.
+   */
+  ingestionService?: IngestionService;
 
   /** Human-readable reason why update tools are unavailable (stub mode) */
   updateToolsUnavailableReason?: string;

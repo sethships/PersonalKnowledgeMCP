@@ -39,6 +39,8 @@ import type { GraphService } from "./services/graph-service-types.js";
 // Incremental update dependencies
 import { FileChunker } from "./ingestion/file-chunker.js";
 import { FileScanner } from "./ingestion/file-scanner.js";
+import { RepositoryCloner } from "./ingestion/repository-cloner.js";
+import { IngestionService } from "./services/ingestion-service.js";
 import { GitHubClientImpl } from "./services/github-client.js";
 import { IncrementalUpdatePipeline } from "./services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "./services/incremental-update-coordinator.js";
@@ -446,6 +448,36 @@ async function main(): Promise<void> {
       updateToolsUnavailableReason = "GITHUB_PAT is not configured";
     }
 
+    // Step 5c: Build an IngestionService for the `register_local_folder` tool
+    // (Phase C / #566). This is constructed up-front (independent of the
+    // GITHUB_PAT branch above) because local-folder registration does not
+    // require a remote and has no PAT dependency. The repositoryCloner is
+    // wired in for parity with the type contract; it is never invoked for
+    // local-folder paths because the local branch in `IngestionService.index`
+    // skips it entirely.
+    const registrationFileScanner = new FileScanner();
+    const registrationFileChunker = new FileChunker();
+    const registrationDocChunker = new DocumentChunker();
+    const registrationDocTypeDetector = new DocumentTypeDetector();
+    const registrationRepositoryCloner = new RepositoryCloner({
+      clonePath: Bun.env["CLONE_PATH"] || "./data/repositories",
+      githubPat: Bun.env["GITHUB_PAT"],
+      gitPat: Bun.env["GIT_PAT"],
+    });
+    const ingestionService = new IngestionService(
+      registrationRepositoryCloner,
+      registrationFileScanner,
+      registrationFileChunker,
+      embeddingProvider,
+      chromaClient,
+      repositoryService,
+      {
+        documentChunker: registrationDocChunker,
+        documentTypeDetector: registrationDocTypeDetector,
+      }
+    );
+    logger.debug("Ingestion service initialized for register_local_folder MCP tool");
+
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
     const mcpServer = new PersonalKnowledgeMCPServer(
@@ -466,6 +498,7 @@ async function main(): Promise<void> {
         jobTracker,
         documentSearchService,
         listWatchedFoldersService,
+        ingestionService,
         updateToolsUnavailableReason,
       }
     );

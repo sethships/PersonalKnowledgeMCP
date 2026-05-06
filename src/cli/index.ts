@@ -113,12 +113,25 @@ program
 // Index command
 program
   .command("index")
-  .description("Index a repository for semantic search")
-  .argument("<url>", "Repository URL to index")
+  .description("Index a git repository OR a local folder (auto-detected) for semantic search")
+  .argument("<url>", "Git URL or absolute / relative local folder path")
   .option("-n, --name <name>", "Custom repository name")
-  .option("-b, --branch <branch>", "Branch to clone")
+  .option("-b, --branch <branch>", "Branch to clone (git only)")
   .option("-f, --force", "Force reindexing if repository already exists")
   .option("-p, --provider <provider>", "Embedding provider (openai, transformersjs, local, ollama)")
+  .option(
+    "--tier <tier>",
+    "Security tier: private | work | public (local folders default to private; public is refused for folders)"
+  )
+  .option(
+    "--watch",
+    "Enable filesystem watcher after indexing a local folder (default: enabled)"
+  )
+  .option("--no-watch", "Disable filesystem watcher even for local folders")
+  .option(
+    "--follow-symlinks",
+    "Follow symlinks inside the local folder (default: skip; out-of-folder targets are rejected even when set)"
+  )
   .action(async (url: string, options: Record<string, unknown>) => {
     try {
       const validatedOptions = IndexCommandOptionsSchema.parse(options);

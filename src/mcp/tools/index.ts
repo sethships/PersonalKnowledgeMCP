@@ -44,6 +44,11 @@ import {
   getGraphMetricsToolDefinition,
   createGetGraphMetricsHandler,
 } from "./get-graph-metrics.js";
+import {
+  registerLocalFolderToolDefinition,
+  createRegisterLocalFolderHandler,
+} from "./register-local-folder.js";
+import type { IngestionService } from "../../services/ingestion-service.js";
 
 /**
  * Dependencies for tool registry creation
@@ -76,6 +81,11 @@ export interface ToolRegistryDependencies {
   imageSearchService?: ImageSearchService;
   /** Optional: ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+  /**
+   * Optional: IngestionService for the `register_local_folder` tool (Phase C).
+   * When omitted the tool is not registered.
+   */
+  ingestionService?: IngestionService;
   /** Optional: Human-readable reason why update tools are unavailable */
   updateToolsUnavailableReason?: string;
 }
@@ -256,6 +266,21 @@ export function createToolRegistry(
     registry["list_watched_folders"] = {
       definition: listWatchedFoldersToolDefinition,
       handler: createListWatchedFoldersHandler(deps.listWatchedFoldersService),
+    };
+  }
+
+  // Phase C (T4.4): register `register_local_folder` when an IngestionService
+  // is wired. The tool runs synchronously by default; async mode is only
+  // honored when a JobTracker is also available.
+  if (deps.ingestionService) {
+    registry["register_local_folder"] = {
+      definition: registerLocalFolderToolDefinition,
+      handler: createRegisterLocalFolderHandler({
+        ingestionService: deps.ingestionService,
+        localFolderCoordinator: deps.localFolderCoordinator,
+        repositoryService: deps.repositoryService,
+        jobTracker: deps.jobTracker,
+      }),
     };
   }
 

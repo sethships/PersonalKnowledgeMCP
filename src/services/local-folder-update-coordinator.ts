@@ -50,6 +50,18 @@ export interface LocalFolderCoordinatorConfig {
 }
 
 /**
+ * Pluggable watch-manager surface used by the coordinator's lifecycle
+ * methods. Phase C wires a real `LocalFolderRepoWatchManager` (chokidar +
+ * `FolderEventRouter`); tests can pass a fake. When omitted the coordinator
+ * still persists `watchEnabled` to metadata but no live watcher attaches —
+ * useful for environments that disable filesystem watchers entirely.
+ */
+export interface LocalFolderWatchManager {
+  startWatching(repo: RepositoryInfo): Promise<void>;
+  stopWatching(repoName: string): Promise<void>;
+}
+
+/**
  * Coordinator for incremental updates of `local-folder` repositories.
  */
 export class LocalFolderUpdateCoordinator {
@@ -61,10 +73,58 @@ export class LocalFolderUpdateCoordinator {
     private readonly updatePipeline: IncrementalUpdatePipeline,
     private readonly changeDetector: LocalFolderChangeDetector = new LocalFolderChangeDetector(),
     private readonly manifestStore: FileManifestStoreImpl = FileManifestStoreImpl.getInstance(),
-    config: LocalFolderCoordinatorConfig = {}
+    config: LocalFolderCoordinatorConfig = {},
+    private readonly watchManager?: LocalFolderWatchManager
   ) {
     this.logger = getComponentLogger("services:local-folder-update-coordinator");
     this.updateHistoryLimit = config.updateHistoryLimit ?? 50;
+  }
+
+  /**
+   * Start the filesystem watcher for a `local-folder` repo and persist the
+   * `watchEnabled: true` flag so the MCP server can restore the watch on
+   * restart (Phase C / T5.3).
+   *
+   * Safe to call when no watch manager was injected — the persistence step
+   * still runs so the next process startup (with a watch manager wired) will
+   * resume the watch automatically. This makes the registration code path
+   * insensitive to whether the current process has a live watcher fleet.
+   */
+  async startWatching(repo: RepositoryInfo): Promise<void> {
+    if (repo.source !== "local-folder") {
+      throw new Error(
+        `startWatching requires a local-folder repository, got source="${repo.source}" for "${repo.name}"`
+      );
+    }
+
+    if (this.watchManager) {
+      await this.watchManager.startWatching(repo);
+    } else {
+      this.logger.info(
+        { repository: repo.name },
+        "startWatching: no watch manager wired; persisting watchEnabled=true only"
+      );
+    }
+
+    if (repo.watchEnabled !== true) {
+      await this.repositoryService.updateRepository({ ...repo, watchEnabled: true });
+    }
+  }
+
+  /**
+   * Stop the filesystem watcher for a `local-folder` repo and persist
+   * `watchEnabled: false` so the watcher does not resume on restart.
+   */
+  async stopWatching(repositoryName: string): Promise<void> {
+    if (this.watchManager) {
+      await this.watchManager.stopWatching(repositoryName);
+    }
+
+    const repo = await this.repositoryService.getRepository(repositoryName);
+    if (!repo) return;
+    if (repo.watchEnabled === true) {
+      await this.repositoryService.updateRepository({ ...repo, watchEnabled: false });
+    }
   }
 
   /**
