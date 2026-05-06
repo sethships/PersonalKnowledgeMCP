@@ -51,6 +51,7 @@ interface ParsedListResponse {
     status: string;
     index_duration_ms: number;
     error_message?: string;
+    local_path?: string;
   }>;
   summary: {
     total_repositories: number;
@@ -344,6 +345,39 @@ describe("createListRepositoriesHandler", () => {
       expect(remoteResp?.url).toBe("https://github.com/user/remote-repo.git");
       expect(localResp?.source).toBe("local-folder");
       expect(localResp?.url).toBeNull();
+    });
+
+    it("exposes local_path for local-folder AND local-git, but never for git-remote (PR #573 review TEST-2 + L-4)", async () => {
+      const remote = createMockRepo("remote-repo", 1, 1, {
+        source: "git-remote",
+        localPath: "/data/repos/remote-repo", // internal clone cache; do NOT expose
+      });
+      const localFolder = createMockRepo("folder-repo", 1, 1, {
+        source: "local-folder",
+        url: null,
+        localPath: "/Users/dev/notes",
+      });
+      const localGit = createMockRepo("git-repo", 1, 1, {
+        source: "local-git",
+        url: null,
+        localPath: "/Users/dev/projects/my-app",
+      });
+      mockRepositoryService.listRepositories = mock(() =>
+        Promise.resolve([remote, localFolder, localGit])
+      );
+
+      const result = await handler({});
+      const response = parseResponse(getTextContent(result.content));
+
+      const remoteResp = response.repositories.find((r) => r.name === "remote-repo");
+      const folderResp = response.repositories.find((r) => r.name === "folder-repo");
+      const gitResp = response.repositories.find((r) => r.name === "git-repo");
+
+      // git-remote: local_path MUST NOT be present (internal clone-cache path).
+      expect(remoteResp).not.toHaveProperty("local_path");
+      // local-folder + local-git: user supplied the path; surface it.
+      expect(folderResp?.local_path).toBe("/Users/dev/notes");
+      expect(gitResp?.local_path).toBe("/Users/dev/projects/my-app");
     });
   });
 

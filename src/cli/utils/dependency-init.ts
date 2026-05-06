@@ -26,6 +26,7 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { GitHubClientImpl } from "../../services/github-client.js";
 import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import { IndexCompletenessChecker } from "../../services/index-completeness-checker.js";
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
@@ -39,6 +40,8 @@ import { DocumentChunker } from "../../documents/DocumentChunker.js";
 import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
 import { WatchedFolderStoreImpl } from "../../services/watched-folder-store.js";
 import type { WatchedFolderStoreService } from "../../services/watched-folder-store.js";
+import { FileManifestStoreImpl } from "../../services/file-manifest-store.js";
+import { pruneOrphanManifests } from "../../services/orphan-manifest-reaper.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -93,6 +96,8 @@ export interface CliDependencies {
   githubClient: GitHubClient;
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
+  /** Coordinator for `local-folder` source repos (used by trigger_incremental_update). */
+  localFolderCoordinator: LocalFolderUpdateCoordinator;
   tokenService: TokenService;
   /** Optional graph adapter for graph database operations (only if configured) */
   graphAdapter?: GraphStorageAdapter;
@@ -264,6 +269,16 @@ export async function initializeDependencies(
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.debug("Repository metadata service initialized");
 
+    // Step 5a: Reap orphan FileManifests (PR #573 review M-2). Best-effort —
+    // a failure here doesn't block CLI bootstrap. Mirrors the wiring in
+    // src/index.ts so MCP boot and CLI boot share the same hygiene.
+    try {
+      const manifestStore = FileManifestStoreImpl.getInstance(config.data.path);
+      await pruneOrphanManifests(repositoryService, manifestStore);
+    } catch (err) {
+      logger.warn({ err }, "Orphan manifest reaper failed (continuing CLI bootstrap)");
+    }
+
     // Step 6: Initialize search service
     const searchService = new SearchServiceImpl(
       embeddingProvider,
@@ -431,6 +446,17 @@ export async function initializeDependencies(
       "Incremental update coordinator initialized"
     );
 
+    // Local-folder coordinator shares the metadata service + pipeline; it owns
+    // its own change detector and uses the FileManifestStore singleton.
+    const localFolderCoordinator = new LocalFolderUpdateCoordinator(
+      repositoryService,
+      updatePipeline,
+      undefined,
+      undefined,
+      { updateHistoryLimit }
+    );
+    logger.debug("Local folder update coordinator initialized");
+
     return {
       embeddingProvider,
       chromaClient,
@@ -440,6 +466,7 @@ export async function initializeDependencies(
       githubClient,
       updatePipeline,
       updateCoordinator,
+      localFolderCoordinator,
       tokenService,
       graphAdapter,
       graphIngestionService,

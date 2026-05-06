@@ -197,6 +197,22 @@ export interface ScanOptions {
    * ```
    */
   onProgress?: (scanned: number, total: number) => void;
+
+  /**
+   * When `true`, honor every `.gitignore` discovered in the tree, not just the
+   * root one. Rules from a nested `.gitignore` are scoped to its containing
+   * directory and override ancestor rules (matching git's semantics, including
+   * negation via `!keep.txt`).
+   *
+   * Used by `local-folder` and `local-git` ingestion paths where users
+   * routinely have nested `.gitignore` files (monorepos, vendored docs,
+   * build directories with their own ignore rules). For `git-remote` shallow
+   * clones the default `false` is fine because the remote already excluded
+   * ignored files at clone time.
+   *
+   * @default false
+   */
+  respectNestedGitignore?: boolean;
 }
 
 /**

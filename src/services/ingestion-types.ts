@@ -46,6 +46,17 @@ export interface IndexOptions {
    * @default false
    */
   force?: boolean;
+
+  /**
+   * Security tier this repository belongs to.
+   *
+   * Defaults to `"private"` when omitted. `"public"` is refused at registration
+   * for `local-folder` sources to prevent accidental disclosure of personal
+   * content; `"private"` and `"work"` are always allowed.
+   *
+   * @default "private"
+   */
+  tier?: "private" | "work" | "public";
 }
 
 /**
@@ -359,4 +370,19 @@ export interface BatchResult {
    * Errors encountered in this batch
    */
   errors: IndexError[];
+
+  /**
+   * POSIX-relative paths of files that fully made it through chunk → embed →
+   * store in this batch.
+   *
+   * Used by `IngestionService.writeInitialFileManifest` to ensure the initial
+   * `local-folder` manifest fingerprints ONLY successfully-indexed files —
+   * fixing PR #573 review M-3 where a partial-success first index would write
+   * fingerprints for files the pipeline errored on, causing the next
+   * incremental update to see no diff and silently skip them forever.
+   *
+   * Empty when nothing in the batch reached ChromaDB. May be a subset of
+   * `filesProcessed` if the embed/store phase fails for the whole batch.
+   */
+  processedRelativePaths: string[];
 }

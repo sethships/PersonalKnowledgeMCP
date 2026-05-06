@@ -16,7 +16,12 @@
 import type { Tool, CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
+import {
+  dispatchCoordinator,
+  type UpdateCoordinatorLike,
+} from "../../services/update-coordinator-dispatch.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
@@ -38,6 +43,7 @@ type TriggerErrorCode =
   | "update_in_progress"
   | "update_failed"
   | "timeout"
+  | "service_unavailable"
   | "internal_error";
 
 /**
@@ -213,7 +219,12 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   };
 
   if (result.commitSha) {
-    response.commit_sha = result.commitSha.substring(0, 7);
+    // Truncate git SHAs to the conventional 7-char short form, but pass through
+    // the synthetic `local-<isoDate>` markers used by local-folder repos in
+    // full — truncating to 7 chars yields a meaningless "local-2".
+    response.commit_sha = result.commitSha.startsWith("local-")
+      ? result.commitSha
+      : result.commitSha.substring(0, 7);
   }
   if (result.commitMessage) {
     response.commit_message = result.commitMessage;
@@ -272,7 +283,17 @@ function formatAsyncSuccessResponse(repository: string, jobId: string): TextCont
  */
 export interface TriggerUpdateDependencies {
   repositoryService: RepositoryMetadataService;
+  /** Coordinator for git-remote and local-git sources. */
   updateCoordinator: IncrementalUpdateCoordinator;
+  /**
+   * Coordinator for `local-folder` sources. The handler dispatches to this one
+   * after resolving the `RepositoryInfo` if `repo.source === "local-folder"`.
+   * Optional so tests and legacy bootstrap paths that never register a
+   * local-folder repo do not need to construct one. If absent and a
+   * local-folder repo is requested, the handler returns a `service_unavailable`
+   * error rather than misrouting through the git coordinator.
+   */
+  localFolderCoordinator?: LocalFolderUpdateCoordinator;
   rateLimiter: MCPRateLimiter;
   jobTracker: JobTracker;
 }
@@ -297,7 +318,7 @@ export interface TriggerUpdateDependencies {
  * See: https://github.com/sethb75/PersonalKnowledgeMCP/issues/126#issuecomment-X
  */
 async function executeWithTimeout(
-  coordinator: IncrementalUpdateCoordinator,
+  coordinator: UpdateCoordinatorLike,
   repositoryName: string,
   timeoutMs: number
 ): Promise<CoordinatorResult> {
@@ -343,7 +364,8 @@ async function executeWithTimeout(
  * ```
  */
 export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): ToolHandler {
-  const { repositoryService, updateCoordinator, rateLimiter, jobTracker } = deps;
+  const { repositoryService, updateCoordinator, localFolderCoordinator, rateLimiter, jobTracker } =
+    deps;
 
   return async (args: unknown): Promise<CallToolResult> => {
     const startTime = performance.now();
@@ -380,6 +402,32 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
             formatErrorResponse(
               "repository_not_found",
               `Repository '${repositoryName}' is not indexed. Use list_indexed_repositories to see available repositories.`
+            ),
+          ],
+          isError: true,
+        };
+      }
+
+      // Pick the coordinator that matches the repo's source via the shared
+      // helper. `dispatchCoordinator` returns undefined when a local-folder
+      // repo is requested but no local-folder coordinator was injected — we
+      // surface that as `service_unavailable` rather than misroute through
+      // the git coordinator (which would throw `MissingCommitShaError`).
+      const coordinatorForRepo = dispatchCoordinator(
+        repo,
+        updateCoordinator,
+        localFolderCoordinator
+      );
+      if (!coordinatorForRepo) {
+        log.warn(
+          { repository: repositoryName },
+          "trigger_incremental_update invoked for local-folder repo with no LocalFolderUpdateCoordinator configured"
+        );
+        return {
+          content: [
+            formatErrorResponse(
+              "service_unavailable",
+              `Repository '${repositoryName}' is a local-folder source but the local-folder update coordinator is not configured on this server.`
             ),
           ],
           isError: true,
@@ -466,7 +514,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
 
           try {
             const result = await executeWithTimeout(
-              updateCoordinator,
+              coordinatorForRepo,
               repositoryName,
               UPDATE_TIMEOUT_MS
             );
@@ -506,7 +554,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
 
       try {
         const result = await executeWithTimeout(
-          updateCoordinator,
+          coordinatorForRepo,
           repositoryName,
           UPDATE_TIMEOUT_MS
         );

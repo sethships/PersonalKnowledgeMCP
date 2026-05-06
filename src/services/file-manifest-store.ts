@@ -14,7 +14,7 @@
  */
 
 import { join, dirname } from "path";
-import { rename, unlink, mkdir } from "fs/promises";
+import { rename, unlink, mkdir, readdir, readFile } from "fs/promises";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { getComponentLogger } from "../logging/index.js";
@@ -118,6 +118,22 @@ export interface FileManifestStoreService {
    * Idempotent — succeeds with no error when the manifest file does not exist.
    */
   deleteManifest(repository: string): Promise<void>;
+
+  /**
+   * Enumerate the repository names of every persisted manifest on disk.
+   *
+   * Used by the startup orphan-manifest reaper (PR #573 review M-2): a
+   * `local-folder` registration that crashes between `writeInitialFileManifest`
+   * and `repositoryService.updateRepository` leaves a manifest file with no
+   * matching metadata entry. On boot, the orchestrator compares this list
+   * against `RepositoryMetadataService.listRepositories()` and deletes any
+   * manifests whose repository names are absent from the metadata store.
+   *
+   * Returns an empty array when the manifests directory does not exist yet
+   * (fresh install). Manifests with malformed JSON or missing `repository`
+   * fields are skipped with a debug log rather than failing the boot.
+   */
+  listManifests(): Promise<string[]>;
 }
 
 /** Zod schema for a single fingerprint entry (validated on read). */
@@ -291,6 +307,40 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
     );
     this.writeQueue = next.catch(() => undefined);
     await next;
+  }
+
+  async listManifests(): Promise<string[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.manifestsDir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      this.logger.warn(
+        { manifestsDir: this.manifestsDir, err },
+        "Failed to enumerate manifests directory"
+      );
+      return [];
+    }
+
+    const repositories: string[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      const filePath = join(this.manifestsDir, entry);
+      try {
+        const content = await readFile(filePath, "utf-8");
+        const parsed: unknown = JSON.parse(content);
+        const manifest = FileManifestSchema.parse(parsed);
+        repositories.push(manifest.repository);
+      } catch (err) {
+        // Malformed / partial manifests are skipped rather than failing the
+        // entire boot — the reaper can clean them up on a future run after
+        // the user re-indexes.
+        this.logger.debug({ filePath, err }, "Skipping unreadable manifest during listManifests");
+      }
+    }
+    return repositories;
   }
 
   private async saveManifestInternal(repository: string, manifest: FileManifest): Promise<void> {

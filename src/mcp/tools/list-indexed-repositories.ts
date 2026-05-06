@@ -51,6 +51,14 @@ interface IndexedRepositoryResponse {
   index_duration_ms: number;
   /** Error message if status is "error" */
   error_message?: string;
+  /**
+   * Absolute filesystem path of the indexed repository.
+   *
+   * Present for `local-git` and `local-folder` sources (where `url` is null
+   * or only of historical interest). Omitted for `git-remote` repositories,
+   * where the local clone path is an internal cache detail.
+   */
+  local_path?: string;
 }
 
 /**
@@ -111,6 +119,12 @@ function formatListRepositoriesResponse(
     status: repo.status,
     index_duration_ms: repo.indexDurationMs,
     ...(repo.errorMessage && { error_message: repo.errorMessage }),
+    // Surface the on-disk path for non-git-remote sources so callers know
+    // where the user-registered folder actually lives. For git-remote
+    // repositories the localPath is an internal clone-cache directory and
+    // exposing it would invite users to edit it (which would race with the
+    // next git fetch + reset --hard).
+    ...(repo.source !== "git-remote" && repo.localPath && { local_path: repo.localPath }),
   }));
 
   // Calculate summary statistics

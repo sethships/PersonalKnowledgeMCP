@@ -17,6 +17,7 @@ import { getComponentLogger } from "../logging/index.js";
 import type { ScanOptions, FileInfo, FileScannerConfig } from "./types.js";
 import { ValidationError, FileScanError } from "./errors.js";
 import { DEFAULT_EXTENSIONS } from "./default-extensions.js";
+import { GitignoreFilter } from "./gitignore-filter.js";
 
 /**
  * Scans repository directories to identify files for indexing.
@@ -140,8 +141,13 @@ export class FileScanner {
       // 1. Validate and normalize repository path
       const normalizedRepoPath = await this.validateRepoPath(repoPath);
 
-      // 2. Load .gitignore rules
-      const gitignore = await this.loadGitignore(normalizedRepoPath);
+      // 2. Load .gitignore rules. For nested mode (local-folder / local-git),
+      //    walk the tree to merge every .gitignore; otherwise use the cheap
+      //    root-only loader that has shipped since before this feature.
+      const nestedFilter = options.respectNestedGitignore
+        ? await GitignoreFilter.load(normalizedRepoPath)
+        : null;
+      const gitignore = nestedFilter ? null : await this.loadGitignore(normalizedRepoPath);
 
       // 3. Determine extensions and exclusions
       const extensions = options.includeExtensions ?? [...DEFAULT_EXTENSIONS];
@@ -153,7 +159,9 @@ export class FileScanner {
       this.logger.debug({ count: matchedPaths.length }, "Glob scan complete, applying gitignore");
 
       // 5. Apply gitignore filtering
-      const filteredPaths = this.applyGitignoreFilter(matchedPaths, gitignore);
+      const filteredPaths = nestedFilter
+        ? this.applyNestedGitignoreFilter(normalizedRepoPath, matchedPaths, nestedFilter)
+        : this.applyGitignoreFilter(matchedPaths, gitignore!);
 
       this.logger.debug(
         { before: matchedPaths.length, after: filteredPaths.length },
@@ -360,6 +368,25 @@ export class FileScanner {
   private applyGitignoreFilter(paths: string[], gitignore: ReturnType<typeof ignore>): string[] {
     // The ignore library's filter() method returns paths NOT ignored
     return gitignore.filter(paths);
+  }
+
+  /**
+   * Apply nested .gitignore filtering using the GitignoreFilter.
+   *
+   * Each candidate path is evaluated against every .gitignore from the repo
+   * root down to the file's directory; deeper rules override shallower ones.
+   *
+   * @param repoPath - Absolute repo root (paths are relative to this)
+   * @param paths - Repo-relative file paths from the glob scan
+   * @param filter - Pre-loaded nested filter
+   * @returns Repo-relative paths that survive the filter
+   */
+  private applyNestedGitignoreFilter(
+    repoPath: string,
+    paths: string[],
+    filter: GitignoreFilter
+  ): string[] {
+    return paths.filter((rel) => !filter.isIgnored(join(repoPath, rel)));
   }
 
   /**
