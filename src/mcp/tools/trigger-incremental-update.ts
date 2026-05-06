@@ -18,17 +18,10 @@ import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
 import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
-
-/**
- * Minimal structural interface satisfied by both `IncrementalUpdateCoordinator`
- * (git-remote / local-git) and `LocalFolderUpdateCoordinator` (local-folder).
- *
- * Used by `executeWithTimeout` so the dispatch in the handler can pick a
- * coordinator without the timeout helper caring which concrete class it has.
- */
-interface UpdateCoordinator {
-  updateRepository(repositoryName: string): Promise<CoordinatorResult>;
-}
+import {
+  dispatchCoordinator,
+  type UpdateCoordinatorLike,
+} from "../../services/update-coordinator-dispatch.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
@@ -226,7 +219,12 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
   };
 
   if (result.commitSha) {
-    response.commit_sha = result.commitSha.substring(0, 7);
+    // Truncate git SHAs to the conventional 7-char short form, but pass through
+    // the synthetic `local-<isoDate>` markers used by local-folder repos in
+    // full — truncating to 7 chars yields a meaningless "local-2".
+    response.commit_sha = result.commitSha.startsWith("local-")
+      ? result.commitSha
+      : result.commitSha.substring(0, 7);
   }
   if (result.commitMessage) {
     response.commit_message = result.commitMessage;
@@ -320,7 +318,7 @@ export interface TriggerUpdateDependencies {
  * See: https://github.com/sethb75/PersonalKnowledgeMCP/issues/126#issuecomment-X
  */
 async function executeWithTimeout(
-  coordinator: UpdateCoordinator,
+  coordinator: UpdateCoordinatorLike,
   repositoryName: string,
   timeoutMs: number
 ): Promise<CoordinatorResult> {
@@ -410,31 +408,30 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
         };
       }
 
-      // Pick the coordinator that matches the repo's source. Git-flavored repos
-      // (git-remote, local-git) use the existing IncrementalUpdateCoordinator;
-      // local-folder repos use the manifest-based LocalFolderUpdateCoordinator.
-      // If a local-folder repo is requested but no local-folder coordinator was
-      // injected, surface a `service_unavailable` error rather than misroute.
-      let coordinatorForRepo: UpdateCoordinator;
-      if (repo.source === "local-folder") {
-        if (!localFolderCoordinator) {
-          log.warn(
-            { repository: repositoryName },
-            "trigger_incremental_update invoked for local-folder repo with no LocalFolderUpdateCoordinator configured"
-          );
-          return {
-            content: [
-              formatErrorResponse(
-                "service_unavailable",
-                `Repository '${repositoryName}' is a local-folder source but the local-folder update coordinator is not configured on this server.`
-              ),
-            ],
-            isError: true,
-          };
-        }
-        coordinatorForRepo = localFolderCoordinator;
-      } else {
-        coordinatorForRepo = updateCoordinator;
+      // Pick the coordinator that matches the repo's source via the shared
+      // helper. `dispatchCoordinator` returns undefined when a local-folder
+      // repo is requested but no local-folder coordinator was injected — we
+      // surface that as `service_unavailable` rather than misroute through
+      // the git coordinator (which would throw `MissingCommitShaError`).
+      const coordinatorForRepo = dispatchCoordinator(
+        repo,
+        updateCoordinator,
+        localFolderCoordinator
+      );
+      if (!coordinatorForRepo) {
+        log.warn(
+          { repository: repositoryName },
+          "trigger_incremental_update invoked for local-folder repo with no LocalFolderUpdateCoordinator configured"
+        );
+        return {
+          content: [
+            formatErrorResponse(
+              "service_unavailable",
+              `Repository '${repositoryName}' is a local-folder source but the local-folder update coordinator is not configured on this server.`
+            ),
+          ],
+          isError: true,
+        };
       }
 
       // Step 3: Check for existing running job first (for deduplication)

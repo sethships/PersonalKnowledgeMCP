@@ -64,7 +64,10 @@ describe("LocalFolderChangeDetector", () => {
     const detector = new LocalFolderChangeDetector(store);
     const result = await detector.detect(repo);
 
-    const adds = result.changes.filter((c) => c.status === "added").map((c) => c.path).sort();
+    const adds = result.changes
+      .filter((c) => c.status === "added")
+      .map((c) => c.path)
+      .sort();
     expect(adds).toEqual(["a.ts", "b.ts"]);
     expect(Object.keys(result.nextManifestFiles).sort()).toEqual(["a.ts", "b.ts"]);
   });
@@ -75,7 +78,7 @@ describe("LocalFolderChangeDetector", () => {
     const detector = new LocalFolderChangeDetector(store);
 
     // Seed manifest from initial scan.
-    let initial = await detector.detect(repo);
+    const initial = await detector.detect(repo);
     await store.saveManifest(repo.name, {
       version: "1.0",
       repository: repo.name,
@@ -96,7 +99,7 @@ describe("LocalFolderChangeDetector", () => {
     await writeFile(join(testDir, "a.ts"), "AAAA");
     const repo = makeRepo("test", testDir);
     const detector = new LocalFolderChangeDetector(store);
-    let initial = await detector.detect(repo);
+    const initial = await detector.detect(repo);
     await store.saveManifest(repo.name, {
       version: "1.0",
       repository: repo.name,

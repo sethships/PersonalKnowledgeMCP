@@ -128,8 +128,24 @@ export class LocalFolderChangeDetector {
       try {
         sha256 = await this.streamSha256(snap.absPath);
       } catch (err) {
-        this.logger.warn({ relPath, err }, "Could not hash file; treating as unchanged");
-        if (priorEntry) nextManifestFiles[relPath] = priorEntry;
+        // Hash failure (transient I/O, permission flake, etc.) — emit the
+        // file as `modified` (or `added` when no prior entry) and DROP it
+        // from the next manifest. This forces a re-hash on the next update
+        // rather than leaving the prior fingerprint in place, which would
+        // make a genuinely-modified-but-temporarily-unreadable file look
+        // unchanged forever once the read recovers and `(size, mtime)`
+        // happens to match.
+        this.logger.warn(
+          { relPath, err },
+          "Could not hash file; emitting as changed and skipping fingerprint"
+        );
+        if (priorEntry) {
+          changes.push({ path: relPath, status: "modified" });
+        } else {
+          changes.push({ path: relPath, status: "added" });
+        }
+        // Intentionally do NOT add an entry to nextManifestFiles for this path —
+        // the next walk will discover it again and try to hash from scratch.
         continue;
       }
 
@@ -226,9 +242,7 @@ export class LocalFolderChangeDetector {
         continue;
       }
 
-      const relPath = posix.normalize(
-        relative(rootPath, absPath).split(sep).join(posix.sep)
-      );
+      const relPath = posix.normalize(relative(rootPath, absPath).split(sep).join(posix.sep));
       out.set(relPath, { absPath, sizeBytes: st.size, mtimeMs: st.mtimeMs });
     }
   }

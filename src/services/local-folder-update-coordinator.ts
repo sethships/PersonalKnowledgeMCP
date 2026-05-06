@@ -40,10 +40,7 @@ import {
   RepositoryNotFoundError,
   ConcurrentUpdateError,
 } from "./incremental-update-coordinator-errors.js";
-import {
-  FileManifestStoreImpl,
-  FILE_MANIFEST_EMPTY_GENERATED_AT,
-} from "./file-manifest-store.js";
+import { FileManifestStoreImpl, FILE_MANIFEST_EMPTY_GENERATED_AT } from "./file-manifest-store.js";
 import { LocalFolderChangeDetector } from "./local-folder-change-detector.js";
 
 /** Configuration accepted by the coordinator constructor. */
@@ -186,15 +183,29 @@ export class LocalFolderUpdateCoordinator {
         historyStatus = "partial";
       }
 
+      // For files the pipeline reported errors on, carry the PRIOR fingerprint
+      // forward instead of the freshly-walked one. Without this, a partial
+      // failure rewrites the manifest with the new (sha256, size, mtime) of an
+      // errored file, so the next update sees a clean diff and never retries it
+      // — silent permanent data loss in the index. If the file had no prior
+      // fingerprint (it was an `added` change that errored), drop it from the
+      // manifest entirely so the next walk reports it as `added` again.
+      const errorPaths = new Set(pipelineResult.errors.map((e) => e.path));
+      for (const errPath of errorPaths) {
+        const prior = priorManifest.files[errPath];
+        if (prior) {
+          nextManifestFiles[errPath] = prior;
+        } else {
+          delete nextManifestFiles[errPath];
+        }
+      }
+
       // Rewrite the manifest ONLY if the pipeline didn't outright fail. Leaving
       // the prior manifest in place on full failure means the next update sees
       // the same diff and can retry, rather than silently advancing the
       // baseline past unprocessed files.
       const manifestRewritten = historyStatus !== "failed";
-      const newManifest = this.changeDetector.buildNextManifest(
-        repositoryName,
-        nextManifestFiles
-      );
+      const newManifest = this.changeDetector.buildNextManifest(repositoryName, nextManifestFiles);
       if (manifestRewritten) {
         await this.manifestStore.saveManifest(repositoryName, newManifest);
       }
@@ -206,9 +217,7 @@ export class LocalFolderUpdateCoordinator {
         priorManifest.generatedAt === FILE_MANIFEST_EMPTY_GENERATED_AT
           ? `local-${FILE_MANIFEST_EMPTY_GENERATED_AT}`
           : `local-${priorManifest.generatedAt}`;
-      const newMarker = manifestRewritten
-        ? `local-${newManifest.generatedAt}`
-        : previousMarker;
+      const newMarker = manifestRewritten ? `local-${newManifest.generatedAt}` : previousMarker;
 
       const historyEntry: UpdateHistoryEntry = {
         timestamp: new Date().toISOString(),
@@ -288,10 +297,7 @@ export class LocalFolderUpdateCoordinator {
         durationMs,
       };
     } catch (error) {
-      logger.error(
-        { err: error },
-        "Local folder incremental update failed with unhandled error"
-      );
+      logger.error({ err: error }, "Local folder incremental update failed with unhandled error");
       throw error;
     } finally {
       // Mirror the git coordinator's safety net: if we set the in-progress

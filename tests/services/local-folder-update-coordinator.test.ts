@@ -14,10 +14,7 @@ import { LocalFolderUpdateCoordinator } from "../../src/services/local-folder-up
 import { LocalFolderChangeDetector } from "../../src/services/local-folder-change-detector.js";
 import { FileManifestStoreImpl } from "../../src/services/file-manifest-store.js";
 import type { IncrementalUpdatePipeline } from "../../src/services/incremental-update-pipeline.js";
-import type {
-  RepositoryInfo,
-  RepositoryMetadataService,
-} from "../../src/repositories/types.js";
+import type { RepositoryInfo, RepositoryMetadataService } from "../../src/repositories/types.js";
 import type { UpdateResult } from "../../src/services/incremental-update-types.js";
 import { initializeLogger, resetLogger } from "../../src/logging/index.js";
 
@@ -69,7 +66,9 @@ function makeMetadataService(initial: RepositoryInfo | null): MockMetadataServic
     current: initial,
     saved: [] as RepositoryInfo[],
     listRepositories: mock(async () => (initial ? [initial] : [])),
-    getRepository: mock(async (name: string) => (svc.current && svc.current.name === name ? svc.current : null)),
+    getRepository: mock(async (name: string) =>
+      svc.current && svc.current.name === name ? svc.current : null
+    ),
     updateRepository: mock(async (info: RepositoryInfo) => {
       svc.current = info;
       svc.saved.push(info);
@@ -248,6 +247,67 @@ describe("LocalFolderUpdateCoordinator", () => {
     // next attempt sees the same diff and can retry.
     const persisted = await store.loadManifest(repo.name);
     expect(persisted.generatedAt).toBe(seedManifest.generatedAt);
+  });
+
+  it("preserves prior fingerprint for files the pipeline reported errors on (partial success)", async () => {
+    // Three files modified on disk; pipeline succeeds on two (count=2) and errors
+    // on one. With errors < processed, historyStatus is "partial" → manifest IS
+    // rewritten. The errored file's prior fingerprint must be carried forward
+    // so the next update sees its diff and retries it. Without the fix the
+    // manifest would advance past the unprocessed file and silently lose the
+    // index update.
+    await writeFile(join(testDir, "ok1.ts"), "v1");
+    await writeFile(join(testDir, "ok2.ts"), "v1");
+    await writeFile(join(testDir, "bad.ts"), "v1");
+    const repo = makeRepo("partial", testDir);
+    const detector = new LocalFolderChangeDetector(store);
+
+    const seed = await detector.detect(repo);
+    await store.saveManifest(repo.name, {
+      version: "1.0",
+      repository: repo.name,
+      generatedAt: new Date().toISOString(),
+      files: seed.nextManifestFiles,
+    });
+    const seededBad = seed.nextManifestFiles["bad.ts"]!;
+    const seededOk1 = seed.nextManifestFiles["ok1.ts"]!;
+
+    await writeFile(join(testDir, "ok1.ts"), "v2-bigger");
+    await writeFile(join(testDir, "ok2.ts"), "v2-bigger");
+    await writeFile(join(testDir, "bad.ts"), "v2-also-bigger");
+
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 2, // ok1 + ok2 succeeded
+          filesDeleted: 0,
+          chunksUpserted: 2,
+          chunksDeleted: 0,
+          durationMs: 5,
+        },
+        errors: [{ path: "bad.ts", error: "transient embedding failure" }],
+        filterStats: {
+          totalChanges: 3,
+          eligibleChanges: 3,
+          filteredChanges: 3,
+          skippedChanges: 0,
+        },
+      })),
+    } as unknown as IncrementalUpdatePipeline;
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    const result = await coord.updateRepository("partial");
+    expect(result.status).toBe("updated"); // partial-success surfaces as "updated"
+
+    const persisted = await store.loadManifest(repo.name);
+    // ok1.ts advanced — sha differs from seed.
+    expect(persisted.files["ok1.ts"]?.sha256).not.toBe(seededOk1.sha256);
+    // bad.ts kept its prior fingerprint so the next update will see the diff.
+    expect(persisted.files["bad.ts"]?.sha256).toBe(seededBad.sha256);
+    expect(persisted.files["bad.ts"]?.sizeBytes).toBe(seededBad.sizeBytes);
+    expect(persisted.files["bad.ts"]?.mtimeMs).toBe(seededBad.mtimeMs);
   });
 
   it("refuses to run for a repository whose source is not local-folder", async () => {

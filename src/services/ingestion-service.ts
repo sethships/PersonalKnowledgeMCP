@@ -305,11 +305,7 @@ export class IngestionService {
           // Size pre-scan and hard-refusal happen before we sink time into
           // FileScanner / chunking / embeddings. Soft-warn thresholds are
           // logged; hard-refuse throws unless options.force is set.
-          await this.enforceLocalFolderSizeGuardrails(
-            repositoryName,
-            resolvedPath,
-            options
-          );
+          await this.enforceLocalFolderSizeGuardrails(repositoryName, resolvedPath, options);
         }
 
         cloneResult = { path: resolvedPath, name: repositoryName, branch, commitSha };
@@ -672,6 +668,19 @@ export class IngestionService {
         // Collection might not exist, log but continue
         this.logger.warn("Collection deletion failed", {
           collectionName,
+          error: err,
+        });
+      }
+
+      // Delete the FileManifest, if any. Idempotent — succeeds with no error
+      // when the manifest file does not exist (e.g. git-remote / local-git
+      // repos that never had one). Without this, re-registering the same name
+      // later would load a stale manifest and skip already-changed files.
+      try {
+        await FileManifestStoreImpl.getInstance().deleteManifest(name);
+      } catch (err) {
+        this.logger.warn("FileManifest deletion failed (continuing)", {
+          repository: name,
           error: err,
         });
       }
@@ -1293,10 +1302,7 @@ export class IngestionService {
             continue;
           }
           // Early exit on hard refusal (avoids walking the rest of a 200K-file folder).
-          if (
-            !options.force &&
-            (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)
-          ) {
+          if (!options.force && (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)) {
             return;
           }
         }
@@ -1305,10 +1311,7 @@ export class IngestionService {
 
     await walk(rootPath);
 
-    if (
-      !options.force &&
-      (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)
-    ) {
+    if (!options.force && (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)) {
       throw new LocalFolderSizeRefusedError(
         repositoryName,
         fileCount,

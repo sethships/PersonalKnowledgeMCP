@@ -160,6 +160,7 @@ export async function resetUpdateCommand(
         repositoryService: deps.repositoryService,
         ingestionService: deps.ingestionService,
         updateCoordinator: deps.updateCoordinator,
+        localFolderCoordinator: deps.localFolderCoordinator,
       }
     );
 
@@ -221,6 +222,7 @@ export async function resetUpdateCommand(
       repositoryService: deps.repositoryService,
       ingestionService: deps.ingestionService,
       updateCoordinator: deps.updateCoordinator,
+      localFolderCoordinator: deps.localFolderCoordinator,
     });
 
     if (result.success) {

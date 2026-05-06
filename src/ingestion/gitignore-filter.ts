@@ -153,9 +153,7 @@ export class GitignoreFilter {
     for (let i = this.rules.length - 1; i >= 0; i--) {
       const rule = this.rules[i]!;
       if (!GitignoreFilter.isWithin(rule.dir, abs)) continue;
-      const relToRule = posix.normalize(
-        relative(rule.dir, abs).split(sep).join(posix.sep)
-      );
+      const relToRule = posix.normalize(relative(rule.dir, abs).split(sep).join(posix.sep));
       if (!relToRule || relToRule.startsWith("..")) continue;
       const verdict = rule.ig.test(relToRule);
       if (verdict.ignored || verdict.unignored) {

@@ -11,6 +11,7 @@ import ora from "ora";
 import Table from "cli-table3";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
+import { dispatchCoordinator } from "../../services/update-coordinator-dispatch.js";
 
 /**
  * Update all repositories command options
@@ -166,7 +167,26 @@ export async function updateAllCommand(
     }).start();
 
     try {
-      const result = await deps.updateCoordinator.updateRepository(repo.name);
+      // Phase B: dispatch by source so local-folder repos use their manifest-based
+      // coordinator instead of the git coordinator.
+      const coordinator = dispatchCoordinator(
+        repo,
+        deps.updateCoordinator,
+        deps.localFolderCoordinator
+      );
+      if (!coordinator) {
+        spinner.fail(
+          chalk.red(
+            `${repo.name}: source='${repo.source}' but no local-folder coordinator configured`
+          )
+        );
+        results.push({
+          repository: repo.name,
+          error: "Local-folder coordinator not configured on this build",
+        });
+        continue;
+      }
+      const result = await coordinator.updateRepository(repo.name);
 
       // Stop spinner based on result
       if (result.status === "no_changes") {
