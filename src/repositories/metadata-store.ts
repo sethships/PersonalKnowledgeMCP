@@ -473,7 +473,7 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
         const persistedSource = (repo as { source?: unknown }).source;
         if (persistedSource === undefined) {
           metadata.repositories[key] = {
-            ...(repo as RepositoryInfo),
+            ...repo,
             source: "git-remote",
           };
         } else if (!VALID_SOURCES.includes(persistedSource as RepositoryInfo["source"])) {
@@ -485,7 +485,7 @@ export class RepositoryMetadataStoreImpl implements RepositoryMetadataService {
             "Unknown repository source value on read - quarantining as 'git-remote' for back-compat. Re-index the repository to clean up."
           );
           metadata.repositories[key] = {
-            ...(repo as RepositoryInfo),
+            ...repo,
             source: "git-remote",
           };
         }

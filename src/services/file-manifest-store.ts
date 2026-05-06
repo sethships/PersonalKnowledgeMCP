@@ -28,7 +28,7 @@ import { sanitizeCollectionName } from "../repositories/metadata-store.js";
  * and the migration logic — the type and schema follow automatically (Issue
  * #11 from PR #569 review).
  */
-export const FILE_MANIFEST_VERSION = "1.0" as const;
+export const FILE_MANIFEST_VERSION = "1.0";
 export type FileManifestVersion = typeof FILE_MANIFEST_VERSION;
 
 /**
@@ -293,10 +293,7 @@ export class FileManifestStoreImpl implements FileManifestStoreService {
     await next;
   }
 
-  private async saveManifestInternal(
-    repository: string,
-    manifest: FileManifest
-  ): Promise<void> {
+  private async saveManifestInternal(repository: string, manifest: FileManifest): Promise<void> {
     const filePath = this.getManifestPath(repository);
     const tempPath = `${filePath}.tmp`;
 

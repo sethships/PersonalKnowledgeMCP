@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
 /**
  * Unit tests for FileManifestStoreImpl
  *
@@ -419,9 +423,12 @@ describe("FileManifestStoreImpl", () => {
       const id = store.computeManifestId("my-repo");
       // The identifier MUST work as the lookup key — saving with the repo
       // name and loading with computeManifestId(name) returns the same data.
-      await store.saveManifest("my-repo", buildManifest("my-repo", {
-        "a.ts": { sha256: "f".repeat(64), sizeBytes: 1, mtimeMs: 1 },
-      }));
+      await store.saveManifest(
+        "my-repo",
+        buildManifest("my-repo", {
+          "a.ts": { sha256: "f".repeat(64), sizeBytes: 1, mtimeMs: 1 },
+        })
+      );
       const loaded = await store.loadManifest(id);
       expect(loaded.files["a.ts"]?.sha256).toBe("f".repeat(64));
     });
@@ -444,10 +451,7 @@ describe("FileManifestStoreImpl", () => {
       // The next save (different repo, different path) MUST succeed even
       // though the queue head was previously rejected.
       const okEntry: FileManifestEntry = { sha256: "9".repeat(64), sizeBytes: 1, mtimeMs: 1 };
-      await store.saveManifest(
-        "queue-ok",
-        buildManifest("queue-ok", { "a.ts": okEntry })
-      );
+      await store.saveManifest("queue-ok", buildManifest("queue-ok", { "a.ts": okEntry }));
 
       const reloaded = await store.loadManifest("queue-ok");
       expect(reloaded.files["a.ts"]).toEqual(okEntry);
@@ -483,10 +487,7 @@ describe("FileManifestStoreImpl", () => {
   });
 });
 
-function buildManifest(
-  repository: string,
-  files: Record<string, FileManifestEntry>
-): FileManifest {
+function buildManifest(repository: string, files: Record<string, FileManifestEntry>): FileManifest {
   return {
     version: "1.0" as const,
     repository,

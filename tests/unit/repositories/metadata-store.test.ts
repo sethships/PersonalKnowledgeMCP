@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
 /**
  * Unit tests for RepositoryMetadataStoreImpl
  *
@@ -22,10 +26,7 @@ import {
   FileOperationError,
   InvalidMetadataFormatError,
 } from "../../../src/repositories/errors.js";
-import type {
-  RepositoryInfo,
-  UpdateHistoryEntry,
-} from "../../../src/repositories/types.js";
+import type { RepositoryInfo, UpdateHistoryEntry } from "../../../src/repositories/types.js";
 import {
   createTestRepositoryInfo,
   edgeCaseRepositoryNames,
@@ -521,8 +522,8 @@ describe("source discriminator + back-compat round-trip", () => {
     const legacyFile = {
       version: "1.0",
       repositories: {
-        "a": { ...buildLegacyRepoRecord("a") },
-        "b": { ...buildLegacyRepoRecord("b") },
+        a: { ...buildLegacyRepoRecord("a") },
+        b: { ...buildLegacyRepoRecord("b") },
       },
     };
     fs.writeFileSync(
@@ -579,20 +580,17 @@ describe("source discriminator + back-compat round-trip", () => {
     await expect(store.updateRepository(repo)).rejects.toThrow(RepositoryMetadataError);
   });
 
-  test.each(["private", "work", "public"] as const)(
-    "round-trips tier value %s",
-    async (tier) => {
-      const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
-      const repo = createTestRepositoryInfo("tier-repo", { tier });
-      await store.updateRepository(repo);
+  test.each(["private", "work", "public"] as const)("round-trips tier value %s", async (tier) => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("tier-repo", { tier });
+    await store.updateRepository(repo);
 
-      RepositoryMetadataStoreImpl.resetInstance();
-      const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
-      const reloaded = await store2.getRepository("tier-repo");
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("tier-repo");
 
-      expect(reloaded?.tier).toBe(tier);
-    }
-  );
+    expect(reloaded?.tier).toBe(tier);
+  });
 
   test("round-trips tier=undefined as undefined (omitted)", async () => {
     const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
