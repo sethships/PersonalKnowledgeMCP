@@ -94,6 +94,7 @@ export class PersonalKnowledgeMCPServer {
         searchService,
         repositoryService,
         updateCoordinator: optionalDeps.updateCoordinator,
+        localFolderCoordinator: optionalDeps.localFolderCoordinator,
         rateLimiter: optionalDeps.rateLimiter,
         jobTracker: optionalDeps.jobTracker,
         graphService: optionalDeps.graphService,

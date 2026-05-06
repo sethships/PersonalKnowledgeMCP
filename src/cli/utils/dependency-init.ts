@@ -26,6 +26,7 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { GitHubClientImpl } from "../../services/github-client.js";
 import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import { IndexCompletenessChecker } from "../../services/index-completeness-checker.js";
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
@@ -93,6 +94,8 @@ export interface CliDependencies {
   githubClient: GitHubClient;
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
+  /** Coordinator for `local-folder` source repos (used by trigger_incremental_update). */
+  localFolderCoordinator: LocalFolderUpdateCoordinator;
   tokenService: TokenService;
   /** Optional graph adapter for graph database operations (only if configured) */
   graphAdapter?: GraphStorageAdapter;
@@ -431,6 +434,17 @@ export async function initializeDependencies(
       "Incremental update coordinator initialized"
     );
 
+    // Local-folder coordinator shares the metadata service + pipeline; it owns
+    // its own change detector and uses the FileManifestStore singleton.
+    const localFolderCoordinator = new LocalFolderUpdateCoordinator(
+      repositoryService,
+      updatePipeline,
+      undefined,
+      undefined,
+      { updateHistoryLimit }
+    );
+    logger.debug("Local folder update coordinator initialized");
+
     return {
       embeddingProvider,
       chromaClient,
@@ -440,6 +454,7 @@ export async function initializeDependencies(
       githubClient,
       updatePipeline,
       updateCoordinator,
+      localFolderCoordinator,
       tokenService,
       graphAdapter,
       graphIngestionService,

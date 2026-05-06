@@ -8,10 +8,19 @@
  * @module services/ingestion-service
  */
 
-import { resolve, basename, normalize } from "node:path";
-import { stat } from "node:fs/promises";
+import { resolve, basename, normalize, join, sep, relative, posix } from "node:path";
+import { stat, readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { isLocalPath } from "../utils/path-utils.js";
 import simpleGit from "simple-git";
+import { GitignoreFilter } from "../ingestion/gitignore-filter.js";
+import {
+  FileManifestStoreImpl,
+  type FileManifest,
+  type FileManifestEntry,
+  FILE_MANIFEST_VERSION,
+} from "./file-manifest-store.js";
 import type { Logger } from "pino";
 import type { RepositoryCloner } from "../ingestion/repository-cloner.js";
 import type { CloneResult, FileInfo, FileChunk } from "../ingestion/types.js";
@@ -40,6 +49,8 @@ import {
   RepositoryAlreadyExistsError,
   IndexingInProgressError,
   CollectionCreationError,
+  LocalFolderPublicTierRefusedError,
+  LocalFolderSizeRefusedError,
 } from "./ingestion-errors.js";
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
 import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
@@ -240,9 +251,13 @@ export class IngestionService {
       );
 
       let cloneResult: CloneResult;
+      // Source discriminator threaded through to buildRepositoryMetadata. The
+      // remote-clone branch always produces "git-remote"; the local-path branch
+      // distinguishes "local-git" (has a `.git` directory) from "local-folder"
+      // (no git history — change detection happens via FileManifest instead).
+      let effectiveSource: "git-remote" | "local-git" | "local-folder" = "git-remote";
 
       if (isLocalPath(url)) {
-        // Local path — validate it exists and is a git repo, then use in-place
         const resolvedPath = normalize(resolve(url));
 
         try {
@@ -258,16 +273,43 @@ export class IngestionService {
           );
         }
 
-        const git = simpleGit(resolvedPath);
+        const hasGitDir = await this.directoryHasGitFolder(resolvedPath);
+        effectiveSource = hasGitDir ? "local-git" : "local-folder";
+
+        // Tier refusal: local folders may not register at the public tier. We
+        // check before any heavy work so a misconfigured request fails fast.
+        const requestedTier = options.tier ?? "private";
+        if (effectiveSource === "local-folder" && requestedTier === "public") {
+          throw new LocalFolderPublicTierRefusedError(repositoryName);
+        }
 
         let branch = options.branch ?? "unknown";
         let commitSha: string | undefined;
 
-        try {
-          branch = options.branch ?? (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
-          commitSha = (await git.revparse(["HEAD"])).trim();
-        } catch {
-          this.logger.warn({ resolvedPath }, "Could not read git metadata from local path");
+        if (hasGitDir) {
+          // Existing local-git behavior: read git metadata in place.
+          const git = simpleGit(resolvedPath);
+          try {
+            branch = options.branch ?? (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+            commitSha = (await git.revparse(["HEAD"])).trim();
+          } catch {
+            this.logger.warn({ resolvedPath }, "Could not read git metadata from local path");
+          }
+        } else {
+          // local-folder: skip every simple-git call (no .git to read). The
+          // display branch is a fixed sentinel; real change detection runs
+          // through LocalFolderChangeDetector + FileManifest.
+          branch = options.branch ?? "(local-folder)";
+          commitSha = undefined;
+
+          // Size pre-scan and hard-refusal happen before we sink time into
+          // FileScanner / chunking / embeddings. Soft-warn thresholds are
+          // logged; hard-refuse throws unless options.force is set.
+          await this.enforceLocalFolderSizeGuardrails(
+            repositoryName,
+            resolvedPath,
+            options
+          );
         }
 
         cloneResult = { path: resolvedPath, name: repositoryName, branch, commitSha };
@@ -276,10 +318,12 @@ export class IngestionService {
         this.logger.info("Using local repository path", {
           repository: repositoryName,
           path: resolvedPath,
+          source: effectiveSource,
           branch,
           commitSha,
         });
       } else {
+        effectiveSource = "git-remote";
         const remote = await this.repositoryCloner.clone(url, {
           branch: options.branch,
           fetchLatest: options.force, // Fetch latest when force reindexing
@@ -309,6 +353,12 @@ export class IngestionService {
       const fileInfos = await this.fileScanner.scanFiles(cloneResult.path, {
         includeExtensions: options.includeExtensions,
         excludePatterns: options.excludePatterns,
+        // Walk every nested .gitignore for local sources — users routinely have
+        // them in monorepos and vendored docs. Git-remote shallow clones already
+        // exclude ignored files at clone time, so the cheap root-only path is
+        // preserved there.
+        respectNestedGitignore:
+          effectiveSource === "local-folder" || effectiveSource === "local-git",
         onProgress: (scanned) => {
           this.updateProgress(
             {
@@ -455,6 +505,20 @@ export class IngestionService {
               .join("; ")}`
           : undefined;
 
+      // For local-folder sources, write the initial FileManifest before
+      // persisting metadata so a crash between manifest-write and metadata-write
+      // leaves a recoverable state (next registration sees no metadata, next
+      // local-folder update sees a manifest with `generatedAt = epoch sentinel`
+      // and treats the repo as new).
+      let lastManifestId: string | undefined;
+      if (effectiveSource === "local-folder") {
+        lastManifestId = await this.writeInitialFileManifest(
+          repositoryName,
+          cloneResult.path,
+          fileInfos
+        );
+      }
+
       const metadata = this.buildRepositoryMetadata({
         name: repositoryName,
         url,
@@ -463,6 +527,9 @@ export class IngestionService {
         collectionName,
         options,
         errorMessage,
+        source: effectiveSource,
+        tier: options.tier ?? "private",
+        lastManifestId,
       });
 
       await this.repositoryService.updateRepository(metadata);
@@ -1103,16 +1170,23 @@ export class IngestionService {
     collectionName: string;
     options: IndexOptions;
     errorMessage?: string;
+    /**
+     * Pre-computed source discriminator from the indexer's clone/resolve fork.
+     * Required so the metadata reflects whether `.git` was actually present at
+     * the local path; deriving it from `params.url` alone would conflate
+     * `local-git` and `local-folder`.
+     */
+    source: "git-remote" | "local-git" | "local-folder";
+    /** Security tier (defaults to "private"; "public" already refused for local-folder). */
+    tier: "private" | "work" | "public";
+    /** Manifest pointer set only for `local-folder` sources. */
+    lastManifestId?: string;
   }): RepositoryInfo {
     return {
       name: params.name,
-      // Phase A: distinguish remote clones from local-git paths. Local-folder
-      // sources (no .git) will be added in Phase B via a parallel construction
-      // site. `isLocalPath` mirrors the same gate used in `indexRepository` at
-      // the clone-vs-resolve fork (see ~line 244), so the discriminator we
-      // persist here matches the path that actually produced the index.
-      source: isLocalPath(params.url) ? "local-git" : "git-remote",
-      url: params.url,
+      source: params.source,
+      // local-folder repos have no clone URL — persist null per the type contract.
+      url: params.source === "local-folder" ? null : params.url,
       branch: params.cloneResult.branch,
       localPath: params.cloneResult.path,
       collectionName: params.collectionName,
@@ -1133,6 +1207,196 @@ export class IngestionService {
       embeddingProvider: this.embeddingProvider.providerId,
       embeddingModel: this.embeddingProvider.modelId,
       embeddingDimensions: this.embeddingProvider.dimensions,
+      // Local-folder + multi-tier fields
+      tier: params.tier,
+      lastManifestId: params.lastManifestId,
     };
+  }
+
+  /**
+   * Test whether `absolutePath` contains a `.git` entry (file or directory).
+   *
+   * A `.git` *directory* is the normal case. A `.git` *file* is what `git
+   * worktree` creates inside a linked worktree — we accept both because both
+   * indicate the path is inside a git working tree and the existing
+   * `simple-git` revparse calls will succeed.
+   */
+  private async directoryHasGitFolder(absolutePath: string): Promise<boolean> {
+    try {
+      await stat(join(absolutePath, ".git"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Pre-scan a `local-folder` candidate, counting files and bytes after
+   * applying nested `.gitignore` and the user's extension whitelist, and
+   * enforce soft-warn / hard-refuse thresholds.
+   *
+   * Soft warn (logged + surfaced via progress event):
+   *   - more than 10,000 files OR more than 1 GiB total.
+   * Hard refuse (throws `LocalFolderSizeRefusedError`):
+   *   - more than 100,000 files OR more than 10 GiB total.
+   * `options.force === true` bypasses the hard refusal.
+   *
+   * Symlinks are NOT followed during this estimate (lstat-only), so a folder
+   * that includes a link to `/etc` doesn't pad the count and a link loop can't
+   * cause a hang. Walk cost is dominated by readdir + lstat which are cheap
+   * relative to the chunk + embed work the guardrail is protecting against.
+   */
+  private async enforceLocalFolderSizeGuardrails(
+    repositoryName: string,
+    rootPath: string,
+    options: IndexOptions
+  ): Promise<void> {
+    const SOFT_FILE_LIMIT = 10_000;
+    const SOFT_BYTE_LIMIT = 1_073_741_824; // 1 GiB
+    const HARD_FILE_LIMIT = 100_000;
+    const HARD_BYTE_LIMIT = 10_737_418_240; // 10 GiB
+
+    const filter = await GitignoreFilter.load(rootPath);
+    const extensions =
+      options.includeExtensions && options.includeExtensions.length > 0
+        ? new Set(options.includeExtensions.map((e) => e.toLowerCase()))
+        : new Set(DEFAULT_EXTENSIONS.map((e) => e.toLowerCase()));
+
+    let fileCount = 0;
+    let totalBytes = 0;
+
+    const walk = async (dir: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name === ".git") continue;
+        const abs = join(dir, entry.name);
+        // Symlinks: skip outright. Do not stat() the target (cycle / outside-root risk).
+        if (entry.isSymbolicLink()) continue;
+
+        if (entry.isDirectory()) {
+          if (filter.isIgnored(abs)) continue;
+          await walk(abs);
+        } else if (entry.isFile()) {
+          if (filter.isIgnored(abs)) continue;
+          const ext = "." + (entry.name.split(".").pop() ?? "").toLowerCase();
+          if (!extensions.has(ext)) continue;
+          try {
+            const st = await stat(abs);
+            fileCount++;
+            totalBytes += st.size;
+          } catch {
+            continue;
+          }
+          // Early exit on hard refusal (avoids walking the rest of a 200K-file folder).
+          if (
+            !options.force &&
+            (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)
+          ) {
+            return;
+          }
+        }
+      }
+    };
+
+    await walk(rootPath);
+
+    if (
+      !options.force &&
+      (fileCount > HARD_FILE_LIMIT || totalBytes > HARD_BYTE_LIMIT)
+    ) {
+      throw new LocalFolderSizeRefusedError(
+        repositoryName,
+        fileCount,
+        totalBytes,
+        HARD_FILE_LIMIT,
+        HARD_BYTE_LIMIT
+      );
+    }
+    if (fileCount > SOFT_FILE_LIMIT || totalBytes > SOFT_BYTE_LIMIT) {
+      this.logger.warn(
+        {
+          repository: repositoryName,
+          rootPath,
+          fileCount,
+          totalBytes,
+          softFileLimit: SOFT_FILE_LIMIT,
+          softByteLimit: SOFT_BYTE_LIMIT,
+        },
+        "Local folder exceeds soft size guardrail; proceeding because under the hard refusal threshold or force=true was set"
+      );
+    }
+  }
+
+  /**
+   * Compute per-file fingerprints for a freshly-scanned local-folder repo and
+   * persist a `FileManifest` so a future incremental update has a baseline to
+   * diff against.
+   *
+   * SHA-256 is computed via streaming so files larger than the chunker's
+   * normal cap (which they shouldn't be, but a manifest is a different
+   * pipeline) don't blow up memory.
+   *
+   * Returns the manifest pointer (`computeManifestId(name)`) to store on the
+   * `RepositoryInfo`.
+   */
+  private async writeInitialFileManifest(
+    repositoryName: string,
+    rootPath: string,
+    fileInfos: FileInfo[]
+  ): Promise<string> {
+    const store = FileManifestStoreImpl.getInstance();
+    const files: Record<string, FileManifestEntry> = {};
+
+    for (const info of fileInfos) {
+      try {
+        const sha256 = await this.streamSha256(info.absolutePath);
+        const st = await stat(info.absolutePath);
+        // Manifest keys are POSIX-normalized relative paths so cross-platform
+        // diffs stay deterministic. fileInfos already uses POSIX separators
+        // for relativePath but normalize defensively.
+        const relPath = posix.normalize(
+          relative(rootPath, info.absolutePath).split(sep).join(posix.sep)
+        );
+        files[relPath] = {
+          sha256,
+          sizeBytes: st.size,
+          mtimeMs: st.mtimeMs,
+        };
+      } catch (err) {
+        this.logger.warn(
+          { absolutePath: info.absolutePath, err },
+          "Could not fingerprint file for manifest; skipping"
+        );
+      }
+    }
+
+    const manifest: FileManifest = {
+      version: FILE_MANIFEST_VERSION,
+      repository: repositoryName,
+      generatedAt: new Date().toISOString(),
+      files,
+    };
+    await store.saveManifest(repositoryName, manifest);
+    return store.computeManifestId(repositoryName);
+  }
+
+  /**
+   * Streaming SHA-256 of a file's contents. Hex digest, lowercase, 64 chars.
+   */
+  private async streamSha256(absolutePath: string): Promise<string> {
+    return new Promise<string>((resolveHash, rejectHash) => {
+      const hash = createHash("sha256");
+      const stream = createReadStream(absolutePath);
+      stream.on("data", (chunk: string | Buffer) => {
+        hash.update(chunk);
+      });
+      stream.on("end", () => resolveHash(hash.digest("hex")));
+      stream.on("error", rejectHash);
+    });
   }
 }

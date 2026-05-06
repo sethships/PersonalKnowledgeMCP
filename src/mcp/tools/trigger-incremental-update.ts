@@ -16,7 +16,19 @@
 import type { Tool, CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
+
+/**
+ * Minimal structural interface satisfied by both `IncrementalUpdateCoordinator`
+ * (git-remote / local-git) and `LocalFolderUpdateCoordinator` (local-folder).
+ *
+ * Used by `executeWithTimeout` so the dispatch in the handler can pick a
+ * coordinator without the timeout helper caring which concrete class it has.
+ */
+interface UpdateCoordinator {
+  updateRepository(repositoryName: string): Promise<CoordinatorResult>;
+}
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
@@ -38,6 +50,7 @@ type TriggerErrorCode =
   | "update_in_progress"
   | "update_failed"
   | "timeout"
+  | "service_unavailable"
   | "internal_error";
 
 /**
@@ -272,7 +285,17 @@ function formatAsyncSuccessResponse(repository: string, jobId: string): TextCont
  */
 export interface TriggerUpdateDependencies {
   repositoryService: RepositoryMetadataService;
+  /** Coordinator for git-remote and local-git sources. */
   updateCoordinator: IncrementalUpdateCoordinator;
+  /**
+   * Coordinator for `local-folder` sources. The handler dispatches to this one
+   * after resolving the `RepositoryInfo` if `repo.source === "local-folder"`.
+   * Optional so tests and legacy bootstrap paths that never register a
+   * local-folder repo do not need to construct one. If absent and a
+   * local-folder repo is requested, the handler returns a `service_unavailable`
+   * error rather than misrouting through the git coordinator.
+   */
+  localFolderCoordinator?: LocalFolderUpdateCoordinator;
   rateLimiter: MCPRateLimiter;
   jobTracker: JobTracker;
 }
@@ -297,7 +320,7 @@ export interface TriggerUpdateDependencies {
  * See: https://github.com/sethb75/PersonalKnowledgeMCP/issues/126#issuecomment-X
  */
 async function executeWithTimeout(
-  coordinator: IncrementalUpdateCoordinator,
+  coordinator: UpdateCoordinator,
   repositoryName: string,
   timeoutMs: number
 ): Promise<CoordinatorResult> {
@@ -343,7 +366,8 @@ async function executeWithTimeout(
  * ```
  */
 export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): ToolHandler {
-  const { repositoryService, updateCoordinator, rateLimiter, jobTracker } = deps;
+  const { repositoryService, updateCoordinator, localFolderCoordinator, rateLimiter, jobTracker } =
+    deps;
 
   return async (args: unknown): Promise<CallToolResult> => {
     const startTime = performance.now();
@@ -384,6 +408,33 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
           ],
           isError: true,
         };
+      }
+
+      // Pick the coordinator that matches the repo's source. Git-flavored repos
+      // (git-remote, local-git) use the existing IncrementalUpdateCoordinator;
+      // local-folder repos use the manifest-based LocalFolderUpdateCoordinator.
+      // If a local-folder repo is requested but no local-folder coordinator was
+      // injected, surface a `service_unavailable` error rather than misroute.
+      let coordinatorForRepo: UpdateCoordinator;
+      if (repo.source === "local-folder") {
+        if (!localFolderCoordinator) {
+          log.warn(
+            { repository: repositoryName },
+            "trigger_incremental_update invoked for local-folder repo with no LocalFolderUpdateCoordinator configured"
+          );
+          return {
+            content: [
+              formatErrorResponse(
+                "service_unavailable",
+                `Repository '${repositoryName}' is a local-folder source but the local-folder update coordinator is not configured on this server.`
+              ),
+            ],
+            isError: true,
+          };
+        }
+        coordinatorForRepo = localFolderCoordinator;
+      } else {
+        coordinatorForRepo = updateCoordinator;
       }
 
       // Step 3: Check for existing running job first (for deduplication)
@@ -466,7 +517,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
 
           try {
             const result = await executeWithTimeout(
-              updateCoordinator,
+              coordinatorForRepo,
               repositoryName,
               UPDATE_TIMEOUT_MS
             );
@@ -506,7 +557,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
 
       try {
         const result = await executeWithTimeout(
-          updateCoordinator,
+          coordinatorForRepo,
           repositoryName,
           UPDATE_TIMEOUT_MS
         );

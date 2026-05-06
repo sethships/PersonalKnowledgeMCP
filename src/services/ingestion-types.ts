@@ -46,6 +46,17 @@ export interface IndexOptions {
    * @default false
    */
   force?: boolean;
+
+  /**
+   * Security tier this repository belongs to.
+   *
+   * Defaults to `"private"` when omitted. `"public"` is refused at registration
+   * for `local-folder` sources to prevent accidental disclosure of personal
+   * content; `"private"` and `"work"` are always allowed.
+   *
+   * @default "private"
+   */
+  tier?: "private" | "work" | "public";
 }
 
 /**

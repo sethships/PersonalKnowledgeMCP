@@ -40,6 +40,7 @@ import { FileScanner } from "./ingestion/file-scanner.js";
 import { GitHubClientImpl } from "./services/github-client.js";
 import { IncrementalUpdatePipeline } from "./services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "./services/incremental-update-coordinator.js";
+import { LocalFolderUpdateCoordinator } from "./services/local-folder-update-coordinator.js";
 import { IndexCompletenessChecker } from "./services/index-completeness-checker.js";
 import { MCPRateLimiter } from "./mcp/rate-limiter.js";
 import { JobTracker } from "./mcp/job-tracker.js";
@@ -339,6 +340,7 @@ async function main(): Promise<void> {
 
     // Step 5b: Initialize incremental update dependencies (optional - requires GITHUB_PAT)
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
+    let localFolderCoordinator: LocalFolderUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
     let jobTracker: JobTracker | undefined;
     let updateToolsUnavailableReason: string | undefined;
@@ -400,6 +402,12 @@ async function main(): Promise<void> {
           { completenessChecker }
         );
 
+        // Local-folder coordinator shares the metadata service + pipeline.
+        localFolderCoordinator = new LocalFolderUpdateCoordinator(
+          repositoryService,
+          updatePipeline
+        );
+
         // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
         rateLimiter = new MCPRateLimiter();
 
@@ -415,6 +423,7 @@ async function main(): Promise<void> {
           "Incremental update initialization failed - MCP update tools will be unavailable"
         );
         updateCoordinator = undefined;
+        localFolderCoordinator = undefined;
         rateLimiter = undefined;
         jobTracker = undefined;
         updateToolsUnavailableReason = `Initialization failed: ${errorMsg}`;
@@ -439,6 +448,7 @@ async function main(): Promise<void> {
       {
         graphService,
         updateCoordinator,
+        localFolderCoordinator,
         rateLimiter,
         jobTracker,
         documentSearchService,
