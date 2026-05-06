@@ -1,6 +1,6 @@
 # ADR-0005: Cross-Machine Migration Archive Format
 
-**Status:** Proposed
+**Status:** Accepted (revised 2026-05-05 to align with PRD v1.2 and Design §9)
 
 **Date:** 2026-04-23
 
@@ -121,6 +121,8 @@ Rationale:
 
 ### Manifest schema (v1)
 
+> *Revised 2026-05-05 — code-review fix M-2: ADR-0008 Option D `externalPaths` summary, `watched-folders` artifact entry, and `instance-config` artifact entry folded in. See ADR-0008 §"Archive writer behavior" and Design §3.2.*
+
 ```json
 {
   "schemaVersion": "1.0",
@@ -153,7 +155,27 @@ Rationale:
       "included": true,
       "repositoriesJsonSha256": "...",
       "includedClonedSource": false,
-      "repoCount": 7
+      "repoCount": 7,
+      "externalPaths": [
+        {
+          "repoId": "my-local-research-corpus",
+          "externalPath": "D:\\research\\corpus",
+          "isExternalPath": true,
+          "pathStatus": "ok"
+        }
+      ]
+    }
+  },
+  "artifacts": {
+    "watched-folders": {
+      "included": true,
+      "path": "stores/repositories/watched-folders.json",
+      "sha256": "..."
+    },
+    "instance-config": {
+      "included": true,
+      "path": "stores/repositories/instance-config.json",
+      "sha256": "..."
     }
   },
   "options": {
@@ -167,6 +189,8 @@ Rationale:
   }
 }
 ```
+
+The `repositories.externalPaths` array (one entry per external-path repo, see ADR-0008 Option D) lets the restore tool surface prompts/warnings up-front without parsing the entire `repositories.json`. The `watched-folders` and `instance-config` artifact entries describe their archive paths and per-artifact SHAs for end-to-end integrity verification.
 
 A sibling `<archive>.sha256` covers the whole tarball; `manifest.json` covers every inner artifact. Verification is two-step: envelope hash, then manifest-declared hashes.
 
@@ -193,7 +217,7 @@ A sibling `<archive>.sha256` covers the whole tarball; `manifest.json` covers ev
 
 ## Implementation Notes
 
-- File naming convention: `pk-mcp-migration-<YYYYMMDD-HHMMSS>-<instance>.tar.gz`
+- File naming convention: `pk-mcp-default-<YYYYMMDD-HHMMSS>.tar.gz`. The `default` segment forward-compatibly previews where the multi-instance segment will go in V1.x (when `--instance` returns to scope, the segment becomes `private` / `work` / `public` / etc.).
 - Sidecar: `<archive>.sha256` for envelope-level check, matching existing pattern
 - TODO: Determine whether to embed a detached minisign/GPG signature for provenance — deferred to a follow-up ADR if signing is prioritized
 - TODO: Decide on deterministic-output flags across bsdtar (Windows) and GNU tar (Linux) — may need a wrapper that normalizes to a single canonical form
@@ -207,7 +231,7 @@ A sibling `<archive>.sha256` covers the whole tarball; `manifest.json` covers ev
 
 ## Validation Criteria
 
-- Archive produced on Windows and extracted on Linux (and vice-versa) yields byte-identical store contents
-- Envelope `.sha256` verifies successfully on any platform with standard tools
+- Per-artifact and envelope SHAs verify end-to-end on the producing host; cross-platform integrity is verified by per-store hashes (Chroma `manifest.json`, FalkorDB `dump.rdb` SHA, `repositories.json` SHA), not envelope byte-identicality
+- Envelope `.sha256` verifies successfully on any platform with standard tools (on the producing host)
 - Manifest schema validates against published JSON Schema
 - A v1.0 archive opened by a v2.x reader produces a clear "supported" or "incompatible" verdict, never silent data loss

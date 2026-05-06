@@ -16,7 +16,7 @@ This is a plan, not a design. The design is fixed. Deviations from the PRD/desig
 
 ## 1. Executive Summary
 
-V1 delivers single-instance (`default` profile) cross-machine export / import / verify / inspect of ChromaDB + FalkorDB + repository metadata + `watched-folders.json`, with cross-OS path flexibility and allowlist-based content policy, and closes the long-standing FalkorDB standalone backup gap. The plan decomposes the work into **17 atomic PRs**, each bounded to <=400 LOC, sequenced so that two foundational refactors (per-adapter quiesce gate; path tokenization) land before any archive / CLI work begins.
+V1 delivers single-instance (`default` profile) cross-machine export / import / verify / inspect of ChromaDB + FalkorDB + repository metadata + `watched-folders.json`, with cross-OS path flexibility and allowlist-based content policy, and closes the long-standing FalkorDB standalone backup gap. The plan decomposes the work into **19 atomic PRs** (revised 2026-05-05 — H-4 split PR-14 into PR-14a/PR-14b and M-6 split PR-05 into PR-05a/PR-05b per code-review feedback), each bounded to <=400 LOC, sequenced so that two foundational refactors (per-adapter quiesce gate; path tokenization) land before any archive / CLI work begins.
 
 **Biggest risks:** (1) per-adapter gate touches four writer surfaces and must not regress any existing ingestion path; (2) FalkorDB RDB-copy race and BGSAVE-complete detection require a spike before the adapter PR lands; (3) cross-OS integration testing is more infrastructure investment than existing tests require and needs a CI plan up front.
 
@@ -24,7 +24,9 @@ V1 delivers single-instance (`default` profile) cross-machine export / import / 
 
 ---
 
-## 2. Work Breakdown (17 PRs, all <=400 LOC)
+## 2. Work Breakdown (19 PRs, all <=400 LOC)
+
+> *Revised 2026-05-05 to pre-split PR-14 per code-review feedback (H-4) and PR-05 per code-review feedback (M-6).*
 
 Naming uses conventional-commit style since that's the project convention. Sizes are ideal-days for one engineer: **S = 1-2 days**, **M = 2-4 days**, **L = 4-6 days**. Any PR that would exceed the ~400 LOC ceiling has been pre-split.
 
@@ -52,9 +54,9 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 
 ---
 
-#### PR-02 — `feat(storage): wire MigrationLockGate into ChromaStorageClient`
+#### PR-02 — `feat(storage): wire MigrationLockGate into ChromaStorageClientImpl`
 
-- **Scope:** Instrument six mutating methods in `src/storage/chroma-client.ts`: `addDocuments`, `upsertDocuments`, `deleteDocuments`, `createCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`. Each calls `assertWritesAllowed()` at the top. Add a "coverage unit test" that enumerates all exported mutating methods via reflection/type introspection and asserts each calls the gate (per ADR-0007 Validation Criteria).
+- **Scope:** Instrument six mutating methods on the class implementing `ChromaStorageClient` (namely `ChromaStorageClientImpl`) in `src/storage/chroma-client.ts`: `addDocuments`, `upsertDocuments`, `deleteDocuments`, `getOrCreateCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`. Each calls `assertWritesAllowed()` at the top. Read methods (`getCollectionIfExists`, `query*`, `getDocument`) are intentionally NOT gated. Add a "coverage unit test" that enumerates all exported mutating methods via reflection/type introspection and asserts each calls the gate (per ADR-0007 Validation Criteria).
 - **Does NOT:** touch graph adapter, metadata store, or watched-folder store.
 - **Dependencies:** PR-01.
 - **Size:** S (6 methods, ~80 LOC of wiring + coverage test).
@@ -88,15 +90,30 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 
 ---
 
-#### PR-05 — `feat(watched-folders): wire MigrationLockGate + caller-side error handling`
+#### PR-05a — `feat(watched-folders): wire MigrationLockGate into WatchedFolderStoreImpl`
 
-- **Scope:** Two parts kept together because they're small:
-  1. Instrument `WatchedFolderStoreService.addFolder / updateFolder / removeFolder` in `src/services/watched-folder-store.ts`.
-  2. Add caller-side `MigrationQuiesceError` handling per ADR-0007 §"Caller-side error handling": CLI commands abort with exit code and message; `ProcessingQueue` / `FolderDocumentIndexingService` defer-and-retry; MCP tool handlers (`trigger_incremental_update`) return `quiesce_in_progress` structured error with `retry_after_seconds` hint.
-- **Dependencies:** PR-01 through PR-04 (all four gate sites need to be live before callers can sensibly handle the error).
-- **Size:** M (~300 LOC across the service + caller-side helpers + tests; watch size, may need to split the caller-side helpers into a separate PR-05b if we bust 400 LOC).
-- **Test strategy:** per-caller-type tests (CLI abort, queue defer, MCP structured error), plus adapter-coverage on the watched-folder store.
-- **Risk flags:** R2. This is the most likely PR to need splitting — if LOC creeps, cut the MCP tool handler piece into PR-05b.
+> *Restructured 2026-05-05 — code-review fix M-6: PR-05 pre-split into PR-05a (gating) and PR-05b (caller-side error handling).*
+
+- **Scope:** Instrument `WatchedFolderStoreImpl.addFolder / updateFolder / removeFolder` in `src/services/watched-folder-store.ts`. Adapter-coverage test contribution mirroring PR-02..PR-04. **Auth-store note (H-1):** auth store writes (`src/auth/token-store.ts`, `src/auth/oidc/oidc-session-store.ts`, `src/auth/user-mapping/user-mapping-store.ts`) must also check the migration lock; their adapter-coverage test contribution can land as a follow-up if it busts LOC, but they must be on the inventory for PR-04/PR-05a review. (Stakeholder confirmation needed before PR-01 on the "gated, not snapshotted" policy — see ADR-0007 §"Other persistent state under `data/`".)
+- **Dependencies:** PR-01.
+- **Size:** S (~150 LOC).
+- **Test strategy:** unit test per write method (lock-held raises; lock-held-by-self passes; lock-released passes). Adapter-coverage unit test for the watched-folder store.
+- **Risk flags:** R2.
+- **Acceptance criteria:** `WatchedFolderStoreImpl` writes invoke `assertWritesAllowed`; adapter-coverage test passes; auth-store inventory acknowledged.
+
+---
+
+#### PR-05b — `feat(migration): caller-side MigrationQuiesceError handling`
+
+- **Scope:** Caller-side `MigrationQuiesceError` handling per ADR-0007 §"Caller-side error handling":
+  - CLI commands abort with exit code and message
+  - `ProcessingQueue` / `FolderDocumentIndexingService` defer-and-retry against the lock TTL
+  - MCP tool handlers (`trigger_incremental_update`) return `quiesce_in_progress` structured error with `retry_after_seconds` hint
+  - May sub-split by caller class if it exceeds 400 LOC during implementation.
+- **Dependencies:** PR-01 through PR-05a (all five gate sites need to be live before callers can sensibly handle the error).
+- **Size:** M (~250 LOC of caller-side helpers + tests).
+- **Test strategy:** per-caller-type tests (CLI abort, queue defer, MCP structured error).
+- **Risk flags:** R2.
 - **Acceptance criteria:** ADR-0007 "Caller-side error handling" section; `MigrationQuiesceError` surfaces sensibly from every caller class.
 
 ---
@@ -122,7 +139,7 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 - **Size:** M (~350 LOC — metadata store + four consumers + tests). Pre-split trigger: if consumer list grows, split the consumer updates into PR-07b.
 - **Test strategy:** unit tests for metadata store tokenize-on-write + legacy tolerance; per-consumer test that a tokenized entry and a legacy entry both resolve correctly; preserved security boundary in `remove-command`; grep-based test that no bare `localPath` read exists outside `resolveRepositoryPath`.
 - **Risk flags:** R3. Regression risk on existing ingestion paths is real — run full test suite twice.
-- **Acceptance criteria:** ADR-0008 Validation Criteria bullets 1-6; `pathFormat: "tokenized-v1"` marker present in output; `remove-command` security check still refuses path-escape.
+- **Acceptance criteria:** ADR-0008 Validation Criteria bullets 1-6; `pathFormat: "tokenized-v1"` marker present in output; `remove-command` security check still refuses path-escape; **schema change applied to `RepositoryInfo` interface in `src/repositories/types.ts` (add `isExternalPath`, optional `externalPathOrigin`, optional `pathStatus`); the Zod validation schema in `src/repositories/metadata-store.ts` is updated to accept the new fields; every test fixture that builds a `RepositoryInfo` is updated** (M-3 in code-review fix list — revised 2026-05-05).
 
 ---
 
@@ -138,7 +155,7 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 - **Size:** S.
 - **Test strategy:** unit tests mocking Redis responses for `MODULE LIST` parsing (packed integer decode), version-detection fallback chain, refuse-if-no-version. Integration test spike against a live `falkordb/falkordb:v4.4.1` container (required for ADR-0006 T2 confirmation — already verified in the spike, but regression-test it here).
 - **Risk flags:** R5 (version-field shape). Spike already resolved this per ADR-0006, but this PR is where it gets codified.
-- **Acceptance criteria:** ADR-0006 "Version Detection Strategy" section; version detection refuses on pre-v4.0.0 or missing version; integration test against pinned image passes.
+- **Acceptance criteria:** ADR-0006 "Version Detection Strategy" section; version detection refuses on pre-v4.0.0 or missing version; integration test against pinned image passes. **Implementation must reference ADR-0006 §"Primary backup flow" as the single source of truth for the BGSAVE → poll-LASTSAVE → poll-INFO-persistence sequence** (M-7 in code-review fix list — revised 2026-05-05); any predicate change is made in ADR-0006 first and then propagated here.
 
 ---
 
@@ -154,7 +171,7 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 - **Size:** M (four scripts × two platforms, plus deprecation + doc updates).
 - **Test strategy:** script-level integration tests that run the backup script against a live FalkorDB container, verify `dump.rdb` extracted, restore the backup into a fresh container, smoke-query with `GRAPH.QUERY knowledge_graph "MATCH (n) RETURN count(n)"`. Run on both PowerShell (Windows CI) and bash (Linux CI) — this is the first cross-platform integration test in the plan.
 - **Risk flags:** R4 (Docker volume "swap" semantics). Password handling under PowerShell quoting rules is the single biggest foot-gun.
-- **Acceptance criteria:** PRD FR-6.1 through FR-6.4; US-3 acceptance criteria; scripts parity with ChromaDB scripts; Neo4j scripts deprecated or removed; `docs/docker-operations.md` updated.
+- **Acceptance criteria:** PRD FR-6.1 through FR-6.4; US-3 acceptance criteria; scripts parity with ChromaDB scripts; Neo4j scripts deprecated or removed; `docs/docker-operations.md` updated. **Shell-script BGSAVE-complete detection must reference ADR-0006 §"Primary backup flow" as the single source of truth** (M-7 in code-review fix list — revised 2026-05-05); if the predicate logic changes there, both PR-08 (TS) and these scripts update in lockstep.
 
 ---
 
@@ -213,7 +230,7 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 - **Size:** M.
 - **Test strategy:** allowlist unit tests covering every legal field and at least five illegal fields including a "new field added in a future PR" case that fails the build. Snapshot-and-restore round-trip: legacy absolute paths tokenize on snapshot, restore on target yields tokenized output. External-path round-trip (path preserved verbatim, marker set, origin captured).
 - **Risk flags:** R9 (secrets leak if allowlist wrong). Fail-closed test is the load-bearing guardrail.
-- **Acceptance criteria:** FR-1.3, FR-1.5, FR-1.10, FR-1.11 (archive side only; restore UX in PR-16).
+- **Acceptance criteria:** FR-1.3, FR-1.5, FR-1.10, FR-1.11 (archive side only; restore UX in PR-16). **Auth store files (`tokens.json`, `oidc-sessions.json`, `user-mappings.json`) are explicitly excluded by the allowlist and the README.txt mentions auth re-bootstrap on the destination** (per code-review fix H-1, revised 2026-05-05; cross-reference ADR-0007 §"Other persistent state under `data/`"). Stakeholder confirmation needed before PR-01 on the "gated, not snapshotted" policy.
 
 ---
 
@@ -221,22 +238,36 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 
 ---
 
-#### PR-14 — `feat(migration): orchestrator + archive packaging (tar.gz + SHA)`
+#### PR-14a — `feat(migration): archive packaging (tar.gz + envelope SHA)`
 
-- **Scope:** New `src/services/migration/migration-orchestrator.ts` coordinating the three adapters in design §4.1's backup order (fsync metadata → BGSAVE trigger → Chroma tar → poll + copy RDB → write metadata last). New `src/services/migration/archive-writer.ts` and `archive-reader.ts` doing tar.gz packaging. Decision per feasibility §2.3: use `tar-stream` / `node-tar` Bun-native library rather than shelling out to system tar, to sidestep GNU tar vs bsdtar determinism pain. Envelope SHA-256 sidecar.
+> *Restructured 2026-05-05 — code-review fix H-4: PR-14 pre-split into PR-14a (archive packaging) and PR-14b (orchestrator).*
+
+- **Scope:** New `src/services/migration/archive-writer.ts` and `src/services/migration/archive-reader.ts` doing tar.gz packaging. Decision per feasibility §2.3: use `tar-stream` / `node-tar` Bun-native library rather than shelling out to system tar, to sidestep GNU tar vs bsdtar determinism pain. Envelope SHA-256 sidecar.
+- **Does NOT:** orchestrate adapters; CLI surface; live-container integration.
+- **Dependencies:** PR-10 (manifest schema) only.
+- **Size:** S–M (~250 LOC: archive-writer + archive-reader + their tests).
+- **Test strategy:** unit tests for archive packaging (determinism of per-artifact SHAs, not envelope SHA — R6 relaxation); round-trip pack/unpack with synthetic payloads.
+- **Risk flags:** R6 (per-artifact SHA verification is the V1 contract; envelope byte-identicality is not).
+- **Acceptance criteria:** FR-1.7, FR-1.8; ADR-0005 archive layout; envelope SHA sidecar produced.
+
+---
+
+#### PR-14b — `feat(migration): orchestrator (coordinates adapters, manages quiesce window)`
+
+- **Scope:** New `src/services/migration/migration-orchestrator.ts` coordinating the three adapters in design §4.1's backup order (fsync metadata → BGSAVE trigger → Chroma tar → poll + copy RDB → snapshot metadata last). Acquires the migration lock; assembles the manifest; invokes the archive writer from PR-14a.
 - **Does NOT:** CLI surface (that's PR-15).
-- **Dependencies:** PR-01 through PR-13 except PR-09 (scripts are independent).
-- **Size:** M-L (watch LOC — orchestrator + archive I/O is where size creeps; pre-split trigger: if packaging grows past 200 LOC, split archive I/O into PR-14b).
-- **Test strategy:** integration test for full orchestrator flow against live containers; unit tests for archive packaging (determinism of per-artifact SHAs, not envelope SHA — R6 relaxation).
-- **Risk flags:** R4, R6, R8 (CI investment).
-- **Acceptance criteria:** FR-1.4, FR-1.7, FR-1.8, FR-2.6, FR-2.9; design §4.1 backup sequence.
+- **Dependencies:** PR-11, PR-12, PR-13, PR-14a (and transitively PR-01..PR-10).
+- **Size:** M (~300 LOC: orchestrator + integration test against live containers).
+- **Test strategy:** integration test for full orchestrator flow against live containers; quiesce-window timing assertion; failure-mode-matrix coverage (design §4.3).
+- **Risk flags:** R4, R8 (CI investment).
+- **Acceptance criteria:** FR-1.4, FR-2.6, FR-2.9; design §4.1 backup sequence; ADR-0007 snapshot-order spec honored.
 
 ---
 
 #### PR-15 — `feat(cli): pk-mcp migrate export / import / verify / inspect commands`
 
-- **Scope:** New `src/cli/commands/migrate-export-command.ts`, `migrate-import-command.ts`, `migrate-verify-command.ts`, `migrate-inspect-command.ts`. Register under a new `migrate` Commander subcommand group in `src/cli/index.ts` (matches existing `graph`, `token`, `watch`, `documents` pattern). Flags per design §5.1-§5.2: `--output`, `--stores`, `--bgsave-timeout`, `--quiesce-wait`, `--no-verify`, `--dry-run`, `--quiet`, `--yes`, `--allow-minor-drift`, `--staging-dir`, `--keep-set-aside`. Deferred flags (`--instance`, `--encrypt`, `--include-repos-source`) fail fast with "not yet supported in V1; see V1.x roadmap" message. Validation schemas in `src/cli/utils/validation.ts` (Zod).
-- **Dependencies:** PR-14.
+- **Scope:** New `src/cli/commands/migrate-export-command.ts`, `migrate-import-command.ts`, `migrate-verify-command.ts`, `migrate-inspect-command.ts`. Register under a new `migrate` Commander subcommand group in `src/cli/index.ts` (matches existing `graph`, `token`, `watch`, `documents` pattern). Flags per design §5.1-§5.2: `--output`, `--stores`, `--bgsave-timeout`, `--quiesce-wait`, `--no-verify`, `--dry-run`, `--quiet`, `--yes`, `--allow-minor-drift`, `--staging-dir`, `--keep-set-aside`, `--skip-missing-external` (per M-4 fix; opt-in to restore the prior "skip-with-warning" semantics on missing external paths under non-interactive runs). Deferred flags (`--instance`, `--encrypt`, `--include-repos-source`) fail fast with "not yet supported in V1; see V1.x roadmap" message. Validation schemas in `src/cli/utils/validation.ts` (Zod).
+- **Dependencies:** PR-14b.
 - **Size:** M.
 - **Test strategy:** unit tests for each command's flag parsing; integration test: run `migrate export` on a populated instance, then `migrate inspect` on the output. Verify deferred flags fail fast with correct messages.
 - **Risk flags:** CLI naming (`migrate` vs `backup`): PRD picks `migrate`; design §5 already aligned to `migrate`. No ambiguity remains.
@@ -249,7 +280,8 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 - **Scope:** External-path handling during `migrate import` per ADR-0008 §"Restore-side behavior":
   - TTY detection + interactive prompt (path / skip / remove)
   - `--external-path-map <file>` flag accepting JSON/YAML `{ name: newPath }`
-  - Non-interactive default: skip with loud warning, exit 0
+  - **Non-interactive default: fail-fast** — exit non-zero, list missing external paths (per code-review fix M-4, revised 2026-05-05; aligns with PRD FR-3.10 "must not silently succeed with broken entries")
+  - **`--skip-missing-external` opt-in flag**: restores the prior "skip with loud per-entry warning, exit 0" semantics for users who want it; affected entries land with `pathStatus: "broken"`
   - `pathStatus: "broken"` marker in `repositories.json`; consumers (`RepositoryCloner`, etc.) refuse broken entries
   - `fs.realpath` validation of user-supplied remap paths; refuse `..` escapes; refuse paths under `CLONE_ROOT` (external entries must stay external)
   - Manifest `externalPaths` summary consumed up-front so prompting happens before destructive actions
@@ -285,11 +317,14 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
                           |
           +---------------+---------------+---------------+
           |               |               |               |
-        PR-02           PR-03           PR-04           PR-05
+        PR-02           PR-03           PR-04           PR-05a
        (Chroma         (Graph          (Metadata       (Watched-folder
-        gate)           gate)           gate)           gate + callers)
+        gate)           gate)           gate)           gate)
           |               |               |               |
           +---------------+---------------+---------------+
+                                  |
+                            PR-05b (caller-side
+                              error handling)
                                   |
                                   +--------+
                                            |
@@ -307,16 +342,16 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
                   |
                PR-10 (manifest schema)
                   |
-          +-------+-------+-------+
-          |               |       |
-        PR-11           PR-12   PR-13
-       (Chroma         (Falkor  (Metadata
-        adapter)        adapter) adapter +
-          |               |      allowlist)
-          +-------+-------+
+          +-------+-------+-------+-------+
+          |               |       |       |
+        PR-11           PR-12   PR-13   PR-14a
+       (Chroma         (Falkor  (Metadata (archive
+        adapter)        adapter) adapter +  packaging)
+          |               |      allowlist)  |
+          |               |       |          |
+          +-------+-------+-------+----------+
                   |
-               PR-14 (orchestrator +
-                      archive packaging)
+               PR-14b (orchestrator)
                   |
                PR-15 (CLI commands)
                   |
@@ -327,21 +362,21 @@ All PRs share a common gate: `bun run typecheck` + `bun test` + `bun run build` 
 
 ### Critical Path
 
-**PR-01 → PR-05 → PR-07 → PR-10 → PR-14 → PR-15 → PR-16 → PR-17**
+**PR-01 → PR-05a → PR-05b → PR-07 → PR-10 → PR-14a → PR-14b → PR-15 → PR-16 → PR-17**
 
-That's 8 PRs on the critical path. Everything else is either prerequisite-parallel or wait-blocked on critical-path items.
+That's 10 PRs on the critical path. Everything else is either prerequisite-parallel or wait-blocked on critical-path items.
 
 ### Parallelization Opportunities
 
-- **PR-02, PR-03, PR-04** can land in parallel once PR-01 is merged (different adapter files, no shared surface).
+- **PR-02, PR-03, PR-04, PR-05a** can land in parallel once PR-01 is merged (different adapter files, no shared surface).
 - **PR-06** can start as soon as PR-01 begins (no dependency).
 - **PR-09** (standalone scripts) is completely independent of the critical path and should be scheduled first for a single engineer because it resolves the longest-standing user pain (FalkorDB has no backups today) and delivers standalone value before the TS migration tool is done. If multiple engineers, PR-09 is an obvious parallel track.
-- **PR-08** needs PR-03 merged (adapter gate) but not PR-04/PR-05/PR-06/PR-07.
-- **PR-11, PR-12, PR-13** can all land in parallel once PR-10 ships.
+- **PR-08** needs PR-03 merged (adapter gate) but not PR-04/PR-05a/PR-05b/PR-06/PR-07.
+- **PR-11, PR-12, PR-13, PR-14a** can all land in parallel once PR-10 ships (PR-14a depends only on the manifest schema).
 
 ### Approximate Serial Length (one engineer)
 
-Summing critical-path PR sizes: S + M + M + M + L + M + M + S = **~22-28 ideal-days**. Add ~20-30% buffer for review cycles and integration-test flakiness, landing in the **5-7 week** band for one engineer, which tracks the feasibility review's "4-8 dev-weeks" estimate. Schedule windows are stakeholder-owned; this plan does not assign calendar dates.
+Summing critical-path PR sizes (PR-01 → PR-05a → PR-05b → PR-07 → PR-10 → PR-14a → PR-14b → PR-15 → PR-16 → PR-17): S + S + M + M + M + S + M + M + M + S = **~24-30 ideal-days**. Add ~20-30% buffer for review cycles and integration-test flakiness, landing in the **5-7 week** band for one engineer, which tracks the feasibility review's "4-8 dev-weeks" estimate. Schedule windows are stakeholder-owned; this plan does not assign calendar dates.
 
 ---
 
@@ -352,10 +387,10 @@ Summing critical-path PR sizes: S + M + M + M + L + M + M + S = **~22-28 ideal-d
 **Goal:** Prove the core pipeline end-to-end on a single OS family. This is the "does it move data at all?" milestone.
 
 **Cut at:** PR-01 through PR-15 merged. Specifically:
-- Quiesce gate across all four writer surfaces (PR-01..PR-05)
+- Quiesce gate across all four writer surfaces (PR-01..PR-05a) plus caller-side error handling (PR-05b)
 - Path tokenization merged and consumers migrated (PR-06, PR-07) — tokenization is load-bearing even on same-OS moves because the source archive could contain legacy absolute paths
 - FalkorDB ops + standalone scripts shipped (PR-08, PR-09) — US-3 unblocked standalone
-- All three store adapters + manifest + orchestrator + CLI (PR-10..PR-15)
+- All three store adapters + manifest + archive packaging + orchestrator + CLI (PR-10..PR-14a..PR-14b..PR-15)
 
 **Explicitly NOT in Alpha:**
 - External-path restore UX (PR-16) — alpha refuses external-path entries with a clear "not yet implemented" error
@@ -455,7 +490,7 @@ This is the single most important test investment in the plan. Two approaches be
 
 **Option B (fallback):** A single-platform runner does both operations using WSL or a second Docker context to simulate the other OS. Cheaper but less rigorous.
 
-Decision criterion: if the test harness work for Option A exceeds 2-3 days, fall back to Option B and document the gap.
+Decision: PM allocates a spike-PR (PR-08.5 or similar) before PR-09 starts, to (a) confirm Windows runner availability in current GitHub Actions config and (b) decide Option A vs Option B with a 2-day budget. PR-09 sizing assumes the decision is resolved going in. (Revised 2026-05-05 — code-review fix L-2; the open §7 prereq question #3 on Windows CI runner is the gating input.)
 
 ### Per-adapter gate test coverage without matrix explosion
 
@@ -534,7 +569,7 @@ Target measurements recorded in V1 release notes.
 ### "Done" definition
 
 GA ships when all of:
-- PR-01 through PR-17 merged to main.
+- PR-01 through PR-17 merged to main (19 PRs total after the H-4 and M-6 splits: PR-01, PR-02, PR-03, PR-04, PR-05a, PR-05b, PR-06, PR-07, PR-08, PR-09, PR-10, PR-11, PR-12, PR-13, PR-14a, PR-14b, PR-15, PR-16, PR-17).
 - All 10 pre-GA smoke tests pass on reference hardware in a single day.
 - All four performance targets met.
 - README.md, `docs/docker-operations.md`, `docs/migration/runbook.md`, `docs/migration/kubernetes.md` reviewed by someone not on the dev team.
@@ -549,7 +584,7 @@ Lightweight backlog — not issues, not a formal register, just "don't lose thes
 
 | ID | Item | Source | Target |
 |----|------|--------|--------|
-| F1 | **`pk-mcp repo repath <name> <new-path>` subcommand** (ADR-0008 T14) | Design, ADR-0008 §Refactor Sizing, this plan §4 | V1.0.1 fast-follow |
+| F1 | **`pk-mcp repo repath <name> <new-path>` subcommand** (ADR-0008 T14) — **Resolved 2026-05-05 (code-review fix I-3): PM-recommended fast-follow as V1.0.1, NOT GA-blocking. Stakeholder signoff captured 2026-05-05.** | Design, ADR-0008 §Refactor Sizing, this plan §4 | V1.0.1 fast-follow |
 | F2 | **Watched-folders path-resolver shared with Phase 6** (design T13) | Design §13 | Phase 6 implementation — architect to confirm shared module at Phase 6 kickoff |
 | F3 | **Multi-instance support** (US-D1) with FalkorDB per-instance prerequisite | PRD §13.1 | V1.x |
 | F4 | **Optional passphrase encryption** (US-D2, `--encrypt`) | PRD §13.1 | V1.x |
@@ -577,7 +612,7 @@ These are places where the authoritative design artifacts are either internally 
 
 3. **PRD FR-6.3 "remove or mark deprecated" for stale Neo4j scripts — pick one.** Plan proposes "deprecate in PR-09, remove in a follow-up." Confirm this is acceptable vs. removing outright. (Low stakes; PM call.)
 
-4. **`pk-mcp repo repath` GA vs fast-follow.** ADR-0008 says "design-level only in V1; implementation can slip to a fast-follow if time-pressed." Plan recommends fast-follow (§4). Confirm stakeholder agrees; otherwise plan needs PR-17b.
+4. **`pk-mcp repo repath` GA vs fast-follow.** ADR-0008 says "design-level only in V1; implementation can slip to a fast-follow if time-pressed." Plan recommends fast-follow (§4). **Resolved 2026-05-05 (code-review fix I-3): PM-recommended fast-follow as V1.0.1, NOT GA-blocking. Stakeholder signoff captured 2026-05-05.**
 
 5. **Cross-OS CI matrix availability.** Prerequisite §7 item 4. Not a design inconsistency — just a "need to verify before PR-09 runs."
 

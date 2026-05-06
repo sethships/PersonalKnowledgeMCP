@@ -117,10 +117,18 @@ Rationale:
 
 ### Primary backup flow
 
-1. Confirm FalkorDB container is running and authenticated.
-2. Issue `LASTSAVE` and record `t0`.
-3. Issue `BGSAVE`.
-4. Poll `LASTSAVE` every second until it advances past `t0` (or timeout, default 5 min).
+> *Revised 2026-05-05 — code-review fix M-7. This specification is the single source of truth for both PR-08 (TS implementation in `falkordb-ops.ts`) and PR-09 (shell scripts). Both must reference this section; if the predicate logic needs to change, change it here first and update both implementations.*
+
+The BGSAVE → poll-LASTSAVE → poll-INFO-persistence sequence is specified below in language-agnostic numbered form, naming exact Redis fields, predicates, and ordering.
+
+1. Confirm FalkorDB container is running and authenticated (`PING` returns `PONG`).
+2. Issue Redis command `LASTSAVE`. Record the integer Unix timestamp it returns as `t0`.
+3. Issue Redis command `BGSAVE`. Expect either `Background saving started` or, if a save is already in flight, `Background save already in progress` — both are non-error.
+4. Poll Redis every 1 second (default 300 sec total budget; configurable via `--bgsave-timeout` per Design §5.1) until ALL of the following predicates hold simultaneously in a single polling tick:
+   - `LASTSAVE` returns an integer strictly greater than `t0` (the saved-snapshot timestamp has advanced).
+   - `INFO persistence` field `rdb_bgsave_in_progress` equals `0` (no fork is still writing).
+   - `INFO persistence` field `rdb_last_bgsave_status` equals `ok` (the last save succeeded; any other value, including `err`, is a hard failure — abort backup with the value reported).
+   If the timeout expires before all three predicates hold, abort backup and report the last observed values for diagnostics.
 5. Capture version metadata per **Version Detection Strategy** below.
 6. Use a read-only Alpine sidecar mounted against `falkordb-data` to copy `dump.rdb` to the staging area.
 7. SHA-256 the copied file; write version metadata into the store's section of `manifest.json`.

@@ -39,17 +39,33 @@ Migration cannot be correct without understanding which processes and code paths
 - **CLI commands:** `index-command.ts`, `update-all-command.ts`, `update-repository-command.ts`, `documents-index-command.ts`, `watch-command.ts` (add / rescan), `remove-command.ts`, `reset-update-command.ts`, `migrate-extensions-command.ts`, `graph-populate-command.ts`, `graph-populate-all-command.ts`, `graph-transfer-command.ts`, `graph-migrate-command.ts`
 - **Services:** `IngestionService.indexRepository / reindexRepository / removeRepository`, `IncrementalUpdateCoordinator.updateRepository`, `IncrementalUpdatePipeline.processChanges`, `FolderWatcherService` (emits events), `ProcessingQueue` (dispatches batches), `FolderDocumentIndexingService.handleDetectedChange`, `GraphIngestionService.ingestFiles / deleteRepositoryData / deleteFileData`
 - **MCP tool handlers:** `trigger_incremental_update` in `src/mcp/tools/`
-- **Metadata stores:** `RepositoryMetadataStoreImpl.updateRepository / removeRepository` (writes `repositories.json`), `WatchedFolderStoreService.addFolder / updateFolder / removeFolder` (writes `watched-folders.json`)
+- **Metadata stores:** `RepositoryMetadataStoreImpl.updateRepository / removeRepository` (writes `repositories.json`), `WatchedFolderStoreImpl` (implementing `WatchedFolderStoreService`) `.addFolder / updateFolder / removeFolder` (writes `watched-folders.json`)
 
 ### The three actual bytes-on-wire write surfaces
 
 Despite the sprawling set of callers, every write that matters for migration consistency funnels through exactly one of three low-level writers:
 
-1. **ChromaDB client** — `ChromaStorageClient.addDocuments / upsertDocuments / deleteDocuments / createCollection / deleteCollection / deleteDocumentsByFilePrefix`
+1. **ChromaDB client** — `ChromaStorageClientImpl.addDocuments / upsertDocuments / deleteDocuments / getOrCreateCollection / deleteCollection / deleteDocumentsByFilePrefix`
 2. **Graph storage adapter** — `GraphStorageAdapter.runQuery` (write Cypher) and any raw-command execution used by graph ingestion
-3. **Repository metadata store** — `RepositoryMetadataStoreImpl.updateRepository / removeRepository` (and `WatchedFolderStoreService` for the watched-folders file)
+3. **Repository metadata store** — `RepositoryMetadataStoreImpl.updateRepository / removeRepository` (and `WatchedFolderStoreImpl` for the watched-folders file)
 
 This observation — that there are many callers but only three **adapters** that actually mutate persistent state — is the pivot that makes a coordinated quiesce tractable.
+
+### Other persistent state under `data/`
+
+> *Revised 2026-05-05 — code-review fix H-1*
+
+The three adapters above are the canonical write surfaces for *migration-relevant* state, but the codebase has additional persistent JSON stores under `${DATA_PATH}/` that are written by long-lived MCP HTTP server processes:
+
+- `src/auth/token-store.ts` — persists bearer tokens for the MCP HTTP transport (write target: `${DATA_PATH}/tokens.json`).
+- `src/auth/oidc/oidc-session-store.ts` — persists OIDC session/state for in-flight authorization-code flows (write target: `${DATA_PATH}/oidc-sessions.json`).
+- `src/auth/user-mapping/user-mapping-store.ts` — persists OIDC-claim-to-instance user mappings (write target: `${DATA_PATH}/user-mappings.json`).
+
+**V1 policy: gated only, not snapshotted.** These stores hold secrets (bearer tokens, OIDC sessions, user-claim mappings). They are written by the long-lived MCP HTTP server and must honor the `data/.migration.lock` to prevent torn writes during snapshot. They are deliberately excluded from the archive payload — consistent with §"Security and Allowlist" / design §8's stance that users re-populate `.env` and other secret material from their own secret management on the destination machine. The `README.txt` that ships inside the archive must call out that auth state is NOT migrated and must be re-bootstrapped on the destination machine.
+
+The adapter-coverage test (PR-04 / PR-05 enforcement; see ADR-0007 Validation Criteria) should call out that these auth stores ALSO honor the lock; their adapter-coverage test contribution may land as a PR-04b / PR-05b follow-up if it busts the LOC budget, but they must be on the inventory.
+
+**Stakeholder confirmation needed before PR-01:** is the "gated, not snapshotted, re-bootstrap on destination" policy correct? The alternative is "snapshot too" which adds an adapter and a roadmap PR; or "out of scope, MCP server stops during backup" which contradicts §"Decision Outcome" / §6's reads-continue stance.
 
 ### Existing write-safety mechanism today
 
@@ -131,10 +147,10 @@ The repo today relies on a **per-repository** `updateInProgress` flag stored in 
 ### Option 5: Per-Adapter Gate (Thin Check at Storage-Adapter Boundary) — **RECOMMENDED**
 
 **Description:** Add a `MigrationLockGate` that is consulted inside the three low-level adapters at every mutation entry point:
-- `ChromaStorageClient` (in our `chroma-client.ts` wrapper, not the vendor library) checks the gate before every `addDocuments`, `upsertDocuments`, `deleteDocuments`, `createCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`.
+- `ChromaStorageClientImpl` (in our `chroma-client.ts` wrapper, not the vendor library) checks the gate before every `addDocuments`, `upsertDocuments`, `deleteDocuments`, `getOrCreateCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`. (Read methods — `getCollectionIfExists`, `query*`, `getDocument` — are intentionally NOT gated; they are read-only and must continue serving during the quiesce window per §6.)
 - `GraphStorageAdapter` checks the gate before every write Cypher query (`runQuery` with write intent) and any raw Redis write command.
 - `RepositoryMetadataStoreImpl` checks the gate before every `updateRepository` and `removeRepository`.
-- (`WatchedFolderStoreService` likewise, for completeness, before its three write methods.)
+- (`WatchedFolderStoreImpl` likewise, for completeness, before its three write methods.)
 
 The gate is a process-singleton that reads `data/.migration.lock` on each write attempt (cached with short TTL to avoid per-write stat overhead). When the lock is held by another process and has not expired, write attempts raise `MigrationQuiesceError` which upstream callers (CLI commands, MCP tool handlers, the ProcessingQueue batch runner) handle by deferring work, retrying with backoff, or surfacing a clear error message.
 
@@ -198,10 +214,10 @@ Rationale:
   - `probeLockState(): LockState` — non-throwing, returns `{ held, heldByCurrentProcess, expiresAt, operation }`.
   - In-process cache with TTL (default 500ms) to keep per-write overhead under 1µs in the steady state.
 - **Integration points** (V1):
-  1. `ChromaStorageClient` in `src/storage/chroma-client.ts` — wrap the six mutating methods listed above.
-  2. `GraphStorageAdapter` in `src/graph/adapters/FalkorDBAdapter.ts` — gate write queries and any `BGSAVE`-adjacent mutations that aren't the backup itself.
+  1. The class implementing `ChromaStorageClient`, namely `ChromaStorageClientImpl`, in `src/storage/chroma-client.ts` — wrap the six mutating methods listed above.
+  2. `GraphStorageAdapter` (concrete: `FalkorDBAdapter`) in `src/graph/adapters/FalkorDBAdapter.ts` — gate write queries and any `BGSAVE`-adjacent mutations that aren't the backup itself.
   3. `RepositoryMetadataStoreImpl.updateRepository / removeRepository` in `src/repositories/metadata-store.ts`.
-  4. `WatchedFolderStoreService.addFolder / updateFolder / removeFolder` in `src/services/watched-folder-store.ts`.
+  4. `WatchedFolderStoreImpl` (implementing `WatchedFolderStoreService`) `.addFolder / updateFolder / removeFolder` in `src/services/watched-folder-store.ts`.
 - **Self-exception**: Writes originating from the migration tool itself (restore path, which is the sole writer at the time) pass a process-local "owner" token that the gate recognizes via `heldByCurrentProcess`. This avoids the backup/restore process deadlocking against its own gate.
 
 ### Caller-side error handling
@@ -214,13 +230,13 @@ Callers cannot assume writes succeed. Three patterns by caller type:
 
 ### Snapshot order within the quiesce window
 
-Unchanged from the prior ADR version:
+> *Revised 2026-05-05 — code-review fix M-5*
 
-1. Flush `repositories.json` to disk (already sync-written; belt-and-suspenders `fsync`).
+1. Acquire `data/.migration.lock`. `fsync` on `repositories.json` and `watched-folders.json` to flush any in-flight writes to disk before BGSAVE/tar work begins. **No copy yet** — this step only ensures the on-disk state is durable.
 2. Trigger FalkorDB `BGSAVE` (non-blocking; starts first because it runs asynchronously on the server).
 3. Tar ChromaDB volume (blocking, via Alpine sidecar with read-only mount).
 4. Poll FalkorDB `LASTSAVE` + `INFO persistence` (`rdb_bgsave_in_progress == 0` AND `rdb_last_bgsave_status == ok`) to confirm BGSAVE completed; copy the resulting `dump.rdb`.
-5. Snapshot `repositories.json` and instance config (last — they're the "source of truth" pointer).
+5. Copy the now-consistent `repositories.json` and `watched-folders.json` into the archive staging area, alongside the sanitized `instance-config.json`. **This is the snapshot of the source-of-truth pointers** taken AFTER Chroma+Falkor have been snapshotted in steps 2–4.
 
 Putting `repositories.json` last ensures that if it references a repo commit, both the vector chunks and graph nodes for that commit are already captured in the archive.
 
@@ -278,10 +294,11 @@ The NFR of "2× disk space required during restore" is an honest consequence of 
 ## Implementation Notes
 
 - `MigrationLockGate` must be acquired before any Docker commands or file reads in the backup/restore orchestrator.
+- **Canonical lock path is `${DATA_PATH}/.migration.lock`.** The literal `data/.migration.lock` form used elsewhere in this ADR is the default when `DATA_PATH=./data`.
 - Lock file is written with `O_CREAT | O_EXCL` semantics (`fs.open(path, 'wx')`) to prevent races.
 - The gate is a singleton initialized by `dependency-init.ts` so the CLI, the MCP stdio server, and the MCP HTTP server all share the same implementation behavior (different process instances share the same file-based signal).
-- TODO: Decide whether to pause the MCP HTTP/SSE transport during *restore* (definitely yes — containers are stopped). During *backup*, reads must continue (HTTP transport stays up).
-- TODO: Specify behavior when an in-flight ingestion is past the quiesce wait timeout — abort backup with clear message (recommended), or force-cancel the ingestion (harsher, not recommended for V1).
+- **HTTP transport during restore (resolved 2026-05-05):** Restore stops the containers (Chroma, Falkor) directly; the MCP HTTP transport is unavailable for that window regardless. V1 documents this in the runbook (PR-17); no graceful-stop logic is added in V1.
+- **Quiesce-wait timeout behavior (resolved 2026-05-05):** When an in-flight ingestion has not drained past the quiesce wait timeout, the backup aborts with a clear error message naming the long-running ingestion job(s); the user can `pk-mcp ingest cancel` and retry. This matches the conservative posture in the rest of ADR-0007 (refuse rather than risk inconsistency).
 
 ## Links
 

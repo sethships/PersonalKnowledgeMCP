@@ -155,6 +155,8 @@ Note: in V1 (single-instance), archive filenames drop the `-<instance>` suffix t
 
 The `externalPaths` array lets the restore tool surface prompts/warnings up-front without having to parse the full `repositories.json` first.
 
+**Auth-store exclusion (revised 2026-05-05 — code-review fix H-1).** The three persistent auth stores under `data/` — `tokens.json` (bearer tokens; `src/auth/token-store.ts`), `oidc-sessions.json` (OIDC session state; `src/auth/oidc/oidc-session-store.ts`), and `user-mappings.json` (claim→instance mappings; `src/auth/user-mapping/user-mapping-store.ts`) — are **gated by the migration lock but explicitly excluded from the archive payload**. They hold secrets and re-bootstrapping them on the destination machine is the user's responsibility (consistent with §8's stance that `.env` and other secret material come from the user's secret management). The archive's `README.txt` calls out that auth state is NOT migrated and must be re-bootstrapped on the destination. See ADR-0007 §"Other persistent state under `data/`" for the full rationale and the stakeholder-confirmation flag.
+
 ## 4. Data Flow
 
 ### 4.1 Backup sequence
@@ -305,7 +307,7 @@ Flags deferred from V1 (moved to §12): `--instance`, `--include-repos-source`, 
 
 ## 6. Cross-Store Consistency (Quiesce Model)
 
-**Summary**: V1 uses a **per-adapter gate** that checks the advisory lock at every mutation entry point inside `ChromaStorageClient`, `GraphStorageAdapter`, and `RepositoryMetadataStoreImpl`. See [ADR-0007](adr/0007-cross-store-consistency-model.md) for the full analysis.
+**Summary**: V1 uses a **per-adapter gate** that checks the advisory lock at every mutation entry point inside `ChromaStorageClientImpl`, `GraphStorageAdapter` (concrete: `FalkorDBAdapter`), and `RepositoryMetadataStoreImpl` (with `WatchedFolderStoreImpl` covered as well). See [ADR-0007](adr/0007-cross-store-consistency-model.md) for the full analysis.
 
 ### Why not single-chokepoint?
 
@@ -315,9 +317,9 @@ The feasibility audit showed the actual writer surface includes a dozen CLI comm
 
 Despite the sprawling caller surface, every write that matters for migration consistency funnels through exactly three low-level adapters:
 
-1. `ChromaStorageClient` — `addDocuments`, `upsertDocuments`, `deleteDocuments`, `createCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`
+1. `ChromaStorageClientImpl` (the class implementing `ChromaStorageClient`) — `addDocuments`, `upsertDocuments`, `deleteDocuments`, `getOrCreateCollection`, `deleteCollection`, `deleteDocumentsByFilePrefix`. Read methods (`getCollectionIfExists`, `query*`, `getDocument`) are intentionally NOT gated.
 2. `GraphStorageAdapter` — write Cypher (`runQuery` with write intent) and any raw Redis write commands (non-BGSAVE)
-3. `RepositoryMetadataStoreImpl` — `updateRepository`, `removeRepository` (plus `WatchedFolderStoreService` methods for `watched-folders.json`)
+3. `RepositoryMetadataStoreImpl` — `updateRepository`, `removeRepository` (plus `WatchedFolderStoreImpl` methods for `watched-folders.json`)
 
 Instrumenting the three adapters provides **complete writer coverage by construction**: anything that doesn't go through one of them isn't a relevant write, and anything that does inherits quiesce semantics automatically — including future features.
 
@@ -339,11 +341,13 @@ Instrumenting the three adapters provides **complete writer coverage by construc
 
 ### Snapshot order within the quiesce window
 
-1. Flush `repositories.json` and `watched-folders.json` to disk (already sync-written; belt-and-suspenders `fsync`).
+> *Revised 2026-05-05 — code-review fix M-5*
+
+1. Acquire `data/.migration.lock`. `fsync` on `repositories.json` and `watched-folders.json` to flush any in-flight writes to disk before BGSAVE/tar work begins. **No copy yet** — this step only ensures the on-disk state is durable.
 2. Trigger FalkorDB `BGSAVE` (non-blocking; starts first because it runs asynchronously on the server).
 3. Tar ChromaDB volume (blocking, via Alpine sidecar with read-only mount).
-4. Poll FalkorDB `LASTSAVE` **and** `INFO persistence` (`rdb_bgsave_in_progress == 0` and `rdb_last_bgsave_status == ok`) to confirm BGSAVE completed; copy the resulting `dump.rdb`. Capture the FalkorDB version per ADR-0006's empirically-verified `MODULE LIST` strategy (see §10).
-5. Snapshot `repositories.json` (normalized per ADR-0008 — clone-managed tokenized, external flagged), `watched-folders.json` (tokenized where the path is under a known root; otherwise flagged as external, same rules as repositories), and instance config (last — they're the "source of truth" pointer).
+4. Poll FalkorDB `LASTSAVE` **and** `INFO persistence` (`rdb_bgsave_in_progress == 0` and `rdb_last_bgsave_status == ok`) to confirm BGSAVE completed; copy the resulting `dump.rdb`. Capture the FalkorDB version per ADR-0006's empirically-verified `MODULE LIST` strategy (see §10). The full BGSAVE-complete predicate sequence is the single source of truth in ADR-0006 §"Primary backup flow".
+5. Copy the now-consistent `repositories.json` (normalized per ADR-0008 — clone-managed tokenized, external flagged), `watched-folders.json` (tokenized where the path is under a known root; otherwise flagged as external, same rules as repositories), and the sanitized `instance-config.json` into the archive staging area. **This is the snapshot of the source-of-truth pointers** taken AFTER Chroma+Falkor have been snapshotted in steps 2–4.
 
 ## 7. Cross-OS Path Flexibility
 
@@ -380,7 +384,7 @@ The codebase supports indexing against a local filesystem path outside the clone
 - **In the archive**, external entries are included; the archive manifest surfaces them in a `repositories.externalPaths` summary so the restore flow can act on them without parsing the full `repositories.json`. The *files* referenced by external paths are **not** bundled (V1 design philosophy — `--include-repos-source` remains deferred).
 - **On restore**, for each external entry whose path does not exist on the target:
   - **Interactive (TTY)**: prompt the user to provide a new path, `skip` (retain entry with `pathStatus: "broken"`), or `remove` the entry.
-  - **Non-interactive (`--yes` / no TTY)**: default to `skip` with a loud per-entry warning. Restore exit code is 0 (soft failure). Users repair later via a reserved `pk-mcp repo repath <name> <new-path>` subcommand.
+  - **Non-interactive (`--yes` / no TTY)**: **fail-fast** by default — exit non-zero, list missing external paths (revised 2026-05-05 — code-review fix M-4; aligns with PRD FR-3.10's "must not silently succeed with broken entries" contract). The opt-in flag `--skip-missing-external` restores the prior "skip with exit 0 and per-entry warning" semantics for users who want it; affected entries land with `pathStatus: "broken"` and can be repaired later via the reserved `pk-mcp repo repath <name> <new-path>` subcommand.
   - **`--external-path-map <file>`**: JSON/YAML mapping of `{ name: newPath }`. Mapped entries are re-pointed without prompting; unmapped entries fall back to the interactive/non-interactive rules above.
 - **Security posture**: external paths bypass the `remove-command.ts` "must be under `CLONE_PATH`" check by design. The restore-time prompt validates user-supplied re-point paths via `fs.realpath` and refuses `..` escapes. Malicious archives carrying suspicious external paths (e.g., `/etc`) are visible to the user in the prompt; automatic re-pointing is never performed.
 
@@ -395,6 +399,7 @@ This replaces the earlier "documented non-portable case" language. External path
   - Embedding-provider shape: provider name (`openai` / `transformers` / `ollama`), model identifier, endpoint (for Ollama). API keys (`openaiApiKey`) are **never** allowlisted.
   - Tuning knobs with no security sensitivity: chunk sizes, concurrency limits, retention counts.
 - **`.env` is excluded wholesale.** It is not the source of the allowlist. `.env` contains secrets by design; the archive is not the vehicle for transporting them. Users re-populate `.env` on the target machine from their own secret management (password manager, vault, etc.). The archive's embedded `README.txt` spells this out.
+- **Auth stores are excluded wholesale (revised 2026-05-05 — code-review fix H-1).** The three persistent auth stores under `${DATA_PATH}/` — `tokens.json`, `oidc-sessions.json`, `user-mappings.json` — are not on the allowlist and are not in the archive. They are, however, gated by the migration lock so their long-lived MCP HTTP server writers cannot tear writes during snapshot. The README.txt notes this and points the user at re-bootstrap instructions (re-issue tokens, re-link OIDC, re-create user mappings on the destination machine). See ADR-0007 §"Other persistent state under `data/`".
 - **Implementation shape (design-level only)**: a schema-driven filter enumerates allowed keys and emits a sanitized object; a test fails the build if an unknown key reaches the serializer (fail-closed). Writer never sees the raw config; it consumes the sanitized output.
 - **Archive encryption is deferred out of V1.** Users wrap the output with `age` / `openssl` / `7z` themselves in the interim. Rationale: avoiding a crypto choice in V1 keeps the feature lean and shippable, and the archive is a single file, so wrapping is trivial.
 - **Embeddings can leak proprietary content.** Archives are treated as sensitive by policy; the CLI warns users at creation time.
@@ -418,14 +423,16 @@ This replaces the earlier "documented non-portable case" language. External path
 
 ## 11. Kubernetes Path (Deferred — Acknowledged)
 
-V1 does not solve K8s backup. The PVC at `kubernetes/base/mcp-service/pvc.yaml` plus the ChromaDB/FalkorDB PVCs (when they land) can be backed up via:
+> *Revised 2026-05-05 — code-review fix L-4: limitation now leads, not the reuse story.*
 
-- **Velero** with volume snapshots — recommended. Works with any CSI driver that supports snapshots. Produces its own backup objects.
-- **Sidecar pattern** — a job pod mounts the PVCs, invokes the same migration tool in CLI mode, uploads the resulting archive to object storage.
+**K8s is fundamentally different from the V1 Docker-volume model: there is no host Docker socket, and PVCs are not Docker-volume-shaped.** Reuse from the V1 tool is limited to the manifest schema and per-store *interfaces*, NOT the adapter implementations. The recommended K8s migration path is **Velero with CSI snapshots, not a port of the V1 tool**. The CLI mode of the V1 tool can still run inside a K8s pod that mounts the relevant PVCs, but this is operator-driven, not first-class.
 
-Either approach reuses the same manifest format and per-store adapters. The quiesce gate becomes a ConfigMap/annotation rather than a file, and the MCP service's adapters honor it the same way. **TODO: produce a K8s-specific design doc when K8s deployment is prioritized.**
+Recommended approaches when K8s deployment is prioritized:
 
-A note on feasibility: the volume-mount-plus-sidecar pattern is fundamentally Docker-model; it does not translate cleanly to PVCs without either elevated privileges or Velero-style CSI snapshots. This bounds the "K8s path" more than a casual read of this section suggests.
+- **Velero** with volume snapshots — recommended. Works with any CSI driver that supports snapshots. Produces its own backup objects. Reuses none of the V1 adapter code; reuses the manifest schema as a sidecar artifact if desired.
+- **CLI-in-pod (operator-driven)** — a job pod mounts the PVCs and invokes `pk-mcp migrate export` in CLI mode, uploads the resulting archive to object storage. Requires elevated privileges or in-cluster Docker access; non-trivial.
+
+The quiesce gate would become a ConfigMap/annotation rather than a file in any K8s-native implementation, and the MCP service's adapters would honor it the same way — but this is a re-implementation, not a port. **TODO: produce a K8s-specific design doc when K8s deployment is prioritized.**
 
 ## 12. Post-V1 / Future (Preserved Analysis)
 
@@ -541,5 +548,8 @@ Still open:
 | `src/graph/adapters/FalkorDBAdapter.ts` | Live graph client | Instrumented with `MigrationLockGate` (ADR-0007) |
 | `src/storage/chroma-client.ts` | Live vector client | Instrumented with `MigrationLockGate` (ADR-0007) |
 | `src/repositories/metadata-store.ts` | Metadata writer singleton | Instrumented with `MigrationLockGate` + tokenization (ADR-0007, ADR-0008) |
-| `src/services/watched-folder-store.ts` | Watched-folders persistence | Instrumented with `MigrationLockGate`; included in V1 archive payload (see §3.2) |
+| `src/services/watched-folder-store.ts` | Watched-folders persistence (class `WatchedFolderStoreImpl`) | Instrumented with `MigrationLockGate`; included in V1 archive payload (see §3.2) |
+| `src/auth/token-store.ts` | Bearer token store (long-lived MCP HTTP) | Instrumented with `MigrationLockGate`; **excluded from archive payload** (see §3.2 / §8 / ADR-0007 §"Other persistent state under `data/`") |
+| `src/auth/oidc/oidc-session-store.ts` | OIDC session store (long-lived MCP HTTP) | Instrumented with `MigrationLockGate`; **excluded from archive payload** |
+| `src/auth/user-mapping/user-mapping-store.ts` | User-claim → instance mapping store | Instrumented with `MigrationLockGate`; **excluded from archive payload** |
 | `kubernetes/base/mcp-service/pvc.yaml` | K8s PVC (untracked) | Referenced in §11; V1 deferred |

@@ -106,7 +106,7 @@ Example stored form:
 
 **Pros:**
 - Covers the real-world scope: data-root-managed clones use tokens; user-specified external paths are transparent about their unportability.
-- Aligns with the existing `isLocalPath` distinction the codebase already makes.
+- `isExternalPath` is a NEW stored attribute on `RepositoryInfo` that captures *where the indexed content lives on disk* (under `CLONE_ROOT` vs not). It is **independent of** `isLocalPath(url)` from `src/utils/path-utils.ts`, which captures *what kind of source URL the user supplied*. The two are correlated in common cases but not equivalent: a `file://` URL with a localPath under `CLONE_ROOT` has `isLocalPath(url)===true` and `isExternalPath===false`.
 - Lets the restore flow ask the user "this archive was indexed against `/home/alice/my-repo` which doesn't exist on this machine — where should I point it?" in a controlled way.
 
 **Cons:**
@@ -223,7 +223,8 @@ On restore, each external-path entry is checked for existence on the target mach
 2. **Path does not exist; interactive shell (TTY).** Prompt the user with:
    - "Repository `my-local-research-corpus` was indexed from `D:\research\corpus` on a Windows machine. This path does not exist on this machine. Provide a new path, skip this entry, or remove it from the index?"
    - Options: `[p]ath` (prompt for new absolute path, validated for existence), `[s]kip` (leave entry in `repositories.json` but mark as broken via a new `pathStatus: "broken"` field — index remains but ingestion refuses until repaired), `[r]emove` (delete from `repositories.json` and leave the ChromaDB/FalkorDB entries orphaned, cleaned up on next `pk-mcp maintenance` run).
-3. **Path does not exist; non-interactive (CI, `--yes`).** Default to `skip` with a loud warning per entry. Exit code is still 0 (the restore succeeded; the external-path mismatch is a soft problem the user can fix later with `pk-mcp repo repath <name> <new-path>` — a new CLI subcommand reserved for this purpose, design-level only in V1).
+3. **Path does not exist; non-interactive (CI, `--yes`).** **Fail-fast** (exit non-zero, list missing external paths) per code-review fix M-4 (revised 2026-05-05). Aligns with PRD FR-3.10's "must not silently succeed with broken entries" contract.
+   - **`--skip-missing-external` opt-in flag.** When explicitly passed, restores the old "skip with exit 0 and warning per entry" semantics; the entry is left in place with `pathStatus: "broken"` and the user can repair it later via `pk-mcp repo repath <name> <new-path>`. The opt-in flag preserves the personal-laptop-move ergonomic for users who want it.
 4. **`--external-path-map <file>`.** Power-user flag accepting a JSON/YAML mapping of `{ name: newPath }`. Any entry in the map is re-pointed without prompting. Entries not in the map fall through to step 1/2/3. This is the scripted migration path.
 
 The `pathStatus: "broken"` marker is read by `RepositoryCloner.updateToLatest` and other writers; they refuse to operate on a broken entry until the user runs `pk-mcp repo repath` to fix it. This prevents silent partial failures deep inside a long-running update.
@@ -276,6 +277,7 @@ The `remove-command.ts` check that `localPath` lives under `CLONE_PATH` continue
 - The `pathFormat` marker gate only affects the metadata file's top-level structure; individual record shape is unchanged.
 - Tokenizer should be case-sensitive on Unix, case-insensitive on Windows (match filesystem semantics) when deciding whether a path is under a known root.
 - On Windows, `C:\src\PersonalKnowledgeMCP\data\repositories` and `c:/src/personalknowledgemcp/data/repositories` refer to the same location; the tokenizer normalizes both before prefix-matching.
+- **Windows long-path handling**: Strip the `\\?\` long-path prefix before tokenization on Windows. Tests in PR-06 cover paths exceeding 260 chars to prevent the prefix-comparison failure mode.
 - `resolveRepositoryPath` must not resolve symlinks by default — preserve the caller's intent.
 - The migration tool's archive writer passes the *source machine's* `PathRoots` to the tokenizer at snapshot time, and the restore tool's reader passes the *target machine's* `PathRoots` to the resolver. There is no global singleton for `PathRoots` — it's always injected — so tests can exercise arbitrary root configurations.
 - TODO: Decide whether to expose `PATH_ROOTS` diagnostics via a `pk-mcp status --verbose` extension so users can quickly see what `{{CLONE_ROOT}}` resolves to. Out of scope for the ADR but a small quality-of-life add.
@@ -285,8 +287,11 @@ The `remove-command.ts` check that `localPath` lives under `CLONE_PATH` continue
 
 T-shirt scale (not a schedule).
 
+> *Revised 2026-05-05 — code-review fix M-3: schema-change row added below.*
+
 | Component | Size |
 |-----------|------|
+| **`RepositoryInfo` schema change**: (1) add `isExternalPath: boolean` (and optional `externalPathOrigin`, `pathStatus`) to the `RepositoryInfo` interface in `src/repositories/types.ts`; (2) update the Zod validation schema in `src/repositories/metadata-store.ts`; (3) update every test fixture that builds a `RepositoryInfo` to include the new fields | M |
 | `src/repositories/path-resolver.ts` (new module, tokenize + resolve helpers, tests) | S |
 | `RepositoryMetadataStoreImpl.updateRepository` — tokenize or mark external before write | S |
 | `RepositoryMetadataStoreImpl.loadMetadata` — tolerate legacy absolute paths, add `pathFormat` marker handling, materialize `isExternalPath` on legacy reads | S |
