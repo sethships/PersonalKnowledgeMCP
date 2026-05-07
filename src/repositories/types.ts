@@ -199,6 +199,10 @@ export interface RepositoryInfo {
    * Consumers can check this list before issuing graph queries that would
    * otherwise return empty results.
    *
+   * TODO(#567 wiring follow-up): no code path currently writes this field —
+   * it will be populated when `IngestionService.indexRepository` is updated
+   * to call `GraphIngestionService.ingestDocumentGraph`.
+   *
    * @example ["markdown"], ["markdown", "pdf"], []
    */
   docGraphCoverage?: ("markdown" | "pdf" | "docx")[];

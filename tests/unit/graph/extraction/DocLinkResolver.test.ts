@@ -57,6 +57,52 @@ describe("DocLinkResolver — wikilink precedence", () => {
     expect(linksTo[0]!.toId).toContain(target.filePath);
   });
 
+  it("tier 1 vs tier 2: title beats stem on a single bare identifier", () => {
+    // Same bare token "AuthService" matches BOTH a doc title AND a stem.
+    const titleDoc = makeDoc("docs/foo.md", { title: "AuthService" });
+    const stemDoc = makeDoc("AuthService.md", { title: "Wholly Different" });
+    const source = makeDoc("notes.md", {
+      unresolvedLinks: [{ type: "wikilink", target: "AuthService" }],
+    });
+    const out = new DocLinkResolver().resolve({
+      documents: [source, titleDoc, stemDoc],
+      repository: REPO,
+      symbolIndex: new Map(),
+    });
+    const linksTo = out.edges.filter((e) => e.type === "LINKS_TO");
+    expect(linksTo).toHaveLength(1);
+    expect(linksTo[0]!.toId).toContain(titleDoc.filePath);
+    expect(out.debug.some((d) => d.includes("stem"))).toBe(true);
+  });
+
+  it("all four tiers collide on `AuthService`: title wins", () => {
+    const titleDoc = makeDoc("docs/foo.md", { title: "AuthService" });
+    const stemDoc = makeDoc("AuthService.md", { title: "Different" });
+    const sectionDoc = makeDoc("guide.md", {
+      title: "Guide",
+      sections: [{ id: "Section:g", level: 1, title: "AuthService", startChar: 0, endChar: 1 }],
+    });
+    const source = makeDoc("notes.md", {
+      unresolvedLinks: [{ type: "wikilink", target: "AuthService" }],
+    });
+    const symbolIndex = new Map<string, SymbolRef>([
+      [
+        "AuthService",
+        { id: "Class:Auth", name: "AuthService", type: "class", filePath: "src/a.ts" },
+      ],
+    ]);
+    const out = new DocLinkResolver().resolve({
+      documents: [source, titleDoc, stemDoc, sectionDoc],
+      repository: REPO,
+      symbolIndex,
+    });
+    const linksTo = out.edges.filter((e) => e.type === "LINKS_TO");
+    // Title wins → resolves to titleDoc, NOT to stemDoc / section / symbol.
+    expect(linksTo.find((e) => e.toId.includes("docs/foo.md"))).toBeDefined();
+    // No MENTIONS edge to the symbol because title resolution short-circuited.
+    expect(out.edges.find((e) => e.type === "MENTIONS")).toBeUndefined();
+  });
+
   it("tier 2: stem wins over section / symbol when title does not match", () => {
     const stemDoc = makeDoc("AuthService.md", { title: "Wholly Unrelated" });
     const stemColliderSection = makeDoc("other.md", {

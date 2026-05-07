@@ -39,4 +39,11 @@ export function createMigration0002(adapter: GraphAdapterType): SchemaMigration 
   };
 }
 
+/**
+ * Default migration for backward compatibility (uses Neo4j syntax).
+ *
+ * @deprecated Use `createMigration0002(adapter)` for adapter-aware migrations.
+ *   This export is hard-coded to Neo4j flavor and will fail at parse time on
+ *   FalkorDB. Mirrors the `migration0001` deprecation pattern.
+ */
 export const migration0002: SchemaMigration = createMigration0002("neo4j");

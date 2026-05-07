@@ -31,8 +31,13 @@ const SUPPORTED_EXTENSIONS = new Set([".pdf", ".docx"]);
  * mentions. Tokens shorter than 4 chars or all-lowercase are dropped because
  * heuristic matches against PDF/DOCX prose generate too many false positives
  * otherwise (`User`, `Config`, `Status` would all collide with code symbols).
+ *
+ * Unlike `DocEntityExtractor.looksLikeCodeIdentifier`, the PDF/DOCX regex
+ * stops at `.` because PDF prose lacks the backtick boundary that
+ * disambiguates `AuthService.validate` from `… AuthService. Validate …`.
+ * Markdown can rely on the codespan delimiter to scope the identifier and
+ * therefore tolerates dotted accessors and a leading underscore; PDF cannot.
  */
-const IDENT_RE = /\b[A-Za-z][A-Za-z0-9_]{3,}\b/g;
 
 function looksLikeCodeIdentifier(text: string): boolean {
   if (text.length < 4) return false;
@@ -115,11 +120,13 @@ export class PdfDocxEntityExtractor {
 
   private collectMentions(content: string, sections: readonly DocSectionData[]): DocMentionData[] {
     if (!content) return [];
+    // Local regex instance avoids cross-call lastIndex hazards if the method
+    // ever runs in overlapping contexts (concurrency footgun mitigation).
+    const identRe = /\b[A-Za-z][A-Za-z0-9_]{3,}\b/g;
     const seen = new Set<string>();
     const out: DocMentionData[] = [];
     let m: RegExpExecArray | null;
-    IDENT_RE.lastIndex = 0;
-    while ((m = IDENT_RE.exec(content)) !== null) {
+    while ((m = identRe.exec(content)) !== null) {
       const text = m[0];
       if (!looksLikeCodeIdentifier(text)) continue;
       // Dedupe within a single document; the resolver will MERGE edges, but

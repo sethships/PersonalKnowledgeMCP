@@ -104,6 +104,14 @@ See [other](./other.md) and [external](https://example.com).
     expect(wikilinks.map((l) => l.target).sort()).toEqual(["AuthService", "OtherPage"]);
   });
 
+  it("strips Obsidian aliases from wikilink targets", () => {
+    const md = "# T\n\nSee [[OtherPage|see here]] for details.";
+    const result = extractor.extractFromContent(md, "x.md");
+    const wikilinks = result.unresolvedLinks.filter((l) => l.type === "wikilink");
+    expect(wikilinks).toHaveLength(1);
+    expect(wikilinks[0]!.target).toBe("OtherPage");
+  });
+
   it("emits high-confidence mentions for code-shaped backtick spans", () => {
     const md = "# T\n\nUse `AuthService.validate` and `parseToken`.";
     const result = extractor.extractFromContent(md, "x.md");

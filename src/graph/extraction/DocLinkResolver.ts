@@ -63,9 +63,9 @@ export class DocLinkResolver {
     const externalLinks: ExternalLinkSpec[] = [];
     const debug: string[] = [];
 
-    const titleIndex = this.buildTitleIndex(input.documents);
-    const stemIndex = this.buildPathStemIndex(input.documents);
-    const sectionIndex = this.buildSectionIndex(input.documents);
+    const titleIndex = this.buildTitleIndex(input.documents, debug);
+    const stemIndex = this.buildPathStemIndex(input.documents, debug);
+    const sectionIndex = this.buildSectionIndex(input.documents, debug);
 
     for (const doc of input.documents) {
       const docId = documentId(input.repository, doc.filePath);
@@ -119,28 +119,43 @@ export class DocLinkResolver {
     return { edges, externalLinks, debug };
   }
 
-  private buildTitleIndex(docs: readonly DocExtractionResult[]): Map<string, DocExtractionResult> {
+  private buildTitleIndex(
+    docs: readonly DocExtractionResult[],
+    debug: string[]
+  ): Map<string, DocExtractionResult> {
     const map = new Map<string, DocExtractionResult>();
     for (const doc of docs) {
       const key = doc.title.toLowerCase();
-      if (!map.has(key)) map.set(key, doc); // first wins
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, doc); // first wins
+      } else {
+        debug.push(`title collision: "${doc.title}" — ${prev.filePath} wins over ${doc.filePath}`);
+      }
     }
     return map;
   }
 
   private buildPathStemIndex(
-    docs: readonly DocExtractionResult[]
+    docs: readonly DocExtractionResult[],
+    debug: string[]
   ): Map<string, DocExtractionResult> {
     const map = new Map<string, DocExtractionResult>();
     for (const doc of docs) {
       const stem = path.basename(doc.filePath, path.extname(doc.filePath)).toLowerCase();
-      if (!map.has(stem)) map.set(stem, doc);
+      const prev = map.get(stem);
+      if (!prev) {
+        map.set(stem, doc);
+      } else {
+        debug.push(`stem collision: "${stem}" — ${prev.filePath} wins over ${doc.filePath}`);
+      }
     }
     return map;
   }
 
   private buildSectionIndex(
-    docs: readonly DocExtractionResult[]
+    docs: readonly DocExtractionResult[],
+    debug: string[]
   ): Map<string, { doc: DocExtractionResult; section: DocSectionData }> {
     const map = new Map<string, { doc: DocExtractionResult; section: DocSectionData }>();
     for (const doc of docs) {
@@ -148,8 +163,26 @@ export class DocLinkResolver {
       for (const section of doc.sections) {
         const anchor = section.title.toLowerCase().replace(/\s+/g, "-");
         // Index both `stem#anchor` and `title#anchor` so wikilinks can use either.
-        map.set(`${stem}#${anchor}`, { doc, section });
-        map.set(`${doc.title.toLowerCase()}#${anchor}`, { doc, section });
+        // First-wins on collisions; the `${title}#${anchor}` key in particular
+        // can collide across documents that share a title.
+        const stemKey = `${stem}#${anchor}`;
+        const prevStem = map.get(stemKey);
+        if (!prevStem) {
+          map.set(stemKey, { doc, section });
+        } else {
+          debug.push(
+            `section collision: "${stemKey}" — ${prevStem.doc.filePath} wins over ${doc.filePath}`
+          );
+        }
+        const titleKey = `${doc.title.toLowerCase()}#${anchor}`;
+        const prevTitle = map.get(titleKey);
+        if (!prevTitle) {
+          map.set(titleKey, { doc, section });
+        } else {
+          debug.push(
+            `section collision: "${titleKey}" — ${prevTitle.doc.filePath} wins over ${doc.filePath}`
+          );
+        }
       }
     }
     return map;

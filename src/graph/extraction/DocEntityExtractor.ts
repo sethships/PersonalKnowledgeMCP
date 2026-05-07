@@ -45,8 +45,6 @@ function looksLikeCodeIdentifier(text: string): boolean {
   return /[A-Z]/.test(text.slice(1));
 }
 
-const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
-
 export class DocEntityExtractor {
   /**
    * Whether this extractor handles the given file by extension.
@@ -197,6 +195,7 @@ export class DocEntityExtractor {
       for (const token of toks) {
         // Update cursor by locating raw text. This is approximate but good
         // enough to attribute references to a section.
+        // TODO(#567 follow-up): repeated identical raw strings can attribute the second occurrence to the wrong section. Use marked offset metadata or pre-compute heading char ranges and bisect on token order.
         if (typeof token.raw === "string") {
           const idx = content.indexOf(token.raw, cursor);
           if (idx !== -1) cursor = idx;
@@ -241,10 +240,14 @@ export class DocEntityExtractor {
     sections: DocSectionData[],
     links: DocLinkData[]
   ): void {
+    // Local regex instance avoids cross-call lastIndex hazards if the method
+    // ever runs in overlapping contexts (concurrency footgun mitigation).
+    const wikilinkRe = /\[\[([^\]]+)\]\]/g;
     let m: RegExpExecArray | null;
-    WIKILINK_RE.lastIndex = 0;
-    while ((m = WIKILINK_RE.exec(content)) !== null) {
-      const target = m[1]!.trim();
+    while ((m = wikilinkRe.exec(content)) !== null) {
+      // Obsidian alias: [[Target|display]] — strip everything from `|` on.
+      const raw = m[1]!.trim();
+      const target = raw.split("|")[0]!.trim();
       if (target.length === 0) continue;
       links.push({
         type: "wikilink",

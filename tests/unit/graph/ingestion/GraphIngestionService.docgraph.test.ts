@@ -40,7 +40,7 @@ function makeRecordingAdapter(): {
       if (cypher.includes("labels(s)[0] AS type")) {
         return symbolRows as unknown as T[];
       }
-      if (cypher.includes("RETURN removed")) {
+      if (cypher.includes("size(rels) AS removed")) {
         return [{ removed: staleRemoved }] as unknown as T[];
       }
       return [] as T[];

@@ -1311,6 +1311,12 @@ export class GraphIngestionService {
    *
    * The method is idempotent — every write uses MERGE on a deterministic id.
    *
+   * Precondition: this method must run AFTER `ingestFiles` has completed
+   * Phase 6 (Module nodes), otherwise the in-memory symbol index will be
+   * empty and all MENTIONS will go unresolved. The two-phase MENTIONS
+   * resolution invariant depends on this ordering — do not call
+   * `ingestDocumentGraph` before code ingestion.
+   *
    * @param repository - Repository name (must already have a Repository node).
    * @param documents - Per-file `DocExtractionResult` from
    *                    `DocEntityExtractor` and/or `PdfDocxEntityExtractor`.
@@ -1446,13 +1452,20 @@ export class GraphIngestionService {
     // Step 6 — stale MENTIONS sweep. A code symbol may have been deleted by
     // an unrelated incremental update; the edge would otherwise survive
     // because deleteFileData only acts on the file containing the symbol.
+    //
+    // FalkorDB rejects `EXISTS(prop)`; Neo4j 5+ deprecated it. Use `IS NULL`,
+    // and — more importantly — fix the semantic: a stale MENTIONS edge is one
+    // whose target's repository no longer matches the document's repository
+    // (i.e. the symbol was reattached to a different repo or removed during
+    // an unrelated incremental update). Edges to deleted nodes cannot exist
+    // in either backend, so this is the actual condition we want to sweep.
     const staleSweep = await this.graphAdapter.runQuery<{ removed: number }>(
       `
       MATCH (d:Document {repository: $repository})-[m:MENTIONS]->(s)
-      WHERE NOT EXISTS(s.id)
-      WITH m, count(*) AS removed
-      DELETE m
-      RETURN removed
+      WHERE s.repository IS NULL OR s.repository <> $repository
+      WITH collect(m) AS rels
+      FOREACH (r IN rels | DELETE r)
+      RETURN size(rels) AS removed
       `,
       { repository }
     );
