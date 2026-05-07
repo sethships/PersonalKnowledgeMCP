@@ -113,21 +113,37 @@ program
 // Index command
 program
   .command("index")
-  .description("Index a git repository OR a local folder (auto-detected) for semantic search")
-  .argument("<url>", "Git URL or absolute / relative local folder path")
-  .option("-n, --name <name>", "Custom repository name")
-  .option("-b, --branch <branch>", "Branch to clone (git only)")
-  .option("-f, --force", "Force reindexing if repository already exists")
+  .description(
+    "Index a git repository or a local folder for semantic + graph search. " +
+      "The argument is auto-detected: a git URL is cloned; a filesystem path is registered as " +
+      "'local-git' (when it contains a .git directory) or 'local-folder' (otherwise)."
+  )
+  .argument(
+    "<url>",
+    "Git URL (e.g. https://github.com/user/repo.git) OR an absolute or relative local folder path"
+  )
+  .option(
+    "-n, --name <name>",
+    "Repository display name. Defaults to the repo name from the URL or the basename of the path"
+  )
+  .option("-b, --branch <branch>", "Branch to clone (git remotes only; ignored for local sources)")
+  .option(
+    "-f, --force",
+    "Force reindexing if a repository with this name or path is already registered"
+  )
   .option("-p, --provider <provider>", "Embedding provider (openai, transformersjs, local, ollama)")
   .option(
     "--tier <tier>",
-    "Security tier: private | work | public (local folders default to private; public is refused for folders)"
+    "Security tier: private | work | public. Local folders default to 'private'; 'public' is refused"
   )
-  .option("--watch", "Enable filesystem watcher after indexing a local folder (default: enabled)")
-  .option("--no-watch", "Disable filesystem watcher even for local folders")
+  .option(
+    "--watch",
+    "Enable the filesystem watcher after indexing a local folder (default: enabled for local folders)"
+  )
+  .option("--no-watch", "Disable the filesystem watcher (local folders only)")
   .option(
     "--follow-symlinks",
-    "Follow symlinks inside the local folder (default: skip; out-of-folder targets are rejected even when set)"
+    "Follow symlinks inside the local folder. Out-of-folder targets are rejected even when set (default: skip)"
   )
   .action(async (url: string, options: Record<string, unknown>) => {
     try {

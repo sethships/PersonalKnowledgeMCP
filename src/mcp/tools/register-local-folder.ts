@@ -78,50 +78,57 @@ interface ErrorResponse {
 export const registerLocalFolderToolDefinition: Tool = {
   name: "register_local_folder",
   description:
-    "Registers a local filesystem folder as a `local-folder` repository in the knowledge base. " +
-    "Scans the folder, generates embeddings, and (by default) starts a filesystem watcher " +
-    "that re-indexes the folder when its files change. The path may be absolute or relative; " +
-    "for `local-folder` sources `tier='public'` is refused. Use `async: true` to return a job " +
-    "ID immediately and poll `get_update_status` for completion.",
+    "Registers a local filesystem folder as a first-class `local-folder` repository — " +
+    "indistinguishable from a git-cloned repository at the MCP tool layer. After registration the " +
+    "folder appears in `list_indexed_repositories` and is searchable via `semantic_search`, " +
+    "`search_documents`, and the graph tools (`get_dependencies`, `get_dependents`, `get_architecture`, " +
+    "`find_path`, `get_graph_metrics`). The path may be absolute or relative. By default the call " +
+    "scans the folder, generates embeddings, populates the knowledge graph, and starts a filesystem " +
+    "watcher that re-indexes on file changes. `tier='public'` is refused for local folders; choose " +
+    "'private' or 'work'. Use `async: true` to return a job ID immediately and poll " +
+    "`get_update_status` for completion. See ADR-0009 for the design rationale.",
   inputSchema: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "Absolute or relative path to the folder to register.",
+        description:
+          "Absolute or relative path to the folder to register. The resolved absolute path is the deduplication key.",
         minLength: 1,
       },
       name: {
         type: "string",
-        description: "Optional repository name. Defaults to the basename of the resolved path.",
+        description:
+          "Repository display name. Defaults to the basename of the resolved path. Must be unique across all registered repositories (git or local).",
       },
       tier: {
         type: "string",
         enum: ["private", "work"],
-        description: "Security tier. Defaults to 'private'. 'public' is refused for local folders.",
+        description:
+          "Security tier. Defaults to 'private'. 'public' is refused for local folders — local content is unvetted and the public tier serves unauthenticated readers.",
       },
       force: {
         type: "boolean",
         description:
-          "Force re-registration even if a repo with this name (or absolute path) is already registered.",
+          "Force re-registration when a repository with this name or absolute path is already registered. Existing chunks and graph data are cleared and the folder is re-scanned.",
         default: false,
       },
       watch: {
         type: "boolean",
-        description: "Start the filesystem watcher after the initial scan. Defaults to true.",
+        description:
+          "Start the filesystem watcher after the initial scan so the index re-syncs as files change. Defaults to true; set to false for snapshot-only registration.",
         default: true,
       },
       followSymlinks: {
         type: "boolean",
         description:
-          "Follow filesystem symlinks inside the folder (out-of-folder targets are still rejected).",
+          "Follow filesystem symlinks inside the folder. Out-of-folder targets are rejected even when this is true, to prevent accidental escape from the registered tree.",
         default: false,
       },
       async: {
         type: "boolean",
         description:
-          "If true, return a job ID immediately and run registration in the background. " +
-          "Use get_update_status with the job_id to poll for completion. Defaults to false.",
+          "If true, return a job ID immediately and run registration in the background. Poll `get_update_status` with the returned job_id for completion. Defaults to false.",
         default: false,
       },
     },
