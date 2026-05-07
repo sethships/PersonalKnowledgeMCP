@@ -469,10 +469,6 @@ async function main(): Promise<void> {
         // Create file chunker with default config
         const fileChunker = new FileChunker();
 
-        // graphIngestionService is hoisted to the graph-adapter block above
-        // (Step 3c) so it's shared with the registration IngestionService
-        // and the Phase 5 wiring in `cli index` actually has access to it.
-
         // Create document processing dependencies for incremental pipeline
         const documentTypeDetector = new DocumentTypeDetector();
         const documentChunker = new DocumentChunker();
