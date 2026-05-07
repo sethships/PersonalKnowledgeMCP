@@ -321,17 +321,12 @@ export async function initializeDependencies(
     const documentChunker = new DocumentChunker();
     const documentTypeDetector = new DocumentTypeDetector();
 
-    // Step 9: Initialize ingestion service (with document support)
-    const ingestionService = new IngestionServiceImpl(
-      repositoryCloner,
-      fileScanner,
-      fileChunker,
-      embeddingProvider,
-      chromaClient,
-      repositoryService,
-      { documentChunker, documentTypeDetector }
-    );
-    logger.debug("Ingestion service initialized (with document support)");
+    // Step 9 (deferred): The ingestion service is constructed AFTER the
+    // graph adapter is initialized below, so the optional
+    // `graphIngestionService` dependency can be threaded through. With the
+    // previous ordering, the Phase 5 wiring added in PR #583 (issue #580)
+    // silently no-op'd because `graphIngestionService` was always undefined
+    // at construction time.
 
     // Step 10: Initialize GitHub client
     const githubClient = new GitHubClientImpl({
@@ -424,6 +419,24 @@ export async function initializeDependencies(
       process.once("SIGINT", () => signalHandler("SIGINT"));
       process.once("SIGTERM", () => signalHandler("SIGTERM"));
     }
+
+    // Step 9 (now): Initialize ingestion service with document AND graph
+    // support. This MUST run after the graph adapter init above so the
+    // optional `graphIngestionService` is threaded through; `cli index`
+    // depends on this to run the Phase 5 graph step (PR #583, issue #580).
+    const ingestionService = new IngestionServiceImpl(
+      repositoryCloner,
+      fileScanner,
+      fileChunker,
+      embeddingProvider,
+      chromaClient,
+      repositoryService,
+      { documentChunker, documentTypeDetector, graphIngestionService }
+    );
+    logger.debug(
+      { graphEnabled: !!graphIngestionService },
+      "Ingestion service initialized (with document + graph support)"
+    );
 
     // Step 13: Initialize incremental update pipeline (with optional graph ingestion service)
     const updatePipeline = new IncrementalUpdatePipeline(
