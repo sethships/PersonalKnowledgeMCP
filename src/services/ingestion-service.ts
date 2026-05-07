@@ -61,6 +61,10 @@ import {
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
 import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
 import type { ExtractionResult } from "../documents/types.js";
+import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
+import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
+import type { FileInput } from "../graph/ingestion/types.js";
+import { DocGraphBatcher } from "../graph/extraction/doc-graph-batch.js";
 
 /**
  * Service for orchestrating repository indexing operations
@@ -128,6 +132,18 @@ export class IngestionService {
    */
   private readonly documentTypeDetector?: DocumentTypeDetector;
 
+  /**
+   * Optional graph ingestion service. When provided, `indexRepository`
+   * also populates the code graph (`ingestFiles`) and document graph
+   * (`ingestDocumentGraph`) after batch chunking + embedding completes.
+   * When unset, indexing remains ChromaDB-only and the operator is expected
+   * to populate the graph separately via `cli graph populate`.
+   */
+  private readonly graphIngestionService?: GraphIngestionService;
+
+  /** Lazily created on first use during `processFileBatch`. */
+  private readonly docGraphBatcher = new DocGraphBatcher();
+
   constructor(
     private readonly repositoryCloner: RepositoryCloner,
     private readonly fileScanner: FileScanner,
@@ -138,10 +154,12 @@ export class IngestionService {
     options?: {
       documentChunker?: DocumentChunker;
       documentTypeDetector?: DocumentTypeDetector;
+      graphIngestionService?: GraphIngestionService;
     }
   ) {
     this.documentChunker = options?.documentChunker;
     this.documentTypeDetector = options?.documentTypeDetector;
+    this.graphIngestionService = options?.graphIngestionService;
   }
 
   /**
@@ -449,6 +467,12 @@ export class IngestionService {
       // as "added" and retries.
       const processedRelativePaths: string[] = [];
 
+      // Accumulators for the graph step that runs after the batch loop.
+      // Populated only when `graphIngestionService` is configured — see
+      // `processFileBatch` for the gating.
+      const codeFilesForGraph: FileInput[] = [];
+      const docExtractionResults: DocExtractionResult[] = [];
+
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
         const batch = fileBatches[batchIndex];
         if (!batch) continue; // Skip if batch is undefined (shouldn't happen)
@@ -490,6 +514,8 @@ export class IngestionService {
           stats.documentsStored += batchResult.documentsStored;
           errors.push(...batchResult.errors);
           processedRelativePaths.push(...batchResult.processedRelativePaths);
+          codeFilesForGraph.push(...batchResult.codeFilesForGraph);
+          docExtractionResults.push(...batchResult.docExtractionResults);
         } catch (batchError) {
           // Log batch error but continue with next batch
           this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed, continuing...`, {
@@ -513,7 +539,27 @@ export class IngestionService {
         chunksCreated: stats.chunksCreated,
       });
 
-      // Phase 5: Update repository metadata
+      // Phase 5: Knowledge-graph ingestion (issue #580). Populates the code
+      // graph first, then the document graph — the ordering is required by
+      // `ingestDocumentGraph` so the two-pass MENTIONS resolution sees the
+      // freshly-inserted Function/Class/Module nodes.
+      //
+      // Both calls are best-effort: graph failures surface as non-fatal
+      // `IndexError`s on the result, mirroring the per-file resilience used
+      // throughout the rest of the indexing pipeline so that ChromaDB stays
+      // populated even if FalkorDB is unhealthy.
+      if (this.graphIngestionService) {
+        await this.runGraphIngestion(
+          repositoryName,
+          url,
+          codeFilesForGraph,
+          docExtractionResults,
+          options,
+          errors
+        );
+      }
+
+      // Phase 6: Update repository metadata
       this.updateProgress(
         {
           phase: "updating_metadata",
@@ -805,6 +851,8 @@ export class IngestionService {
       documentsStored: 0,
       errors: [],
       processedRelativePaths: [],
+      codeFilesForGraph: [],
+      docExtractionResults: [],
     };
 
     const allChunks: InternalChunk[] = [];
@@ -826,7 +874,7 @@ export class IngestionService {
       try {
         // Check if file is a document type and we have document processing capabilities
         if (this.isDocumentFile(fileInfo)) {
-          const docChunks = await this.processDocumentFile(
+          const { chunks: docChunks, docExtraction } = await this.processDocumentFile(
             fileInfo.absolutePath,
             fileInfo.relativePath,
             repositoryName
@@ -835,6 +883,9 @@ export class IngestionService {
           result.filesProcessed++;
           result.chunksCreated += docChunks.length;
           chunkedRelativePaths.push(fileInfo.relativePath);
+          if (docExtraction) {
+            result.docExtractionResults.push(docExtraction);
+          }
         } else {
           // Existing code path: read as text → FileChunker
           const content = await Bun.file(fileInfo.absolutePath).text();
@@ -843,6 +894,15 @@ export class IngestionService {
           result.filesProcessed++;
           result.chunksCreated += chunks.length;
           chunkedRelativePaths.push(fileInfo.relativePath);
+          // Capture for the post-batch graph step so it doesn't re-read disk.
+          // Only retained when the graph service is configured — otherwise the
+          // memory cost of holding every code file's content is wasted.
+          if (this.graphIngestionService) {
+            result.codeFilesForGraph.push({
+              path: fileInfo.relativePath,
+              content,
+            });
+          }
         }
       } catch (error) {
         // Individual file error - log and continue
@@ -996,7 +1056,7 @@ export class IngestionService {
     absolutePath: string,
     relativePath: string,
     repositoryName: string
-  ): Promise<InternalChunk[]> {
+  ): Promise<{ chunks: InternalChunk[]; docExtraction: DocExtractionResult | null }> {
     const extractor = this.documentTypeDetector!.getExtractor(absolutePath);
     if (!extractor) {
       throw new Error(`No extractor found for document: ${relativePath}`);
@@ -1014,10 +1074,19 @@ export class IngestionService {
       repositoryName
     );
 
+    // Reuse the same extraction to produce the doc-graph payload — markdown
+    // file tokens are surfaced on `MarkdownExtractionResult` precisely so we
+    // don't re-lex; PDF/DOCX share the parsed `ExtractionResult` directly.
+    // Skip when the graph service isn't wired since the result would be
+    // discarded anyway.
+    const docExtraction = this.graphIngestionService
+      ? this.docGraphBatcher.fromExtraction(relativePath, extractionResult)
+      : null;
+
     // Note: Table-related fields (isTable, tableIndex, tableCaption) from
     // DocumentChunkMetadata are intentionally omitted. Table support will be
     // added when the storage schema supports table metadata fields.
-    return documentChunks.map((chunk) => ({
+    const chunks = documentChunks.map((chunk) => ({
       content: chunk.content,
       startLine: chunk.startLine,
       endLine: chunk.endLine,
@@ -1039,6 +1108,107 @@ export class IngestionService {
         documentAuthor: chunk.metadata.documentAuthor,
       },
     }));
+
+    return { chunks, docExtraction };
+  }
+
+  /**
+   * Populate the knowledge graph for a repository after the chunk → embed →
+   * store pipeline has completed (issue #580).
+   *
+   * Order is load-bearing: `ingestFiles` runs first so the in-memory symbol
+   * index built inside `ingestDocumentGraph` sees Function/Class/Module nodes,
+   * which is the precondition for two-pass MENTIONS resolution.
+   *
+   * Errors are collected onto the indexing run's error list rather than
+   * thrown — graph problems must not invalidate a successful ChromaDB index.
+   *
+   * @param repository - Repository name (already validated upstream).
+   * @param url - Repository URL or local path; required by `ingestFiles` for
+   *              the Repository node. Empty strings are tolerated by the
+   *              graph layer for local-folder sources.
+   * @param codeFiles - Code-file `FileInput`s captured during chunking.
+   * @param docResults - Per-doc-file `DocExtractionResult`s captured during
+   *                     chunking.
+   * @param options - Indexing options (used to forward the progress callback
+   *                  through to the graph progress events).
+   * @param errors - Indexing error accumulator; mutated on graph failure.
+   */
+  private async runGraphIngestion(
+    repository: string,
+    url: string,
+    codeFiles: readonly FileInput[],
+    docResults: readonly DocExtractionResult[],
+    options: IndexOptions,
+    errors: IndexError[]
+  ): Promise<void> {
+    if (!this.graphIngestionService) return;
+
+    if (codeFiles.length > 0) {
+      try {
+        const ingestResult = await this.graphIngestionService.ingestFiles([...codeFiles], {
+          repository,
+          repositoryUrl: url,
+          force: options.force ?? false,
+        });
+        // L6: a returned (not thrown) "failed" status must surface as an
+        // IndexError too — otherwise an entirely-failed graph ingest would
+        // produce a `success` IndexResult.
+        if (ingestResult.status === "failed") {
+          errors.push({
+            type: "batch_error",
+            message: `Code graph ingestion returned failed: ${
+              ingestResult.errors[0]?.message ?? "unknown error"
+            }`,
+          });
+        }
+        this.logger.info("Code graph ingestion completed", {
+          repository,
+          fileCount: codeFiles.length,
+          status: ingestResult.status,
+        });
+      } catch (error) {
+        // M5: surface a directive recovery hint when the graph still has
+        // prior data for this repo (commonly after `cli remove repo && cli
+        // index repo`, since `removeRepository` doesn't currently clear the
+        // graph). Generic catch-all otherwise.
+        const isExists =
+          error instanceof Error &&
+          (error.name === "RepositoryExistsError" ||
+            error.message.toLowerCase().includes("already has graph data"));
+        this.logger.error("Code graph ingestion failed", { repository, error });
+        errors.push({
+          type: "batch_error",
+          message: isExists
+            ? `Code graph for "${repository}" already exists from a prior run; rerun with --force or call \`cli graph populate ${repository} --force\` to reset.`
+            : `Code graph ingestion failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+          originalError: error,
+        });
+      }
+    }
+
+    if (docResults.length > 0) {
+      try {
+        const result = await this.graphIngestionService.ingestDocumentGraph(repository, docResults);
+        this.logger.info("Document graph ingestion completed", {
+          repository,
+          documentsCreated: result.documentsCreated,
+          sectionsCreated: result.sectionsCreated,
+          edgesCreated: result.edgesCreated,
+        });
+      } catch (error) {
+        this.logger.error("Document graph ingestion failed", { repository, error });
+        errors.push({
+          type: "batch_error",
+          message: `Document graph ingestion failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          originalError: error,
+        });
+      }
+    }
   }
 
   /**

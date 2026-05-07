@@ -10,7 +10,9 @@ import { join } from "path";
 import {
   SUPPORTED_EXTENSIONS,
   EXCLUDED_DIRECTORIES,
+  DOC_GRAPH_EXTENSIONS,
   scanDirectory,
+  scanDocumentFiles,
   formatDuration,
   formatPhase,
 } from "../../../src/cli/utils/file-scanner.js";
@@ -273,6 +275,83 @@ describe("file-scanner utilities", () => {
 
       // Clean up
       await rm(deepDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("DOC_GRAPH_EXTENSIONS (issue #580)", () => {
+    test("contains markdown / txt / pdf / docx", () => {
+      expect(DOC_GRAPH_EXTENSIONS.has(".md")).toBe(true);
+      expect(DOC_GRAPH_EXTENSIONS.has(".markdown")).toBe(true);
+      expect(DOC_GRAPH_EXTENSIONS.has(".txt")).toBe(true);
+      expect(DOC_GRAPH_EXTENSIONS.has(".pdf")).toBe(true);
+      expect(DOC_GRAPH_EXTENSIONS.has(".docx")).toBe(true);
+    });
+
+    test("does not overlap with code SUPPORTED_EXTENSIONS", () => {
+      // The two sets must stay disjoint so the partitioning in
+      // graph-populate-command works without double-counting files.
+      for (const ext of DOC_GRAPH_EXTENSIONS) {
+        expect(SUPPORTED_EXTENSIONS.has(ext)).toBe(false);
+      }
+    });
+  });
+
+  describe("scanDocumentFiles (issue #580)", () => {
+    const docTestDir = join(process.cwd(), "tests", "temp", "doc-scanner-test");
+
+    beforeAll(async () => {
+      await mkdir(docTestDir, { recursive: true });
+      await mkdir(join(docTestDir, "docs"), { recursive: true });
+      await mkdir(join(docTestDir, "docs", "nested"), { recursive: true });
+      await mkdir(join(docTestDir, "node_modules"), { recursive: true });
+
+      await writeFile(join(docTestDir, "README.md"), "# Top");
+      await writeFile(join(docTestDir, "docs", "guide.md"), "# Guide");
+      await writeFile(join(docTestDir, "docs", "spec.markdown"), "# Spec");
+      await writeFile(join(docTestDir, "docs", "notes.txt"), "plain notes");
+      // Empty PDF / DOCX placeholders — scanner only inspects the extension.
+      await writeFile(join(docTestDir, "docs", "paper.pdf"), "");
+      await writeFile(join(docTestDir, "docs", "letter.docx"), "");
+      await writeFile(join(docTestDir, "docs", "nested", "deep.md"), "deep");
+      await writeFile(join(docTestDir, "src.ts"), "export const x = 1;");
+      // Files inside excluded directories must be ignored.
+      await writeFile(join(docTestDir, "node_modules", "vendored.md"), "noise");
+    });
+
+    afterAll(async () => {
+      await rm(docTestDir, { recursive: true, force: true });
+    });
+
+    test("finds every doc-graph-eligible extension recursively", async () => {
+      const refs = await scanDocumentFiles(docTestDir, docTestDir);
+      const paths = refs.map((r) => r.relativePath).sort();
+      expect(paths).toEqual([
+        "README.md",
+        "docs/guide.md",
+        "docs/letter.docx",
+        "docs/nested/deep.md",
+        "docs/notes.txt",
+        "docs/paper.pdf",
+        "docs/spec.markdown",
+      ]);
+    });
+
+    test("excludes node_modules and other ignored directories", async () => {
+      const refs = await scanDocumentFiles(docTestDir, docTestDir);
+      expect(refs.some((r) => r.relativePath.includes("node_modules"))).toBe(false);
+    });
+
+    test("excludes code files (disjoint from scanDirectory)", async () => {
+      const refs = await scanDocumentFiles(docTestDir, docTestDir);
+      expect(refs.some((r) => r.relativePath.endsWith(".ts"))).toBe(false);
+    });
+
+    test("returns absolute and POSIX-style relative paths", async () => {
+      const refs = await scanDocumentFiles(docTestDir, docTestDir);
+      for (const ref of refs) {
+        expect(ref.absolutePath.startsWith(docTestDir)).toBe(true);
+        expect(ref.relativePath.includes("\\")).toBe(false);
+      }
     });
   });
 });

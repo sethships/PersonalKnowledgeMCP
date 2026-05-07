@@ -32,6 +32,8 @@ import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
 import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
 import type { ExtractionResult } from "../documents/types.js";
+import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
+import { DocGraphBatcher } from "../graph/extraction/doc-graph-batch.js";
 
 /**
  * Pipeline service for processing incremental repository updates.
@@ -74,6 +76,13 @@ export class IncrementalUpdatePipeline {
    * and ensures efficient batching.
    */
   private readonly EMBEDDING_BATCH_SIZE = 100;
+
+  /**
+   * Doc-graph helper instance — stateless aside from cached extractor objects
+   * so we don't re-instantiate `DocEntityExtractor` / `PdfDocxEntityExtractor`
+   * for every document file in an update batch.
+   */
+  private readonly docGraphBatcher = new DocGraphBatcher();
 
   /**
    * Create an incremental update pipeline.
@@ -265,16 +274,37 @@ export class IncrementalUpdatePipeline {
     // document files (via DocumentChunker) in a single accumulator.
     const allChunks: InternalChunk[] = [];
 
+    // Per-update accumulator for doc-graph extractions (issue #580). Populated
+    // by `processAddedFile`/`processModifiedFile`/`processRenamedFile` for
+    // markdown / pdf / docx / txt files; flushed once after the per-file loop
+    // via `graphIngestionService.ingestDocumentGraph`. Skipped entirely when
+    // the graph service is not configured.
+    const docExtractionResults: DocExtractionResult[] = [];
+
     // Process each change
     for (const change of filteredChanges) {
       try {
         switch (change.status) {
           case "added":
-            await this.processAddedFile(change, options, allChunks, stats, graphStats);
+            await this.processAddedFile(
+              change,
+              options,
+              allChunks,
+              stats,
+              graphStats,
+              docExtractionResults
+            );
             break;
 
           case "modified":
-            await this.processModifiedFile(change, options, allChunks, stats, graphStats);
+            await this.processModifiedFile(
+              change,
+              options,
+              allChunks,
+              stats,
+              graphStats,
+              docExtractionResults
+            );
             break;
 
           case "deleted":
@@ -282,7 +312,14 @@ export class IncrementalUpdatePipeline {
             break;
 
           case "renamed":
-            await this.processRenamedFile(change, options, allChunks, stats, graphStats);
+            await this.processRenamedFile(
+              change,
+              options,
+              allChunks,
+              stats,
+              graphStats,
+              docExtractionResults
+            );
             break;
 
           default:
@@ -331,6 +368,48 @@ export class IncrementalUpdatePipeline {
           path: "(batch embedding/storage)",
           error: errorMessage,
         });
+      }
+    }
+
+    // Doc-graph batch flush (issue #580). Runs after the per-file
+    // `processGraphUpdate("ingest", ...)` calls in the loop above complete,
+    // so when `ingestDocumentGraph` queries the graph for code symbols to
+    // resolve MENTIONS, any Function/Class nodes added in THIS update are
+    // already persisted (the symbol lookup runs against the adapter, not
+    // in-process state). Pre-existing symbols from prior ingestions are
+    // already there from earlier runs. Non-blocking: errors degrade the run
+    // rather than failing it, matching `processGraphUpdate` semantics.
+    if (this.graphIngestionService && docExtractionResults.length > 0 && graphStats) {
+      try {
+        const result = await this.graphIngestionService.ingestDocumentGraph(
+          options.repository,
+          docExtractionResults
+        );
+        logger.info(
+          {
+            operation: "pipeline_doc_graph_batch",
+            repository: options.repository,
+            documents: result.documentsCreated,
+            sections: result.sectionsCreated,
+            edges: result.edgesCreated,
+          },
+          "Document graph batch completed"
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        graphStats.graphErrors.push({
+          path: "(doc-graph batch)",
+          error: errorMessage,
+          operation: "ingest",
+        });
+        logger.warn(
+          {
+            operation: "pipeline_doc_graph_batch",
+            repository: options.repository,
+            error: errorMessage,
+          },
+          "Document graph batch failed - continuing"
+        );
       }
     }
 
@@ -532,7 +611,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing added file");
 
@@ -540,12 +620,15 @@ export class IncrementalUpdatePipeline {
 
     // Route document files through the document pipeline
     if (this.isDocumentFile(change.path)) {
-      const docChunks = await this.processDocumentFile(
+      const { chunks: docChunks, docExtraction } = await this.processDocumentFile(
         absolutePath,
         change.path,
         options.repository
       );
       allChunks.push(...docChunks);
+      if (docExtraction) {
+        docExtractionResults.push(docExtraction);
+      }
     } else {
       const content = await Bun.file(absolutePath).text();
 
@@ -591,7 +674,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing modified file");
 
@@ -607,12 +691,41 @@ export class IncrementalUpdatePipeline {
 
     // Route document files through the document pipeline
     if (this.isDocumentFile(change.path)) {
-      const docChunks = await this.processDocumentFile(
+      // Modified document: delete the prior :Document/:Section/edges before
+      // re-ingesting so stale wikilinks/MENTIONS for removed content don't
+      // linger. `deleteFileData` already covers both code and doc nodes
+      // idempotently — see GraphIngestionService.ts lines 463-569.
+      if (graphStats && this.graphIngestionService) {
+        try {
+          const result = await this.graphIngestionService.deleteFileData(
+            options.repository,
+            change.path
+          );
+          graphStats.graphNodesDeleted += result.nodesDeleted;
+          graphStats.graphRelationshipsDeleted += result.relationshipsDeleted;
+        } catch (error) {
+          // Non-blocking: log and continue. The MERGE-based ingest below will
+          // still produce the right end state for the document and its edges,
+          // even if some stale orphan nodes remain.
+          this.logger.warn(
+            {
+              filePath: change.path,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "deleteFileData failed for modified doc - continuing"
+          );
+        }
+      }
+
+      const { chunks: docChunks, docExtraction } = await this.processDocumentFile(
         absolutePath,
         change.path,
         options.repository
       );
       allChunks.push(...docChunks);
+      if (docExtraction) {
+        docExtractionResults.push(docExtraction);
+      }
     } else {
       // Graph: delete old data first (non-blocking, code files only)
       if (graphStats) {
@@ -708,7 +821,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug(
       { path: change.path, previousPath: change.previousPath },
@@ -733,12 +847,36 @@ export class IncrementalUpdatePipeline {
 
     // Route document files through the document pipeline
     if (this.isDocumentFile(change.path)) {
-      const docChunks = await this.processDocumentFile(
+      // Drop the previous-path :Document and its edges before re-ingesting
+      // under the new path so the rename doesn't leave orphan nodes.
+      if (graphStats && this.graphIngestionService) {
+        try {
+          const result = await this.graphIngestionService.deleteFileData(
+            options.repository,
+            change.previousPath
+          );
+          graphStats.graphNodesDeleted += result.nodesDeleted;
+          graphStats.graphRelationshipsDeleted += result.relationshipsDeleted;
+        } catch (error) {
+          this.logger.warn(
+            {
+              filePath: change.previousPath,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "deleteFileData failed for renamed doc - continuing"
+          );
+        }
+      }
+
+      const { chunks: docChunks, docExtraction } = await this.processDocumentFile(
         absolutePath,
         change.path,
         options.repository
       );
       allChunks.push(...docChunks);
+      if (docExtraction) {
+        docExtractionResults.push(docExtraction);
+      }
     } else {
       // Graph: delete old path data (non-blocking, code files only)
       if (graphStats) {
@@ -937,7 +1075,7 @@ export class IncrementalUpdatePipeline {
     absolutePath: string,
     relativePath: string,
     repository: string
-  ): Promise<InternalChunk[]> {
+  ): Promise<{ chunks: InternalChunk[]; docExtraction: DocExtractionResult | null }> {
     const extractor = this.documentTypeDetector!.getExtractor(absolutePath);
     if (!extractor) {
       throw new Error(`No extractor found for document: ${relativePath}`);
@@ -956,7 +1094,16 @@ export class IncrementalUpdatePipeline {
       repository
     );
 
-    return documentChunks.map((chunk) => ({
+    // Reuse the same extraction to build the doc-graph payload (issue #580).
+    // For markdown, `MarkdownExtractionResult.tokens` is forwarded so we don't
+    // re-lex; PDF/DOCX hand the extraction object straight through.
+    // Skipped when the graph service isn't wired since the result would be
+    // discarded by `processChanges`.
+    const docExtraction = this.graphIngestionService
+      ? this.docGraphBatcher.fromExtraction(relativePath, extractionResult)
+      : null;
+
+    const chunks = documentChunks.map((chunk) => ({
       content: chunk.content,
       startLine: chunk.startLine,
       endLine: chunk.endLine,
@@ -978,6 +1125,8 @@ export class IncrementalUpdatePipeline {
         documentAuthor: chunk.metadata.documentAuthor,
       },
     }));
+
+    return { chunks, docExtraction };
   }
 
   /**

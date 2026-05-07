@@ -15,6 +15,31 @@
 import { readdir, readFile } from "fs/promises";
 import { join, extname } from "path";
 import type { FileInput } from "../../graph/ingestion/types.js";
+import { MARKDOWN_LIKE_EXTS, PDF_DOCX_EXTS } from "../../graph/extraction/doc-graph-batch.js";
+
+/**
+ * Path reference for a doc-graph-eligible file (markdown / pdf / docx / txt).
+ *
+ * Distinct from `FileInput` because we don't read content upfront — for PDFs
+ * and DOCX the binary content isn't usable as a string, and `DocGraphBatcher`
+ * runs the full extractor itself when needed.
+ */
+export interface DocFileRef {
+  /** Absolute filesystem path used by extractors. */
+  absolutePath: string;
+  /** POSIX-style path relative to the scan root, used for graph IDs. */
+  relativePath: string;
+}
+
+/**
+ * File extensions eligible for doc-graph extraction. Re-derived from the
+ * batcher's dispatch sets so the scan list cannot drift from what the
+ * batcher will accept.
+ */
+export const DOC_GRAPH_EXTENSIONS: ReadonlySet<string> = new Set([
+  ...MARKDOWN_LIKE_EXTS,
+  ...PDF_DOCX_EXTS,
+]);
 
 /**
  * Supported file extensions for graph population.
@@ -120,6 +145,52 @@ export async function scanDirectory(
   }
 
   return files;
+}
+
+/**
+ * Recursively scan directory for doc-graph-eligible files (issue #580).
+ *
+ * Mirrors {@link scanDirectory} but emits {@link DocFileRef}s instead of
+ * `FileInput`s — content is not read upfront because PDF / DOCX cannot be
+ * usefully stored as utf-8 strings and `DocGraphBatcher` will run the
+ * appropriate extractor itself. Markdown / txt files have their content read
+ * later inside `DocGraphBatcher.fromFile`.
+ *
+ * Uses the same {@link EXCLUDED_DIRECTORIES} as `scanDirectory` so generated
+ * docs under `node_modules`, `dist`, etc. don't pollute the doc graph.
+ *
+ * @param dirPath - Directory to scan
+ * @param basePath - Base path for relative-path calculation
+ * @returns Array of `DocFileRef`s for every supported document file found
+ */
+export async function scanDocumentFiles(dirPath: string, basePath: string): Promise<DocFileRef[]> {
+  const out: DocFileRef[] = [];
+
+  let entries;
+  try {
+    entries = await readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+
+  for (const entry of entries) {
+    const fullPath = join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (!EXCLUDED_DIRECTORIES.has(entry.name)) {
+        const sub = await scanDocumentFiles(fullPath, basePath);
+        out.push(...sub);
+      }
+    } else if (entry.isFile()) {
+      const ext = extname(entry.name).toLowerCase();
+      if (DOC_GRAPH_EXTENSIONS.has(ext)) {
+        const relativePath = fullPath.substring(basePath.length + 1).replace(/\\/g, "/");
+        out.push({ absolutePath: fullPath, relativePath });
+      }
+    }
+  }
+
+  return out;
 }
 
 /**
