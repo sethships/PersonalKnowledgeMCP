@@ -49,11 +49,21 @@ vi.mock("fs/promises", () => ({
   stat: vi.fn().mockResolvedValue({ isDirectory: () => false }),
 }));
 
-// Mock GraphIngestionService
+// Mock GraphIngestionService. Includes `ingestDocumentGraph` (issue #580) so
+// that doc-graph wiring added in `graphPopulateAllCommand` doesn't crash —
+// these tests focus on the code-graph status flow, not doc-graph counts.
 const mockIngestFiles = vi.fn();
+const mockIngestDocumentGraph = vi.fn().mockResolvedValue({
+  documentsCreated: 0,
+  sectionsCreated: 0,
+  externalLinksCreated: 0,
+  edgesCreated: 0,
+  staleMentionsRemoved: 0,
+});
 vi.mock("../../src/graph/ingestion/GraphIngestionService.js", () => ({
   GraphIngestionService: vi.fn().mockImplementation(() => ({
     ingestFiles: mockIngestFiles,
+    ingestDocumentGraph: mockIngestDocumentGraph,
   })),
 }));
 
@@ -752,11 +762,14 @@ describe("Graph Populate All Command", () => {
       const repos = [createRepoWithLocalPath("repo1")];
       mockListRepositories.mockResolvedValue(repos);
 
-      // Return directory entries with no supported extensions
+      // Return directory entries with no supported extensions. After issue
+      // #580, markdown / pdf / docx / txt are also supported (doc-graph), so
+      // the fixture must avoid those extensions to genuinely have nothing to
+      // ingest. Pure config files (`.json`, `.yaml`) are still skipped.
       const { readdir } = await import("fs/promises");
       (readdir as Mock<any>).mockResolvedValue([
-        { name: "readme.md", isDirectory: () => false, isFile: () => true },
         { name: "config.json", isDirectory: () => false, isFile: () => true },
+        { name: "settings.yaml", isDirectory: () => false, isFile: () => true },
       ]);
 
       await graphPopulateAllCommand({ adapter: "neo4j" }, mockRepositoryService);

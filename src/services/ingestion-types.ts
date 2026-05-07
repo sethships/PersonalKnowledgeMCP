@@ -7,6 +7,9 @@
  * @module services/ingestion-types
  */
 
+import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
+import type { FileInput } from "../graph/ingestion/types.js";
+
 /**
  * Options for indexing a repository
  */
@@ -409,4 +412,21 @@ export interface BatchResult {
    * `filesProcessed` if the embed/store phase fails for the whole batch.
    */
   processedRelativePaths: string[];
+
+  /**
+   * `FileInput`-shaped pairs for code files in this batch, captured during
+   * chunking so the post-batch graph step (`GraphIngestionService.ingestFiles`)
+   * doesn't have to re-read the same files from disk.
+   *
+   * Document files (markdown / pdf / docx / txt) are excluded — they flow
+   * through `docExtractionResults` instead.
+   */
+  codeFilesForGraph: FileInput[];
+
+  /**
+   * Per-document `DocExtractionResult` payloads collected while chunking.
+   * Fed to `GraphIngestionService.ingestDocumentGraph` after all batches
+   * complete so two-pass MENTIONS resolution sees the populated code graph.
+   */
+  docExtractionResults: DocExtractionResult[];
 }

@@ -44,9 +44,13 @@ import {
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
+  scanDocumentFiles,
   formatDuration,
   formatPhase,
 } from "../utils/file-scanner.js";
+import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
+import { DocGraphBatcher } from "../../graph/extraction/doc-graph-batch.js";
+import type { DocExtractionResult } from "../../graph/extraction/doc-types.js";
 
 /**
  * Result of populating a single repository.
@@ -289,12 +293,13 @@ export async function graphPopulateAllCommand(
           continue;
         }
 
-        // Scan files
+        // Scan files (separate code-file and doc-file passes — issue #580)
         const skippedFiles: string[] = [];
         const files = await scanDirectory(repo.localPath, repo.localPath, skippedFiles);
+        const docFiles = await scanDocumentFiles(repo.localPath, repo.localPath);
 
-        if (files.length === 0) {
-          const noFilesError = `No supported files found (supported: ${Array.from(SUPPORTED_EXTENSIONS).join(", ")})`;
+        if (files.length === 0 && docFiles.length === 0) {
+          const noFilesError = `No supported files found (code: ${Array.from(SUPPORTED_EXTENSIONS).join(", ")}; docs: .md, .markdown, .txt, .pdf, .docx)`;
           if (!json) {
             spinner.warn(`${repo.name}: ${noFilesError}`);
           }
@@ -316,20 +321,67 @@ export async function graphPopulateAllCommand(
           }
         };
 
-        // Ingest files
-        const result = await ingestionService.ingestFiles(files, {
-          repository: repo.name,
-          // Phase A: this command iterates over git-remote and local-git
-          // repos only; Phase B will skip local-folder repos entirely.
-          repositoryUrl: repo.url!,
-          force,
-          onProgress,
-        });
+        // Ingest files (code graph)
+        const result =
+          files.length > 0
+            ? await ingestionService.ingestFiles(files, {
+                repository: repo.name,
+                // Phase A: this command iterates over git-remote and local-git
+                // repos only; Phase B will skip local-folder repos entirely.
+                repositoryUrl: repo.url!,
+                force,
+                onProgress,
+              })
+            : null;
+
+        // Ingest doc graph (issue #580). Runs after code graph so the symbol
+        // index inside `ingestDocumentGraph` sees Function/Class/Module nodes.
+        // Errors here are logged but don't fail the per-repo result — the
+        // code-graph status from `ingestFiles` is the authoritative signal.
+        if (docFiles.length > 0) {
+          const detector = new DocumentTypeDetector();
+          const batcher = new DocGraphBatcher();
+          const docResults: DocExtractionResult[] = [];
+          for (const ref of docFiles) {
+            try {
+              const res = await batcher.fromFile(ref.absolutePath, ref.relativePath, detector);
+              if (res) docResults.push(res);
+            } catch {
+              // Per-file extraction failures should not abort the repo.
+            }
+          }
+          if (docResults.length > 0) {
+            try {
+              await ingestionService.ingestDocumentGraph(repo.name, docResults);
+            } catch (error) {
+              // Log to spinner only; the code-graph result is what populates
+              // the summary table. A doc-graph failure for one repo should
+              // not stop the iteration over others.
+              if (!json) {
+                spinner.warn(
+                  `${repo.name}: doc-graph failed (${error instanceof Error ? error.message : String(error)})`
+                );
+              }
+            }
+          }
+        }
 
         const durationMs = Date.now() - startTime;
 
         // Record result
-        if (result.status === "success") {
+        if (!result) {
+          // Doc-only repository — code graph was skipped because there were no
+          // code files to ingest. Treat as success so the summary table doesn't
+          // claim the repo failed when the doc graph populated cleanly.
+          if (!json) {
+            spinner.succeed(`${repo.name}: ${docFiles.length} doc files`);
+          }
+          results.push({
+            repository: repo.name,
+            status: "success",
+            durationMs,
+          });
+        } else if (result.status === "success") {
           if (!json) {
             spinner.succeed(
               `${repo.name}: ${result.stats.nodesCreated} nodes, ${result.stats.relationshipsCreated} relationships`
