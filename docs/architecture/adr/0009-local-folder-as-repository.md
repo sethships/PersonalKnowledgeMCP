@@ -113,7 +113,7 @@ The following sub-decisions are recorded as part of this ADR:
 
 - `--follow-symlinks` defaults to **off**. Out-of-folder targets are rejected even when the flag is set, to prevent accidental escape from the registered tree.
 
-## Positive Consequences
+### Positive Consequences
 
 - A local folder is indistinguishable from a git-cloned repository at the MCP tool layer.
 - Existing tests and operational tooling apply unchanged to local-folder repositories.
@@ -121,13 +121,13 @@ The following sub-decisions are recorded as part of this ADR:
 - `chokidar` watcher infrastructure and `IncrementalUpdatePipeline` are reused, not re-implemented.
 - The `back-compat read path` keeps existing installations working without a one-shot upgrade dance.
 
-## Negative Consequences
+### Negative Consequences
 
 - `IngestionService` grows a top-level `switch (source)` and a small set of source-shaped seams. Each future source type compounds this, modestly.
 - Two folder concepts (WatchedFolder and `local-folder` repo source) coexist. Documentation and `--help` text must keep their distinction crisp; the `FolderEventRouter` is the only piece of code that bridges them.
 - Manifests are host-local. A user who restores a backup on a different machine gets a fresh manifest and a full re-scan on first update. ADR-0008 addresses registry-level portability; per-folder manifest portability is deferred.
 
-## Risks and Mitigations
+### Risks and Mitigations
 
 | Risk | Mitigation |
 |------|------------|
