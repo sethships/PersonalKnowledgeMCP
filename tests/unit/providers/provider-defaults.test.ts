@@ -79,7 +79,11 @@ describe("resolveEmbeddingDefaults", () => {
 
   describe("transformersjs provider — substitutes when env model looks like OpenAI's", () => {
     test("passes through HuggingFace-style model", () => {
-      const result = resolveEmbeddingDefaults("transformersjs", "Xenova/bge-base-en-v1.5", undefined);
+      const result = resolveEmbeddingDefaults(
+        "transformersjs",
+        "Xenova/bge-base-en-v1.5",
+        undefined
+      );
       expect(result.model).toBe("Xenova/bge-base-en-v1.5");
       expect(result.warning).toBeUndefined();
     });
@@ -152,7 +156,11 @@ describe("resolveEmbeddingDefaults", () => {
 
   describe("warning content", () => {
     test("warning names the offending env model and the resolved provider", () => {
-      const { warning } = resolveEmbeddingDefaults("transformersjs", "text-embedding-3-small", 1536);
+      const { warning } = resolveEmbeddingDefaults(
+        "transformersjs",
+        "text-embedding-3-small",
+        1536
+      );
       expect(warning).toContain("text-embedding-3-small");
       expect(warning).toContain("transformersjs");
       expect(warning).toContain("Xenova/all-MiniLM-L6-v2");
@@ -172,7 +180,11 @@ describe("resolveEmbeddingDefaults", () => {
       // Xenova/bge-base-en-v1.5 is 768 and overrides this at construction time.
       // This test pins the helper-side contract — see the JSDoc on
       // ResolvedEmbeddingDefaults.dimensions.
-      const result = resolveEmbeddingDefaults("transformersjs", "Xenova/bge-base-en-v1.5", undefined);
+      const result = resolveEmbeddingDefaults(
+        "transformersjs",
+        "Xenova/bge-base-en-v1.5",
+        undefined
+      );
       expect(result.dimensions).toBe(384);
     });
   });
@@ -191,7 +203,11 @@ describe("resolveEmbeddingDefaults", () => {
     });
 
     test("amazon.titan-embed-* with transformersjs substitutes default", () => {
-      const result = resolveEmbeddingDefaults("transformersjs", "amazon.titan-embed-text-v1", undefined);
+      const result = resolveEmbeddingDefaults(
+        "transformersjs",
+        "amazon.titan-embed-text-v1",
+        undefined
+      );
       expect(result.model).toBe("Xenova/all-MiniLM-L6-v2");
       expect(result.warning).toBeDefined();
     });
@@ -205,7 +221,11 @@ describe("resolveEmbeddingDefaults", () => {
 
   describe("envModel trimming (Fix #3)", () => {
     test("trims leading/trailing whitespace from envModel before checks", () => {
-      const result = resolveEmbeddingDefaults("transformersjs", "  Xenova/bge-base-en-v1.5  ", undefined);
+      const result = resolveEmbeddingDefaults(
+        "transformersjs",
+        "  Xenova/bge-base-en-v1.5  ",
+        undefined
+      );
       expect(result.model).toBe("Xenova/bge-base-en-v1.5");
       expect(result.warning).toBeUndefined();
     });

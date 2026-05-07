@@ -65,8 +65,8 @@ function isModelCompatibleWithProvider(model: string, provider: ProviderType): b
   // Update when adding new provider integrations.
   const looksLikeForeignCloud =
     model.startsWith("text-embedding-") || // OpenAI
-    model.startsWith("voyage-") ||         // Voyage AI
-    model.startsWith("cohere.embed-") ||   // Cohere / AWS Bedrock
+    model.startsWith("voyage-") || // Voyage AI
+    model.startsWith("cohere.embed-") || // Cohere / AWS Bedrock
     model.startsWith("amazon.titan-embed-"); // AWS Bedrock Titan
   const looksLikeHuggingFace = model.includes("/");
 
