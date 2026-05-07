@@ -217,9 +217,23 @@ async function main(): Promise<void> {
 
     // Step 3c: Initialize graph service (if adapter available)
     let graphService: GraphService | undefined;
+    let graphIngestionService: GraphIngestionService | undefined;
     if (graphAdapter) {
       graphService = new GraphServiceImpl(graphAdapter);
       logger.info("Graph service initialized");
+
+      // Hoisted out of the per-feature blocks below so every consumer
+      // (incremental pipeline, register_local_folder ingestion service)
+      // shares one instance and the Phase 5 graph step in `IngestionService`
+      // (issue #580) actually fires when graph storage is configured.
+      const entityExtractor = new EntityExtractor();
+      const relationshipExtractor = new RelationshipExtractor();
+      graphIngestionService = new GraphIngestionService(
+        graphAdapter,
+        entityExtractor,
+        relationshipExtractor
+      );
+      logger.debug("Graph ingestion service initialized");
     }
 
     // Step 4: Initialize repository metadata service (singleton)
@@ -455,19 +469,6 @@ async function main(): Promise<void> {
         // Create file chunker with default config
         const fileChunker = new FileChunker();
 
-        // Create graph ingestion service if graph adapter is available
-        let graphIngestionService: GraphIngestionService | undefined;
-        if (graphAdapter) {
-          const entityExtractor = new EntityExtractor();
-          const relationshipExtractor = new RelationshipExtractor();
-          graphIngestionService = new GraphIngestionService(
-            graphAdapter,
-            entityExtractor,
-            relationshipExtractor
-          );
-          logger.debug("Graph ingestion service initialized for incremental updates");
-        }
-
         // Create document processing dependencies for incremental pipeline
         const documentTypeDetector = new DocumentTypeDetector();
         const documentChunker = new DocumentChunker();
@@ -608,9 +609,19 @@ async function main(): Promise<void> {
       {
         documentChunker: registrationDocChunker,
         documentTypeDetector: registrationDocTypeDetector,
+        // Issue #580 follow-up: wire the hoisted graphIngestionService so
+        // `register_local_folder` (and any other consumer of this instance)
+        // gets the Phase 5 code+doc graph populated automatically when graph
+        // storage is configured. Undefined here means the caller didn't
+        // configure FalkorDB/Neo4j — IngestionService gates the graph step
+        // on this field, so ChromaDB-only behavior is preserved.
+        graphIngestionService,
       }
     );
-    logger.debug("Ingestion service initialized for register_local_folder MCP tool");
+    logger.debug(
+      { graphEnabled: !!graphIngestionService },
+      "Ingestion service initialized for register_local_folder MCP tool"
+    );
 
     // Step 6: Create MCP server
     logger.info("Creating MCP server");
