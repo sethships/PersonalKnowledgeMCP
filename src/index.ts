@@ -13,6 +13,7 @@ import { PersonalKnowledgeMCPServer } from "./mcp/server.js";
 import { SearchServiceImpl } from "./services/search-service.js";
 import { createEmbeddingProvider } from "./providers/factory.js";
 import { embeddingProviderFactory } from "./providers/EmbeddingProviderFactory.js";
+import { resolveEmbeddingDefaults } from "./providers/provider-defaults.js";
 import { RepositoryMetadataStoreImpl } from "./repositories/metadata-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "./logging/index.js";
 import {
@@ -88,7 +89,28 @@ async function main(): Promise<void> {
   logger.info("Initializing Personal Knowledge MCP Server");
 
   try {
-    // Step 1: Load configuration from environment variables
+    // Step 1: Load configuration from environment variables.
+    // Provider-aware defaults (#581): when EMBEDDING_MODEL belongs to a different
+    // provider than the resolved one, substitute the provider default + warn so
+    // an OpenAI-shaped .env doesn't break a transformersjs/ollama runtime.
+    const resolvedProvider =
+      Bun.env["EMBEDDING_PROVIDER"] || embeddingProviderFactory.getDefaultProvider();
+    const providerType = embeddingProviderFactory.resolveProviderType(resolvedProvider);
+    const envEmbeddingDimensions = Bun.env["EMBEDDING_DIMENSIONS"]
+      ? parseInt(Bun.env["EMBEDDING_DIMENSIONS"], 10)
+      : undefined;
+    const embeddingDefaults = providerType
+      ? resolveEmbeddingDefaults(providerType, Bun.env["EMBEDDING_MODEL"], envEmbeddingDimensions)
+      : {
+          // Unknown provider — let the createEmbeddingProvider call below surface
+          // the proper error. Pass through env values unchanged.
+          model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
+          dimensions: envEmbeddingDimensions ?? 1536,
+        };
+    if ("warning" in embeddingDefaults && embeddingDefaults.warning) {
+      logger.warn({ resolvedProvider }, embeddingDefaults.warning);
+    }
+
     const config = {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
@@ -96,9 +118,9 @@ async function main(): Promise<void> {
         authToken: Bun.env["CHROMADB_AUTH_TOKEN"],
       },
       embedding: {
-        provider: Bun.env["EMBEDDING_PROVIDER"] || embeddingProviderFactory.getDefaultProvider(),
-        model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
-        dimensions: parseInt(Bun.env["EMBEDDING_DIMENSIONS"] || "1536", 10),
+        provider: resolvedProvider,
+        model: embeddingDefaults.model,
+        dimensions: embeddingDefaults.dimensions,
         batchSize: parseInt(Bun.env["EMBEDDING_BATCH_SIZE"] || "100", 10),
         maxRetries: parseInt(Bun.env["EMBEDDING_MAX_RETRIES"] || "3", 10),
         timeoutMs: parseInt(Bun.env["EMBEDDING_TIMEOUT_MS"] || "30000", 10),
