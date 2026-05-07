@@ -12,10 +12,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { DocLinkResolver } from "../../../../src/graph/extraction/DocLinkResolver.js";
-import type {
-  DocExtractionResult,
-  SymbolRef,
-} from "../../../../src/graph/extraction/doc-types.js";
+import type { DocExtractionResult, SymbolRef } from "../../../../src/graph/extraction/doc-types.js";
 
 function makeDoc(
   filePath: string,
@@ -72,7 +69,10 @@ describe("DocLinkResolver — wikilink precedence", () => {
       unresolvedLinks: [{ type: "wikilink", target: "AuthService" }],
     });
     const symbolIndex = new Map<string, SymbolRef>([
-      ["AuthService", { id: "Class:AuthService", name: "AuthService", type: "class", filePath: "src/auth.ts" }],
+      [
+        "AuthService",
+        { id: "Class:AuthService", name: "AuthService", type: "class", filePath: "src/auth.ts" },
+      ],
     ]);
 
     const resolver = new DocLinkResolver();
@@ -92,9 +92,7 @@ describe("DocLinkResolver — wikilink precedence", () => {
   it("tier 3: section anchor wins over symbol when stem does not match", () => {
     const docWithSection = makeDoc("guide.md", {
       title: "Guide",
-      sections: [
-        { id: "Section:g-1", level: 1, title: "AuthFlow", startChar: 0, endChar: 1 },
-      ],
+      sections: [{ id: "Section:g-1", level: 1, title: "AuthFlow", startChar: 0, endChar: 1 }],
     });
     const source = makeDoc("notes.md", {
       // The wikilink target uses the `stem#anchor` form so the section index
@@ -124,7 +122,10 @@ describe("DocLinkResolver — wikilink precedence", () => {
       unresolvedLinks: [{ type: "wikilink", target: "AuthService" }],
     });
     const symbolIndex = new Map<string, SymbolRef>([
-      ["AuthService", { id: "Class:AuthService", name: "AuthService", type: "class", filePath: "src/auth.ts" }],
+      [
+        "AuthService",
+        { id: "Class:AuthService", name: "AuthService", type: "class", filePath: "src/auth.ts" },
+      ],
     ]);
 
     const resolver = new DocLinkResolver();
@@ -209,7 +210,14 @@ describe("DocLinkResolver — section + mention edges", () => {
     const doc = makeDoc("g.md", {
       sections: [
         { id: "Section:1", level: 1, title: "Top", startChar: 0, endChar: 100 },
-        { id: "Section:2", level: 2, title: "Sub", parentId: "Section:1", startChar: 10, endChar: 50 },
+        {
+          id: "Section:2",
+          level: 2,
+          title: "Sub",
+          parentId: "Section:1",
+          startChar: 10,
+          endChar: 50,
+        },
       ],
     });
     const resolver = new DocLinkResolver();
@@ -234,7 +242,10 @@ describe("DocLinkResolver — section + mention edges", () => {
       ],
     });
     const symbolIndex = new Map<string, SymbolRef>([
-      ["AuthService", { id: "Class:Auth", name: "AuthService", type: "class", filePath: "src/a.ts" }],
+      [
+        "AuthService",
+        { id: "Class:Auth", name: "AuthService", type: "class", filePath: "src/a.ts" },
+      ],
     ]);
     const resolver = new DocLinkResolver();
     const out = resolver.resolve({

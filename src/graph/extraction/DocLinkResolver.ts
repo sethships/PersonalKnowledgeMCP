@@ -119,9 +119,7 @@ export class DocLinkResolver {
     return { edges, externalLinks, debug };
   }
 
-  private buildTitleIndex(
-    docs: readonly DocExtractionResult[]
-  ): Map<string, DocExtractionResult> {
+  private buildTitleIndex(docs: readonly DocExtractionResult[]): Map<string, DocExtractionResult> {
     const map = new Map<string, DocExtractionResult>();
     for (const doc of docs) {
       const key = doc.title.toLowerCase();
@@ -135,9 +133,7 @@ export class DocLinkResolver {
   ): Map<string, DocExtractionResult> {
     const map = new Map<string, DocExtractionResult>();
     for (const doc of docs) {
-      const stem = path
-        .basename(doc.filePath, path.extname(doc.filePath))
-        .toLowerCase();
+      const stem = path.basename(doc.filePath, path.extname(doc.filePath)).toLowerCase();
       if (!map.has(stem)) map.set(stem, doc);
     }
     return map;
@@ -187,8 +183,8 @@ export class DocLinkResolver {
     // Treat as a relative path. Resolve against the source document's directory.
     const cleanTarget = target.split("#")[0]!.split("?")[0]!;
     if (cleanTarget.length === 0) return; // pure-anchor link; ignore in v1
-    const resolved = path
-      .posix.normalize(path.posix.join(path.posix.dirname(sourceDoc.filePath), cleanTarget))
+    const resolved = path.posix
+      .normalize(path.posix.join(path.posix.dirname(sourceDoc.filePath), cleanTarget))
       .replace(/\\/g, "/");
 
     const targetDoc = input.documents.find(
@@ -204,9 +200,7 @@ export class DocLinkResolver {
     }
 
     // Stem fallback for shorthand links like `[x](AuthService)`.
-    const stem = path
-      .basename(cleanTarget, path.extname(cleanTarget))
-      .toLowerCase();
+    const stem = path.basename(cleanTarget, path.extname(cleanTarget)).toLowerCase();
     const stemDoc = stemIndex.get(stem);
     if (stemDoc) {
       edges.push({

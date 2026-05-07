@@ -131,9 +131,10 @@ function formatListRepositoriesResponse(
     // exposing it would invite users to edit it (which would race with the
     // next git fetch + reset --hard).
     ...(repo.source !== "git-remote" && repo.localPath && { local_path: repo.localPath }),
-    ...(repo.docGraphCoverage && repo.docGraphCoverage.length > 0 && {
-      doc_graph_coverage: [...repo.docGraphCoverage],
-    }),
+    ...(repo.docGraphCoverage &&
+      repo.docGraphCoverage.length > 0 && {
+        doc_graph_coverage: [...repo.docGraphCoverage],
+      }),
   }));
 
   // Calculate summary statistics

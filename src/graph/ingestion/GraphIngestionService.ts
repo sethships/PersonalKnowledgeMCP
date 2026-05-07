@@ -1477,9 +1477,7 @@ export class GraphIngestionService {
    */
   private async buildSymbolIndex(
     repository: string
-  ): Promise<
-    ReadonlyMap<string, import("../extraction/doc-types.js").SymbolRef>
-  > {
+  ): Promise<ReadonlyMap<string, import("../extraction/doc-types.js").SymbolRef>> {
     const rows = await this.graphAdapter.runQuery<{
       id: string;
       name: string;
@@ -1497,19 +1495,14 @@ export class GraphIngestionService {
 
     const map = new Map<string, import("../extraction/doc-types.js").SymbolRef>();
     for (const row of rows) {
-      const type =
-        row.type === "Function"
-          ? "function"
-          : row.type === "Class"
-            ? "class"
-            : "module";
+      const type = row.type === "Function" ? "function" : row.type === "Class" ? "class" : "module";
       // First write wins on collisions — keeps the index deterministic when
       // two symbols share a name. The resolver logs ambiguous wikilinks.
       if (!map.has(row.name)) {
         map.set(row.name, {
           id: row.id,
           name: row.name,
-          type: type as "function" | "class" | "module",
+          type: type,
           filePath: row.filePath ?? "",
         });
       }

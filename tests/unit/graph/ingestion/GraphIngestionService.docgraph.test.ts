@@ -117,7 +117,14 @@ describe("GraphIngestionService.ingestDocumentGraph", () => {
     const doc = makeDoc("g.md", {
       sections: [
         { id: "Section:1", level: 1, title: "Top", startChar: 0, endChar: 100 },
-        { id: "Section:2", level: 2, title: "Sub", parentId: "Section:1", startChar: 10, endChar: 50 },
+        {
+          id: "Section:2",
+          level: 2,
+          title: "Sub",
+          parentId: "Section:1",
+          startChar: 10,
+          endChar: 50,
+        },
       ],
     });
     const result = await svc.ingestDocumentGraph("repo", [doc]);
@@ -132,13 +139,9 @@ describe("GraphIngestionService.ingestDocumentGraph", () => {
     const svc = makeService(adapter);
 
     const doc = makeDoc("notes.md", {
-      sections: [
-        { id: "Section:s1", level: 1, title: "Top", startChar: 0, endChar: 50 },
-      ],
+      sections: [{ id: "Section:s1", level: 1, title: "Top", startChar: 0, endChar: 50 }],
       codeMentions: [{ identifier: "AuthService", confidence: "high" }],
-      unresolvedLinks: [
-        { type: "markdown", target: "https://example.com/x", text: "x" },
-      ],
+      unresolvedLinks: [{ type: "markdown", target: "https://example.com/x", text: "x" }],
     });
     const result = await svc.ingestDocumentGraph("repo", [doc]);
 

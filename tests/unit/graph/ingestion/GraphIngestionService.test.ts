@@ -657,8 +657,7 @@ describe("GraphIngestionService", () => {
       // Verify the file-side query was called with the correct file ID.
       const calls = (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mock.calls;
       const fileCall = calls.find(
-        (c: unknown[]) =>
-          typeof c[1] === "object" && c[1] !== null && "fileId" in (c[1] as object)
+        (c: unknown[]) => typeof c[1] === "object" && c[1] !== null && "fileId" in c[1]
       );
       expect(fileCall?.[1]).toEqual({ fileId: "File:test-repo:src/utils.ts" });
     });
@@ -723,8 +722,7 @@ describe("GraphIngestionService", () => {
       // The Phase D doc-deletion query also runs; pick the call that targeted
       // the File node by its `fileId` param.
       const fileCall = calls.find(
-        (c: unknown[]) =>
-          typeof c[1] === "object" && c[1] !== null && "fileId" in (c[1] as object)
+        (c: unknown[]) => typeof c[1] === "object" && c[1] !== null && "fileId" in c[1]
       );
       expect(fileCall?.[1]).toEqual({ fileId: "File:my-project:src/components/Button.tsx" });
     });

@@ -58,7 +58,9 @@ export class PdfDocxEntityExtractor {
     const format: "pdf" | "docx" = ext === ".pdf" ? "pdf" : "docx";
 
     const sections =
-      format === "docx" && extraction.sections ? this.toSectionData(filePath, extraction.sections) : [];
+      format === "docx" && extraction.sections
+        ? this.toSectionData(filePath, extraction.sections)
+        : [];
 
     const codeMentions = this.collectMentions(extraction.content, sections);
     const title = this.resolveTitle(extraction.metadata.title, sections, filePath);
@@ -111,10 +113,7 @@ export class PdfDocxEntityExtractor {
     return out;
   }
 
-  private collectMentions(
-    content: string,
-    sections: readonly DocSectionData[]
-  ): DocMentionData[] {
+  private collectMentions(content: string, sections: readonly DocSectionData[]): DocMentionData[] {
     if (!content) return [];
     const seen = new Set<string>();
     const out: DocMentionData[] = [];

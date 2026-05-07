@@ -35,8 +35,7 @@ export function createMigration0002(adapter: GraphAdapterType): SchemaMigration 
   return {
     version: "1.1.0",
     description: "Phase D — document graph indexes (Document, Section, ExternalLink)",
-    statements:
-      adapter === "falkordb" ? [...FALKORDB_STATEMENTS] : [...NEO4J_STATEMENTS],
+    statements: adapter === "falkordb" ? [...FALKORDB_STATEMENTS] : [...NEO4J_STATEMENTS],
   };
 }
 
