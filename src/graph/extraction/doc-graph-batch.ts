@@ -61,21 +61,14 @@ export class DocGraphBatcher {
    *
    * Returns `null` for unsupported extensions (images, code, etc.).
    */
-  fromExtraction(
-    relativePath: string,
-    extraction: ExtractionResult
-  ): DocExtractionResult | null {
+  fromExtraction(relativePath: string, extraction: ExtractionResult): DocExtractionResult | null {
     const ext = extname(relativePath).toLowerCase();
     if (MARKDOWN_LIKE_EXTS.has(ext)) {
       const md = extraction as MarkdownExtractionResult;
-      return this.docEntity.extractFromContent(
-        md.normalizedSource ?? md.content,
-        relativePath,
-        {
-          tokens: md.tokens as readonly Token[] | undefined,
-          frontmatterTitle: md.frontmatter?.title,
-        }
-      );
+      return this.docEntity.extractFromContent(md.normalizedSource ?? md.content, relativePath, {
+        tokens: md.tokens as readonly Token[] | undefined,
+        frontmatterTitle: md.frontmatter?.title,
+      });
     }
     if (PDF_DOCX_EXTS.has(ext)) {
       return this.pdfDocx.extractFromExtractionResult(extraction, relativePath);

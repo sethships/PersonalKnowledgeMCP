@@ -34,13 +34,7 @@ export interface DocFileRef {
  * File extensions eligible for doc-graph extraction. Mirrors the dispatch in
  * `DocGraphBatcher` so the scan list matches what the batcher will accept.
  */
-export const DOC_GRAPH_EXTENSIONS = new Set([
-  ".md",
-  ".markdown",
-  ".txt",
-  ".pdf",
-  ".docx",
-]);
+export const DOC_GRAPH_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".pdf", ".docx"]);
 
 /**
  * Supported file extensions for graph population.
@@ -164,10 +158,7 @@ export async function scanDirectory(
  * @param basePath - Base path for relative-path calculation
  * @returns Array of `DocFileRef`s for every supported document file found
  */
-export async function scanDocumentFiles(
-  dirPath: string,
-  basePath: string
-): Promise<DocFileRef[]> {
+export async function scanDocumentFiles(dirPath: string, basePath: string): Promise<DocFileRef[]> {
   const out: DocFileRef[] = [];
 
   let entries;

@@ -432,9 +432,7 @@ describe("IngestionService - doc-graph wiring (#580)", () => {
       {
         documentChunker: docChunker as any,
         documentTypeDetector: detector as any,
-        graphIngestionService: withGraph
-          ? (graph as unknown as GraphIngestionService)
-          : undefined,
+        graphIngestionService: withGraph ? (graph as unknown as GraphIngestionService) : undefined,
       }
     );
   }
@@ -504,11 +502,13 @@ describe("IngestionService - doc-graph wiring (#580)", () => {
       // PDF metadata.title was forwarded from the extraction
       expect(pdf!.title).toBe("PDF Title");
       // The wikilink in the markdown content should land in unresolved links.
-      expect(md!.unresolvedLinks.some((l) => l.type === "wikilink" && l.target === "Other Page"))
-        .toBe(true);
+      expect(
+        md!.unresolvedLinks.some((l) => l.type === "wikilink" && l.target === "Other Page")
+      ).toBe(true);
       // High-confidence MENTIONS for the inline `AuthService` codespan.
-      expect(md!.codeMentions.some((m) => m.identifier === "AuthService" && m.confidence === "high"))
-        .toBe(true);
+      expect(
+        md!.codeMentions.some((m) => m.identifier === "AuthService" && m.confidence === "high")
+      ).toBe(true);
     }
   });
 
