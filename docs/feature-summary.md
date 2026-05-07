@@ -23,6 +23,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | `get_graph_metrics` Tool | Complete | Repository health statistics |
 | `trigger_incremental_update` Tool | Complete | Update repository index after changes |
 | `get_update_status` Tool | Complete | Track async update job status |
+| `register_local_folder` Tool | Complete | Register a local folder as a first-class repository (see [ADR-0009](architecture/adr/0009-local-folder-as-repository.md)) |
 | Rate Limiting | Complete | Configurable per-minute/per-hour limits |
 | CORS Support | Complete | Browser client compatibility |
 | Error Handling | Complete | MCP-compliant error responses |
@@ -31,7 +32,7 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 
 | Command | Status | Description |
 |---------|--------|-------------|
-| `index <url>` | Complete | Index a GitHub repository |
+| `index <url-or-path>` | Complete | Index a git repository **or** a local folder (auto-detected). Flags: `--name`, `--branch`, `--force`, `--provider`, `--tier`, `--watch` / `--no-watch`, `--follow-symlinks` |
 | `search <query>` | Complete | Search indexed repositories |
 | `status` | Complete | List repositories and their status |
 | `remove <name>` | Complete | Remove repository from index |
@@ -105,6 +106,23 @@ Personal Knowledge MCP provides a comprehensive AI-first knowledge management se
 | Graph MCP Tools | Complete | 5 tools for dependency analysis |
 | Incremental Graph Updates | Complete | Integrated with update pipeline |
 | Graph Query Metrics | Complete | Performance monitoring |
+
+### Local Folder as Repository
+
+A local folder can be registered as a first-class repository. It is indistinguishable from a git-cloned repository at the MCP tool layer. See [ADR-0009](architecture/adr/0009-local-folder-as-repository.md) for the design rationale.
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| `local-folder` Source Type | Complete | New `RepositoryInfo.source` discriminator alongside `git-remote` and `local-git` |
+| `register_local_folder` MCP Tool | Complete | Register a folder, scan it, and (by default) start the filesystem watcher |
+| CLI Auto-Detection | Complete | `pk-mcp index <path>` auto-detects local paths vs. git URLs (paths with a `.git` dir become `local-git`) |
+| Per-Repo File Manifest | Complete | Tracks `mtime` / `size` / SHA-256 for fast non-git change detection |
+| Filesystem Watcher | Complete | `chokidar`-based watcher; default `--watch=true`, opt-out via `--no-watch` |
+| Document Graph Extraction | Complete | Markdown headings, links, and `[[wikilinks]]` participate in the graph; PDF/DOCX at lower fidelity |
+| `.gitignore` Honored | Complete | When a `.gitignore` is present at the folder root |
+| `tier='public'` Refused | Complete | Local folders accept `private` or `work` only; `public` returns a clear error |
+| Symlink Handling | Complete | `--follow-symlinks` opt-in; out-of-folder targets always rejected |
+| `FolderEventRouter` | Complete | Routes filesystem events to either a Phase 6 `WatchedFolder` or a `local-folder` repo |
 
 ## Performance Targets
 

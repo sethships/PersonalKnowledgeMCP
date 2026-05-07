@@ -4,7 +4,7 @@
 **Date:** 2026-05-04
 **Owner:** Architecture
 **Related PRD:** `docs/pm/Phase6-Document-Ingestion-PRD.md` (Phase 6 — parallel WatchedFolder concept)
-**Related ADR (to author):** `docs/architecture/adr/0007-local-folder-as-repository.md`
+**Related ADR:** [`docs/architecture/adr/0009-local-folder-as-repository.md`](./adr/0009-local-folder-as-repository.md)
 
 ---
 
