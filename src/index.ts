@@ -99,15 +99,12 @@ async function main(): Promise<void> {
     const envEmbeddingDimensions = Bun.env["EMBEDDING_DIMENSIONS"]
       ? parseInt(Bun.env["EMBEDDING_DIMENSIONS"], 10)
       : undefined;
-    const embeddingDefaults = providerType
-      ? resolveEmbeddingDefaults(providerType, Bun.env["EMBEDDING_MODEL"], envEmbeddingDimensions)
-      : {
-          // Unknown provider — let the createEmbeddingProvider call below surface
-          // the proper error. Pass through env values unchanged.
-          model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
-          dimensions: envEmbeddingDimensions ?? 1536,
-        };
-    if ("warning" in embeddingDefaults && embeddingDefaults.warning) {
+    const embeddingDefaults = resolveEmbeddingDefaults(
+      providerType,
+      Bun.env["EMBEDDING_MODEL"],
+      envEmbeddingDimensions
+    );
+    if (embeddingDefaults.warning) {
       logger.warn({ resolvedProvider }, embeddingDefaults.warning);
     }
 

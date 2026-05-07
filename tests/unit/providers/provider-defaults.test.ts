@@ -164,4 +164,77 @@ describe("resolveEmbeddingDefaults", () => {
       expect(warning).toContain(".env");
     });
   });
+
+  describe("dimensions contract (Fix #1)", () => {
+    test("returns helper-default dimensions for unknown-but-passthrough HF model — factory's per-model table overrides at runtime", () => {
+      // Helper has no per-model table of its own; it returns the provider's
+      // default (384). The factory's TRANSFORMERSJS_MODEL_DIMENSIONS for
+      // Xenova/bge-base-en-v1.5 is 768 and overrides this at construction time.
+      // This test pins the helper-side contract — see the JSDoc on
+      // ResolvedEmbeddingDefaults.dimensions.
+      const result = resolveEmbeddingDefaults("transformersjs", "Xenova/bge-base-en-v1.5", undefined);
+      expect(result.dimensions).toBe(384);
+    });
+  });
+
+  describe("non-OpenAI cloud-provider prefixes also trigger substitution", () => {
+    test("voyage-* with transformersjs substitutes default", () => {
+      const result = resolveEmbeddingDefaults("transformersjs", "voyage-large-2", undefined);
+      expect(result.model).toBe("Xenova/all-MiniLM-L6-v2");
+      expect(result.warning).toBeDefined();
+    });
+
+    test("cohere.embed-* with ollama substitutes default", () => {
+      const result = resolveEmbeddingDefaults("ollama", "cohere.embed-english-v3.0", undefined);
+      expect(result.model).toBe("nomic-embed-text");
+      expect(result.warning).toBeDefined();
+    });
+
+    test("amazon.titan-embed-* with transformersjs substitutes default", () => {
+      const result = resolveEmbeddingDefaults("transformersjs", "amazon.titan-embed-text-v1", undefined);
+      expect(result.model).toBe("Xenova/all-MiniLM-L6-v2");
+      expect(result.warning).toBeDefined();
+    });
+
+    test("voyage-* with openai trusts user (cross-provider — let the API surface its own error)", () => {
+      const result = resolveEmbeddingDefaults("openai", "voyage-2", 1024);
+      expect(result.model).toBe("voyage-2");
+      expect(result.warning).toBeUndefined();
+    });
+  });
+
+  describe("envModel trimming (Fix #3)", () => {
+    test("trims leading/trailing whitespace from envModel before checks", () => {
+      const result = resolveEmbeddingDefaults("transformersjs", "  Xenova/bge-base-en-v1.5  ", undefined);
+      expect(result.model).toBe("Xenova/bge-base-en-v1.5");
+      expect(result.warning).toBeUndefined();
+    });
+
+    test("trimmed envModel is reflected in the warning text", () => {
+      const result = resolveEmbeddingDefaults("transformersjs", "  text-embedding-3-small  ", 1536);
+      expect(result.warning).toContain("'text-embedding-3-small'");
+      expect(result.warning).not.toContain("  ");
+    });
+  });
+
+  describe("provider: undefined (unknown-provider fallback)", () => {
+    test("returns OpenAI-shaped fallbacks when provider is undefined and no env values", () => {
+      const result = resolveEmbeddingDefaults(undefined, undefined, undefined);
+      expect(result.model).toBe("text-embedding-3-small");
+      expect(result.dimensions).toBe(1536);
+      expect(result.warning).toBeUndefined();
+    });
+
+    test("respects env values when provider is undefined", () => {
+      const result = resolveEmbeddingDefaults(undefined, "some-custom-model", 512);
+      expect(result.model).toBe("some-custom-model");
+      expect(result.dimensions).toBe(512);
+      expect(result.warning).toBeUndefined();
+    });
+
+    test("trims envModel even when provider is undefined", () => {
+      const result = resolveEmbeddingDefaults(undefined, "  some-model  ", undefined);
+      expect(result.model).toBe("some-model");
+    });
+  });
 });

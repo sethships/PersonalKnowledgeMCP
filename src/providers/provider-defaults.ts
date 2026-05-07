@@ -40,7 +40,13 @@ export const PROVIDER_DEFAULT_DIMENSIONS: Record<ProviderType, number> = {
 export interface ResolvedEmbeddingDefaults {
   /** Model to use — either the env-supplied value or a provider default. */
   model: string;
-  /** Dimensions to use — overrides upstream when model was substituted. */
+  /**
+   * Dimensions to use. Note: the EmbeddingProviderFactory's per-model dimension
+   * tables (TRANSFORMERSJS_MODEL_DIMENSIONS / OLLAMA_MODEL_DIMENSIONS) override
+   * this value at provider construction time for any known model. Treat this
+   * field as a fallback for unknown models and a hard value only when
+   * `warning` is set (substituted-default case).
+   */
   dimensions: number;
   /** Populated when the env-supplied model was substituted with a provider default. */
   warning?: string;
@@ -55,26 +61,30 @@ export interface ResolvedEmbeddingDefaults {
  * check.
  */
 function isModelCompatibleWithProvider(model: string, provider: ProviderType): boolean {
-  const looksLikeOpenAI = model.startsWith("text-embedding-");
+  // Names that unambiguously belong to a non-{transformersjs,ollama} cloud provider.
+  // Update when adding new provider integrations.
+  const looksLikeForeignCloud =
+    model.startsWith("text-embedding-") || // OpenAI
+    model.startsWith("voyage-") ||         // Voyage AI
+    model.startsWith("cohere.embed-") ||   // Cohere / AWS Bedrock
+    model.startsWith("amazon.titan-embed-"); // AWS Bedrock Titan
   const looksLikeHuggingFace = model.includes("/");
 
-  if (provider === "openai") {
-    // Trust whatever the user set — OpenAI accepts arbitrary model strings and
-    // a non-OpenAI-shaped value would just produce a clean API error.
-    return true;
-  }
+  if (provider === "openai") return true;
+  if (provider === "transformersjs") return !looksLikeForeignCloud;
+  if (provider === "ollama") return !looksLikeForeignCloud && !looksLikeHuggingFace;
 
-  if (provider === "transformersjs") {
-    // Transformers.js models are HuggingFace IDs (`org/model`). An OpenAI-shaped
-    // name without a slash will fail the HuggingFace download — substitute.
-    return !looksLikeOpenAI;
-  }
+  // Exhaustiveness guard (Fix #6) — adding a new ProviderType triggers a compile error.
+  return assertNever(provider);
+}
 
-  if (provider === "ollama") {
-    // Ollama models are simple slugs (no `/`) and not OpenAI-prefixed.
-    return !looksLikeOpenAI && !looksLikeHuggingFace;
-  }
-
+/**
+ * Exhaustiveness helper — asserts at compile time that all union variants have
+ * been handled. Calling this with a value that's not `never` is a compile error.
+ */
+function assertNever(value: never): boolean {
+  // At runtime, if somehow reached, treat as "trust the user" rather than throw.
+  void value;
   return true;
 }
 
@@ -84,28 +94,41 @@ function isModelCompatibleWithProvider(model: string, provider: ProviderType): b
  * the provider default when they're not.
  *
  * @param provider - Canonical provider type (caller is responsible for alias resolution).
+ *                   When undefined, the helper returns OpenAI-shaped fallbacks and
+ *                   leaves error reporting to the downstream `createEmbeddingProvider`.
  * @param envModel - Value of `EMBEDDING_MODEL` env var (or undefined if unset).
  * @param envDimensions - Value of `EMBEDDING_DIMENSIONS` env var (or undefined if unset).
  * @returns Resolved model + dimensions, plus a warning string when env model was substituted.
  */
 export function resolveEmbeddingDefaults(
-  provider: ProviderType,
+  provider: ProviderType | undefined,
   envModel: string | undefined,
   envDimensions: number | undefined
 ): ResolvedEmbeddingDefaults {
+  const trimmedEnvModel = envModel?.trim();
+
+  if (!provider) {
+    // Unknown provider — let the createEmbeddingProvider call surface the proper
+    // error. Pass through env values unchanged using OpenAI-shaped fallbacks.
+    return {
+      model: trimmedEnvModel || "text-embedding-3-small",
+      dimensions: envDimensions ?? 1536,
+    };
+  }
+
   const defaultModel = PROVIDER_DEFAULT_MODEL[provider];
   const defaultDimensions = PROVIDER_DEFAULT_DIMENSIONS[provider];
 
-  if (!envModel || envModel.trim() === "") {
+  if (!trimmedEnvModel) {
     return {
       model: defaultModel,
       dimensions: envDimensions ?? defaultDimensions,
     };
   }
 
-  if (isModelCompatibleWithProvider(envModel, provider)) {
+  if (isModelCompatibleWithProvider(trimmedEnvModel, provider)) {
     return {
-      model: envModel,
+      model: trimmedEnvModel,
       dimensions: envDimensions ?? defaultDimensions,
     };
   }
@@ -114,7 +137,7 @@ export function resolveEmbeddingDefaults(
     model: defaultModel,
     dimensions: defaultDimensions,
     warning:
-      `EMBEDDING_MODEL='${envModel}' is not compatible with provider '${provider}'. ` +
+      `EMBEDDING_MODEL='${trimmedEnvModel}' is not compatible with provider '${provider}'. ` +
       `Using provider default model '${defaultModel}' (${defaultDimensions} dimensions). ` +
       `Set EMBEDDING_MODEL to a ${provider}-compatible model in your .env to silence this warning.`,
   };

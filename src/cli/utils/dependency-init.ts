@@ -200,13 +200,10 @@ export async function initializeDependencies(
     // Provider-aware defaults (#581): when EMBEDDING_MODEL belongs to a different
     // provider than the resolved one, substitute the provider default + warn so
     // an OpenAI-shaped .env doesn't break --provider transformersjs/ollama.
-    // `providerType` is non-null here because `isProviderAvailable` above already
-    // gated the resolved provider through alias resolution.
+    // `providerType` should be defined here since `isProviderAvailable` above
+    // already gated the resolved provider through alias resolution; the helper
+    // handles `undefined` gracefully regardless.
     const providerType = embeddingProviderFactory.resolveProviderType(resolvedProvider);
-    if (!providerType) {
-      // Defensive — should be unreachable given the isProviderAvailable check above.
-      throw new Error(`Internal error: provider '${resolvedProvider}' passed availability check but failed alias resolution`);
-    }
     const envEmbeddingDimensions = Bun.env["EMBEDDING_DIMENSIONS"]
       ? parseIntEnv("EMBEDDING_DIMENSIONS", 0)
       : undefined;
