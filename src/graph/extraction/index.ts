@@ -72,3 +72,25 @@ export type {
   ImportInfo,
   ExportInfo,
 } from "./types.js";
+
+// =============================================================================
+// Document Graph Extraction (Phase D / issue #567)
+// =============================================================================
+
+export { DocEntityExtractor } from "./DocEntityExtractor.js";
+export { PdfDocxEntityExtractor } from "./PdfDocxEntityExtractor.js";
+export { DocLinkResolver, documentId } from "./DocLinkResolver.js";
+
+export type {
+  DocumentFormat,
+  MentionConfidence,
+  DocSectionData,
+  DocLinkData,
+  DocMentionData,
+  DocExtractionResult,
+  SymbolRef,
+  ResolvedDocEdge,
+  ExternalLinkSpec,
+} from "./doc-types.js";
+
+export type { ResolverInput, ResolverOutput } from "./DocLinkResolver.js";

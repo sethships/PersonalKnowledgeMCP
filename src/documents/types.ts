@@ -487,6 +487,32 @@ export interface MarkdownExtractionResult extends ExtractionResult {
    * @default undefined
    */
   frontmatter?: MarkdownFrontmatter;
+
+  /**
+   * Tokens produced by the markdown lexer for the body content.
+   *
+   * Exposed so downstream consumers (e.g. `DocEntityExtractor`) can reuse the
+   * same parse the chunker already drives, avoiding a second `marked.lexer()`
+   * pass per file.
+   *
+   * Type is intentionally `unknown[]` here to keep the documents layer free of
+   * a hard dependency on `marked`'s `Token` type. Consumers that need typed
+   * access should narrow with the `Token[]` import from `marked`.
+   *
+   * @default undefined
+   */
+  tokens?: unknown[];
+
+  /**
+   * The frontmatter-stripped body content that {@link tokens} was lexed from.
+   *
+   * Char offsets in {@link sections} reference this buffer. Identical to
+   * {@link ExtractionResult.content} for markdown — surfaced as a named field
+   * to make the contract explicit for the doc-graph extractor.
+   *
+   * @default undefined
+   */
+  normalizedSource?: string;
 }
 
 /**

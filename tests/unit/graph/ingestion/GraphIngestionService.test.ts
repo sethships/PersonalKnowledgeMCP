@@ -640,10 +640,13 @@ describe("GraphIngestionService", () => {
 
   describe("deleteFileData", () => {
     it("should delete file data successfully and return statistics", async () => {
-      // Mock runQuery to return deletion statistics
-      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([
-        { nodesDeleted: 5, relsDeleted: 8 },
-      ]);
+      // Phase D extends deleteFileData with a second query that prunes any
+      // Document/Section nodes sourced from this path. The first call covers
+      // the code-side deletion; the second covers the document-side. Per-call
+      // returns are summed before being surfaced to the caller.
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>)
+        .mockResolvedValueOnce([{ nodesDeleted: 5, relsDeleted: 8 }])
+        .mockResolvedValueOnce([{ nodesDeleted: 0, relsDeleted: 0 }]);
 
       const result = await service.deleteFileData("test-repo", "src/utils.ts");
 
@@ -651,11 +654,12 @@ describe("GraphIngestionService", () => {
       expect(result.nodesDeleted).toBe(5);
       expect(result.relationshipsDeleted).toBe(8);
 
-      // Verify runQuery was called with correct file ID
-      expect(mockNeo4jClient.runQuery).toHaveBeenCalled();
+      // Verify the file-side query was called with the correct file ID.
       const calls = (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mock.calls;
-      const lastCall = calls[calls.length - 1];
-      expect(lastCall?.[1]).toEqual({ fileId: "File:test-repo:src/utils.ts" });
+      const fileCall = calls.find(
+        (c: unknown[]) => typeof c[1] === "object" && c[1] !== null && "fileId" in c[1]
+      );
+      expect(fileCall?.[1]).toEqual({ fileId: "File:test-repo:src/utils.ts" });
     });
 
     it("should handle non-existent files gracefully", async () => {
@@ -715,8 +719,12 @@ describe("GraphIngestionService", () => {
       await service.deleteFileData("my-project", "src/components/Button.tsx");
 
       const calls = (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mock.calls;
-      const lastCall = calls[calls.length - 1];
-      expect(lastCall?.[1]).toEqual({ fileId: "File:my-project:src/components/Button.tsx" });
+      // The Phase D doc-deletion query also runs; pick the call that targeted
+      // the File node by its `fileId` param.
+      const fileCall = calls.find(
+        (c: unknown[]) => typeof c[1] === "object" && c[1] !== null && "fileId" in c[1]
+      );
+      expect(fileCall?.[1]).toEqual({ fileId: "File:my-project:src/components/Button.tsx" });
     });
   });
 

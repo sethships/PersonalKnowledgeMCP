@@ -190,6 +190,23 @@ export interface RepositoryInfo {
    */
   excludePatterns: string[];
 
+  /**
+   * Document formats actually encountered when populating the document graph.
+   *
+   * Phase D / issue #567. This is a *presence* set, not a *capability* set —
+   * a repository with no markdown files but the markdown extractor wired up
+   * still reports an empty array (or omits the field on legacy records).
+   * Consumers can check this list before issuing graph queries that would
+   * otherwise return empty results.
+   *
+   * TODO(#567 wiring follow-up): no code path currently writes this field —
+   * it will be populated when `IngestionService.indexRepository` is updated
+   * to call `GraphIngestionService.ingestDocumentGraph`.
+   *
+   * @example ["markdown"], ["markdown", "pdf"], []
+   */
+  docGraphCoverage?: ("markdown" | "pdf" | "docx")[];
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Embedding Provider Fields (Optional)
   // ─────────────────────────────────────────────────────────────────────────────
