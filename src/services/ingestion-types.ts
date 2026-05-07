@@ -420,6 +420,19 @@ export interface BatchResult {
    *
    * Document files (markdown / pdf / docx / txt) are excluded — they flow
    * through `docExtractionResults` instead.
+   *
+   * Convention: empty array when the owning `IngestionService` was
+   * constructed without a `graphIngestionService` (the per-batch populate
+   * code is gated on that field). Consumers should not infer "no code files"
+   * from emptiness.
+   *
+   * MEMORY: This holds full file content until the post-batch graph step
+   * completes. For repos with `graphIngestionService` configured and
+   * >10K code files, expect ~content_total_bytes of additional retained
+   * memory across the run. Standalone `cli graph populate` already has the
+   * same characteristic (it materializes the same list upfront via
+   * `scanDirectory`); the trade-off is identical. A future follow-up could
+   * stream `ingestFiles` per-batch to bound memory at one batch.
    */
   codeFilesForGraph: FileInput[];
 
@@ -427,6 +440,10 @@ export interface BatchResult {
    * Per-document `DocExtractionResult` payloads collected while chunking.
    * Fed to `GraphIngestionService.ingestDocumentGraph` after all batches
    * complete so two-pass MENTIONS resolution sees the populated code graph.
+   *
+   * Convention: empty array when the owning `IngestionService` was
+   * constructed without a `graphIngestionService` (the per-batch populate
+   * code is gated on that field).
    */
   docExtractionResults: DocExtractionResult[];
 }

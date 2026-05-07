@@ -28,18 +28,18 @@ import type { DocExtractionResult } from "./doc-types.js";
 import type { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
 import type { ExtractionResult, MarkdownExtractionResult } from "../../documents/types.js";
 
-const MARKDOWN_LIKE_EXTS = new Set([".md", ".markdown", ".txt"]);
-const PDF_DOCX_EXTS = new Set([".pdf", ".docx"]);
+/**
+ * Extensions whose extraction goes through `DocEntityExtractor`. Source of
+ * truth — `cli/utils/file-scanner.ts` re-exports the union so the CLI scan
+ * list stays in sync with what the batcher accepts.
+ */
+export const MARKDOWN_LIKE_EXTS = new Set([".md", ".markdown", ".txt"]);
 
 /**
- * Whether `relativePath` is a doc-graph-eligible file. Returns false for
- * code files, images, and unknown extensions. Used by callers that want
- * to filter their file list before invoking the batcher.
+ * Extensions whose extraction goes through `PdfDocxEntityExtractor`. Source
+ * of truth (see `MARKDOWN_LIKE_EXTS`).
  */
-export function isDocGraphFile(relativePath: string): boolean {
-  const ext = extname(relativePath).toLowerCase();
-  return MARKDOWN_LIKE_EXTS.has(ext) || PDF_DOCX_EXTS.has(ext);
-}
+export const PDF_DOCX_EXTS = new Set([".pdf", ".docx"]);
 
 /**
  * Builds `DocExtractionResult` payloads for `ingestDocumentGraph`.
@@ -62,15 +62,19 @@ export class DocGraphBatcher {
    * Returns `null` for unsupported extensions (images, code, etc.).
    */
   fromExtraction(relativePath: string, extraction: ExtractionResult): DocExtractionResult | null {
-    const ext = extname(relativePath).toLowerCase();
-    if (MARKDOWN_LIKE_EXTS.has(ext)) {
+    // Discriminate on `metadata.documentType` rather than file extension —
+    // every extractor in `documents/extractors/` sets this, and using the
+    // proper tag keeps the structural cast below sound if `MarkdownParser`
+    // ever adds non-optional fields to `MarkdownExtractionResult`.
+    const docType = extraction.metadata.documentType;
+    if (docType === "markdown" || docType === "txt") {
       const md = extraction as MarkdownExtractionResult;
       return this.docEntity.extractFromContent(md.normalizedSource ?? md.content, relativePath, {
         tokens: md.tokens as readonly Token[] | undefined,
         frontmatterTitle: md.frontmatter?.title,
       });
     }
-    if (PDF_DOCX_EXTS.has(ext)) {
+    if (docType === "pdf" || docType === "docx") {
       return this.pdfDocx.extractFromExtractionResult(extraction, relativePath);
     }
     return null;

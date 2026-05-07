@@ -16,34 +16,13 @@ import { describe, it, expect } from "bun:test";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
-import {
-  DocGraphBatcher,
-  isDocGraphFile,
-} from "../../../../src/graph/extraction/doc-graph-batch.js";
+import { DocGraphBatcher } from "../../../../src/graph/extraction/doc-graph-batch.js";
 import type { DocumentTypeDetector } from "../../../../src/documents/DocumentTypeDetector.js";
 import type {
   DocumentExtractor,
   ExtractionResult,
   MarkdownExtractionResult,
 } from "../../../../src/documents/types.js";
-
-describe("isDocGraphFile", () => {
-  it("accepts markdown / txt / pdf / docx", () => {
-    expect(isDocGraphFile("notes.md")).toBe(true);
-    expect(isDocGraphFile("notes.markdown")).toBe(true);
-    expect(isDocGraphFile("notes.txt")).toBe(true);
-    expect(isDocGraphFile("paper.pdf")).toBe(true);
-    expect(isDocGraphFile("paper.docx")).toBe(true);
-    expect(isDocGraphFile("paper.PDF")).toBe(true);
-  });
-
-  it("rejects code, images, and unknown extensions", () => {
-    expect(isDocGraphFile("src/foo.ts")).toBe(false);
-    expect(isDocGraphFile("photo.jpg")).toBe(false);
-    expect(isDocGraphFile("Makefile")).toBe(false);
-    expect(isDocGraphFile("data.json")).toBe(false);
-  });
-});
 
 describe("DocGraphBatcher.fromExtraction", () => {
   const batcher = new DocGraphBatcher();
@@ -122,19 +101,22 @@ describe("DocGraphBatcher.fromExtraction", () => {
     expect(result!.unresolvedLinks).toHaveLength(0);
   });
 
-  it("returns null for unsupported extensions", () => {
-    const extraction: ExtractionResult = {
+  it("returns null for unsupported documentTypes", () => {
+    // The batcher discriminates on `metadata.documentType`, not the file
+    // extension. An extraction whose documentType isn't markdown/txt/pdf/docx
+    // (e.g. an image or a future custom type) should yield null.
+    const extraction = {
       content: "not a doc-graph file",
       metadata: {
-        documentType: "txt",
-        filePath: "x.json",
+        documentType: "unknown" as unknown as "markdown",
+        filePath: "x.unknown",
         fileSizeBytes: 0,
         contentHash: "h",
         fileModifiedAt: new Date(),
       },
-    };
+    } as ExtractionResult;
 
-    expect(batcher.fromExtraction("x.json", extraction)).toBeNull();
+    expect(batcher.fromExtraction("x.unknown", extraction)).toBeNull();
   });
 });
 

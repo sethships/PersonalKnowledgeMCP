@@ -1146,22 +1146,44 @@ export class IngestionService {
 
     if (codeFiles.length > 0) {
       try {
-        await this.graphIngestionService.ingestFiles([...codeFiles], {
+        const ingestResult = await this.graphIngestionService.ingestFiles([...codeFiles], {
           repository,
           repositoryUrl: url,
           force: options.force ?? false,
         });
+        // L6: a returned (not thrown) "failed" status must surface as an
+        // IndexError too — otherwise an entirely-failed graph ingest would
+        // produce a `success` IndexResult.
+        if (ingestResult.status === "failed") {
+          errors.push({
+            type: "batch_error",
+            message: `Code graph ingestion returned failed: ${
+              ingestResult.errors[0]?.message ?? "unknown error"
+            }`,
+          });
+        }
         this.logger.info("Code graph ingestion completed", {
           repository,
           fileCount: codeFiles.length,
+          status: ingestResult.status,
         });
       } catch (error) {
+        // M5: surface a directive recovery hint when the graph still has
+        // prior data for this repo (commonly after `cli remove repo && cli
+        // index repo`, since `removeRepository` doesn't currently clear the
+        // graph). Generic catch-all otherwise.
+        const isExists =
+          error instanceof Error &&
+          (error.name === "RepositoryExistsError" ||
+            error.message.toLowerCase().includes("already has graph data"));
         this.logger.error("Code graph ingestion failed", { repository, error });
         errors.push({
           type: "batch_error",
-          message: `Code graph ingestion failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          message: isExists
+            ? `Code graph for "${repository}" already exists from a prior run; rerun with --force or call \`cli graph populate ${repository} --force\` to reset.`
+            : `Code graph ingestion failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
           originalError: error,
         });
       }

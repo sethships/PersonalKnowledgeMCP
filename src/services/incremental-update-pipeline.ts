@@ -371,11 +371,14 @@ export class IncrementalUpdatePipeline {
       }
     }
 
-    // Doc-graph batch flush (issue #580). Runs after per-file `ingestFile`
-    // calls so the in-memory symbol index inside `ingestDocumentGraph` sees
-    // any newly-added Function/Class nodes and can resolve MENTIONS edges.
-    // Non-blocking: graph errors degrade the run rather than failing it,
-    // matching the per-file pattern used in `processGraphUpdate`.
+    // Doc-graph batch flush (issue #580). Runs after the per-file
+    // `processGraphUpdate("ingest", ...)` calls in the loop above complete,
+    // so when `ingestDocumentGraph` queries the graph for code symbols to
+    // resolve MENTIONS, any Function/Class nodes added in THIS update are
+    // already persisted (the symbol lookup runs against the adapter, not
+    // in-process state). Pre-existing symbols from prior ingestions are
+    // already there from earlier runs. Non-blocking: errors degrade the run
+    // rather than failing it, matching `processGraphUpdate` semantics.
     if (this.graphIngestionService && docExtractionResults.length > 0 && graphStats) {
       try {
         const result = await this.graphIngestionService.ingestDocumentGraph(
@@ -608,8 +611,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats,
-    docExtractionResults?: DocExtractionResult[]
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing added file");
 
@@ -623,7 +626,7 @@ export class IncrementalUpdatePipeline {
         options.repository
       );
       allChunks.push(...docChunks);
-      if (docExtraction && docExtractionResults) {
+      if (docExtraction) {
         docExtractionResults.push(docExtraction);
       }
     } else {
@@ -671,8 +674,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats,
-    docExtractionResults?: DocExtractionResult[]
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug({ path: change.path }, "Processing modified file");
 
@@ -720,7 +723,7 @@ export class IncrementalUpdatePipeline {
         options.repository
       );
       allChunks.push(...docChunks);
-      if (docExtraction && docExtractionResults) {
+      if (docExtraction) {
         docExtractionResults.push(docExtraction);
       }
     } else {
@@ -818,8 +821,8 @@ export class IncrementalUpdatePipeline {
     options: UpdateOptions,
     allChunks: InternalChunk[],
     stats: UpdateStats,
-    graphStats?: GraphUpdateStats,
-    docExtractionResults?: DocExtractionResult[]
+    graphStats: GraphUpdateStats | undefined,
+    docExtractionResults: DocExtractionResult[]
   ): Promise<void> {
     this.logger.debug(
       { path: change.path, previousPath: change.previousPath },
@@ -871,7 +874,7 @@ export class IncrementalUpdatePipeline {
         options.repository
       );
       allChunks.push(...docChunks);
-      if (docExtraction && docExtractionResults) {
+      if (docExtraction) {
         docExtractionResults.push(docExtraction);
       }
     } else {

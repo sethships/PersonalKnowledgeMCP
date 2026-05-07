@@ -123,6 +123,19 @@ export async function graphPopulateCommand(
       );
     }
 
+    // M10 (issue #580 review): refuse to run on local-folder repos. The
+    // `repository.url!` non-null assertion below crashes for local-folder
+    // sources (where `url` is null by contract), and `cli index <local-path>`
+    // now populates the graph automatically via IngestionService — running
+    // this command afterward would be redundant or harmful.
+    if (repository.source === "local-folder") {
+      throw new Error(
+        `Repository "${repositoryName}" is a local-folder source.\n` +
+          "Local-folder repos are populated automatically by 'cli index <path>'.\n" +
+          "Re-run 'cli index --force' to refresh the graph."
+      );
+    }
+
     // Verify local path exists
     try {
       await stat(repository.localPath);
@@ -267,6 +280,11 @@ export async function graphPopulateCommand(
           docFiles.length > 0
             ? {
                 docFilesScanned: docFiles.length,
+                // I12 (issue #580 review): when every doc file failed to
+                // extract (docResult is null), surface that explicitly so
+                // JSON consumers don't conflate "no docs scanned" with
+                // "all docs failed".
+                success: docResult !== null,
                 ...(docResult ?? {
                   documentsCreated: 0,
                   sectionsCreated: 0,

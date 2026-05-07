@@ -92,6 +92,18 @@ The following sub-decisions are recorded as part of this ADR:
 - PDF and DOCX get low-fidelity extraction. Edges produced from these sources carry a `confidence` attribute so that graph-tool consumers can filter or weight them.
 - Code retains AST-level precision via the existing `CodeEntityExtractor`. The graph schema is unchanged for code.
 
+### Automatic graph population in `cli index` (issue #580)
+
+The original ADR assumed graph population happened only via the explicit `cli graph populate` / `cli graph populate-all` commands after `cli index`. Issue #580 surfaced that this left the Phase D doc-graph extractors as production dead code: ChromaDB was populated by `cli index`, but no path automatically populated `:Document`/`:Section` nodes, wikilink/MENTIONS edges, or `:ExternalLink` nodes.
+
+The fix wires the graph step directly into `IngestionService.indexRepository`:
+
+- When `IngestionService` is constructed with an optional `graphIngestionService`, `cli index <url>` runs a Phase 5 graph step after the chunk → embed → store pipeline completes. The step calls `ingestFiles()` (code graph) followed by `ingestDocumentGraph()` (doc graph). Order is load-bearing: the symbol index inside `ingestDocumentGraph` queries the persisted code graph for MENTIONS resolution, so code symbols must already be there.
+- The graph step is **opt-in via dependency injection**. Callers that construct `IngestionService` without a `graphIngestionService` (e.g., test fixtures, environments without FalkorDB/Neo4j) get the original ChromaDB-only behavior. Graph errors emit non-fatal `IndexError`s — ChromaDB stays populated even when FalkorDB is unhealthy.
+- The `cli graph populate` and `cli graph populate-all` commands still exist for git-remote and local-git repos. They now refuse to run on `local-folder` sources (since `cli index` already populates those) and gain a doc-graph extraction pass for the repos they do handle.
+
+This also means the incremental update path (`IncrementalUpdatePipeline.processChanges`) flushes per-update doc-graph extractions in a single batch after the per-file code-graph ingest calls — closing the loop so live folder edits keep the doc graph fresh.
+
 ### `FolderEventRouter` shared component
 
 - A single new component, `src/services/folder-event-router.ts`, dispatches filesystem events from the shared `chokidar` infrastructure to either:

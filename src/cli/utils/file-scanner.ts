@@ -15,6 +15,7 @@
 import { readdir, readFile } from "fs/promises";
 import { join, extname } from "path";
 import type { FileInput } from "../../graph/ingestion/types.js";
+import { MARKDOWN_LIKE_EXTS, PDF_DOCX_EXTS } from "../../graph/extraction/doc-graph-batch.js";
 
 /**
  * Path reference for a doc-graph-eligible file (markdown / pdf / docx / txt).
@@ -31,10 +32,14 @@ export interface DocFileRef {
 }
 
 /**
- * File extensions eligible for doc-graph extraction. Mirrors the dispatch in
- * `DocGraphBatcher` so the scan list matches what the batcher will accept.
+ * File extensions eligible for doc-graph extraction. Re-derived from the
+ * batcher's dispatch sets so the scan list cannot drift from what the
+ * batcher will accept.
  */
-export const DOC_GRAPH_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".pdf", ".docx"]);
+export const DOC_GRAPH_EXTENSIONS: ReadonlySet<string> = new Set([
+  ...MARKDOWN_LIKE_EXTS,
+  ...PDF_DOCX_EXTS,
+]);
 
 /**
  * Supported file extensions for graph population.

@@ -279,6 +279,23 @@ export async function graphPopulateAllCommand(
       }
 
       try {
+        // M10 (issue #580 review): skip local-folder repos cleanly. The
+        // `repo.url!` non-null assertion below would crash for local-folder
+        // sources (where `url` is null), and `cli index <local-path>` now
+        // populates the graph automatically via IngestionService — running
+        // populate-all afterward would be redundant or harmful.
+        if (repo.source === "local-folder") {
+          if (!json) {
+            spinner.info(`${repo.name}: skipped (local-folder repos populate via 'cli index')`);
+          }
+          results.push({
+            repository: repo.name,
+            status: "skipped",
+            error: "local-folder repos are populated by 'cli index'",
+          });
+          continue;
+        }
+
         // Validate repository
         const validationError = await validateRepository(repo);
         if (validationError) {
@@ -338,6 +355,8 @@ export async function graphPopulateAllCommand(
         // index inside `ingestDocumentGraph` sees Function/Class/Module nodes.
         // Errors here are logged but don't fail the per-repo result — the
         // code-graph status from `ingestFiles` is the authoritative signal.
+        let docResult: Awaited<ReturnType<typeof ingestionService.ingestDocumentGraph>> | null =
+          null;
         if (docFiles.length > 0) {
           const detector = new DocumentTypeDetector();
           const batcher = new DocGraphBatcher();
@@ -352,7 +371,7 @@ export async function graphPopulateAllCommand(
           }
           if (docResults.length > 0) {
             try {
-              await ingestionService.ingestDocumentGraph(repo.name, docResults);
+              docResult = await ingestionService.ingestDocumentGraph(repo.name, docResults);
             } catch (error) {
               // Log to spinner only; the code-graph result is what populates
               // the summary table. A doc-graph failure for one repo should
@@ -370,15 +389,28 @@ export async function graphPopulateAllCommand(
 
         // Record result
         if (!result) {
-          // Doc-only repository — code graph was skipped because there were no
-          // code files to ingest. Treat as success so the summary table doesn't
-          // claim the repo failed when the doc graph populated cleanly.
+          // L11 (issue #580 review): doc-only repository. Synthesize stats
+          // from `docResult` so the summary table shows real counts instead
+          // of "-" for nodes/relationships when doc-graph populated cleanly.
+          const docNodes = docResult
+            ? docResult.documentsCreated +
+              docResult.sectionsCreated +
+              docResult.externalLinksCreated
+            : 0;
+          const docEdges = docResult?.edgesCreated ?? 0;
           if (!json) {
             spinner.succeed(`${repo.name}: ${docFiles.length} doc files`);
           }
           results.push({
             repository: repo.name,
             status: "success",
+            stats: {
+              filesProcessed: docFiles.length,
+              filesFailed: 0,
+              nodesCreated: docNodes,
+              relationshipsCreated: docEdges,
+              durationMs,
+            },
             durationMs,
           });
         } else if (result.status === "success") {
