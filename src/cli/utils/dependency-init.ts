@@ -19,6 +19,7 @@ import { IngestionService as IngestionServiceImpl } from "../../services/ingesti
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
 import { createEmbeddingProvider } from "../../providers/factory.js";
 import { embeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
+import { resolveEmbeddingDefaults } from "../../providers/provider-defaults.js";
 import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.js";
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
 import { FileScanner } from "../../ingestion/file-scanner.js";
@@ -195,7 +196,26 @@ export async function initializeDependencies(
       }
     }
 
-    // Step 2: Load configuration from environment variables
+    // Step 2: Load configuration from environment variables.
+    // Provider-aware defaults (#581): when EMBEDDING_MODEL belongs to a different
+    // provider than the resolved one, substitute the provider default + warn so
+    // an OpenAI-shaped .env doesn't break --provider transformersjs/ollama.
+    // `providerType` should be defined here since `isProviderAvailable` above
+    // already gated the resolved provider through alias resolution; the helper
+    // handles `undefined` gracefully regardless.
+    const providerType = embeddingProviderFactory.resolveProviderType(resolvedProvider);
+    const envEmbeddingDimensions = Bun.env["EMBEDDING_DIMENSIONS"]
+      ? parseIntEnv("EMBEDDING_DIMENSIONS", 0)
+      : undefined;
+    const embeddingDefaults = resolveEmbeddingDefaults(
+      providerType,
+      Bun.env["EMBEDDING_MODEL"],
+      envEmbeddingDimensions
+    );
+    if (embeddingDefaults.warning) {
+      logger.warn({ resolvedProvider }, embeddingDefaults.warning);
+    }
+
     const config = {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
@@ -204,8 +224,8 @@ export async function initializeDependencies(
       },
       embedding: {
         provider: resolvedProvider,
-        model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
-        dimensions: parseIntEnv("EMBEDDING_DIMENSIONS", 1536),
+        model: embeddingDefaults.model,
+        dimensions: embeddingDefaults.dimensions,
         batchSize: parseIntEnv("EMBEDDING_BATCH_SIZE", 100),
         maxRetries: parseIntEnv("EMBEDDING_MAX_RETRIES", 3),
         timeoutMs: parseIntEnv("EMBEDDING_TIMEOUT_MS", 30000),
