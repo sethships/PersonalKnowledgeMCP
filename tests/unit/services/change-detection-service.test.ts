@@ -386,7 +386,12 @@ describe("ChangeDetectionService", () => {
       await fs.promises.writeFile(path.join(testFolder.path, "file1.md"), "content 1");
       await fs.promises.writeFile(path.join(testFolder.path, "file2.md"), "content 2");
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Poll instead of a fixed sleep: watcher event latency varies with host
+      // load (a fixed 300ms wait intermittently missed the second event on CI)
+      const deadline = Date.now() + 5000;
+      while (changeDetection.getTrackedFileCount() < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
 
       expect(changeDetection.getTrackedFileCount()).toBe(2);
     });
