@@ -337,6 +337,48 @@ describe("DocumentChunker", () => {
       }
     });
 
+    test("oversized paragraph arriving mid-group is still sub-chunked (issue #589)", () => {
+      const chunker = createChunker({
+        maxChunkTokens: 100,
+        overlapTokens: 20,
+        respectParagraphs: true,
+        respectPageBoundaries: false,
+      });
+
+      // Regression for issue #589: a large markdown table (single newlines, so
+      // one paragraph block) arriving while a paragraph group was in progress
+      // bypassed chunkOversizedParagraph and was emitted whole as a single
+      // chunk far above maxChunkTokens, which embedding providers reject.
+      const intro = "This is an introductory paragraph that starts a group before the table.";
+      const tableRows = Array.from(
+        { length: 100 },
+        (_, i) => `| 4.${i} | 2026-03-${(i % 28) + 1} | Project Management | Added task ${i} |`
+      );
+      const table = [
+        "| Version | Date | Author | Changes |",
+        "|---------|------|--------|---------|",
+        ...tableRows,
+      ].join("\n");
+      const outro = "A concluding paragraph after the table.";
+      const content = `${intro}\n\n${table}\n\n${outro}`;
+
+      const result = createMockExtractionResult({ content });
+      const chunks = chunker.chunkDocument(result, TEST_FILE_PATH, TEST_SOURCE);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // No chunk may exceed the configured token limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(100);
+      }
+
+      // No content lost: intro, last table row, and outro all present
+      const reassembled = chunks.map((c) => c.content).join("\n");
+      expect(reassembled).toContain("introductory paragraph");
+      expect(reassembled).toContain("| 4.99 |");
+      expect(reassembled).toContain("concluding paragraph");
+    });
+
     test("multi-line oversized paragraph still uses line-level splitting", () => {
       const chunker = createChunker({
         maxChunkTokens: 50,
@@ -1188,9 +1230,13 @@ describe("DocumentChunker", () => {
     });
 
     test("Windows CRLF line endings produce same paragraph split as LF equivalents", () => {
-      // Each paragraph is ~6-7 tokens; use limit of 6 to force separate chunks
+      // Each paragraph is 6-7 tokens; use limit of 7 so every paragraph fits in
+      // exactly one chunk while any two paragraphs together exceed the limit.
+      // (Was 6 before issue #589: a 7-token paragraph then slid through as a
+      // single over-limit chunk; the fixed chunker now correctly sub-chunks it,
+      // which would change the count this test pins.)
       const chunker = createChunker({
-        maxChunkTokens: 6,
+        maxChunkTokens: 7,
         overlapTokens: 0,
         respectParagraphs: true,
         respectPageBoundaries: false,

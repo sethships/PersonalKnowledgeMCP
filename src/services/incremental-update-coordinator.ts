@@ -498,6 +498,36 @@ export class IncrementalUpdateCoordinator {
         totalFilesProcessed === 0 &&
         pipelineResult.errors.length === 0;
 
+      // Guard (issue #589): Content-producing changes existed but nothing was
+      // stored and errors occurred — e.g., the embed/store step failed after
+      // the per-file chunk deletes already ran. Advancing the SHA would make
+      // the loss permanent because the next update would see "no changes".
+      // Keep the SHA at the previous commit so the next run retries the diff.
+      const zeroUpsertFailure =
+        pipelineResult.stats.filesAdded + pipelineResult.stats.filesModified > 0 &&
+        pipelineResult.stats.chunksUpserted === 0 &&
+        pipelineResult.errors.length > 0;
+
+      // SHA must not advance under either guard condition
+      const blockShaAdvancement = allEligibleFiltered || zeroUpsertFailure;
+
+      if (zeroUpsertFailure) {
+        logger.warn(
+          {
+            operation: "coordinator_sha_guard",
+            repository: repositoryName,
+            filesAdded: pipelineResult.stats.filesAdded,
+            filesModified: pipelineResult.stats.filesModified,
+            chunksUpserted: pipelineResult.stats.chunksUpserted,
+            chunksDeleted: pipelineResult.stats.chunksDeleted,
+            errorCount: pipelineResult.errors.length,
+          },
+          "SHA advancement blocked: changed files produced no stored chunks and errors occurred " +
+            "(embed/store likely failed). Index remains at previous commit so the next " +
+            "incremental update retries these files."
+        );
+      }
+
       let historyStatus: "success" | "partial" | "failed" | "incomplete";
       if (allEligibleFiltered) {
         historyStatus = "incomplete";
@@ -529,8 +559,8 @@ export class IncrementalUpdateCoordinator {
         timestamp: new Date().toISOString(),
         // Validated above - throws MissingCommitShaError if undefined
         previousCommit: repo.lastIndexedCommitSha,
-        // If guard triggered, don't record HEAD as newCommit (SHA not advanced)
-        newCommit: allEligibleFiltered ? repo.lastIndexedCommitSha : headCommit.sha,
+        // If a guard triggered, don't record HEAD as newCommit (SHA not advanced)
+        newCommit: blockShaAdvancement ? repo.lastIndexedCommitSha : headCommit.sha,
         filesAdded: pipelineResult.stats.filesAdded,
         filesModified: pipelineResult.stats.filesModified,
         filesDeleted: pipelineResult.stats.filesDeleted,
@@ -563,8 +593,9 @@ export class IncrementalUpdateCoordinator {
       const updatedMetadata: RepositoryInfo = {
         ...repo,
         updateHistory: updatedHistory,
-        // Only advance SHA when files were actually processed (or no eligible files existed)
-        lastIndexedCommitSha: allEligibleFiltered ? repo.lastIndexedCommitSha : headCommit.sha,
+        // Only advance SHA when files were actually processed AND their chunks
+        // were stored (or no eligible files existed)
+        lastIndexedCommitSha: blockShaAdvancement ? repo.lastIndexedCommitSha : headCommit.sha,
         lastIncrementalUpdateAt: new Date().toISOString(),
         incrementalUpdateCount: (repo.incrementalUpdateCount || 0) + 1,
         // Update file and chunk counts based on pipeline results
@@ -582,7 +613,11 @@ export class IncrementalUpdateCoordinator {
             ? `Incremental update completed with ${pipelineResult.errors.length} error(s)`
             : allEligibleFiltered
               ? `Incremental update incomplete: ${pipelineResult.filterStats.eligibleChanges} eligible file(s) were filtered out`
-              : undefined,
+              : zeroUpsertFailure
+                ? `Incremental update incomplete: no chunks were stored for ` +
+                  `${pipelineResult.stats.filesAdded + pipelineResult.stats.filesModified} changed file(s); ` +
+                  `SHA not advanced, next update will retry`
+                : undefined,
         // Clear the in-progress flag (update completed successfully or with partial errors)
         updateInProgress: false,
         updateStartedAt: undefined,
@@ -609,10 +644,13 @@ export class IncrementalUpdateCoordinator {
       const durationMs = Date.now() - startTime;
 
       let resultStatus: CoordinatorResult["status"];
-      if (allEligibleFiltered) {
-        resultStatus = "incomplete";
-      } else if (historyStatus === "failed") {
+      if (historyStatus === "failed") {
         resultStatus = "failed";
+      } else if (blockShaAdvancement) {
+        // Covers allEligibleFiltered and zeroUpsertFailure (issue #589):
+        // the index was not brought up to the head commit, so the caller
+        // should know the update must be retried.
+        resultStatus = "incomplete";
       } else {
         resultStatus = "updated"; // includes partial success
       }

@@ -29,6 +29,7 @@ import type { InternalChunk } from "./ingestion-types.js";
 import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
 import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
 import { DEFAULT_EXTENSIONS } from "../ingestion/default-extensions.js";
+import { estimateTokens } from "../ingestion/chunk-utils.js";
 import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
 import type { ExtractionResult } from "../documents/types.js";
@@ -76,6 +77,18 @@ export class IncrementalUpdatePipeline {
    * and ensures efficient batching.
    */
   private readonly EMBEDDING_BATCH_SIZE = 100;
+
+  /**
+   * Maximum estimated tokens for a single chunk sent to the embedding provider.
+   *
+   * OpenAI's hard input limit is 8,192 tokens per text. `estimateTokens` uses a
+   * chars/4 heuristic that can under-estimate for token-dense content (tables,
+   * code), so this is set well below 8,192. Correctly chunked content is at
+   * most ~500 estimated tokens; anything above this threshold is pathological
+   * (issue #589) and is skipped with an error rather than poisoning its whole
+   * embedding batch.
+   */
+  private readonly MAX_EMBEDDING_INPUT_TOKENS = 6000;
 
   /**
    * Doc-graph helper instance — stateless aside from cached extractor objects
@@ -347,10 +360,12 @@ export class IncrementalUpdatePipeline {
       }
     }
 
-    // If we have chunks to embed and store, do it in batches
+    // If we have chunks to embed and store, do it in batches. Per-batch and
+    // per-chunk failures are collected into `errors` inside; this catch is a
+    // last resort for unexpected failures outside the batch loop.
     if (allChunks.length > 0) {
       try {
-        await this.embedAndStoreChunks(allChunks, options.collectionName, stats, logger);
+        await this.embedAndStoreChunks(allChunks, options.collectionName, stats, errors, logger);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorType = error instanceof Error ? error.constructor.name : "Unknown";
@@ -919,32 +934,73 @@ export class IncrementalUpdatePipeline {
    * Generate embeddings for chunks and store them in ChromaDB.
    *
    * Batches embedding generation in groups of EMBEDDING_BATCH_SIZE to stay
-   * within API limits. Creates DocumentInput objects and upserts to ChromaDB.
+   * within API limits. Each batch is embedded and upserted independently so a
+   * failure affects at most EMBEDDING_BATCH_SIZE chunks instead of the whole
+   * update (issue #589: a single oversized chunk previously caused every chunk
+   * in the update to be lost after their predecessors were already deleted).
+   *
+   * Chunks whose estimated token count exceeds MAX_EMBEDDING_INPUT_TOKENS are
+   * skipped up-front with a per-chunk error so they cannot poison a batch.
    *
    * @param chunks - All chunks to embed and store
    * @param collectionName - Target ChromaDB collection
    * @param stats - Statistics to update
+   * @param errors - Error collector for skipped chunks and failed batches
+   * @param logger - Correlation-aware logger
    */
   private async embedAndStoreChunks(
     chunks: InternalChunk[],
     collectionName: string,
     stats: UpdateStats,
+    errors: FileProcessingError[],
     logger: Logger
   ): Promise<void> {
     const startTime = Date.now();
 
+    // Safety net: skip pathologically large chunks instead of letting them
+    // fail an entire embedding request. With correct chunking this never
+    // trips, but a chunker regression must degrade per-chunk, not per-update.
+    const safeChunks: InternalChunk[] = [];
+    for (const chunk of chunks) {
+      const estimatedTokens = estimateTokens(chunk.content);
+      if (estimatedTokens > this.MAX_EMBEDDING_INPUT_TOKENS) {
+        errors.push({
+          path: chunk.filePath,
+          error:
+            `Chunk ${chunk.id} skipped: estimated ${estimatedTokens} tokens exceeds ` +
+            `embedding input limit (${this.MAX_EMBEDDING_INPUT_TOKENS})`,
+        });
+        logger.warn(
+          {
+            operation: "pipeline_embed_chunks",
+            chunkId: chunk.id,
+            filePath: chunk.filePath,
+            estimatedTokens,
+            limit: this.MAX_EMBEDDING_INPUT_TOKENS,
+          },
+          "Skipping oversized chunk - exceeds embedding input limit"
+        );
+        continue;
+      }
+      safeChunks.push(chunk);
+    }
+
     logger.info(
-      { operation: "pipeline_embed_chunks", chunkCount: chunks.length },
+      {
+        operation: "pipeline_embed_chunks",
+        chunkCount: safeChunks.length,
+        skippedOversized: chunks.length - safeChunks.length,
+      },
       "Generating embeddings for chunks"
     );
 
-    // Batch embedding generation (max 100 texts per request)
-    const allEmbeddings: number[][] = [];
-    const batchCount = Math.ceil(chunks.length / this.EMBEDDING_BATCH_SIZE);
+    // Embed and upsert per batch (max 100 texts per request). Batches are
+    // independent: a failed batch is recorded as an error and the remaining
+    // batches still get stored.
+    const batchCount = Math.ceil(safeChunks.length / this.EMBEDDING_BATCH_SIZE);
 
-    for (let i = 0; i < chunks.length; i += this.EMBEDDING_BATCH_SIZE) {
-      const batch = chunks.slice(i, i + this.EMBEDDING_BATCH_SIZE);
-      const batchTexts = batch.map((c) => c.content);
+    for (let i = 0; i < safeChunks.length; i += this.EMBEDDING_BATCH_SIZE) {
+      const batch = safeChunks.slice(i, i + this.EMBEDDING_BATCH_SIZE);
       const batchIndex = Math.floor(i / this.EMBEDDING_BATCH_SIZE) + 1;
       const batchStartTime = Date.now();
 
@@ -953,91 +1009,101 @@ export class IncrementalUpdatePipeline {
           operation: "pipeline_embed_batch",
           batchIndex,
           batchCount,
-          batchSize: batchTexts.length,
+          batchSize: batch.length,
         },
         "Generating embeddings for batch"
       );
 
-      const embeddings = await this.embeddingProvider.generateEmbeddings(batchTexts);
-      allEmbeddings.push(...embeddings);
+      try {
+        const embeddings = await this.embeddingProvider.generateEmbeddings(
+          batch.map((c) => c.content)
+        );
 
-      logger.debug(
-        {
-          operation: "pipeline_embed_batch",
-          batchIndex,
-          durationMs: Date.now() - batchStartTime,
-        },
-        "Batch embedding completed"
-      );
+        // Create DocumentInput objects for this batch
+        const documents: DocumentInput[] = batch.map((chunk, index) => {
+          const embedding = embeddings[index];
+          if (!embedding) {
+            throw new Error(`Missing embedding for chunk ${chunk.id} (batch index ${index})`);
+          }
+
+          return {
+            id: chunk.id,
+            content: chunk.content,
+            embedding,
+            metadata: {
+              file_path: chunk.filePath,
+              repository: chunk.repository,
+              chunk_index: chunk.chunkIndex,
+              total_chunks: chunk.totalChunks,
+              chunk_start_line: chunk.startLine,
+              chunk_end_line: chunk.endLine,
+              file_extension: chunk.extension,
+              language: chunk.language,
+              file_size_bytes: chunk.fileSizeBytes,
+              content_hash: chunk.contentHash,
+              indexed_at: new Date().toISOString(),
+              file_modified_at: chunk.fileModifiedAt.toISOString(),
+              // Document-specific metadata (only present for document chunks)
+              ...(chunk.documentMetadata && {
+                document_type: chunk.documentMetadata.documentType,
+                ...(chunk.documentMetadata.pageNumber !== undefined && {
+                  page_number: chunk.documentMetadata.pageNumber,
+                }),
+                ...(chunk.documentMetadata.sectionHeading && {
+                  section_heading: chunk.documentMetadata.sectionHeading,
+                }),
+                ...(chunk.documentMetadata.documentTitle && {
+                  document_title: chunk.documentMetadata.documentTitle,
+                }),
+                ...(chunk.documentMetadata.documentAuthor && {
+                  document_author: chunk.documentMetadata.documentAuthor,
+                }),
+              }),
+            },
+          };
+        });
+
+        await this.storageClient.upsertDocuments(collectionName, documents);
+        stats.chunksUpserted += documents.length;
+
+        logger.debug(
+          {
+            operation: "pipeline_embed_batch",
+            batchIndex,
+            upsertedCount: documents.length,
+            durationMs: Date.now() - batchStartTime,
+          },
+          "Batch embedded and upserted"
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const affectedFiles = [...new Set(batch.map((c) => c.filePath))];
+        errors.push({
+          path: `(embedding batch ${batchIndex}/${batchCount})`,
+          error: `${errorMessage} (${batch.length} chunks across ${affectedFiles.length} files lost)`,
+        });
+        logger.error(
+          {
+            operation: "pipeline_embed_batch",
+            batchIndex,
+            batchCount,
+            batchSize: batch.length,
+            affectedFiles,
+            error: errorMessage,
+          },
+          "Embedding batch failed - continuing with remaining batches"
+        );
+      }
     }
 
-    // Create DocumentInput objects from InternalChunks
-    const documents: DocumentInput[] = chunks.map((chunk, index) => {
-      const embedding = allEmbeddings[index];
-      if (!embedding) {
-        throw new Error(`Missing embedding for chunk ${index}`);
-      }
-
-      return {
-        id: chunk.id,
-        content: chunk.content,
-        embedding,
-        metadata: {
-          file_path: chunk.filePath,
-          repository: chunk.repository,
-          chunk_index: chunk.chunkIndex,
-          total_chunks: chunk.totalChunks,
-          chunk_start_line: chunk.startLine,
-          chunk_end_line: chunk.endLine,
-          file_extension: chunk.extension,
-          language: chunk.language,
-          file_size_bytes: chunk.fileSizeBytes,
-          content_hash: chunk.contentHash,
-          indexed_at: new Date().toISOString(),
-          file_modified_at: chunk.fileModifiedAt.toISOString(),
-          // Document-specific metadata (only present for document chunks)
-          ...(chunk.documentMetadata && {
-            document_type: chunk.documentMetadata.documentType,
-            ...(chunk.documentMetadata.pageNumber !== undefined && {
-              page_number: chunk.documentMetadata.pageNumber,
-            }),
-            ...(chunk.documentMetadata.sectionHeading && {
-              section_heading: chunk.documentMetadata.sectionHeading,
-            }),
-            ...(chunk.documentMetadata.documentTitle && {
-              document_title: chunk.documentMetadata.documentTitle,
-            }),
-            ...(chunk.documentMetadata.documentAuthor && {
-              document_author: chunk.documentMetadata.documentAuthor,
-            }),
-          }),
-        },
-      };
-    });
-
-    // Upsert to ChromaDB
-    const upsertStartTime = Date.now();
-
     logger.info(
       {
         operation: "pipeline_upsert_documents",
-        documentCount: documents.length,
-        collection: collectionName,
-      },
-      "Upserting documents to ChromaDB"
-    );
-
-    await this.storageClient.upsertDocuments(collectionName, documents);
-    stats.chunksUpserted += documents.length;
-
-    logger.info(
-      {
-        operation: "pipeline_upsert_documents",
-        upsertedCount: documents.length,
-        durationMs: Date.now() - upsertStartTime,
+        upsertedCount: stats.chunksUpserted,
+        skippedOversized: chunks.length - safeChunks.length,
         totalDurationMs: Date.now() - startTime,
       },
-      "Successfully upserted chunks to ChromaDB"
+      "Embed and store completed"
     );
   }
 

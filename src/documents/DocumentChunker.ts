@@ -382,8 +382,22 @@ export class DocumentChunker extends FileChunker {
     for (const paragraph of paragraphs) {
       const paragraphTokens = estimateTokens(paragraph.content);
 
-      // If single paragraph exceeds limit, chunk it with sentence/word fallbacks
-      if (paragraphTokens > this.maxTokens && currentParagraphs.length === 0) {
+      // If single paragraph exceeds limit, chunk it with line/sentence/word
+      // fallbacks. This must happen regardless of group state — pushing an
+      // oversized paragraph into a group would emit a chunk far above
+      // maxTokens, which embedding providers reject (issue #589: a ~50KB
+      // markdown table produced a ~12.5k-token chunk; OpenAI's limit is 8192).
+      if (paragraphTokens > this.maxTokens) {
+        // Flush any in-progress group first to preserve ordering
+        if (currentParagraphs.length > 0) {
+          allChunks.push(
+            this.createChunkFromParagraphs(currentParagraphs, filePath, source, fileInfo)
+          );
+          const posIndex = Math.min(overlapCount, currentParagraphs.length - 1);
+          positions.push({ charOffset: currentParagraphs[posIndex]!.charOffset });
+          currentParagraphs = [];
+          currentTokens = 0;
+        }
         const subResult = this.chunkOversizedParagraph(paragraph, fileInfo, source, filePath);
         allChunks.push(...subResult.chunks);
         positions.push(...subResult.positions);
