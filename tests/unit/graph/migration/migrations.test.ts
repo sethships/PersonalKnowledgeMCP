@@ -11,6 +11,10 @@ import {
   MigrationRunner,
 } from "../../../../src/graph/migration/index.js";
 import { migration0001 } from "../../../../src/graph/migration/migrations/0001-initial-schema.js";
+import {
+  migration0002,
+  createMigration0002,
+} from "../../../../src/graph/migration/migrations/0002-document-graph.js";
 import { getAllSchemaStatements } from "../../../../src/graph/schema.js";
 import type { Neo4jStorageClient } from "../../../../src/graph/types.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
@@ -88,6 +92,43 @@ describe("Migration 0001: Initial Schema", () => {
   });
 });
 
+describe("Migration 0002: Document Graph", () => {
+  test("should have version 1.1.0", () => {
+    expect(migration0002.version).toBe("1.1.0");
+  });
+
+  test("should have a description mentioning documents", () => {
+    expect(migration0002.description).toBeDefined();
+    expect(migration0002.description.toLowerCase()).toContain("document");
+  });
+
+  test("Neo4j variant emits idempotent IF NOT EXISTS statements", () => {
+    const m = createMigration0002("neo4j");
+    expect(m.statements.length).toBe(3);
+    for (const stmt of m.statements) {
+      expect(stmt).toContain("IF NOT EXISTS");
+      expect(stmt).toContain("CREATE INDEX");
+    }
+  });
+
+  test("FalkorDB variant emits unnamed-index form (no IF NOT EXISTS)", () => {
+    const m = createMigration0002("falkordb");
+    expect(m.statements.length).toBe(3);
+    for (const stmt of m.statements) {
+      expect(stmt).toMatch(/^CREATE INDEX FOR \(/);
+      expect(stmt).not.toContain("IF NOT EXISTS");
+    }
+  });
+
+  test("covers Document.id, Document.repository, Section.documentId", () => {
+    const m = createMigration0002("neo4j");
+    const joined = m.statements.join("\n");
+    expect(joined).toContain("Document) ON (d.id)");
+    expect(joined).toContain("Document) ON (d.repository)");
+    expect(joined).toContain("Section) ON (s.documentId)");
+  });
+});
+
 describe("ALL_MIGRATIONS", () => {
   test("should export array of migrations", () => {
     expect(Array.isArray(ALL_MIGRATIONS)).toBe(true);
@@ -98,6 +139,12 @@ describe("ALL_MIGRATIONS", () => {
     const m0001 = ALL_MIGRATIONS.find((m) => m.version === "1.0.0");
     expect(m0001).toBeDefined();
     expect(m0001).toBe(migration0001);
+  });
+
+  test("should include migration 0002", () => {
+    const m0002 = ALL_MIGRATIONS.find((m) => m.version === "1.1.0");
+    expect(m0002).toBeDefined();
+    expect(m0002).toBe(migration0002);
   });
 
   test("should have migrations in version order", () => {

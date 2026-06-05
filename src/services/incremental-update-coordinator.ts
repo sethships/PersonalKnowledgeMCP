@@ -284,7 +284,10 @@ export class IncrementalUpdateCoordinator {
 
       // Step 2-5: Detect changes — via GitHub API for github.com repos,
       // or via local git diff for all other hosts and local paths.
-      const parsedUrl = parseGitUrl(repo.url);
+      // url is non-null for git-remote and local-git sources. Phase B will
+      // route local-folder repos to LocalFolderUpdateCoordinator before this
+      // path runs.
+      const parsedUrl = parseGitUrl(repo.url!);
       const isGitHub = parsedUrl?.isGitHub === true;
 
       let headCommit: CommitInfo;
@@ -392,7 +395,7 @@ export class IncrementalUpdateCoordinator {
           repo.localPath,
           repo.branch,
           repo.lastIndexedCommitSha,
-          repo.url,
+          repo.url!,
           logger
         );
 
@@ -461,8 +464,8 @@ export class IncrementalUpdateCoordinator {
 
       // Step 7: Update local clone (git pull).
       // Skipped for local-path repos — the directory is managed by the user, not cloned.
-      if (!isLocalPath(repo.url)) {
-        await this.updateLocalClone(repo.localPath, repo.branch, repo.url);
+      if (!isLocalPath(repo.url!)) {
+        await this.updateLocalClone(repo.localPath, repo.branch, repo.url!);
         logger.info(
           { repository: repositoryName, localPath: repo.localPath },
           "Updated local clone"

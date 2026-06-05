@@ -208,6 +208,8 @@ export class MarkdownParser extends BaseExtractor<
           metadata,
           frontmatter,
           sections,
+          tokens,
+          normalizedSource: content,
         });
       } catch (error) {
         clearTimeout(timeoutId);

@@ -220,7 +220,7 @@ export class EmbeddingProviderFactory {
    * @param provider - Provider name or alias
    * @returns Canonical provider type or undefined if unknown
    */
-  private resolveProviderType(provider: string): ProviderType | undefined {
+  resolveProviderType(provider: string): ProviderType | undefined {
     const normalized = provider.toLowerCase();
     return PROVIDER_ALIASES[normalized];
   }

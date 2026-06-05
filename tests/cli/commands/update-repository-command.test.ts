@@ -41,6 +41,7 @@ describe("Update Repository Command", () => {
   // Sample repository for testing
   const sampleRepo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/repo.git",
     localPath: "/repos/test-repo",
     branch: "main",
@@ -511,9 +512,14 @@ describe("Update Repository Command", () => {
 
       await updateRepositoryCommand("test-repo", options, mockDeps);
 
+      // Phase B: force re-index now passes `name` and `tier` through, and
+      // falls back to `localPath` for local-folder repos (which have null url).
+      // For this git-remote fixture the URL is still the source.
       expect(mockIndexRepository).toHaveBeenCalledWith(sampleRepo.url, {
+        name: sampleRepo.name,
         branch: sampleRepo.branch,
         force: true,
+        tier: sampleRepo.tier,
         onProgress: expect.any(Function),
       });
 

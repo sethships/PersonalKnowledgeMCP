@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { createGraphShutdownHandler } from "../../../src/cli/utils/dependency-init.js";
+import { resolveEmbeddingDefaults } from "../../../src/providers/provider-defaults.js";
 import type { GraphStorageAdapter } from "../../../src/graph/adapters/types.js";
 
 // Test the provider resolution priority logic conceptually
@@ -209,6 +210,39 @@ describe("Graceful Shutdown (createGraphShutdownHandler)", () => {
     await shutdown();
 
     expect(disconnected).toBe(true);
+  });
+});
+
+// Issue #581: an OpenAI-shaped EMBEDDING_MODEL leaking into transformersjs/ollama.
+// We can't run `initializeDependencies()` directly here (see header comment in this
+// file), but the embedding-config block now delegates to `resolveEmbeddingDefaults`,
+// so verifying the helper's behavior at the inputs the dependency-init wrapper
+// supplies is sufficient regression coverage.
+describe("Embedding model provider-leak guard (#581)", () => {
+  it("returns transformersjs default when EMBEDDING_MODEL is the OpenAI default", () => {
+    // Mirrors `bun run cli index --provider transformersjs` with `.env` containing
+    // EMBEDDING_MODEL=text-embedding-3-small and EMBEDDING_DIMENSIONS=1536.
+    const result = resolveEmbeddingDefaults("transformersjs", "text-embedding-3-small", 1536);
+
+    expect(result.model).toBe("Xenova/all-MiniLM-L6-v2");
+    expect(result.dimensions).toBe(384);
+    expect(result.warning).toBeDefined();
+  });
+
+  it("returns ollama default when EMBEDDING_MODEL is OpenAI-shaped", () => {
+    const result = resolveEmbeddingDefaults("ollama", "text-embedding-3-small", 1536);
+
+    expect(result.model).toBe("nomic-embed-text");
+    expect(result.dimensions).toBe(768);
+    expect(result.warning).toBeDefined();
+  });
+
+  it("preserves OpenAI's own EMBEDDING_MODEL when the resolved provider IS openai", () => {
+    const result = resolveEmbeddingDefaults("openai", "text-embedding-3-small", 1536);
+
+    expect(result.model).toBe("text-embedding-3-small");
+    expect(result.dimensions).toBe(1536);
+    expect(result.warning).toBeUndefined();
   });
 });
 

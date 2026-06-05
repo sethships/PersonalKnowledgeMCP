@@ -36,6 +36,7 @@ describe("IncrementalUpdateCoordinator", () => {
   // Test fixture: Repository metadata
   const testRepo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/owner/test-repo.git",
     localPath: "/repos/test-repo",
     collectionName: "repo_test_repo",

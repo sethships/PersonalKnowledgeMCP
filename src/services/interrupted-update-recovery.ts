@@ -12,8 +12,10 @@ import { getComponentLogger } from "../logging/index.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
 import type { IngestionService } from "./ingestion-service.js";
 import type { IncrementalUpdateCoordinator } from "./incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "./local-folder-update-coordinator.js";
 import type { InterruptedUpdateInfo } from "./interrupted-update-detector.js";
 import { clearInterruptedUpdateFlag, formatElapsedTime } from "./interrupted-update-detector.js";
+import { dispatchCoordinator } from "./update-coordinator-dispatch.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -95,6 +97,13 @@ export interface RecoveryDependencies {
   repositoryService: RepositoryMetadataService;
   ingestionService: IngestionService;
   updateCoordinator: IncrementalUpdateCoordinator;
+  /**
+   * Optional local-folder coordinator. When a recovered repository's source
+   * is `local-folder`, recovery dispatches to this coordinator instead of the
+   * git coordinator. Optional for back-compat with bootstrap paths that don't
+   * register local-folder repos.
+   */
+  localFolderCoordinator?: LocalFolderUpdateCoordinator;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,9 +148,50 @@ export async function evaluateRecoveryStrategy(
       elapsedMs,
       hasLastKnownCommit: !!lastKnownCommit,
       status: repository.status,
+      source: repository.source,
     },
     "Evaluating recovery strategy"
   );
+
+  // Local-folder repos never have a `lastIndexedCommitSha` — change detection
+  // happens via FileManifest, and `LocalFolderUpdateCoordinator` already
+  // tolerates missing/empty manifests + drift. The "no last known commit ⇒
+  // full re-index" rule below is correct for git-flavored repos but would
+  // misroute local-folder repos through `executeFullReindexRecovery` (which
+  // would then crash on `repo.url!`). Always recommend resume; the coordinator
+  // will pick up where the manifest left off.
+  //
+  // Stale-recovery warning (PR #573 review M-5): when the in-progress flag
+  // has been set longer than `STALE_UPDATE_THRESHOLD_MS`, the manifest is
+  // still safe to resume against (the coordinator only advances it on
+  // successful pipeline runs), but the user should know they've potentially
+  // lost weeks of unfinished work. Surface the elapsed time both via a
+  // `warn`-level log AND in the strategy `reason` so it shows up in any
+  // recovery report the user reads.
+  if (repository.source === "local-folder") {
+    const isStale = elapsedMs > STALE_UPDATE_THRESHOLD_MS;
+    if (isStale) {
+      const elapsed = formatElapsedTime(elapsedMs);
+      logger.warn(
+        { repository: repositoryName, elapsedMs, elapsed },
+        "Local-folder update interrupted >24h ago — resume is safe (manifest preserved) but review changes after recovery"
+      );
+      return {
+        type: "resume",
+        reason: `local-folder repos resume via FileManifest. Note: update interrupted ${elapsed} ago — review changes carefully after recovery.`,
+        canAutoRecover: true,
+      };
+    }
+    logger.info(
+      { repository: repositoryName },
+      "Local-folder source — recommending resume via LocalFolderUpdateCoordinator"
+    );
+    return {
+      type: "resume",
+      reason: "local-folder repos resume via FileManifest, regardless of elapsed time",
+      canAutoRecover: true,
+    };
+  }
 
   // Check 1: Is the update stale (>24 hours old)?
   if (elapsedMs > STALE_UPDATE_THRESHOLD_MS) {
@@ -312,9 +362,25 @@ async function executeResumeRecovery(
   await clearInterruptedUpdateFlag(deps.repositoryService, repositoryName);
   logger.debug({ repository: repositoryName }, "Cleared interrupted update flag");
 
-  // Attempt incremental update
+  // Attempt incremental update — dispatch by source so a recovered local-folder
+  // repo uses its manifest-based coordinator rather than the git coordinator
+  // (which would throw MissingCommitShaError for sources without a SHA).
+  const repo = await deps.repositoryService.getRepository(repositoryName);
+  const coordinator = repo
+    ? dispatchCoordinator(repo, deps.updateCoordinator, deps.localFolderCoordinator)
+    : deps.updateCoordinator;
+  if (!coordinator) {
+    return {
+      strategy,
+      success: false,
+      repositoryName,
+      message: `Cannot recover '${repositoryName}': source='${repo?.source}' but no local-folder coordinator configured`,
+      durationMs: Date.now() - startTime,
+      error: "local_folder_coordinator_unavailable",
+    };
+  }
   try {
-    const result = await deps.updateCoordinator.updateRepository(repositoryName);
+    const result = await coordinator.updateRepository(repositoryName);
     const durationMs = Date.now() - startTime;
 
     if (result.status === "no_changes") {
@@ -425,10 +491,17 @@ async function executeFullReindexRecovery(
   await clearInterruptedUpdateFlag(deps.repositoryService, repositoryName);
   logger.debug({ repository: repositoryName }, "Cleared interrupted update flag");
 
-  // Perform full re-index
-  const result = await deps.ingestionService.indexRepository(repository.url, {
+  // For git-remote and local-git, re-index from the recorded URL. For
+  // local-folder, `repository.url` is null by design (no clone URL exists),
+  // so use the registered `localPath` instead — `isLocalPath` will route it
+  // through the local-path branch in IngestionService and source detection
+  // (.git presence) reaffirms the existing source discriminator.
+  const sourceForReindex = repository.url ?? repository.localPath;
+  const result = await deps.ingestionService.indexRepository(sourceForReindex, {
+    name: repository.name,
     branch: repository.branch,
     force: true,
+    tier: repository.tier,
   });
 
   const durationMs = Date.now() - startTime;

@@ -7,6 +7,9 @@
  * @module services/ingestion-types
  */
 
+import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
+import type { FileInput } from "../graph/ingestion/types.js";
+
 /**
  * Options for indexing a repository
  */
@@ -46,6 +49,41 @@ export interface IndexOptions {
    * @default false
    */
   force?: boolean;
+
+  /**
+   * Security tier this repository belongs to.
+   *
+   * Defaults to `"private"` when omitted. `"public"` is refused at registration
+   * for `local-folder` sources to prevent accidental disclosure of personal
+   * content; `"private"` and `"work"` are always allowed.
+   *
+   * @default "private"
+   */
+  tier?: "private" | "work" | "public";
+
+  /**
+   * Whether the registered repository should have a filesystem watcher
+   * subscribed after the initial scan completes.
+   *
+   * Only meaningful when the path resolves to a `local-folder` source.
+   * Persisted on `RepositoryInfo.watchEnabled` so the MCP server can restore
+   * active watchers across restarts.
+   *
+   * @default false
+   */
+  watch?: boolean;
+
+  /**
+   * Whether the local-folder watcher should follow filesystem symlinks.
+   *
+   * Only meaningful when the path resolves to a `local-folder` source.
+   * Defaults to `false` for safety. When `true`, chokidar is configured to
+   * follow symlinks but the registration code rejects targets outside the
+   * repository root (depth-cap and TOCTOU-aware via `fs.realpath`).
+   *
+   * @default false
+   */
+  followSymlinks?: boolean;
 }
 
 /**
@@ -359,4 +397,53 @@ export interface BatchResult {
    * Errors encountered in this batch
    */
   errors: IndexError[];
+
+  /**
+   * POSIX-relative paths of files that fully made it through chunk → embed →
+   * store in this batch.
+   *
+   * Used by `IngestionService.writeInitialFileManifest` to ensure the initial
+   * `local-folder` manifest fingerprints ONLY successfully-indexed files —
+   * fixing PR #573 review M-3 where a partial-success first index would write
+   * fingerprints for files the pipeline errored on, causing the next
+   * incremental update to see no diff and silently skip them forever.
+   *
+   * Empty when nothing in the batch reached ChromaDB. May be a subset of
+   * `filesProcessed` if the embed/store phase fails for the whole batch.
+   */
+  processedRelativePaths: string[];
+
+  /**
+   * `FileInput`-shaped pairs for code files in this batch, captured during
+   * chunking so the post-batch graph step (`GraphIngestionService.ingestFiles`)
+   * doesn't have to re-read the same files from disk.
+   *
+   * Document files (markdown / pdf / docx / txt) are excluded — they flow
+   * through `docExtractionResults` instead.
+   *
+   * Convention: empty array when the owning `IngestionService` was
+   * constructed without a `graphIngestionService` (the per-batch populate
+   * code is gated on that field). Consumers should not infer "no code files"
+   * from emptiness.
+   *
+   * MEMORY: This holds full file content until the post-batch graph step
+   * completes. For repos with `graphIngestionService` configured and
+   * >10K code files, expect ~content_total_bytes of additional retained
+   * memory across the run. Standalone `cli graph populate` already has the
+   * same characteristic (it materializes the same list upfront via
+   * `scanDirectory`); the trade-off is identical. A future follow-up could
+   * stream `ingestFiles` per-batch to bound memory at one batch.
+   */
+  codeFilesForGraph: FileInput[];
+
+  /**
+   * Per-document `DocExtractionResult` payloads collected while chunking.
+   * Fed to `GraphIngestionService.ingestDocumentGraph` after all batches
+   * complete so two-pass MENTIONS resolution sees the populated code graph.
+   *
+   * Convention: empty array when the owning `IngestionService` was
+   * constructed without a `graphIngestionService` (the per-batch populate
+   * code is gated on that field).
+   */
+  docExtractionResults: DocExtractionResult[];
 }

@@ -88,6 +88,7 @@ function getTextContent(content: unknown): string {
 function createMockRepo(name: string): RepositoryInfo {
   return {
     name,
+    source: "git-remote",
     url: `https://github.com/user/${name}.git`,
     localPath: `/data/repos/${name}`,
     collectionName: `repo_${name}`,
@@ -267,6 +268,37 @@ describe("createTriggerUpdateHandler", () => {
         expect(response.error).toBe("repository_not_found");
       }
     });
+
+    it("returns service_unavailable for local-folder repo when localFolderCoordinator is undefined (PR #573 review TEST-2)", async () => {
+      // Repo is a local-folder source, but the handler was constructed without
+      // a LocalFolderUpdateCoordinator dependency. The handler must NOT misroute
+      // through the git coordinator (which would throw MissingCommitShaError) —
+      // it must surface a typed `service_unavailable` error.
+      const localFolderRepo: RepositoryInfo = {
+        ...createMockRepo("folder-only"),
+        source: "local-folder",
+        url: null,
+      };
+      mockRepositoryService.getRepository = mock(() => Promise.resolve(localFolderRepo));
+
+      // Reconstruct the handler with NO localFolderCoordinator.
+      const handlerNoLocal = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockUpdateCoordinator,
+        rateLimiter,
+        jobTracker,
+        // localFolderCoordinator omitted intentionally
+      });
+
+      const result = await handlerNoLocal({ repository: "folder-only" });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(getTextContent(result.content)) as ErrorResponse;
+      expect(response.error).toBe("service_unavailable");
+      expect(response.message).toContain("local-folder");
+      // Coordinator must NOT have been invoked.
+      expect(mockUpdateCoordinator.updateRepository).not.toHaveBeenCalled();
+    });
   });
 
   describe("rate limiting", () => {
@@ -373,6 +405,28 @@ describe("createTriggerUpdateHandler", () => {
       const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
       expect(response.commit_sha).toBe("abc1234");
       expect(response.commit_sha?.length).toBe(7);
+    });
+
+    it("preserves local-<isoDate> markers without 7-char truncation (PR #573 review TEST-2)", async () => {
+      // local-folder repos use `local-<isoDate>` synthetic markers in place of
+      // git SHAs. Truncating these to 7 chars yields a meaningless "local-2",
+      // which the response formatter explicitly avoids.
+      const localMarker = "local-2026-05-06T12:34:56.789Z";
+      mockUpdateCoordinator.updateRepository = mock(() =>
+        Promise.resolve(
+          createMockResult({
+            commitSha: localMarker,
+            commitMessage: undefined,
+          })
+        )
+      );
+
+      const result = await handler({ repository: "test-repo" });
+
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      // Marker must be preserved IN FULL, not truncated to "local-2".
+      expect(response.commit_sha).toBe(localMarker);
+      expect(response.commit_sha).not.toBe("local-2");
     });
 
     it("should mark complete in rate limiter", async () => {

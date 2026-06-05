@@ -102,6 +102,7 @@ class MockEmbeddingProviderFactory {
 function createMockRepo(overrides: Partial<RepositoryInfo> = {}): RepositoryInfo {
   return {
     name: "test-folder",
+    source: "git-remote",
     url: "file:///docs",
     localPath: "/data/repos/test-folder",
     collectionName: "repo_test_folder",

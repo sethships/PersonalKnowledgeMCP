@@ -559,6 +559,14 @@ export class FolderWatcherService {
             }
           : undefined;
 
+        // Phase C (issue #566): allow per-folder symlink + depth control.
+        // Omitting the fields preserves Phase 6 behavior (chokidar defaults:
+        // followSymlinks=true, depth=undefined). Local-folder repos pass
+        // explicit values to enforce the safer Phase C symlink policy.
+        const followSymlinksOption =
+          folder.followSymlinks === undefined ? undefined : folder.followSymlinks;
+        const depthOption = folder.depthCap === undefined ? undefined : folder.depthCap;
+
         const watcher = chokidar.watch(folder.path, {
           ignored,
           persistent: true,
@@ -569,7 +577,8 @@ export class FolderWatcherService {
           },
           usePolling: this.config.usePolling,
           interval: this.config.pollInterval,
-          depth: undefined, // Watch recursively
+          depth: depthOption, // Watch recursively unless capped (Phase C)
+          ...(followSymlinksOption !== undefined && { followSymlinks: followSymlinksOption }),
         });
 
         watcher.on("ready", () => {

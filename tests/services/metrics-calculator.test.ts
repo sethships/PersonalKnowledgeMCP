@@ -36,6 +36,7 @@ function createMockHistoryEntry(overrides?: Partial<UpdateHistoryEntry>): Update
 function createMockRepository(overrides?: Partial<RepositoryInfo>): RepositoryInfo {
   return {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/repo.git",
     localPath: "/data/repos/test-repo",
     collectionName: "repo_test_repo",

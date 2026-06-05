@@ -57,15 +57,31 @@ export interface RepositoryInfo {
   name: string;
 
   /**
-   * Original git clone URL
+   * Origin of the indexed content.
    *
-   * The URL used to clone the repository.
-   * Can be HTTPS or SSH format.
+   * - `git-remote`: cloned from a remote git URL (default for legacy data on read for back-compat).
+   * - `local-git`: a path on the host machine that contains a `.git` directory.
+   * - `local-folder`: a path on the host machine with no git history; tracked via per-file content fingerprints.
+   *
+   * Persisted records that predate this field are migrated to `"git-remote"` on read.
+   *
+   * @example "git-remote", "local-git", "local-folder"
+   */
+  source: "git-remote" | "local-git" | "local-folder";
+
+  /**
+   * Original git clone URL.
+   *
+   * The URL used to clone the repository. Can be HTTPS or SSH format.
+   *
+   * `null` is permitted only when `source === "local-folder"` — folders without git history
+   * have no clone URL. For `git-remote` and `local-git` sources this MUST be a non-empty string.
    *
    * @example "https://github.com/user/repo.git"
    * @example "git@github.com:user/repo.git"
+   * @example null  // when source === "local-folder"
    */
-  url: string;
+  url: string | null;
 
   /**
    * Absolute path where repository is cloned locally
@@ -173,6 +189,23 @@ export interface RepositoryInfo {
    * @example ["node_modules/**", "dist/**", "*.test.ts"]
    */
   excludePatterns: string[];
+
+  /**
+   * Document formats actually encountered when populating the document graph.
+   *
+   * Phase D / issue #567. This is a *presence* set, not a *capability* set —
+   * a repository with no markdown files but the markdown extractor wired up
+   * still reports an empty array (or omits the field on legacy records).
+   * Consumers can check this list before issuing graph queries that would
+   * otherwise return empty results.
+   *
+   * TODO(#567 wiring follow-up): no code path currently writes this field —
+   * it will be populated when `IngestionService.indexRepository` is updated
+   * to call `GraphIngestionService.ingestDocumentGraph`.
+   *
+   * @example ["markdown"], ["markdown", "pdf"], []
+   */
+  docGraphCoverage?: ("markdown" | "pdf" | "docx")[];
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Embedding Provider Fields (Optional)
@@ -286,6 +319,66 @@ export interface RepositoryInfo {
    * @example "2024-12-14T15:30:00.000Z"
    */
   updateStartedAt?: string;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Local Folder + Multi-tier Fields (Optional — Phase A foundation)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Security tier this repository belongs to.
+   *
+   * Defaults to `"private"` when not set. Registration-time enforcement (refusing
+   * `"public"` for `local-folder` sources) is added in a later phase; the metadata
+   * store accepts any of the three values for round-trip safety.
+   *
+   * @example "private", "work", "public"
+   */
+  tier?: "private" | "work" | "public";
+
+  /**
+   * Opaque pointer to the file-manifest record for this repository.
+   *
+   * Only set when `source === "local-folder"`. Holds the value returned by
+   * `FileManifestStore.computeManifestId(repo.name)` and is passed back to
+   * `FileManifestStore.loadManifest`/`saveManifest` to correlate the
+   * registry entry with its persisted per-file fingerprints. Treat as
+   * opaque — do not parse it; the store owns the mapping between this
+   * identifier and the on-disk filename, which may include a hash suffix to
+   * avoid case-collisions across distinct repository names.
+   */
+  lastManifestId?: string;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Local-folder watcher fields (Phase C)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether a filesystem watcher is currently subscribed to this repository.
+   *
+   * Only meaningful when `source === "local-folder"`. Persisted so that the
+   * MCP server can restore active watchers on startup. Toggled by
+   * `LocalFolderUpdateCoordinator.startWatching` / `stopWatching`.
+   */
+  watchEnabled?: boolean;
+
+  /**
+   * Whether the watcher should follow filesystem symlinks.
+   *
+   * Only meaningful when `source === "local-folder"`. Defaults to `false` for
+   * safety — out-of-repo symlink targets are rejected even when this is set.
+   * The depth cap (8) is enforced by chokidar config at watch start.
+   */
+  followSymlinks?: boolean;
+
+  /**
+   * Per-repository debounce window in milliseconds for the local-folder
+   * watcher. Defaults to 2000 ms when omitted.
+   *
+   * Only meaningful when `source === "local-folder"`. Lets noisy editors
+   * (e.g. saves that touch many sibling files in burst) coalesce into a
+   * single re-index call.
+   */
+  watchDebounceMs?: number;
 }
 
 /**
@@ -320,20 +413,30 @@ export interface UpdateHistoryEntry {
   timestamp: string;
 
   /**
-   * Git commit SHA before the update (40 characters)
+   * Identifier for the indexed state before this update.
    *
-   * The commit that was indexed prior to this update operation.
+   * - For `git-remote` and `local-git` repositories: the 40-character git commit SHA
+   *   that was indexed prior to this update operation.
+   * - For `local-folder` repositories: a synthetic marker of the form
+   *   `local-<isoDate>` corresponding to the timestamp of the previously stored
+   *   `FileManifest`. This is not validated as a 40-hex SHA.
    *
    * @example "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+   * @example "local-2026-05-05T10:30:00.000Z"
    */
   previousCommit: string;
 
   /**
-   * Git commit SHA after the update (40 characters)
+   * Identifier for the indexed state after this update.
    *
-   * The new HEAD commit that was indexed by this update operation.
+   * - For `git-remote` and `local-git` repositories: the 40-character git HEAD SHA
+   *   that was indexed by this update operation.
+   * - For `local-folder` repositories: a synthetic marker of the form
+   *   `local-<isoDate>` corresponding to the timestamp of the newly written
+   *   `FileManifest`. This is not validated as a 40-hex SHA.
    *
    * @example "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+   * @example "local-2026-05-05T11:45:12.000Z"
    */
   newCommit: string;
 

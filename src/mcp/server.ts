@@ -94,12 +94,14 @@ export class PersonalKnowledgeMCPServer {
         searchService,
         repositoryService,
         updateCoordinator: optionalDeps.updateCoordinator,
+        localFolderCoordinator: optionalDeps.localFolderCoordinator,
         rateLimiter: optionalDeps.rateLimiter,
         jobTracker: optionalDeps.jobTracker,
         graphService: optionalDeps.graphService,
         documentSearchService: optionalDeps.documentSearchService,
         imageSearchService: optionalDeps.imageSearchService,
         listWatchedFoldersService: optionalDeps.listWatchedFoldersService,
+        ingestionService: optionalDeps.ingestionService,
         updateToolsUnavailableReason: optionalDeps.updateToolsUnavailableReason,
       });
     } else {

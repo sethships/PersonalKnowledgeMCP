@@ -414,6 +414,19 @@ export class GraphIngestionService {
       { repositoryName }
     );
 
+    // Phase D — also tear down document-graph nodes scoped to this repository.
+    // Issued separately from the code-side query so an older graph that has not
+    // applied migration 0002 yet (no Document/Section labels) can still drop
+    // its Repository node without erroring on missing labels.
+    await this.graphAdapter.runQuery(
+      `
+      MATCH (d:Document {repository: $repositoryName})
+      OPTIONAL MATCH (d)-[:HAS_SECTION]->(sec:Section)
+      DETACH DELETE sec, d
+      `,
+      { repositoryName }
+    );
+
     const durationMs = Math.round(performance.now() - startTime);
     this.logger.info(
       {
@@ -492,21 +505,46 @@ export class GraphIngestionService {
       const durationMs = Math.round(performance.now() - startTime);
       const stats = result[0] ?? { nodesDeleted: 0, relsDeleted: 0 };
 
+      // Phase D — drop any Document/Section nodes that were sourced from this
+      // file. Markdown / PDF / DOCX paths sit in the same File namespace, so
+      // an unconditional Document MATCH is the safest cleanup. The query is a
+      // no-op on installs that have not yet applied migration 0002 (the
+      // Document label simply has no matches).
+      const docDeletion = await this.graphAdapter.runQuery<{
+        nodesDeleted: number;
+        relsDeleted: number;
+      }>(
+        `
+        MATCH (d:Document {id: $documentId})
+        OPTIONAL MATCH (d)-[:HAS_SECTION]->(sec:Section)
+        WITH d, collect(DISTINCT sec) AS sections
+        WITH d, sections,
+             size([x IN sections WHERE x IS NOT NULL]) + 1 AS nodeCount
+        OPTIONAL MATCH (d)-[r]-()
+        WITH d, sections, nodeCount, count(r) AS relCount
+        FOREACH (s IN [x IN sections WHERE x IS NOT NULL] | DETACH DELETE s)
+        DETACH DELETE d
+        RETURN nodeCount as nodesDeleted, relCount as relsDeleted
+        `,
+        { documentId: `Document:${repositoryName}:${filePath}` }
+      );
+      const docStats = docDeletion[0] ?? { nodesDeleted: 0, relsDeleted: 0 };
+
       this.logger.debug(
         {
           metric: "graph_ingestion.delete_file_ms",
           value: durationMs,
           repository: repositoryName,
           filePath,
-          nodesDeleted: stats.nodesDeleted,
-          relationshipsDeleted: stats.relsDeleted,
+          nodesDeleted: stats.nodesDeleted + docStats.nodesDeleted,
+          relationshipsDeleted: stats.relsDeleted + docStats.relsDeleted,
         },
         "File graph data deleted"
       );
 
       return {
-        nodesDeleted: stats.nodesDeleted,
-        relationshipsDeleted: stats.relsDeleted,
+        nodesDeleted: stats.nodesDeleted + docStats.nodesDeleted,
+        relationshipsDeleted: stats.relsDeleted + docStats.relsDeleted,
         success: true,
       };
     } catch (error) {
@@ -1247,5 +1285,241 @@ export class GraphIngestionService {
     if (options.onProgress) {
       options.onProgress(progress);
     }
+  }
+
+  // ===========================================================================
+  // Phase D — Document graph (issue #567)
+  // ===========================================================================
+
+  /**
+   * Ingest the document graph for a repository.
+   *
+   * Runs after `ingestFiles()` completes so that the in-memory symbol index
+   * built in step 2 below sees the Function/Class/Module nodes inserted by
+   * code extraction. This is the "two-pass MENTIONS resolution" called out in
+   * issue #567 T6.4.
+   *
+   * Steps:
+   *   1. Validate inputs and short-circuit if there are no documents.
+   *   2. Build a repo-wide code-symbol index by querying FalkorDB.
+   *   3. Run `DocLinkResolver` to produce edge specs.
+   *   4. Batched MERGE for `Document`, `Section`, `ExternalLink` nodes.
+   *   5. Batched MERGE for `LINKS_TO` / `MENTIONS` / `HAS_SECTION` /
+   *      `CONTAINS_SECTION` edges.
+   *   6. Stale-MENTIONS sweep: drop any MENTIONS edges left dangling because
+   *      the targeted code symbol was removed by a previous incremental run.
+   *
+   * The method is idempotent — every write uses MERGE on a deterministic id.
+   *
+   * Precondition: this method must run AFTER `ingestFiles` has completed
+   * Phase 6 (Module nodes), otherwise the in-memory symbol index will be
+   * empty and all MENTIONS will go unresolved. The two-phase MENTIONS
+   * resolution invariant depends on this ordering — do not call
+   * `ingestDocumentGraph` before code ingestion.
+   *
+   * @param repository - Repository name (must already have a Repository node).
+   * @param documents - Per-file `DocExtractionResult` from
+   *                    `DocEntityExtractor` and/or `PdfDocxEntityExtractor`.
+   * @returns Counts of nodes and edges written.
+   */
+  async ingestDocumentGraph(
+    repository: string,
+    documents: readonly import("../extraction/doc-types.js").DocExtractionResult[]
+  ): Promise<{
+    documentsCreated: number;
+    sectionsCreated: number;
+    externalLinksCreated: number;
+    edgesCreated: number;
+    staleMentionsRemoved: number;
+  }> {
+    this.validateRepositoryName(repository);
+    if (documents.length === 0) {
+      return {
+        documentsCreated: 0,
+        sectionsCreated: 0,
+        externalLinksCreated: 0,
+        edgesCreated: 0,
+        staleMentionsRemoved: 0,
+      };
+    }
+
+    const { DocLinkResolver, documentId } = await import("../extraction/DocLinkResolver.js");
+    const symbolIndex = await this.buildSymbolIndex(repository);
+
+    const resolver = new DocLinkResolver();
+    const { edges, externalLinks, debug } = resolver.resolve({
+      documents,
+      repository,
+      symbolIndex,
+    });
+
+    if (debug.length > 0) {
+      this.logger.debug({ repository, ambiguousResolutions: debug.length }, "Doc-graph debug log");
+    }
+
+    // Step 4a — Document nodes.
+    const docPayload = documents.map((d) => ({
+      id: documentId(repository, d.filePath),
+      repository,
+      path: d.filePath,
+      title: d.title,
+      wordCount: d.wordCount,
+      pageCount: d.pageCount ?? null,
+      format: d.format,
+    }));
+    await this.graphAdapter.runQuery(
+      `
+      UNWIND $docs AS doc
+      MERGE (d:Document {id: doc.id})
+      SET d.repository = doc.repository,
+          d.path       = doc.path,
+          d.title      = doc.title,
+          d.wordCount  = doc.wordCount,
+          d.pageCount  = doc.pageCount,
+          d.format     = doc.format,
+          d.labels     = ['Document']
+      `,
+      { docs: docPayload }
+    );
+
+    // Step 4b — Section nodes.
+    const sectionPayload = documents.flatMap((d) =>
+      d.sections.map((s) => ({
+        id: s.id,
+        documentId: documentId(repository, d.filePath),
+        title: s.title,
+        level: s.level,
+        startChar: s.startChar,
+        endChar: s.endChar,
+      }))
+    );
+    if (sectionPayload.length > 0) {
+      await this.graphAdapter.runQuery(
+        `
+        UNWIND $secs AS sec
+        MERGE (s:Section {id: sec.id})
+        SET s.documentId = sec.documentId,
+            s.title      = sec.title,
+            s.level      = sec.level,
+            s.startChar  = sec.startChar,
+            s.endChar    = sec.endChar,
+            s.labels     = ['Section']
+        `,
+        { secs: sectionPayload }
+      );
+    }
+
+    // Step 4c — ExternalLink nodes (deduped on id by MERGE).
+    if (externalLinks.length > 0) {
+      await this.graphAdapter.runQuery(
+        `
+        UNWIND $links AS link
+        MERGE (e:ExternalLink {id: link.id})
+        SET e.url = link.url,
+            e.labels = ['ExternalLink']
+        `,
+        { links: externalLinks.map((l) => ({ id: l.id, url: l.url })) }
+      );
+    }
+
+    // Step 5 — edges, grouped by type so each can use a typed MERGE clause.
+    const byType = {
+      LINKS_TO: edges.filter((e) => e.type === "LINKS_TO"),
+      MENTIONS: edges.filter((e) => e.type === "MENTIONS"),
+      HAS_SECTION: edges.filter((e) => e.type === "HAS_SECTION"),
+      CONTAINS_SECTION: edges.filter((e) => e.type === "CONTAINS_SECTION"),
+    };
+
+    for (const [type, list] of Object.entries(byType)) {
+      if (list.length === 0) continue;
+      const payload = list.map((e) => ({
+        fromId: e.fromId,
+        toId: e.toId,
+        properties: e.properties ?? {},
+      }));
+      await this.graphAdapter.runQuery(
+        `
+        UNWIND $edges AS edge
+        MATCH (from {id: edge.fromId})
+        MATCH (to   {id: edge.toId})
+        MERGE (from)-[r:${type}]->(to)
+        SET r += edge.properties
+        `,
+        { edges: payload }
+      );
+    }
+
+    // Step 6 — stale MENTIONS sweep. A code symbol may have been deleted by
+    // an unrelated incremental update; the edge would otherwise survive
+    // because deleteFileData only acts on the file containing the symbol.
+    //
+    // FalkorDB rejects `EXISTS(prop)`; Neo4j 5+ deprecated it. Use `IS NULL`,
+    // and — more importantly — fix the semantic: a stale MENTIONS edge is one
+    // whose target's repository no longer matches the document's repository
+    // (i.e. the symbol was reattached to a different repo or removed during
+    // an unrelated incremental update). Edges to deleted nodes cannot exist
+    // in either backend, so this is the actual condition we want to sweep.
+    const staleSweep = await this.graphAdapter.runQuery<{ removed: number }>(
+      `
+      MATCH (d:Document {repository: $repository})-[m:MENTIONS]->(s)
+      WHERE s.repository IS NULL OR s.repository <> $repository
+      WITH collect(m) AS rels
+      FOREACH (r IN rels | DELETE r)
+      RETURN size(rels) AS removed
+      `,
+      { repository }
+    );
+    const staleMentionsRemoved = staleSweep[0]?.removed ?? 0;
+
+    return {
+      documentsCreated: documents.length,
+      sectionsCreated: sectionPayload.length,
+      externalLinksCreated: externalLinks.length,
+      edgesCreated: edges.length,
+      staleMentionsRemoved,
+    };
+  }
+
+  /**
+   * Build the in-memory code-symbol index used by `DocLinkResolver`.
+   *
+   * One Cypher round-trip pulls every Function/Class/Module for the repo. For
+   * typical repos (<100k symbols) this comfortably fits in memory; the
+   * threshold for swapping to a per-link Cypher lookup is ~500k symbols and
+   * is not a realistic concern at v1.
+   */
+  private async buildSymbolIndex(
+    repository: string
+  ): Promise<ReadonlyMap<string, import("../extraction/doc-types.js").SymbolRef>> {
+    const rows = await this.graphAdapter.runQuery<{
+      id: string;
+      name: string;
+      type: string;
+      filePath: string;
+    }>(
+      `
+      MATCH (s)
+      WHERE s.repository = $repository
+        AND (s:Function OR s:Class OR s:Module)
+      RETURN s.id AS id, s.name AS name, labels(s)[0] AS type, s.filePath AS filePath
+      `,
+      { repository }
+    );
+
+    const map = new Map<string, import("../extraction/doc-types.js").SymbolRef>();
+    for (const row of rows) {
+      const type = row.type === "Function" ? "function" : row.type === "Class" ? "class" : "module";
+      // First write wins on collisions — keeps the index deterministic when
+      // two symbols share a name. The resolver logs ambiguous wikilinks.
+      if (!map.has(row.name)) {
+        map.set(row.name, {
+          id: row.id,
+          name: row.name,
+          type: type,
+          filePath: row.filePath ?? "",
+        });
+      }
+    }
+    return map;
   }
 }

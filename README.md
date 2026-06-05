@@ -30,6 +30,18 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 | **Token Authentication** | Secure API access with scoped tokens | Complete |
 | **Rate Limiting** | Configurable per-minute/per-hour limits | Complete |
 | **OIDC Framework** | Microsoft Entra ID, Auth0, Okta support | Framework Ready |
+| **Local Folder as Repository** | Index any local folder as a first-class repository (code + docs + graph) | Complete |
+| **Document Graph Extraction** | Markdown links, headings, and `[[wikilinks]]` participate in the knowledge graph | Complete |
+
+### Supported Repository Sources
+
+Repositories can be registered from three different source types. All three are first-class at the MCP tool layer — `list_indexed_repositories`, `semantic_search`, and the graph tools (`get_dependencies`, `get_dependents`, `get_architecture`, `find_path`, `get_graph_metrics`) work identically across them.
+
+| Source | `RepositoryInfo.source` | How to register | Notes |
+|--------|------------------------|-----------------|-------|
+| GitHub / git remote | `git-remote` | `pk-mcp index <git-url>` | Cloned to `./data/repositories/` and refreshed via the GitHub Compare API. |
+| Local git checkout | `local-git` | `pk-mcp index <local-path>` (auto-detected when the path contains a `.git` dir) | Uses the existing local checkout; `git pull` drives incremental updates. |
+| Local folder (no git) | `local-folder` | `pk-mcp index <local-path>` or the `register_local_folder` MCP tool | Per-repo manifest tracks `mtime`/`size`/SHA-256 for change detection. `tier='public'` is refused. See [ADR-0009](docs/architecture/adr/0009-local-folder-as-repository.md). |
 
 ### When to Use What
 
@@ -41,6 +53,7 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 | Understand structure | `get_architecture` | "Show me the module organization" |
 | Trace execution flow | `find_path` | "How does login connect to database?" |
 | Repository health | `get_graph_metrics` | "Show dependency statistics" |
+| Register a local folder as a repo | `register_local_folder` | Index `D:\notes` as a `local-folder` source with the watcher enabled |
 
 ### Key Features
 
@@ -52,6 +65,7 @@ Personal Knowledge MCP provides a comprehensive suite of AI-powered code intelli
 - **Flexible Embedding Providers**: OpenAI (highest quality), Transformers.js (zero-config local), Ollama (GPU acceleration)
 - **Multi-Transport Support**: stdio for Claude Code, HTTP/SSE for Cursor and VS Code
 - **Local-First Deployment**: Runs entirely on localhost with Docker Compose
+- **Local Folder as Repository**: Register a local folder as a first-class repository — same MCP tools, same lifecycle, no git remote required
 
 ## Use Cases
 
@@ -683,6 +697,34 @@ Check the status of an async incremental update job.
 
 **Note**: Jobs are automatically cleaned up after 1 hour.
 
+### register_local_folder
+
+Register a local filesystem folder as a `local-folder` repository. The folder is scanned, embeddings are generated, and (by default) a filesystem watcher is started so the index re-syncs as files change. See [ADR-0009](docs/architecture/adr/0009-local-folder-as-repository.md) for the design rationale.
+
+**Parameters**:
+- `path` (string, required): Absolute or relative path to the folder to register
+- `name` (string, optional): Repository display name. Defaults to the basename of the resolved path
+- `tier` (string, optional): Security tier — `"private"` (default) or `"work"`. `"public"` is **refused** for local folders
+- `force` (boolean, optional): Re-register even if a repo with the same name or absolute path is already registered (default: `false`)
+- `watch` (boolean, optional): Start the filesystem watcher after the initial scan (default: `true`)
+- `followSymlinks` (boolean, optional): Follow filesystem symlinks inside the folder. Out-of-folder targets are rejected even when this is `true` (default: `false`)
+- `async` (boolean, optional): If `true`, return a job ID immediately and run registration in the background. Poll `get_update_status` with the `job_id` (default: `false`)
+
+**Example**:
+```json
+{
+  "path": "D:\\notes",
+  "name": "research-notes",
+  "tier": "private",
+  "watch": true
+}
+```
+
+**Notes**:
+- The registered folder appears in `list_indexed_repositories` with `source: "local-folder"` and the absolute path.
+- All graph and search MCP tools accept the registered name as a `repository` filter.
+- Markdown files participate in the document graph (headings, links, `[[wikilinks]]`); PDF/DOCX participate at lower fidelity (edges carry a `confidence` attribute).
+
 ## Embedding Providers
 
 Personal Knowledge MCP is designed to work **fully offline** with local embedding providers. No external API keys are required.
@@ -751,24 +793,27 @@ pk-mcp --help
 
 ### Commands
 
-#### index - Index a Repository
+#### index - Index a Repository or Local Folder
 
-Clone and index a repository for semantic search.
+Index a git repository **or** a local folder for semantic search. The first argument is auto-detected: a git URL is cloned, an absolute or relative filesystem path is registered as a local folder. A local path that contains a `.git` directory is registered as a `local-git` source; otherwise it is registered as `local-folder`.
 
 ```bash
-pk-mcp index <repository-url> [options]
+pk-mcp index <url-or-path> [options]
 ```
 
 **Options:**
-- `-n, --name <name>` - Custom repository name (defaults to repo name from URL)
-- `-b, --branch <branch>` - Branch to clone (defaults to repository default branch)
-- `-f, --force` - Force reindexing if repository already exists
+- `-n, --name <name>` - Custom repository name (defaults to repo name from URL or basename of the path)
+- `-b, --branch <branch>` - Branch to clone (git only; ignored for local folders)
+- `-f, --force` - Force reindexing if a repository with this name or path is already registered
 - `--provider <provider>` - Embedding provider (openai, transformersjs, ollama)
+- `--tier <tier>` - Security tier: `private` | `work` | `public`. Local folders default to `private`; `public` is **refused** for local folders
+- `--watch` / `--no-watch` - Enable / disable the filesystem watcher for a local folder (default: enabled)
+- `--follow-symlinks` - Follow filesystem symlinks inside a local folder. Out-of-folder targets are rejected even when set (default: skip)
 
 **Examples:**
 
 ```bash
-# Index a public repository
+# Index a public git repository
 pk-mcp index https://github.com/user/my-project.git
 
 # Index with custom name and specific branch
@@ -776,7 +821,15 @@ pk-mcp index https://github.com/user/repo.git --name my-repo --branch develop
 
 # Reindex an existing repository
 pk-mcp index https://github.com/user/repo.git --force
+
+# Register a local folder as a repository (auto-detected from the path)
+pk-mcp index D:\notes --name research-notes --tier private
+
+# Register a local folder without starting the filesystem watcher
+pk-mcp index ./scratch-project --no-watch
 ```
+
+> See [ADR-0009](docs/architecture/adr/0009-local-folder-as-repository.md) for the design rationale behind the `local-folder` source type and how it relates to Phase 6 WatchedFolders.
 
 #### search - Semantic Search
 
@@ -1155,9 +1208,9 @@ Generated with [cloc](https://github.com/AlDanial/cloc) (tracked files only, via
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 506 | 27,276 | 47,757 | 122,093 |
-| Markdown | 72 | 9,445 | 9 | 29,683 |
-| YAML | 68 | 332 | 588 | 3,185 |
+| TypeScript | 548 | 28,488 | 49,994 | 131,397 |
+| Markdown | 83 | 10,561 | 9 | 33,137 |
+| YAML | 68 | 332 | 597 | 3,185 |
 | Bourne Shell | 7 | 471 | 526 | 1,934 |
 | PowerShell | 4 | 399 | 281 | 1,232 |
 | C# | 6 | 219 | 312 | 1,009 |
@@ -1177,9 +1230,9 @@ Generated with [cloc](https://github.com/AlDanial/cloc) (tracked files only, via
 | Visual Studio Solution | 1 | 0 | 1 | 31 |
 | TOML | 1 | 12 | 20 | 15 |
 | MSBuild script | 1 | 3 | 0 | 14 |
-| **SUM** | **696** | **38,517** | **50,083** | **160,834** |
+| **SUM** | **749** | **40,845** | **52,329** | **173,592** |
 
-*Generated with `cloc --vcs=git --md .` against `feature/587-incremental-update-reliability` on 2026-06-05.*
+*Generated with `cloc --vcs=git --md .` against `feature/587-incremental-update-reliability` (merge of `main @ 039407f`) on 2026-06-05.*
 
 ## License
 

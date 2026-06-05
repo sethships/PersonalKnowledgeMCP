@@ -195,9 +195,10 @@ This is a personal RAG (Retrieval-Augmented Generation) knowledgebase system bui
 - Entity extraction: functions, classes, interfaces, imports, and relationships
 - Graph MCP tools: get_dependencies, get_dependents, get_architecture, find_path, get_graph_metrics
 - Graph ingestion service for populating FalkorDB from parsed code
+- Document graph extraction (Phase D, issues #567 / #580): markdown / pdf / docx wired into `IngestionService.indexRepository` and `IncrementalUpdatePipeline.processChanges` via `DocGraphBatcher`. `cli index` now populates both code and doc graphs in one pass when a `graphIngestionService` is wired (see ADR-0009 → "Automatic graph population in `cli index`")
 - Incremental graph updates integrated with update pipeline
 - Graph query metrics and performance monitoring
-- CLI commands: graph migrate, graph populate, graph populate-all
+- CLI commands: graph migrate, graph populate, graph populate-all (the populate commands now refuse local-folder sources — those populate via `cli index`)
 
 ### Phase 6: Unstructured Document Ingestion (Planned)
 **Goal**: Enable educational material and documentation search

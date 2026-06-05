@@ -44,9 +44,13 @@ import {
 import {
   SUPPORTED_EXTENSIONS,
   scanDirectory,
+  scanDocumentFiles,
   formatDuration,
   formatPhase,
 } from "../utils/file-scanner.js";
+import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
+import { DocGraphBatcher } from "../../graph/extraction/doc-graph-batch.js";
+import type { DocExtractionResult } from "../../graph/extraction/doc-types.js";
 
 /**
  * Threshold for warning about large repository file counts.
@@ -119,6 +123,19 @@ export async function graphPopulateCommand(
       );
     }
 
+    // M10 (issue #580 review): refuse to run on local-folder repos. The
+    // `repository.url!` non-null assertion below crashes for local-folder
+    // sources (where `url` is null by contract), and `cli index <local-path>`
+    // now populates the graph automatically via IngestionService — running
+    // this command afterward would be redundant or harmful.
+    if (repository.source === "local-folder") {
+      throw new Error(
+        `Repository "${repositoryName}" is a local-folder source.\n` +
+          "Local-folder repos are populated automatically by 'cli index <path>'.\n" +
+          "Re-run 'cli index --force' to refresh the graph."
+      );
+    }
+
     // Verify local path exists
     try {
       await stat(repository.localPath);
@@ -133,24 +150,27 @@ export async function graphPopulateCommand(
       spinner.text = "Scanning files...";
     }
 
-    // Step 2: Scan files from local repository
+    // Step 2: Scan files from local repository (separate code-file and
+    // doc-file passes so we can feed them to the right ingestion entry point).
     const skippedFiles: string[] = [];
     const files = await scanDirectory(repository.localPath, repository.localPath, skippedFiles);
+    const docFiles = await scanDocumentFiles(repository.localPath, repository.localPath);
 
-    if (files.length === 0) {
+    if (files.length === 0 && docFiles.length === 0) {
       throw new Error(
         `No supported files found in repository "${repositoryName}".\n` +
-          `Supported extensions: ${Array.from(SUPPORTED_EXTENSIONS).join(", ")}`
+          `Supported code extensions: ${Array.from(SUPPORTED_EXTENSIONS).join(", ")}\n` +
+          "Doc extensions: .md, .markdown, .txt, .pdf, .docx"
       );
     }
 
     // Report skipped files if any
     if (skippedFiles.length > 0 && !json) {
       spinner.warn(
-        `Found ${files.length} files to process (${skippedFiles.length} files skipped due to read errors)`
+        `Found ${files.length} code files + ${docFiles.length} doc files (${skippedFiles.length} skipped due to read errors)`
       );
     } else if (!json) {
-      spinner.succeed(`Found ${files.length} files to process`);
+      spinner.succeed(`Found ${files.length} code files + ${docFiles.length} doc files`);
     }
 
     // Warn about large repositories
@@ -200,12 +220,46 @@ export async function graphPopulateCommand(
       spinner.start();
     }
 
-    const result = await ingestionService.ingestFiles(files, {
-      repository: repositoryName,
-      repositoryUrl: repository.url,
-      force,
-      onProgress,
-    });
+    const result =
+      files.length > 0
+        ? await ingestionService.ingestFiles(files, {
+            repository: repositoryName,
+            // url is non-null for git-remote and local-git repos (the only sources
+            // that flow through this CLI command in Phase A). Phase B will branch
+            // on repository.source for local-folder repos.
+            repositoryUrl: repository.url!,
+            force,
+            onProgress,
+          })
+        : null;
+
+    // Step 6b: Doc-graph ingestion (issue #580). Runs after `ingestFiles` so
+    // the symbol index built inside `ingestDocumentGraph` sees Function/Class
+    // nodes and can resolve MENTIONS. Skipped when no doc files are present.
+    let docResult: Awaited<ReturnType<GraphIngestionService["ingestDocumentGraph"]>> | null = null;
+    const docExtractionErrors: string[] = [];
+    if (docFiles.length > 0) {
+      if (!json) {
+        spinner.text = "Extracting document graph...";
+        spinner.start();
+      }
+      const detector = new DocumentTypeDetector();
+      const batcher = new DocGraphBatcher();
+      const docResults: DocExtractionResult[] = [];
+      for (const ref of docFiles) {
+        try {
+          const res = await batcher.fromFile(ref.absolutePath, ref.relativePath, detector);
+          if (res) docResults.push(res);
+        } catch (err) {
+          docExtractionErrors.push(
+            `${ref.relativePath}: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+      if (docResults.length > 0) {
+        docResult = await ingestionService.ingestDocumentGraph(repositoryName, docResults);
+      }
+    }
 
     if (!json) {
       spinner.stop();
@@ -215,16 +269,45 @@ export async function graphPopulateCommand(
     if (json) {
       // Include skipped files in JSON output
       const jsonResult = {
-        ...result,
+        ...(result ?? {
+          status: "success",
+          repository: repositoryName,
+          stats: { filesProcessed: 0, nodesCreated: 0, relationshipsCreated: 0, durationMs: 0 },
+          errors: [],
+        }),
         skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
+        docGraph:
+          docFiles.length > 0
+            ? {
+                docFilesScanned: docFiles.length,
+                // I12 (issue #580 review): when every doc file failed to
+                // extract (docResult is null), surface that explicitly so
+                // JSON consumers don't conflate "no docs scanned" with
+                // "all docs failed".
+                success: docResult !== null,
+                ...(docResult ?? {
+                  documentsCreated: 0,
+                  sectionsCreated: 0,
+                  externalLinksCreated: 0,
+                  edgesCreated: 0,
+                  staleMentionsRemoved: 0,
+                }),
+                extractionErrors: docExtractionErrors.length > 0 ? docExtractionErrors : undefined,
+              }
+            : undefined,
       };
       console.log(JSON.stringify(jsonResult, null, 2));
     } else {
-      printResults(repositoryName, result.status, result.stats, result.errors, skippedFiles);
+      if (result) {
+        printResults(repositoryName, result.status, result.stats, result.errors, skippedFiles);
+      }
+      if (docFiles.length > 0) {
+        printDocGraphResults(docFiles.length, docResult, docExtractionErrors);
+      }
     }
 
     // Exit with error code if failed
-    if (result.status === "failed") {
+    if (result && result.status === "failed") {
       process.exit(1);
     }
   } catch (error) {
@@ -388,5 +471,48 @@ function printResults(
     }
   }
 
+  console.log();
+}
+
+/**
+ * Print doc-graph results in human-readable format (issue #580).
+ *
+ * Called after the code-graph summary so a populate run that touched both
+ * code and doc files surfaces both result blocks side-by-side.
+ */
+function printDocGraphResults(
+  docFilesScanned: number,
+  docResult: {
+    documentsCreated: number;
+    sectionsCreated: number;
+    externalLinksCreated: number;
+    edgesCreated: number;
+    staleMentionsRemoved: number;
+  } | null,
+  extractionErrors: string[]
+): void {
+  console.log();
+  console.log(chalk.bold("  Document graph:"));
+  console.log(`    Files scanned: ${chalk.cyan(docFilesScanned.toString())}`);
+  if (docResult) {
+    console.log(chalk.gray(`    Documents:     ${docResult.documentsCreated}`));
+    console.log(chalk.gray(`    Sections:      ${docResult.sectionsCreated}`));
+    console.log(chalk.gray(`    ExternalLinks: ${docResult.externalLinksCreated}`));
+    console.log(chalk.gray(`    Edges:         ${docResult.edgesCreated}`));
+    if (docResult.staleMentionsRemoved > 0) {
+      console.log(chalk.gray(`    Stale swept:   ${docResult.staleMentionsRemoved}`));
+    }
+  } else {
+    console.log(chalk.gray("    (no extraction results — all files failed or unsupported)"));
+  }
+  if (extractionErrors.length > 0) {
+    console.log(chalk.yellow(`    Extraction errors: ${extractionErrors.length}`));
+    for (const e of extractionErrors.slice(0, 5)) {
+      console.log(chalk.gray(`      • ${e}`));
+    }
+    if (extractionErrors.length > 5) {
+      console.log(chalk.gray(`      ... and ${extractionErrors.length - 5} more`));
+    }
+  }
   console.log();
 }

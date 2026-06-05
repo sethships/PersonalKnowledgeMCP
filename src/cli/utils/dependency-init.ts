@@ -19,6 +19,7 @@ import { IngestionService as IngestionServiceImpl } from "../../services/ingesti
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
 import { createEmbeddingProvider } from "../../providers/factory.js";
 import { embeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
+import { resolveEmbeddingDefaults } from "../../providers/provider-defaults.js";
 import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.js";
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
 import { FileScanner } from "../../ingestion/file-scanner.js";
@@ -26,6 +27,7 @@ import { FileChunker } from "../../ingestion/file-chunker.js";
 import { GitHubClientImpl } from "../../services/github-client.js";
 import { IncrementalUpdatePipeline } from "../../services/incremental-update-pipeline.js";
 import { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import { IndexCompletenessChecker } from "../../services/index-completeness-checker.js";
 import { TokenServiceImpl } from "../../auth/token-service.js";
 import { TokenStoreImpl } from "../../auth/token-store.js";
@@ -39,6 +41,8 @@ import { DocumentChunker } from "../../documents/DocumentChunker.js";
 import { DocumentTypeDetector } from "../../documents/DocumentTypeDetector.js";
 import { WatchedFolderStoreImpl } from "../../services/watched-folder-store.js";
 import type { WatchedFolderStoreService } from "../../services/watched-folder-store.js";
+import { FileManifestStoreImpl } from "../../services/file-manifest-store.js";
+import { pruneOrphanManifests } from "../../services/orphan-manifest-reaper.js";
 
 /**
  * Parse integer from environment variable with validation
@@ -93,6 +97,8 @@ export interface CliDependencies {
   githubClient: GitHubClient;
   updatePipeline: IncrementalUpdatePipeline;
   updateCoordinator: IncrementalUpdateCoordinator;
+  /** Coordinator for `local-folder` source repos (used by trigger_incremental_update). */
+  localFolderCoordinator: LocalFolderUpdateCoordinator;
   tokenService: TokenService;
   /** Optional graph adapter for graph database operations (only if configured) */
   graphAdapter?: GraphStorageAdapter;
@@ -190,7 +196,26 @@ export async function initializeDependencies(
       }
     }
 
-    // Step 2: Load configuration from environment variables
+    // Step 2: Load configuration from environment variables.
+    // Provider-aware defaults (#581): when EMBEDDING_MODEL belongs to a different
+    // provider than the resolved one, substitute the provider default + warn so
+    // an OpenAI-shaped .env doesn't break --provider transformersjs/ollama.
+    // `providerType` should be defined here since `isProviderAvailable` above
+    // already gated the resolved provider through alias resolution; the helper
+    // handles `undefined` gracefully regardless.
+    const providerType = embeddingProviderFactory.resolveProviderType(resolvedProvider);
+    const envEmbeddingDimensions = Bun.env["EMBEDDING_DIMENSIONS"]
+      ? parseIntEnv("EMBEDDING_DIMENSIONS", 0)
+      : undefined;
+    const embeddingDefaults = resolveEmbeddingDefaults(
+      providerType,
+      Bun.env["EMBEDDING_MODEL"],
+      envEmbeddingDimensions
+    );
+    if (embeddingDefaults.warning) {
+      logger.warn({ resolvedProvider }, embeddingDefaults.warning);
+    }
+
     const config = {
       chromadb: {
         host: Bun.env["CHROMADB_HOST"] || "localhost",
@@ -199,8 +224,8 @@ export async function initializeDependencies(
       },
       embedding: {
         provider: resolvedProvider,
-        model: Bun.env["EMBEDDING_MODEL"] || "text-embedding-3-small",
-        dimensions: parseIntEnv("EMBEDDING_DIMENSIONS", 1536),
+        model: embeddingDefaults.model,
+        dimensions: embeddingDefaults.dimensions,
         batchSize: parseIntEnv("EMBEDDING_BATCH_SIZE", 100),
         maxRetries: parseIntEnv("EMBEDDING_MAX_RETRIES", 3),
         timeoutMs: parseIntEnv("EMBEDDING_TIMEOUT_MS", 30000),
@@ -264,6 +289,16 @@ export async function initializeDependencies(
     const repositoryService = RepositoryMetadataStoreImpl.getInstance(config.data.path);
     logger.debug("Repository metadata service initialized");
 
+    // Step 5a: Reap orphan FileManifests (PR #573 review M-2). Best-effort —
+    // a failure here doesn't block CLI bootstrap. Mirrors the wiring in
+    // src/index.ts so MCP boot and CLI boot share the same hygiene.
+    try {
+      const manifestStore = FileManifestStoreImpl.getInstance(config.data.path);
+      await pruneOrphanManifests(repositoryService, manifestStore);
+    } catch (err) {
+      logger.warn({ err }, "Orphan manifest reaper failed (continuing CLI bootstrap)");
+    }
+
     // Step 6: Initialize search service
     const searchService = new SearchServiceImpl(
       embeddingProvider,
@@ -286,17 +321,12 @@ export async function initializeDependencies(
     const documentChunker = new DocumentChunker();
     const documentTypeDetector = new DocumentTypeDetector();
 
-    // Step 9: Initialize ingestion service (with document support)
-    const ingestionService = new IngestionServiceImpl(
-      repositoryCloner,
-      fileScanner,
-      fileChunker,
-      embeddingProvider,
-      chromaClient,
-      repositoryService,
-      { documentChunker, documentTypeDetector }
-    );
-    logger.debug("Ingestion service initialized (with document support)");
+    // Step 9 (deferred): The ingestion service is constructed AFTER the
+    // graph adapter is initialized below, so the optional
+    // `graphIngestionService` dependency can be threaded through. With the
+    // previous ordering, the Phase 5 wiring added in PR #583 (issue #580)
+    // silently no-op'd because `graphIngestionService` was always undefined
+    // at construction time.
 
     // Step 10: Initialize GitHub client
     const githubClient = new GitHubClientImpl({
@@ -390,6 +420,24 @@ export async function initializeDependencies(
       process.once("SIGTERM", () => signalHandler("SIGTERM"));
     }
 
+    // Step 9 (now): Initialize ingestion service with document AND graph
+    // support. This MUST run after the graph adapter init above so the
+    // optional `graphIngestionService` is threaded through; `cli index`
+    // depends on this to run the Phase 5 graph step (PR #583, issue #580).
+    const ingestionService = new IngestionServiceImpl(
+      repositoryCloner,
+      fileScanner,
+      fileChunker,
+      embeddingProvider,
+      chromaClient,
+      repositoryService,
+      { documentChunker, documentTypeDetector, graphIngestionService }
+    );
+    logger.debug(
+      { graphEnabled: !!graphIngestionService },
+      "Ingestion service initialized (with document + graph support)"
+    );
+
     // Step 13: Initialize incremental update pipeline (with optional graph ingestion service)
     const updatePipeline = new IncrementalUpdatePipeline(
       fileChunker,
@@ -431,6 +479,17 @@ export async function initializeDependencies(
       "Incremental update coordinator initialized"
     );
 
+    // Local-folder coordinator shares the metadata service + pipeline; it owns
+    // its own change detector and uses the FileManifestStore singleton.
+    const localFolderCoordinator = new LocalFolderUpdateCoordinator(
+      repositoryService,
+      updatePipeline,
+      undefined,
+      undefined,
+      { updateHistoryLimit }
+    );
+    logger.debug("Local folder update coordinator initialized");
+
     return {
       embeddingProvider,
       chromaClient,
@@ -440,6 +499,7 @@ export async function initializeDependencies(
       githubClient,
       updatePipeline,
       updateCoordinator,
+      localFolderCoordinator,
       tokenService,
       graphAdapter,
       graphIngestionService,

@@ -42,7 +42,8 @@ function getTextContent(content: unknown): string {
 interface ParsedListResponse {
   repositories: Array<{
     name: string;
-    url: string;
+    source: "git-remote" | "local-git" | "local-folder";
+    url: string | null;
     collection_name: string;
     file_count: number;
     chunk_count: number;
@@ -50,6 +51,8 @@ interface ParsedListResponse {
     status: string;
     index_duration_ms: number;
     error_message?: string;
+    local_path?: string;
+    doc_graph_coverage?: ("markdown" | "pdf" | "docx")[];
   }>;
   summary: {
     total_repositories: number;
@@ -76,6 +79,7 @@ function createMockRepo(
 ): RepositoryInfo {
   return {
     name,
+    source: "git-remote",
     url: `https://github.com/user/${name}.git`,
     localPath: `/data/repos/${name}`,
     collectionName: `repo_${name}`,
@@ -176,6 +180,7 @@ describe("createListRepositoriesHandler", () => {
       expect(response.repositories).toHaveLength(1);
       expect(response.repositories[0]).toEqual({
         name: "test-repo",
+        source: "git-remote",
         url: "https://github.com/user/test-repo.git",
         collection_name: "repo_test-repo",
         file_count: 42,
@@ -320,6 +325,83 @@ describe("createListRepositoriesHandler", () => {
       expect(repo).not.toHaveProperty("branch");
       expect(repo).not.toHaveProperty("includeExtensions");
       expect(repo).not.toHaveProperty("excludePatterns");
+    });
+
+    it("surfaces the source discriminator on the response (Issue #6)", async () => {
+      const remote = createMockRepo("remote-repo", 1, 1, { source: "git-remote" });
+      const local = createMockRepo("local-repo", 1, 1, {
+        source: "local-folder",
+        url: null,
+      });
+      mockRepositoryService.listRepositories = mock(() => Promise.resolve([remote, local]));
+
+      const result = await handler({});
+      expect(result.isError).toBe(false);
+      const response = parseResponse(getTextContent(result.content));
+
+      const remoteResp = response.repositories.find((r) => r.name === "remote-repo");
+      const localResp = response.repositories.find((r) => r.name === "local-repo");
+
+      expect(remoteResp?.source).toBe("git-remote");
+      expect(remoteResp?.url).toBe("https://github.com/user/remote-repo.git");
+      expect(localResp?.source).toBe("local-folder");
+      expect(localResp?.url).toBeNull();
+    });
+
+    it("exposes local_path for local-folder AND local-git, but never for git-remote (PR #573 review TEST-2 + L-4)", async () => {
+      const remote = createMockRepo("remote-repo", 1, 1, {
+        source: "git-remote",
+        localPath: "/data/repos/remote-repo", // internal clone cache; do NOT expose
+      });
+      const localFolder = createMockRepo("folder-repo", 1, 1, {
+        source: "local-folder",
+        url: null,
+        localPath: "/Users/dev/notes",
+      });
+      const localGit = createMockRepo("git-repo", 1, 1, {
+        source: "local-git",
+        url: null,
+        localPath: "/Users/dev/projects/my-app",
+      });
+      mockRepositoryService.listRepositories = mock(() =>
+        Promise.resolve([remote, localFolder, localGit])
+      );
+
+      const result = await handler({});
+      const response = parseResponse(getTextContent(result.content));
+
+      const remoteResp = response.repositories.find((r) => r.name === "remote-repo");
+      const folderResp = response.repositories.find((r) => r.name === "folder-repo");
+      const gitResp = response.repositories.find((r) => r.name === "git-repo");
+
+      // git-remote: local_path MUST NOT be present (internal clone-cache path).
+      expect(remoteResp).not.toHaveProperty("local_path");
+      // local-folder + local-git: user supplied the path; surface it.
+      expect(folderResp?.local_path).toBe("/Users/dev/notes");
+      expect(gitResp?.local_path).toBe("/Users/dev/projects/my-app");
+    });
+
+    it("surfaces doc_graph_coverage when populated and omits it otherwise (Phase D / #567)", async () => {
+      const withDocs = createMockRepo("withdocs", 1, 1, {
+        docGraphCoverage: ["markdown", "pdf"],
+      });
+      const withoutDocs = createMockRepo("nodocs", 1, 1);
+      const emptyArray = createMockRepo("emptyarr", 1, 1, { docGraphCoverage: [] });
+      mockRepositoryService.listRepositories = mock(() =>
+        Promise.resolve([withDocs, withoutDocs, emptyArray])
+      );
+
+      const result = await handler({});
+      const response = parseResponse(getTextContent(result.content));
+
+      const withResp = response.repositories.find((r) => r.name === "withdocs");
+      const noResp = response.repositories.find((r) => r.name === "nodocs");
+      const emptyResp = response.repositories.find((r) => r.name === "emptyarr");
+
+      expect(withResp?.doc_graph_coverage).toEqual(["markdown", "pdf"]);
+      // Omit the field for repos that have no doc-graph data (legacy or empty).
+      expect(noResp).not.toHaveProperty("doc_graph_coverage");
+      expect(emptyResp).not.toHaveProperty("doc_graph_coverage");
     });
   });
 

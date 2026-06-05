@@ -8,10 +8,24 @@
  * @module services/ingestion-service
  */
 
-import { resolve, basename, normalize } from "node:path";
-import { stat } from "node:fs/promises";
-import { isLocalPath } from "../utils/path-utils.js";
+import { resolve, basename, normalize, join, sep, relative, posix } from "node:path";
+import { stat, readdir } from "node:fs/promises";
+import { isLocalPath, canonicalizePathForComparison } from "../utils/path-utils.js";
 import simpleGit from "simple-git";
+import { GitignoreFilter } from "../ingestion/gitignore-filter.js";
+import {
+  shouldDescendDir,
+  shouldIncludeFile,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+  type DirEntryLike,
+} from "../ingestion/file-eligibility.js";
+import { streamSha256 } from "../ingestion/sha256-stream.js";
+import {
+  FileManifestStoreImpl,
+  type FileManifest,
+  type FileManifestEntry,
+  FILE_MANIFEST_VERSION,
+} from "./file-manifest-store.js";
 import type { Logger } from "pino";
 import type { RepositoryCloner } from "../ingestion/repository-cloner.js";
 import type { CloneResult, FileInfo, FileChunk } from "../ingestion/types.js";
@@ -40,10 +54,17 @@ import {
   RepositoryAlreadyExistsError,
   IndexingInProgressError,
   CollectionCreationError,
+  LocalFolderPublicTierRefusedError,
+  LocalFolderPathAlreadyRegisteredError,
+  LocalFolderSizeRefusedError,
 } from "./ingestion-errors.js";
 import type { DocumentChunker } from "../documents/DocumentChunker.js";
 import type { DocumentTypeDetector } from "../documents/DocumentTypeDetector.js";
 import type { ExtractionResult } from "../documents/types.js";
+import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionService.js";
+import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
+import type { FileInput } from "../graph/ingestion/types.js";
+import { DocGraphBatcher } from "../graph/extraction/doc-graph-batch.js";
 
 /**
  * Service for orchestrating repository indexing operations
@@ -111,6 +132,18 @@ export class IngestionService {
    */
   private readonly documentTypeDetector?: DocumentTypeDetector;
 
+  /**
+   * Optional graph ingestion service. When provided, `indexRepository`
+   * also populates the code graph (`ingestFiles`) and document graph
+   * (`ingestDocumentGraph`) after batch chunking + embedding completes.
+   * When unset, indexing remains ChromaDB-only and the operator is expected
+   * to populate the graph separately via `cli graph populate`.
+   */
+  private readonly graphIngestionService?: GraphIngestionService;
+
+  /** Lazily created on first use during `processFileBatch`. */
+  private readonly docGraphBatcher = new DocGraphBatcher();
+
   constructor(
     private readonly repositoryCloner: RepositoryCloner,
     private readonly fileScanner: FileScanner,
@@ -121,10 +154,12 @@ export class IngestionService {
     options?: {
       documentChunker?: DocumentChunker;
       documentTypeDetector?: DocumentTypeDetector;
+      graphIngestionService?: GraphIngestionService;
     }
   ) {
     this.documentChunker = options?.documentChunker;
     this.documentTypeDetector = options?.documentTypeDetector;
+    this.graphIngestionService = options?.graphIngestionService;
   }
 
   /**
@@ -240,9 +275,13 @@ export class IngestionService {
       );
 
       let cloneResult: CloneResult;
+      // Source discriminator threaded through to buildRepositoryMetadata. The
+      // remote-clone branch always produces "git-remote"; the local-path branch
+      // distinguishes "local-git" (has a `.git` directory) from "local-folder"
+      // (no git history — change detection happens via FileManifest instead).
+      let effectiveSource: "git-remote" | "local-git" | "local-folder" = "git-remote";
 
       if (isLocalPath(url)) {
-        // Local path — validate it exists and is a git repo, then use in-place
         const resolvedPath = normalize(resolve(url));
 
         try {
@@ -258,16 +297,60 @@ export class IngestionService {
           );
         }
 
-        const git = simpleGit(resolvedPath);
+        const hasGitDir = await this.directoryHasGitFolder(resolvedPath);
+        effectiveSource = hasGitDir ? "local-git" : "local-folder";
+
+        // Tier refusal: local folders may not register at the public tier. We
+        // check before any heavy work so a misconfigured request fails fast.
+        const requestedTier = options.tier ?? "private";
+        if (effectiveSource === "local-folder" && requestedTier === "public") {
+          throw new LocalFolderPublicTierRefusedError(repositoryName);
+        }
+
+        // Duplicate-path detection (Phase C, T4.2): reject when this absolute
+        // path is already registered under a different name. The name-based
+        // collision check above (line ~239) catches re-registrations with the
+        // same name; this catches the user pointing two distinct names at the
+        // same on-disk folder, which would have two coordinators racing on the
+        // same FileManifest. Skipped under `force: true` because the user is
+        // explicitly asking to reindex the existing entry. Comparison is
+        // canonicalised so different separator/case representations of the
+        // same path collide on Windows (NTFS is case-insensitive).
+        if (effectiveSource === "local-folder" && !options.force) {
+          const canonical = canonicalizePathForComparison(resolvedPath);
+          const allRepos = await this.repositoryService.listRepositories();
+          for (const existing of allRepos) {
+            if (existing.source !== "local-folder") continue;
+            if (existing.name === repositoryName) continue;
+            if (canonicalizePathForComparison(existing.localPath) === canonical) {
+              throw new LocalFolderPathAlreadyRegisteredError(resolvedPath, existing.name);
+            }
+          }
+        }
 
         let branch = options.branch ?? "unknown";
         let commitSha: string | undefined;
 
-        try {
-          branch = options.branch ?? (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
-          commitSha = (await git.revparse(["HEAD"])).trim();
-        } catch {
-          this.logger.warn({ resolvedPath }, "Could not read git metadata from local path");
+        if (hasGitDir) {
+          // Existing local-git behavior: read git metadata in place.
+          const git = simpleGit(resolvedPath);
+          try {
+            branch = options.branch ?? (await git.revparse(["--abbrev-ref", "HEAD"])).trim();
+            commitSha = (await git.revparse(["HEAD"])).trim();
+          } catch {
+            this.logger.warn({ resolvedPath }, "Could not read git metadata from local path");
+          }
+        } else {
+          // local-folder: skip every simple-git call (no .git to read). The
+          // display branch is a fixed sentinel; real change detection runs
+          // through LocalFolderChangeDetector + FileManifest.
+          branch = options.branch ?? "(local-folder)";
+          commitSha = undefined;
+
+          // Size pre-scan and hard-refusal happen before we sink time into
+          // FileScanner / chunking / embeddings. Soft-warn thresholds are
+          // logged; hard-refuse throws unless options.force is set.
+          await this.enforceLocalFolderSizeGuardrails(repositoryName, resolvedPath, options);
         }
 
         cloneResult = { path: resolvedPath, name: repositoryName, branch, commitSha };
@@ -276,10 +359,12 @@ export class IngestionService {
         this.logger.info("Using local repository path", {
           repository: repositoryName,
           path: resolvedPath,
+          source: effectiveSource,
           branch,
           commitSha,
         });
       } else {
+        effectiveSource = "git-remote";
         const remote = await this.repositoryCloner.clone(url, {
           branch: options.branch,
           fetchLatest: options.force, // Fetch latest when force reindexing
@@ -309,6 +394,12 @@ export class IngestionService {
       const fileInfos = await this.fileScanner.scanFiles(cloneResult.path, {
         includeExtensions: options.includeExtensions,
         excludePatterns: options.excludePatterns,
+        // Walk every nested .gitignore for local sources — users routinely have
+        // them in monorepos and vendored docs. Git-remote shallow clones already
+        // exclude ignored files at clone time, so the cheap root-only path is
+        // preserved there.
+        respectNestedGitignore:
+          effectiveSource === "local-folder" || effectiveSource === "local-git",
         onProgress: (scanned) => {
           this.updateProgress(
             {
@@ -369,6 +460,19 @@ export class IngestionService {
         batchSize: this.FILE_BATCH_SIZE,
       });
 
+      // Accumulator for files that completed the full chunk → embed → store
+      // pipeline (PR #573 review M-3). Only these get fingerprinted in the
+      // initial FileManifest for `local-folder` repos; files that errored out
+      // are deliberately omitted so the next incremental update treats them
+      // as "added" and retries.
+      const processedRelativePaths: string[] = [];
+
+      // Accumulators for the graph step that runs after the batch loop.
+      // Populated only when `graphIngestionService` is configured — see
+      // `processFileBatch` for the gating.
+      const codeFilesForGraph: FileInput[] = [];
+      const docExtractionResults: DocExtractionResult[] = [];
+
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
         const batch = fileBatches[batchIndex];
         if (!batch) continue; // Skip if batch is undefined (shouldn't happen)
@@ -409,6 +513,9 @@ export class IngestionService {
           stats.embeddingsGenerated += batchResult.embeddingsGenerated;
           stats.documentsStored += batchResult.documentsStored;
           errors.push(...batchResult.errors);
+          processedRelativePaths.push(...batchResult.processedRelativePaths);
+          codeFilesForGraph.push(...batchResult.codeFilesForGraph);
+          docExtractionResults.push(...batchResult.docExtractionResults);
         } catch (batchError) {
           // Log batch error but continue with next batch
           this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed, continuing...`, {
@@ -432,7 +539,27 @@ export class IngestionService {
         chunksCreated: stats.chunksCreated,
       });
 
-      // Phase 5: Update repository metadata
+      // Phase 5: Knowledge-graph ingestion (issue #580). Populates the code
+      // graph first, then the document graph — the ordering is required by
+      // `ingestDocumentGraph` so the two-pass MENTIONS resolution sees the
+      // freshly-inserted Function/Class/Module nodes.
+      //
+      // Both calls are best-effort: graph failures surface as non-fatal
+      // `IndexError`s on the result, mirroring the per-file resilience used
+      // throughout the rest of the indexing pipeline so that ChromaDB stays
+      // populated even if FalkorDB is unhealthy.
+      if (this.graphIngestionService) {
+        await this.runGraphIngestion(
+          repositoryName,
+          url,
+          codeFilesForGraph,
+          docExtractionResults,
+          options,
+          errors
+        );
+      }
+
+      // Phase 6: Update repository metadata
       this.updateProgress(
         {
           phase: "updating_metadata",
@@ -455,6 +582,21 @@ export class IngestionService {
               .join("; ")}`
           : undefined;
 
+      // For local-folder sources, write the initial FileManifest before
+      // persisting metadata so a crash between manifest-write and metadata-write
+      // leaves a recoverable state (next registration sees no metadata, next
+      // local-folder update sees a manifest with `generatedAt = epoch sentinel`
+      // and treats the repo as new).
+      let lastManifestId: string | undefined;
+      if (effectiveSource === "local-folder") {
+        lastManifestId = await this.writeInitialFileManifest(
+          repositoryName,
+          cloneResult.path,
+          fileInfos,
+          new Set(processedRelativePaths)
+        );
+      }
+
       const metadata = this.buildRepositoryMetadata({
         name: repositoryName,
         url,
@@ -463,6 +605,14 @@ export class IngestionService {
         collectionName,
         options,
         errorMessage,
+        source: effectiveSource,
+        tier: options.tier ?? "private",
+        lastManifestId,
+        // Phase C: persist watcher prefs only for local-folder sources so the
+        // MCP server bootstrap can restore active watchers across restarts.
+        watchEnabled: effectiveSource === "local-folder" ? (options.watch ?? false) : undefined,
+        followSymlinks:
+          effectiveSource === "local-folder" ? (options.followSymlinks ?? false) : undefined,
       });
 
       await this.repositoryService.updateRepository(metadata);
@@ -514,10 +664,15 @@ export class IngestionService {
         originalError: error,
       };
 
-      // If error is one of our custom errors, rethrow it
+      // If error is one of our custom errors, rethrow it. The path-collision
+      // error (Phase C) joins this list because the user-corrective fix —
+      // unregister or pass `force` on the existing entry — is identical in
+      // shape to a name collision; both want the typed error surfaced to the
+      // CLI/MCP wrapper rather than the generic `failed` IndexResult.
       if (
         error instanceof RepositoryAlreadyExistsError ||
-        error instanceof IndexingInProgressError
+        error instanceof IndexingInProgressError ||
+        error instanceof LocalFolderPathAlreadyRegisteredError
       ) {
         throw error;
       }
@@ -609,6 +764,19 @@ export class IngestionService {
         });
       }
 
+      // Delete the FileManifest, if any. Idempotent — succeeds with no error
+      // when the manifest file does not exist (e.g. git-remote / local-git
+      // repos that never had one). Without this, re-registering the same name
+      // later would load a stale manifest and skip already-changed files.
+      try {
+        await FileManifestStoreImpl.getInstance().deleteManifest(name);
+      } catch (err) {
+        this.logger.warn("FileManifest deletion failed (continuing)", {
+          repository: name,
+          error: err,
+        });
+      }
+
       // Remove metadata
       await this.repositoryService.removeRepository(name);
 
@@ -682,9 +850,19 @@ export class IngestionService {
       embeddingsGenerated: 0,
       documentsStored: 0,
       errors: [],
+      processedRelativePaths: [],
+      codeFilesForGraph: [],
+      docExtractionResults: [],
     };
 
     const allChunks: InternalChunk[] = [];
+
+    // Track relative paths whose chunks made it into `allChunks`. We only
+    // promote these to `processedRelativePaths` after the embed + store phases
+    // succeed for the whole batch — partial pipeline success is reported as
+    // "no files indexed" so the manifest writer doesn't fingerprint files
+    // whose chunks never reached ChromaDB (PR #573 review M-3).
+    const chunkedRelativePaths: string[] = [];
 
     // Phase 1: Chunk files
     context.onProgress("chunking", {
@@ -696,7 +874,7 @@ export class IngestionService {
       try {
         // Check if file is a document type and we have document processing capabilities
         if (this.isDocumentFile(fileInfo)) {
-          const docChunks = await this.processDocumentFile(
+          const { chunks: docChunks, docExtraction } = await this.processDocumentFile(
             fileInfo.absolutePath,
             fileInfo.relativePath,
             repositoryName
@@ -704,6 +882,10 @@ export class IngestionService {
           allChunks.push(...docChunks);
           result.filesProcessed++;
           result.chunksCreated += docChunks.length;
+          chunkedRelativePaths.push(fileInfo.relativePath);
+          if (docExtraction) {
+            result.docExtractionResults.push(docExtraction);
+          }
         } else {
           // Existing code path: read as text → FileChunker
           const content = await Bun.file(fileInfo.absolutePath).text();
@@ -711,6 +893,16 @@ export class IngestionService {
           allChunks.push(...this.convertFileChunksToInternal(chunks));
           result.filesProcessed++;
           result.chunksCreated += chunks.length;
+          chunkedRelativePaths.push(fileInfo.relativePath);
+          // Capture for the post-batch graph step so it doesn't re-read disk.
+          // Only retained when the graph service is configured — otherwise the
+          // memory cost of holding every code file's content is wasted.
+          if (this.graphIngestionService) {
+            result.codeFilesForGraph.push({
+              path: fileInfo.relativePath,
+              content,
+            });
+          }
         }
       } catch (error) {
         // Individual file error - log and continue
@@ -815,6 +1007,11 @@ export class IngestionService {
     await this.storageClient.addDocuments(collectionName, documents);
     result.documentsStored = documents.length;
 
+    // Storage succeeded — every file whose chunks landed in `allChunks` is
+    // now durably persisted. Promote them to `processedRelativePaths` so the
+    // initial-manifest writer fingerprints only what's actually indexed.
+    result.processedRelativePaths = [...chunkedRelativePaths];
+
     this.logger.debug("Batch processed successfully", {
       batchIndex: context.batchIndex,
       filesProcessed: result.filesProcessed,
@@ -859,7 +1056,7 @@ export class IngestionService {
     absolutePath: string,
     relativePath: string,
     repositoryName: string
-  ): Promise<InternalChunk[]> {
+  ): Promise<{ chunks: InternalChunk[]; docExtraction: DocExtractionResult | null }> {
     const extractor = this.documentTypeDetector!.getExtractor(absolutePath);
     if (!extractor) {
       throw new Error(`No extractor found for document: ${relativePath}`);
@@ -877,10 +1074,19 @@ export class IngestionService {
       repositoryName
     );
 
+    // Reuse the same extraction to produce the doc-graph payload — markdown
+    // file tokens are surfaced on `MarkdownExtractionResult` precisely so we
+    // don't re-lex; PDF/DOCX share the parsed `ExtractionResult` directly.
+    // Skip when the graph service isn't wired since the result would be
+    // discarded anyway.
+    const docExtraction = this.graphIngestionService
+      ? this.docGraphBatcher.fromExtraction(relativePath, extractionResult)
+      : null;
+
     // Note: Table-related fields (isTable, tableIndex, tableCaption) from
     // DocumentChunkMetadata are intentionally omitted. Table support will be
     // added when the storage schema supports table metadata fields.
-    return documentChunks.map((chunk) => ({
+    const chunks = documentChunks.map((chunk) => ({
       content: chunk.content,
       startLine: chunk.startLine,
       endLine: chunk.endLine,
@@ -902,6 +1108,107 @@ export class IngestionService {
         documentAuthor: chunk.metadata.documentAuthor,
       },
     }));
+
+    return { chunks, docExtraction };
+  }
+
+  /**
+   * Populate the knowledge graph for a repository after the chunk → embed →
+   * store pipeline has completed (issue #580).
+   *
+   * Order is load-bearing: `ingestFiles` runs first so the in-memory symbol
+   * index built inside `ingestDocumentGraph` sees Function/Class/Module nodes,
+   * which is the precondition for two-pass MENTIONS resolution.
+   *
+   * Errors are collected onto the indexing run's error list rather than
+   * thrown — graph problems must not invalidate a successful ChromaDB index.
+   *
+   * @param repository - Repository name (already validated upstream).
+   * @param url - Repository URL or local path; required by `ingestFiles` for
+   *              the Repository node. Empty strings are tolerated by the
+   *              graph layer for local-folder sources.
+   * @param codeFiles - Code-file `FileInput`s captured during chunking.
+   * @param docResults - Per-doc-file `DocExtractionResult`s captured during
+   *                     chunking.
+   * @param options - Indexing options (used to forward the progress callback
+   *                  through to the graph progress events).
+   * @param errors - Indexing error accumulator; mutated on graph failure.
+   */
+  private async runGraphIngestion(
+    repository: string,
+    url: string,
+    codeFiles: readonly FileInput[],
+    docResults: readonly DocExtractionResult[],
+    options: IndexOptions,
+    errors: IndexError[]
+  ): Promise<void> {
+    if (!this.graphIngestionService) return;
+
+    if (codeFiles.length > 0) {
+      try {
+        const ingestResult = await this.graphIngestionService.ingestFiles([...codeFiles], {
+          repository,
+          repositoryUrl: url,
+          force: options.force ?? false,
+        });
+        // L6: a returned (not thrown) "failed" status must surface as an
+        // IndexError too — otherwise an entirely-failed graph ingest would
+        // produce a `success` IndexResult.
+        if (ingestResult.status === "failed") {
+          errors.push({
+            type: "batch_error",
+            message: `Code graph ingestion returned failed: ${
+              ingestResult.errors[0]?.message ?? "unknown error"
+            }`,
+          });
+        }
+        this.logger.info("Code graph ingestion completed", {
+          repository,
+          fileCount: codeFiles.length,
+          status: ingestResult.status,
+        });
+      } catch (error) {
+        // M5: surface a directive recovery hint when the graph still has
+        // prior data for this repo (commonly after `cli remove repo && cli
+        // index repo`, since `removeRepository` doesn't currently clear the
+        // graph). Generic catch-all otherwise.
+        const isExists =
+          error instanceof Error &&
+          (error.name === "RepositoryExistsError" ||
+            error.message.toLowerCase().includes("already has graph data"));
+        this.logger.error("Code graph ingestion failed", { repository, error });
+        errors.push({
+          type: "batch_error",
+          message: isExists
+            ? `Code graph for "${repository}" already exists from a prior run; rerun with --force or call \`cli graph populate ${repository} --force\` to reset.`
+            : `Code graph ingestion failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+          originalError: error,
+        });
+      }
+    }
+
+    if (docResults.length > 0) {
+      try {
+        const result = await this.graphIngestionService.ingestDocumentGraph(repository, docResults);
+        this.logger.info("Document graph ingestion completed", {
+          repository,
+          documentsCreated: result.documentsCreated,
+          sectionsCreated: result.sectionsCreated,
+          edgesCreated: result.edgesCreated,
+        });
+      } catch (error) {
+        this.logger.error("Document graph ingestion failed", { repository, error });
+        errors.push({
+          type: "batch_error",
+          message: `Document graph ingestion failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          originalError: error,
+        });
+      }
+    }
   }
 
   /**
@@ -1103,10 +1410,27 @@ export class IngestionService {
     collectionName: string;
     options: IndexOptions;
     errorMessage?: string;
+    /**
+     * Pre-computed source discriminator from the indexer's clone/resolve fork.
+     * Required so the metadata reflects whether `.git` was actually present at
+     * the local path; deriving it from `params.url` alone would conflate
+     * `local-git` and `local-folder`.
+     */
+    source: "git-remote" | "local-git" | "local-folder";
+    /** Security tier (defaults to "private"; "public" already refused for local-folder). */
+    tier: "private" | "work" | "public";
+    /** Manifest pointer set only for `local-folder` sources. */
+    lastManifestId?: string;
+    /** Watcher enable flag — only meaningful for `local-folder` sources. */
+    watchEnabled?: boolean;
+    /** Whether the watcher should follow symlinks — only meaningful for `local-folder`. */
+    followSymlinks?: boolean;
   }): RepositoryInfo {
     return {
       name: params.name,
-      url: params.url,
+      source: params.source,
+      // local-folder repos have no clone URL — persist null per the type contract.
+      url: params.source === "local-folder" ? null : params.url,
       branch: params.cloneResult.branch,
       localPath: params.cloneResult.path,
       collectionName: params.collectionName,
@@ -1127,6 +1451,222 @@ export class IngestionService {
       embeddingProvider: this.embeddingProvider.providerId,
       embeddingModel: this.embeddingProvider.modelId,
       embeddingDimensions: this.embeddingProvider.dimensions,
+      // Local-folder + multi-tier fields
+      tier: params.tier,
+      lastManifestId: params.lastManifestId,
+      // Phase C watcher fields — undefined for non-local-folder sources so we
+      // don't lie about watch capability for git repos.
+      watchEnabled: params.watchEnabled,
+      followSymlinks: params.followSymlinks,
     };
+  }
+
+  /**
+   * Test whether `absolutePath` contains a `.git` entry (file or directory).
+   *
+   * A `.git` *directory* is the normal case. A `.git` *file* is what `git
+   * worktree` creates inside a linked worktree — we accept both because both
+   * indicate the path is inside a git working tree and the existing
+   * `simple-git` revparse calls will succeed.
+   */
+  private async directoryHasGitFolder(absolutePath: string): Promise<boolean> {
+    try {
+      await stat(join(absolutePath, ".git"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Default soft / hard guardrail thresholds for `local-folder` registration.
+   *
+   * Soft thresholds (`>10K` files OR `>1 GiB`) only log a warning. Hard
+   * thresholds (`>100K` files OR `>10 GiB`) throw `LocalFolderSizeRefusedError`
+   * unless `options.force === true`.
+   *
+   * Exposed as a static field so unit tests can construct an `IngestionService`
+   * and pass tiny limits via {@link enforceLocalFolderSizeGuardrails}'s
+   * `thresholds` argument without fixturing 100K files (PR #573 review TEST-1).
+   */
+  static readonly LOCAL_FOLDER_SIZE_THRESHOLDS = {
+    softFileLimit: 10_000,
+    softByteLimit: 1_073_741_824, // 1 GiB
+    hardFileLimit: 100_000,
+    hardByteLimit: 10_737_418_240, // 10 GiB
+  } as const;
+
+  /**
+   * Pre-scan a `local-folder` candidate, counting files and bytes after
+   * applying the same eligibility predicate `FileScanner` will use during the
+   * actual scan, and enforce soft-warn / hard-refuse thresholds.
+   *
+   * Eligibility (gitignore, extension whitelist, default exclusions, dotfile
+   * skip, VCS metadata skip, size cap, symlink skip) is delegated to
+   * `shouldDescendDir` / `shouldIncludeFile` so the guardrail counts the same
+   * files the scanner would index — fixing the H-2 divergence in PR #573.
+   *
+   * `thresholds` is overridable for tests; production callers should leave it
+   * undefined to pick up {@link LOCAL_FOLDER_SIZE_THRESHOLDS}. Soft warn is
+   * also returned via `softWarn: true` in the result so callers can assert
+   * without log inspection.
+   */
+  async enforceLocalFolderSizeGuardrails(
+    repositoryName: string,
+    rootPath: string,
+    options: IndexOptions,
+    thresholds: {
+      softFileLimit: number;
+      softByteLimit: number;
+      hardFileLimit: number;
+      hardByteLimit: number;
+    } = IngestionService.LOCAL_FOLDER_SIZE_THRESHOLDS
+  ): Promise<{ fileCount: number; totalBytes: number; softWarn: boolean }> {
+    const { softFileLimit, softByteLimit, hardFileLimit, hardByteLimit } = thresholds;
+
+    const filter = await GitignoreFilter.load(rootPath);
+    const extensions: Set<string> =
+      options.includeExtensions && options.includeExtensions.length > 0
+        ? new Set(options.includeExtensions.map((e) => e.toLowerCase()))
+        : new Set(DEFAULT_EXTENSIONS.map((e) => e.toLowerCase()));
+
+    let fileCount = 0;
+    let totalBytes = 0;
+    let aborted = false;
+
+    const walk = async (dir: string): Promise<void> => {
+      if (aborted) return;
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (aborted) return;
+        const abs = join(dir, entry.name);
+        // Symlinks are never followed (cycle / out-of-tree escape).
+        if (entry.isSymbolicLink()) continue;
+
+        if (entry.isDirectory()) {
+          if (!shouldDescendDir(abs, entry.name, filter)) continue;
+          await walk(abs);
+          continue;
+        }
+
+        if (!entry.isFile()) continue;
+
+        const ent: DirEntryLike = { name: entry.name, isDir: false, isSymlink: false };
+        const verdict = await shouldIncludeFile(abs, ent, {
+          gitignore: filter,
+          extensions,
+          maxSizeBytes: DEFAULT_MAX_FILE_SIZE_BYTES,
+        });
+        if (!verdict.eligible || !verdict.stats) continue;
+
+        fileCount++;
+        totalBytes += verdict.stats.size;
+
+        // Early exit on hard refusal (avoids walking the rest of a huge folder).
+        if (!options.force && (fileCount > hardFileLimit || totalBytes > hardByteLimit)) {
+          aborted = true;
+          return;
+        }
+      }
+    };
+
+    await walk(rootPath);
+
+    if (!options.force && (fileCount > hardFileLimit || totalBytes > hardByteLimit)) {
+      throw new LocalFolderSizeRefusedError(
+        repositoryName,
+        fileCount,
+        totalBytes,
+        hardFileLimit,
+        hardByteLimit
+      );
+    }
+    const softWarn = fileCount > softFileLimit || totalBytes > softByteLimit;
+    if (softWarn) {
+      this.logger.warn(
+        {
+          repository: repositoryName,
+          rootPath,
+          fileCount,
+          totalBytes,
+          softFileLimit,
+          softByteLimit,
+        },
+        "Local folder exceeds soft size guardrail; proceeding because under the hard refusal threshold or force=true was set"
+      );
+    }
+    return { fileCount, totalBytes, softWarn };
+  }
+
+  /**
+   * Compute per-file fingerprints for a freshly-scanned local-folder repo and
+   * persist a `FileManifest` so a future incremental update has a baseline to
+   * diff against.
+   *
+   * Only files in `processedPaths` (POSIX-relative) are fingerprinted. Files
+   * whose chunks failed to embed/store are omitted so the NEXT incremental
+   * update sees them as `added` and retries — without this, a partial-success
+   * first index would silently lose those files from the index forever
+   * (PR #573 review M-3). Pass `undefined` to fingerprint all `fileInfos`
+   * (used by tests / call paths that have no per-file outcome to filter on).
+   *
+   * SHA-256 is computed via streaming so files larger than the chunker's
+   * normal cap (which they shouldn't be, but a manifest is a different
+   * pipeline) don't blow up memory.
+   *
+   * Returns the manifest pointer (`computeManifestId(name)`) to store on the
+   * `RepositoryInfo`.
+   */
+  private async writeInitialFileManifest(
+    repositoryName: string,
+    rootPath: string,
+    fileInfos: FileInfo[],
+    processedPaths?: ReadonlySet<string>
+  ): Promise<string> {
+    const store = FileManifestStoreImpl.getInstance();
+    const files: Record<string, FileManifestEntry> = {};
+
+    for (const info of fileInfos) {
+      // Skip files that didn't make it through the full pipeline. `info.relativePath`
+      // is already POSIX-normalized (FileScanner.normalizeToPosix), matching the
+      // form `processFileBatch` records into `processedRelativePaths`.
+      if (processedPaths && !processedPaths.has(info.relativePath)) {
+        continue;
+      }
+      try {
+        const sha256 = await streamSha256(info.absolutePath);
+        const st = await stat(info.absolutePath);
+        // Manifest keys are POSIX-normalized relative paths so cross-platform
+        // diffs stay deterministic. fileInfos already uses POSIX separators
+        // for relativePath but normalize defensively.
+        const relPath = posix.normalize(
+          relative(rootPath, info.absolutePath).split(sep).join(posix.sep)
+        );
+        files[relPath] = {
+          sha256,
+          sizeBytes: st.size,
+          mtimeMs: st.mtimeMs,
+        };
+      } catch (err) {
+        this.logger.warn(
+          { absolutePath: info.absolutePath, err },
+          "Could not fingerprint file for manifest; skipping"
+        );
+      }
+    }
+
+    const manifest: FileManifest = {
+      version: FILE_MANIFEST_VERSION,
+      repository: repositoryName,
+      generatedAt: new Date().toISOString(),
+      files,
+    };
+    await store.saveManifest(repositoryName, manifest);
+    return store.computeManifestId(repositoryName);
   }
 }

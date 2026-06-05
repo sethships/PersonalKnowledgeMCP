@@ -116,8 +116,8 @@ describe("Schema Definitions", () => {
       expect(index?.cypher).toContain("IF NOT EXISTS");
     });
 
-    test("should have exactly 4 indexes", () => {
-      expect(INDEXES.length).toBe(4);
+    test("should have exactly 7 indexes (4 code + 3 document graph)", () => {
+      expect(INDEXES.length).toBe(7);
     });
 
     test("all indexes should be idempotent (IF NOT EXISTS)", () => {
@@ -295,7 +295,9 @@ describe("Adapter-Aware Schema Functions", () => {
     test("should return Neo4j schema for neo4j adapter", () => {
       const schema = getSchemaForAdapter("neo4j");
       expect(schema.constraints.length).toBe(4); // repo_name, file_path, chunk_id, concept_name
-      expect(schema.indexes.length).toBe(4); // file_extension, function_name, class_name, module_name
+      // 4 code indexes (file_extension, function/class/module name) +
+      // 3 document-graph indexes (document_id, document_repository, section_documentId).
+      expect(schema.indexes.length).toBe(7);
       expect(schema.fulltextIndexes.length).toBe(1); // entity_names
 
       // Neo4j uses REQUIRE syntax
@@ -307,30 +309,39 @@ describe("Adapter-Aware Schema Functions", () => {
 
     test("should return FalkorDB schema for falkordb adapter", () => {
       const schema = getSchemaForAdapter("falkordb");
-      expect(schema.constraints.length).toBe(4); // repo_name, file_id, chunk_id, concept_name
-      expect(schema.indexes.length).toBe(7); // file_extension, function_name, class_name, module_name + 3 repository indexes
 
-      // FalkorDB uses ASSERT syntax (OpenCypher)
-      for (const constraint of schema.constraints) {
-        expect(constraint.cypher).toContain("ASSERT");
-        expect(constraint.cypher).not.toContain("REQUIRE");
+      // FalkorDB does not accept Cypher CREATE CONSTRAINT statements; uniqueness
+      // is enforced at the application layer via deterministic node IDs.
+      expect(schema.constraints.length).toBe(0);
+
+      // 4 backstop indexes for what would have been constraints +
+      // 7 performance indexes (file_extension, function/class/module name,
+      // file/function/class repository) +
+      // 3 document-graph indexes (document_id, document_repository, section_documentId).
+      expect(schema.indexes.length).toBe(14);
+
+      // FalkorDB only accepts the unnamed Cypher index form.
+      for (const index of schema.indexes) {
+        expect(index.cypher).toMatch(/^CREATE INDEX FOR \(/);
       }
 
       // FalkorDB doesn't support fulltext indexes
       expect(schema.fulltextIndexes.length).toBe(0);
     });
 
-    test("FalkorDB should not have NODE KEY constraint", () => {
+    test("FalkorDB should backstop former unique constraints with indexes", () => {
       const schema = getSchemaForAdapter("falkordb");
 
-      // FalkorDB uses file_id instead of file_path NODE KEY
-      const fileConstraint = schema.constraints.find((c) => c.name === "file_id");
-      expect(fileConstraint).toBeDefined();
-      expect(fileConstraint?.cypher).not.toContain("IS NODE KEY");
+      // The properties Neo4j enforces with unique constraints are exposed as
+      // plain indexes on the FalkorDB adapter (uniqueness is application-level).
+      const expectedIndexNames = ["repository_name", "file_id", "chunk_id", "concept_name"];
+      for (const name of expectedIndexNames) {
+        expect(schema.indexes.find((i) => i.name === name)).toBeDefined();
+      }
 
-      // Verify no NODE KEY constraints exist
-      for (const constraint of schema.constraints) {
-        expect(constraint.cypher).not.toContain("IS NODE KEY");
+      // No NODE KEY (FalkorDB doesn't support composite uniqueness via Cypher).
+      for (const index of schema.indexes) {
+        expect(index.cypher).not.toContain("IS NODE KEY");
       }
     });
 
@@ -371,10 +382,13 @@ describe("Adapter-Aware Schema Functions", () => {
     test("should return FalkorDB schema elements for falkordb adapter", () => {
       const elements = getAllSchemaElements("falkordb");
 
-      // Should have constraints with ASSERT syntax
+      // FalkorDB does not accept Cypher CREATE CONSTRAINT statements.
       const constraints = elements.filter((e) => e.type === "constraint");
-      for (const constraint of constraints) {
-        expect(constraint.cypher).toContain("ASSERT");
+      expect(constraints.length).toBe(0);
+
+      // All emitted elements should be valid FalkorDB Cypher index statements.
+      for (const element of elements) {
+        expect(element.cypher).toMatch(/^CREATE INDEX FOR \(/);
       }
 
       // Should not have fulltext indexes
@@ -387,11 +401,13 @@ describe("Adapter-Aware Schema Functions", () => {
     test("should return FalkorDB-compatible Cypher when adapter is falkordb", () => {
       const statements = getAllSchemaStatements("falkordb");
 
-      // All statements should use ASSERT (OpenCypher) not REQUIRE (Neo4j)
+      // FalkorDB does not accept CREATE CONSTRAINT or named CREATE INDEX.
       const constraintStatements = statements.filter((s) => s.startsWith("CREATE CONSTRAINT"));
-      for (const statement of constraintStatements) {
-        expect(statement).toContain("ASSERT");
-        expect(statement).not.toContain("REQUIRE");
+      expect(constraintStatements.length).toBe(0);
+
+      for (const statement of statements) {
+        // All statements must be the unnamed FalkorDB index form.
+        expect(statement).toMatch(/^CREATE INDEX FOR \(/);
       }
 
       // Should not have fulltext index statements

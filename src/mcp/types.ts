@@ -7,10 +7,12 @@
 
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { IncrementalUpdateCoordinator } from "../services/incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "../services/local-folder-update-coordinator.js";
 import type { GraphService } from "../services/graph-service-types.js";
 import type { DocumentSearchService } from "../services/document-search-types.js";
 import type { ImageSearchService } from "../services/image-search-types.js";
 import type { ListWatchedFoldersService } from "../services/list-watched-folders-types.js";
+import type { IngestionService } from "../services/ingestion-service.js";
 import type { MCPRateLimiter } from "./rate-limiter.js";
 import type { JobTracker } from "./job-tracker.js";
 
@@ -132,8 +134,16 @@ export interface HttpTransportConfig {
  * When not provided, the server operates with only the core tools.
  */
 export interface MCPServerOptionalDeps {
-  /** Coordinator for incremental repository updates */
+  /** Coordinator for incremental repository updates (git-remote / local-git). */
   updateCoordinator?: IncrementalUpdateCoordinator;
+
+  /**
+   * Coordinator for `local-folder` source updates. Required for local-folder
+   * registrations to work end-to-end via `trigger_incremental_update`; if
+   * absent, the dispatch in the tool handler will receive `undefined` and
+   * mark update tools as unavailable.
+   */
+  localFolderCoordinator?: LocalFolderUpdateCoordinator;
 
   /** Rate limiter for administrative operations */
   rateLimiter?: MCPRateLimiter;
@@ -152,6 +162,12 @@ export interface MCPServerOptionalDeps {
 
   /** ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+
+  /**
+   * IngestionService for the `register_local_folder` tool (Phase C / #566).
+   * When omitted the tool is not registered.
+   */
+  ingestionService?: IngestionService;
 
   /** Human-readable reason why update tools are unavailable (stub mode) */
   updateToolsUnavailableReason?: string;

@@ -11,6 +11,7 @@ import ora from "ora";
 import type { CliDependencies } from "../utils/dependency-init.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
 import type { FileProcessingError } from "../../services/incremental-update-types.js";
+import { dispatchCoordinator } from "../../services/update-coordinator-dispatch.js";
 import {
   clearInterruptedUpdateFlag,
   formatElapsedTime,
@@ -171,9 +172,19 @@ export async function updateRepositoryCommand(
     }).start();
 
     try {
-      const result = await deps.ingestionService.indexRepository(repo.url, {
+      // For git-remote and local-git, force re-index from the original URL /
+      // local path. For local-folder, the registered `localPath` IS the source —
+      // `repo.url` is null by design, so passing `repo.url!` would crash in
+      // `validateUrl`. `isLocalPath` accepts the localPath in both cases, so
+      // re-running indexRepository against it correctly hits the local-path
+      // branch and the source detection (.git presence) will reaffirm the
+      // existing source discriminator.
+      const sourceForReindex = repo.url ?? repo.localPath;
+      const result = await deps.ingestionService.indexRepository(sourceForReindex, {
+        name: repo.name,
         branch: repo.branch,
         force: true,
+        tier: repo.tier,
         onProgress: (progress) => {
           spinner.text = `Force re-indexing ${chalk.cyan(repositoryName)} - ${progress.phase}...`;
         },
@@ -230,7 +241,19 @@ export async function updateRepositoryCommand(
   }).start();
 
   try {
-    const result = await deps.updateCoordinator.updateRepository(repositoryName);
+    // Phase B: dispatch by source so local-folder repos use their manifest-based
+    // coordinator instead of the git coordinator (which requires lastIndexedCommitSha).
+    const coordinator = dispatchCoordinator(
+      repo,
+      deps.updateCoordinator,
+      deps.localFolderCoordinator
+    );
+    if (!coordinator) {
+      throw new Error(
+        `Cannot update '${repositoryName}': repository has source '${repo.source}' but no local-folder coordinator is configured.`
+      );
+    }
+    const result = await coordinator.updateRepository(repositoryName);
 
     // Handle no changes
     if (result.status === "no_changes") {

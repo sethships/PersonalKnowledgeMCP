@@ -31,6 +31,7 @@ afterAll(() => {
 function createMockRepo(overrides: Partial<RepositoryInfo> = {}): RepositoryInfo {
   return {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/test-repo.git",
     localPath: process.cwd(),
     collectionName: "repo_test_repo",
@@ -216,6 +217,51 @@ describe("evaluateRecoveryStrategy", () => {
       expect(strategy.type).toBe("manual_required");
       expect(strategy.canAutoRecover).toBe(false);
       expect(strategy.reason).toContain("not accessible");
+    });
+  });
+
+  describe("local-folder source", () => {
+    it("recommends resume for fresh local-folder repos regardless of last commit (PR #573 review)", async () => {
+      // Local-folder repos never have a `lastIndexedCommitSha`. The git path
+      // would route them to full_reindex which crashes on `repo.url!`; the
+      // local-folder branch must intercept and always recommend resume.
+      const repo = createMockRepo({
+        source: "local-folder",
+        url: null,
+      });
+      const info = createMockInterruptedInfo({
+        elapsedMs: 60_000,
+        lastKnownCommit: undefined,
+        repository: repo,
+      });
+
+      const strategy = await evaluateRecoveryStrategy(info);
+
+      expect(strategy.type).toBe("resume");
+      expect(strategy.canAutoRecover).toBe(true);
+      expect(strategy.reason).toMatch(/local-folder|FileManifest/i);
+    });
+
+    it("warns and surfaces elapsed time for stale (>24h) local-folder recoveries (PR #573 review M-5)", async () => {
+      const repo = createMockRepo({
+        source: "local-folder",
+        url: null,
+      });
+      const info = createMockInterruptedInfo({
+        elapsedMs: 48 * 60 * 60 * 1000, // 48 hours stale
+        lastKnownCommit: undefined,
+        repository: repo,
+      });
+
+      const strategy = await evaluateRecoveryStrategy(info);
+
+      // Still resume (manifest is preserved on prior failure), but the reason
+      // string must explicitly mention the elapsed time so it shows up in any
+      // recovery report the operator reads.
+      expect(strategy.type).toBe("resume");
+      expect(strategy.canAutoRecover).toBe(true);
+      expect(strategy.reason).toMatch(/ago/i);
+      expect(strategy.reason).toMatch(/review/i);
     });
   });
 

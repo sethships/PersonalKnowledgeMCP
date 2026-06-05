@@ -56,6 +56,31 @@ export class RepositoryAlreadyExistsError extends IngestionError {
 }
 
 /**
+ * Error thrown when a `local-folder` registration attempts to claim an
+ * absolute path that is already registered under a different repository name.
+ *
+ * Distinct from `RepositoryAlreadyExistsError` because the user-visible fix is
+ * different: the user supplied a non-colliding name but the underlying path
+ * is shared. Includes the existing registration's name so the message points
+ * to the conflict directly.
+ */
+export class LocalFolderPathAlreadyRegisteredError extends IngestionError {
+  override name = "LocalFolderPathAlreadyRegisteredError";
+
+  constructor(
+    public readonly absolutePath: string,
+    public readonly existingRepository: string
+  ) {
+    super(
+      `Local folder path '${absolutePath}' is already registered as ` +
+        `repository '${existingRepository}'. Use force: true on the existing ` +
+        `registration to reindex, or unregister it first.`,
+      false
+    );
+  }
+}
+
+/**
  * Error thrown when attempting to start indexing while another
  * indexing operation is in progress
  */
@@ -78,6 +103,54 @@ export class CloneError extends IngestionError {
 
   constructor(url: string, cause: unknown) {
     super(`Failed to clone repository from '${url}'`, true, cause);
+  }
+}
+
+/**
+ * Error thrown when a caller attempts to register a `local-folder` repository
+ * with `tier: "public"`. Local folders frequently contain personal or
+ * confidential content, so the public tier is refused outright; the user must
+ * pick `"private"` or `"work"` (or register the content via a deliberate
+ * git-remote source, which has its own publication semantics).
+ */
+export class LocalFolderPublicTierRefusedError extends IngestionError {
+  override name = "LocalFolderPublicTierRefusedError";
+
+  constructor(repository: string) {
+    super(
+      `Cannot register local folder '${repository}' with tier="public". ` +
+        `Local folders are refused at the public tier to prevent accidental ` +
+        `disclosure of personal content. Use tier="private" (default) or ` +
+        `tier="work" instead.`,
+      false
+    );
+  }
+}
+
+/**
+ * Error thrown when a `local-folder` registration would exceed the configured
+ * size guardrails (file count or total bytes) and `force` was not set.
+ *
+ * Distinct from `IngestionError` so callers can distinguish a hard-refusal
+ * caused by guardrails from a generic indexing failure.
+ */
+export class LocalFolderSizeRefusedError extends IngestionError {
+  override name = "LocalFolderSizeRefusedError";
+
+  constructor(
+    public readonly repository: string,
+    public readonly fileCount: number,
+    public readonly totalBytes: number,
+    public readonly fileLimit: number,
+    public readonly byteLimit: number
+  ) {
+    super(
+      `Cannot register local folder '${repository}': ` +
+        `${fileCount} files / ${totalBytes} bytes exceeds the hard refusal ` +
+        `threshold of ${fileLimit} files / ${byteLimit} bytes. Pass ` +
+        `force: true to bypass.`,
+      false
+    );
   }
 }
 

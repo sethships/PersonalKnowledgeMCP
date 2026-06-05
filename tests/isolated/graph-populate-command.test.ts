@@ -32,12 +32,23 @@ vi.mock("../../src/graph/Neo4jClient.js", () => ({
   })),
 }));
 
-// Mock GraphIngestionService
+// Mock GraphIngestionService. Includes `ingestDocumentGraph` (issue #580) so
+// the doc-graph wiring added in `graphPopulateCommand` doesn't crash when a
+// fixture happens to include doc files — these tests focus on the code-graph
+// flow, not doc-graph counts.
 const mockIngestFiles = vi.fn();
+const mockIngestDocumentGraph = vi.fn().mockResolvedValue({
+  documentsCreated: 0,
+  sectionsCreated: 0,
+  externalLinksCreated: 0,
+  edgesCreated: 0,
+  staleMentionsRemoved: 0,
+});
 
 vi.mock("../../src/graph/ingestion/GraphIngestionService.js", () => ({
   GraphIngestionService: vi.fn().mockImplementation(() => ({
     ingestFiles: mockIngestFiles,
+    ingestDocumentGraph: mockIngestDocumentGraph,
   })),
 }));
 
@@ -60,6 +71,7 @@ describe("Graph Populate Command", () => {
 
   const mockRepositoryInfo: RepositoryInfo = {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/test/test-repo.git",
     collectionName: "test-repo",
     localPath: "/tmp/test-repo",

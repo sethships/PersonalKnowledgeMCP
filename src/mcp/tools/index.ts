@@ -9,6 +9,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SearchService } from "../../services/types.js";
 import type { RepositoryMetadataService } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import type { MCPRateLimiter } from "../rate-limiter.js";
 import type { JobTracker } from "../job-tracker.js";
 import type { GraphService } from "../../services/graph-service-types.js";
@@ -43,6 +44,11 @@ import {
   getGraphMetricsToolDefinition,
   createGetGraphMetricsHandler,
 } from "./get-graph-metrics.js";
+import {
+  registerLocalFolderToolDefinition,
+  createRegisterLocalFolderHandler,
+} from "./register-local-folder.js";
+import type { IngestionService } from "../../services/ingestion-service.js";
 
 /**
  * Dependencies for tool registry creation
@@ -57,6 +63,12 @@ export interface ToolRegistryDependencies {
   repositoryService: RepositoryMetadataService;
   /** Optional: Update coordinator for trigger_incremental_update tool */
   updateCoordinator?: IncrementalUpdateCoordinator;
+  /**
+   * Optional: Local-folder update coordinator. Used by trigger_incremental_update
+   * when `repo.source === "local-folder"`. Required only if local-folder repos
+   * are registered; otherwise the git-flavored coordinator handles every repo.
+   */
+  localFolderCoordinator?: LocalFolderUpdateCoordinator;
   /** Optional: Rate limiter for trigger_incremental_update tool */
   rateLimiter?: MCPRateLimiter;
   /** Optional: Job tracker for async update operations */
@@ -69,6 +81,11 @@ export interface ToolRegistryDependencies {
   imageSearchService?: ImageSearchService;
   /** Optional: ListWatchedFoldersService for listing watched folders */
   listWatchedFoldersService?: ListWatchedFoldersService;
+  /**
+   * Optional: IngestionService for the `register_local_folder` tool (Phase C).
+   * When omitted the tool is not registered.
+   */
+  ingestionService?: IngestionService;
   /** Optional: Human-readable reason why update tools are unavailable */
   updateToolsUnavailableReason?: string;
 }
@@ -162,13 +179,17 @@ export function createToolRegistry(
     },
   };
 
-  // Always register update tools — use real handlers when deps are available, stubs otherwise
+  // Always register update tools — use real handlers when deps are available, stubs otherwise.
+  // The local-folder coordinator is optional: when missing, trigger_incremental_update
+  // returns a `service_unavailable` error for local-folder repos and continues to work
+  // for git-remote / local-git repos.
   if (deps.updateCoordinator && deps.rateLimiter && deps.jobTracker) {
     registry["trigger_incremental_update"] = {
       definition: triggerIncrementalUpdateToolDefinition,
       handler: createTriggerUpdateHandler({
         repositoryService: deps.repositoryService,
         updateCoordinator: deps.updateCoordinator,
+        localFolderCoordinator: deps.localFolderCoordinator,
         rateLimiter: deps.rateLimiter,
         jobTracker: deps.jobTracker,
       }),
@@ -245,6 +266,21 @@ export function createToolRegistry(
     registry["list_watched_folders"] = {
       definition: listWatchedFoldersToolDefinition,
       handler: createListWatchedFoldersHandler(deps.listWatchedFoldersService),
+    };
+  }
+
+  // Phase C (T4.4): register `register_local_folder` when an IngestionService
+  // is wired. The tool runs synchronously by default; async mode is only
+  // honored when a JobTracker is also available.
+  if (deps.ingestionService) {
+    registry["register_local_folder"] = {
+      definition: registerLocalFolderToolDefinition,
+      handler: createRegisterLocalFolderHandler({
+        ingestionService: deps.ingestionService,
+        localFolderCoordinator: deps.localFolderCoordinator,
+        repositoryService: deps.repositoryService,
+        jobTracker: deps.jobTracker,
+      }),
     };
   }
 

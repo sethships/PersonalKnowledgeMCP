@@ -21,6 +21,7 @@ import type { CompletenessCheckResult } from "../../../src/services/index-comple
 function makeRepo(overrides: Partial<RepositoryInfo> = {}): RepositoryInfo {
   return {
     name: "test-repo",
+    source: "git-remote",
     url: "https://github.com/owner/test-repo.git",
     localPath: "/repos/test-repo",
     collectionName: "repo_test_repo",

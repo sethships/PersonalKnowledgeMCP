@@ -23,9 +23,21 @@ export interface IndexCommandOptions {
   force?: boolean;
   /** Embedding provider to use (openai, transformersjs, local, ollama) */
   provider?: string;
+  /** Security tier — passed through to IngestionService (which enforces folder-specific rules). */
+  tier?: "private" | "work" | "public";
+  /**
+   * Whether to enable the filesystem watcher after indexing finishes. Only
+   * applied when the path resolves to a `local-folder` source. `undefined`
+   * means "use the default for this source" — true for local folders, false
+   * for git sources.
+   */
+  watch?: boolean;
+  /** Whether the local-folder watcher should follow symlinks. Default false. */
+  followSymlinks?: boolean;
 }
 
 import { resolve, normalize, basename } from "node:path";
+import { stat } from "node:fs/promises";
 import { isLocalPath } from "../../utils/path-utils.js";
 
 /**
@@ -113,6 +125,44 @@ export async function indexCommand(
   // Extract or use provided repository name
   const repositoryName = options.name || extractRepositoryName(url);
 
+  // Resolve flag semantics by source. We auto-detect local vs git via
+  // isLocalPath; for local paths we additionally probe `.git` so the watch
+  // default doesn't activate for local-git sources (those have a remote
+  // equivalent and shouldn't pull in the local-folder watcher pipeline).
+  const looksLocal = isLocalPath(url);
+  let isLocalFolderSource = false;
+  if (looksLocal) {
+    try {
+      const resolved = normalize(resolve(url));
+      const pathStat = await stat(resolved);
+      if (pathStat.isDirectory()) {
+        try {
+          await stat(`${resolved}/.git`);
+          isLocalFolderSource = false; // has .git → local-git, not local-folder
+        } catch {
+          isLocalFolderSource = true;
+        }
+      }
+    } catch {
+      // Path stat will fail again inside IngestionService and surface a typed
+      // error; we just don't set the watcher defaults here.
+    }
+  }
+
+  // Phase C (T4.1): refuse non-local flags on git URLs early so the user
+  // doesn't get a confusing IngestionService error after a long clone.
+  if (!looksLocal && (options.watch === true || options.followSymlinks === true)) {
+    throw new Error(
+      "--watch and --follow-symlinks are only valid for local folders, not git URLs.\n" +
+        "Either omit these flags or pass a local path."
+    );
+  }
+  if (!isLocalFolderSource && options.tier === "public" && looksLocal) {
+    // local-git rejects `tier=public` only for the folder source; we let
+    // IngestionService be the single source of truth for public-tier policy
+    // on git-remote / local-git so the message stays consistent.
+  }
+
   // Check if repository already exists (unless force)
   if (!options.force) {
     const existing = await deps.repositoryService.getRepository(repositoryName);
@@ -129,11 +179,18 @@ export async function indexCommand(
   const spinner = createIndexSpinner(repositoryName);
 
   try {
+    // Resolve watch default by source: local-folder → true unless --no-watch
+    // explicitly disables it; everything else → false.
+    const effectiveWatch = isLocalFolderSource ? options.watch !== false : false;
+
     // Index repository with progress callback
     const result = await deps.ingestionService.indexRepository(url, {
       name: options.name,
       branch: options.branch,
       force: options.force,
+      tier: options.tier,
+      watch: effectiveWatch,
+      followSymlinks: options.followSymlinks ?? false,
       onProgress: (progress) => {
         updateIndexSpinner(spinner, progress);
       },

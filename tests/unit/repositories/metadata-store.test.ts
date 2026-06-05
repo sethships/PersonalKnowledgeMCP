@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
 /**
  * Unit tests for RepositoryMetadataStoreImpl
  *
@@ -8,6 +12,9 @@
  */
 
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as fs from "node:fs";
 import {
   RepositoryMetadataStoreImpl,
   sanitizeCollectionName,
@@ -19,8 +26,11 @@ import {
   FileOperationError,
   InvalidMetadataFormatError,
 } from "../../../src/repositories/errors.js";
-import type { UpdateHistoryEntry } from "../../../src/repositories/types.js";
-import { edgeCaseRepositoryNames } from "../../fixtures/repository-fixtures.js";
+import type { RepositoryInfo, UpdateHistoryEntry } from "../../../src/repositories/types.js";
+import {
+  createTestRepositoryInfo,
+  edgeCaseRepositoryNames,
+} from "../../fixtures/repository-fixtures.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 
 describe("RepositoryMetadataStoreImpl", () => {
@@ -426,3 +436,284 @@ describe("RepositoryMetadataStoreImpl", () => {
 // Note: CRUD operation tests are covered by integration tests
 // Unit tests with mocked file I/O are not feasible in Bun due to readonly global.Bun
 // Integration tests provide more value by testing real file operations
+
+describe("source discriminator + back-compat round-trip", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    initializeLogger({ level: "silent", format: "json" });
+    RepositoryMetadataStoreImpl.resetInstance();
+    tmpDir = path.join(
+      os.tmpdir(),
+      `metadata-store-source-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    );
+    fs.mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    RepositoryMetadataStoreImpl.resetInstance();
+    resetLogger();
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test.each(["git-remote", "local-git", "local-folder"] as const)(
+    "round-trips source value %s",
+    async (source) => {
+      const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+      const repo = createTestRepositoryInfo("rt-source", {
+        source,
+        url: source === "local-folder" ? null : "https://github.com/x/y.git",
+      });
+
+      await store.updateRepository(repo);
+
+      // Reset singleton to force a re-read from disk
+      RepositoryMetadataStoreImpl.resetInstance();
+      const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+      const reloaded = await store2.getRepository("rt-source");
+
+      expect(reloaded).not.toBeNull();
+      expect(reloaded?.source).toBe(source);
+      expect(reloaded?.url).toBe(source === "local-folder" ? null : "https://github.com/x/y.git");
+    }
+  );
+
+  test("synthesizes source=git-remote when persisted record has no source field", async () => {
+    // Hand-write a legacy-shape repositories.json (pre-source-discriminator)
+    const legacyFile = {
+      version: "1.0",
+      repositories: {
+        "legacy-repo": {
+          name: "legacy-repo",
+          // NB: no `source` field — simulates data persisted before T1.1
+          url: "https://github.com/legacy/repo.git",
+          localPath: "./data/repos/legacy-repo",
+          collectionName: "repo_legacy_repo",
+          fileCount: 50,
+          chunkCount: 200,
+          lastIndexedAt: "2024-01-01T00:00:00.000Z",
+          indexDurationMs: 1000,
+          status: "ready",
+          branch: "main",
+          includeExtensions: [".ts"],
+          excludePatterns: ["node_modules/**"],
+        },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "repositories.json"),
+      JSON.stringify(legacyFile, null, 2),
+      "utf-8"
+    );
+
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store.getRepository("legacy-repo");
+
+    expect(reloaded).not.toBeNull();
+    expect(reloaded?.source).toBe("git-remote");
+    expect(reloaded?.url).toBe("https://github.com/legacy/repo.git");
+  });
+
+  test("synthesizes source on listRepositories too", async () => {
+    const legacyFile = {
+      version: "1.0",
+      repositories: {
+        a: { ...buildLegacyRepoRecord("a") },
+        b: { ...buildLegacyRepoRecord("b") },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "repositories.json"),
+      JSON.stringify(legacyFile, null, 2),
+      "utf-8"
+    );
+
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const all = await store.listRepositories();
+
+    expect(all).toHaveLength(2);
+    for (const repo of all) {
+      expect(repo.source).toBe("git-remote");
+    }
+  });
+
+  test("round-trips url=null when source is local-folder", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("local-folder-repo", {
+      source: "local-folder",
+      url: null,
+      lastManifestId: "repo_local_folder_repo",
+    });
+
+    await store.updateRepository(repo);
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("local-folder-repo");
+
+    expect(reloaded?.source).toBe("local-folder");
+    expect(reloaded?.url).toBeNull();
+    expect(reloaded?.lastManifestId).toBe("repo_local_folder_repo");
+  });
+
+  test("validation rejects url=null when source is git-remote", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("bad-repo", {
+      source: "git-remote",
+      // Cast: deliberately violating the type contract to exercise the runtime guard
+      url: null as unknown as string,
+    });
+
+    await expect(store.updateRepository(repo)).rejects.toThrow(RepositoryMetadataError);
+  });
+
+  test("validation rejects an unknown source value", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("bad-source", {
+      // Cast: deliberately violating the type contract to exercise the runtime guard
+      source: "bogus" as unknown as RepositoryInfo["source"],
+    });
+
+    await expect(store.updateRepository(repo)).rejects.toThrow(RepositoryMetadataError);
+  });
+
+  test.each(["private", "work", "public"] as const)("round-trips tier value %s", async (tier) => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("tier-repo", { tier });
+    await store.updateRepository(repo);
+
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("tier-repo");
+
+    expect(reloaded?.tier).toBe(tier);
+  });
+
+  test("round-trips tier=undefined as undefined (omitted)", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("no-tier-repo");
+    await store.updateRepository(repo);
+
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("no-tier-repo");
+
+    expect(reloaded?.tier).toBeUndefined();
+  });
+
+  test("round-trips lastManifestId", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const repo = createTestRepositoryInfo("manifest-id-repo", {
+      source: "local-folder",
+      url: null,
+      lastManifestId: "repo_manifest_id_repo",
+    });
+    await store.updateRepository(repo);
+
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("manifest-id-repo");
+
+    expect(reloaded?.lastManifestId).toBe("repo_manifest_id_repo");
+  });
+
+  test("UpdateHistoryEntry preserves both 40-hex SHAs and local- markers", async () => {
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+
+    const gitEntry: UpdateHistoryEntry = {
+      timestamp: "2026-05-05T10:00:00.000Z",
+      previousCommit: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      newCommit: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+      filesAdded: 1,
+      filesModified: 0,
+      filesDeleted: 0,
+      chunksUpserted: 5,
+      chunksDeleted: 0,
+      durationMs: 100,
+      errorCount: 0,
+      status: "success",
+    };
+
+    const localEntry: UpdateHistoryEntry = {
+      timestamp: "2026-05-05T11:00:00.000Z",
+      previousCommit: "local-2026-05-05T10:30:00.000Z",
+      newCommit: "local-2026-05-05T11:00:00.000Z",
+      filesAdded: 0,
+      filesModified: 1,
+      filesDeleted: 0,
+      chunksUpserted: 2,
+      chunksDeleted: 0,
+      durationMs: 50,
+      errorCount: 0,
+      status: "success",
+    };
+
+    const repo = createTestRepositoryInfo("history-repo", {
+      source: "local-folder",
+      url: null,
+      updateHistory: [localEntry, gitEntry],
+    });
+    await store.updateRepository(repo);
+
+    RepositoryMetadataStoreImpl.resetInstance();
+    const store2 = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    const reloaded = await store2.getRepository("history-repo");
+
+    expect(reloaded?.updateHistory).toHaveLength(2);
+    expect(reloaded?.updateHistory?.[0]?.previousCommit).toBe("local-2026-05-05T10:30:00.000Z");
+    expect(reloaded?.updateHistory?.[0]?.newCommit).toBe("local-2026-05-05T11:00:00.000Z");
+    expect(reloaded?.updateHistory?.[1]?.previousCommit).toBe(
+      "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+    );
+  });
+
+  test("quarantines an unknown persisted source value to git-remote on read (Issue #3)", async () => {
+    // Hand-write a repositories.json with a corrupt `source` value that
+    // doesn't match any of the three known discriminators.
+    const corrupt = {
+      version: "1.0",
+      repositories: {
+        "bogus-repo": {
+          ...buildLegacyRepoRecord("bogus-repo"),
+          source: "from-the-future",
+        },
+      },
+    };
+    fs.writeFileSync(
+      path.join(tmpDir, "repositories.json"),
+      JSON.stringify(corrupt, null, 2),
+      "utf-8"
+    );
+
+    const store = RepositoryMetadataStoreImpl.getInstance(tmpDir);
+    // Must not throw — read-side quarantine treats it as git-remote.
+    const reloaded = await store.getRepository("bogus-repo");
+    expect(reloaded).not.toBeNull();
+    expect(reloaded?.source).toBe("git-remote");
+  });
+});
+
+/**
+ * Helper to construct a legacy-shape (pre-source-discriminator) repository
+ * record for synthesis tests. Returns a plain object — NOT typed as
+ * `RepositoryInfo`, since the whole point is that `source` is missing.
+ */
+function buildLegacyRepoRecord(name: string): Record<string, unknown> {
+  return {
+    name,
+    url: `https://github.com/legacy/${name}.git`,
+    localPath: `./data/repos/${name}`,
+    collectionName: `repo_${name}`,
+    fileCount: 1,
+    chunkCount: 1,
+    lastIndexedAt: "2024-01-01T00:00:00.000Z",
+    indexDurationMs: 1,
+    status: "ready",
+    branch: "main",
+    includeExtensions: [".ts"],
+    excludePatterns: [],
+  };
+}
