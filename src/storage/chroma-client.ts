@@ -1172,6 +1172,76 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   }
 
   /**
+   * List the distinct indexed file paths for a repository.
+   *
+   * Fetches metadata only (no document text or embeddings) and collects the
+   * unique `file_path` values, so it remains inexpensive even for large
+   * collections (tens of thousands of chunks). Used by index repair to diff
+   * the indexed set against the files present on disk.
+   *
+   * @param collectionName - Target collection name
+   * @param repository - Repository name to filter chunks by
+   * @returns Set of distinct file paths currently indexed for the repository
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  async listIndexedFilePaths(collectionName: string, repository: string): Promise<Set<string>> {
+    this.ensureConnected();
+
+    const startTime = Date.now();
+
+    try {
+      const collection = await this.getCollectionIfExists(collectionName);
+      if (!collection) {
+        throw new CollectionNotFoundError(collectionName);
+      }
+
+      // Metadata only — avoid pulling document bodies/embeddings.
+      const result = await this.withRetryWrapper(
+        () =>
+          collection.get({
+            where: { repository } as Record<string, unknown>,
+            // @ts-expect-error - String literals are compatible with IncludeEnum
+            include: ["metadatas"],
+          }),
+        "ChromaDB list indexed file paths"
+      );
+
+      const filePaths = new Set<string>();
+      for (const meta of result.metadatas ?? []) {
+        const filePath = (meta as Record<string, unknown> | null)?.["file_path"];
+        if (typeof filePath === "string" && filePath.length > 0) {
+          filePaths.add(filePath);
+        }
+      }
+
+      this.logger.info(
+        {
+          metric: "chromadb.list_indexed_file_paths_ms",
+          value: Date.now() - startTime,
+          collection: collectionName,
+          repository,
+          distinctFiles: filePaths.size,
+        },
+        `Listed ${filePaths.size} distinct indexed file paths for repository '${repository}'`
+      );
+
+      return filePaths;
+    } catch (error) {
+      if (error instanceof StorageError) {
+        throw error;
+      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new SearchOperationError(
+        `Failed to list indexed file paths in collection '${collectionName}': ${errorMessage}`,
+        [collectionName],
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
    * Convert DocumentMetadata to ChromaDB-compatible primitive format.
    * Skips undefined/null optional fields to avoid "undefined" string storage.
    */

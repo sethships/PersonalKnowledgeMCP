@@ -363,6 +363,59 @@ pk-mcp reset-update my-repo --recover
 
 ---
 
+### repair - Repair an Incomplete Index
+
+Recover a repository whose index is incomplete (some eligible files are not indexed, or
+the stored file count has drifted) by re-embedding **only the missing files**, rather than
+the full re-clone and re-embed that `update --force` performs.
+
+The command first diagnoses the index by comparing the eligible files on disk against the
+files actually present in the vector store, then:
+- **Missing files**: re-embeds only those files via the incremental pipeline.
+- **Metadata drift** (all files indexed, but the stored `fileCount` is wrong): corrects the
+  metadata with no embedding calls.
+- **Complete**: does nothing.
+
+**Syntax**:
+```bash
+pk-mcp repair <repository-name> [options]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `repository-name` | Yes | Name of the repository to repair |
+
+**Options**:
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--dry-run` | - | Diagnose only; list the missing files without making changes |
+| `--json` | `-j` | Output as JSON |
+
+**Examples**:
+```bash
+# Inspect what is missing without changing anything
+pk-mcp repair my-api --dry-run
+
+# Re-embed only the missing files
+pk-mcp repair my-api
+
+# JSON output for scripting
+pk-mcp repair my-api --json
+```
+
+**Output**: Status (complete / missing files / metadata drift), eligible vs indexed counts,
+the missing file list, chunks upserted during backfill, and the completeness status after
+the repair.
+
+**When to use `repair` vs `update --force`**:
+- Use **`repair`** for small completeness gaps (a handful of missing files, low divergence).
+  It is far cheaper because it re-embeds only what is missing.
+- Use **`update --force`** when divergence is large, after a force-push, or when the local
+  clone itself is suspect, since it re-clones and re-embeds everything.
+
+---
+
 ## Service Commands
 
 ### health - Health Check

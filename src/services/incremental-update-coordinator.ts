@@ -12,6 +12,7 @@ import simpleGit from "simple-git";
 import type { SimpleGit } from "simple-git";
 import { parseGitUrl } from "../utils/git-url-parser.js";
 import { isLocalPath } from "../utils/path-utils.js";
+import { buildAuthenticatedGitUrl } from "../utils/git-auth-url.js";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type {
@@ -122,6 +123,16 @@ export class IncrementalUpdateCoordinator {
   private readonly simpleGitFactory?: (path: string) => SimpleGit;
 
   /**
+   * GitHub PAT used to refresh the authenticated `origin` URL before pulling.
+   */
+  private readonly githubPat?: string;
+
+  /**
+   * Generic git token for non-github hosts, used the same way as {@link githubPat}.
+   */
+  private readonly gitPat?: string;
+
+  /**
    * Create an incremental update coordinator.
    *
    * @param githubClient - GitHub API client for commit detection
@@ -144,6 +155,8 @@ export class IncrementalUpdateCoordinator {
     this.customGitPull = config.customGitPull;
     this.completenessChecker = config.completenessChecker;
     this.simpleGitFactory = config.simpleGitFactory;
+    this.githubPat = config.githubPat;
+    this.gitPat = config.gitPat;
   }
 
   /**
@@ -449,7 +462,7 @@ export class IncrementalUpdateCoordinator {
       // Step 7: Update local clone (git pull).
       // Skipped for local-path repos — the directory is managed by the user, not cloned.
       if (!isLocalPath(repo.url)) {
-        await this.updateLocalClone(repo.localPath, repo.branch);
+        await this.updateLocalClone(repo.localPath, repo.branch, repo.url);
         logger.info(
           { repository: repositoryName, localPath: repo.localPath },
           "Updated local clone"
@@ -866,11 +879,18 @@ export class IncrementalUpdateCoordinator {
    * Uses custom git pull implementation if provided (for testing),
    * otherwise uses simple-git.
    *
+   * Before pulling, the `origin` remote URL is refreshed with a freshly
+   * authenticated URL built from the resolved PAT. This prevents stale,
+   * expired credentials embedded in the clone's `origin` URL (from clone time)
+   * from causing "Authentication failed" after PAT rotation. Mirrors
+   * `RepositoryCloner.fetchLatest`.
+   *
    * @param localPath - Absolute path to local repository clone
    * @param branch - Branch name to pull
+   * @param url - Canonical repository URL (used to rebuild the authenticated remote)
    * @throws {GitPullError} If git pull fails (conflicts, network issues, etc.)
    */
-  private async updateLocalClone(localPath: string, branch: string): Promise<void> {
+  private async updateLocalClone(localPath: string, branch: string, url: string): Promise<void> {
     this.logger.debug({ localPath, branch }, "Updating local clone via git pull");
 
     try {
@@ -883,6 +903,19 @@ export class IncrementalUpdateCoordinator {
 
       // Otherwise use simple-git
       const git = this.createGit(localPath);
+
+      // Refresh the authenticated origin URL so the pull uses the freshly
+      // resolved PAT rather than any (possibly expired) token embedded in the
+      // clone's stored origin URL. Only update when a credential is actually
+      // injected to avoid rewriting the remote for public/SSH repos.
+      const authenticatedUrl = buildAuthenticatedGitUrl(url, {
+        githubPat: this.githubPat,
+        gitPat: this.gitPat,
+      });
+      if (authenticatedUrl !== url) {
+        await git.remote(["set-url", "origin", authenticatedUrl]);
+        this.logger.debug({ localPath, branch }, "Refreshed authenticated origin URL");
+      }
 
       // Perform git pull origin <branch>
       const result = await git.pull("origin", branch);

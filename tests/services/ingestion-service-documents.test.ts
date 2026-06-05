@@ -166,6 +166,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return 0;
   }
 
+  async listIndexedFilePaths(): Promise<Set<string>> {
+    return new Set();
+  }
+
   clear() {
     this.collections.clear();
     this.capturedDocuments = [];

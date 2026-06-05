@@ -1245,6 +1245,36 @@ bun run cli update <repository-name> --force
 > before reindexing, ensuring your search results reflect the current state of the
 > remote repository.
 
+### Incomplete Index / Drift Detected
+
+**Cause:** After an incremental update, the completeness check reports the index is
+incomplete: some eligible files on disk are not present in the vector store, or the stored
+`fileCount` has drifted from reality. This can also surface as a `drift_detected` status
+when HEAD already matches the tracked commit (so a plain incremental update cannot
+self-heal).
+
+**Diagnosis:**
+```bash
+# Report indexed vs eligible counts and divergence for one or all repositories
+bun run cli check-completeness <repository-name>
+
+# List the specific missing files (read-only, no changes)
+bun run cli repair <repository-name> --dry-run
+```
+
+**Solution:**
+```bash
+# Re-embed ONLY the missing files (cheap; recommended for small gaps)
+bun run cli repair <repository-name>
+
+# Full re-clone + re-embed (use only for large divergence or after a force-push)
+bun run cli update <repository-name> --force
+```
+
+> **Tip:** Prefer `repair` for small completeness gaps. It re-embeds only the missing files
+> instead of the entire repository, so it is far faster and avoids unnecessary embedding
+> cost. Reserve `update --force` for large divergence, force-pushes, or a suspect local clone.
+
 ### Common Error Resolution Summary
 
 | Error | Quick Fix Command |
@@ -1256,6 +1286,8 @@ bun run cli update <repository-name> --force
 | Git pull failed | `bun run cli remove <name> --force --delete-files && bun run cli index <url>` |
 | Repository not found | `bun run cli status` to verify name |
 | Stale search results | `bun run cli update <name> --force` |
+| Incomplete index / drift detected | `bun run cli repair <name>` (use `--dry-run` first) |
+| Auth failed after PAT rotation | Update `GITHUB_PAT` in `.env`; the next update refreshes the clone's credentials automatically |
 
 ---
 

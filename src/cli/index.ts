@@ -42,6 +42,7 @@ import {
 } from "./commands/token-command.js";
 import { migrateExtensionsCommand } from "./commands/migrate-extensions-command.js";
 import { checkCompletenessCommand } from "./commands/check-completeness-command.js";
+import { repairCommand } from "./commands/repair-command.js";
 import { graphMigrateCommand } from "./commands/graph-migrate-command.js";
 import { graphPopulateCommand } from "./commands/graph-populate-command.js";
 import { graphPopulateAllCommand } from "./commands/graph-populate-all-command.js";
@@ -84,6 +85,7 @@ import {
   GraphTransferCommandOptionsSchema,
   MigrateExtensionsCommandOptionsSchema,
   CheckCompletenessCommandOptionsSchema,
+  RepairCommandOptionsSchema,
   ProvidersStatusCommandOptionsSchema,
   ProvidersSetupCommandOptionsSchema,
   ModelsListCommandOptionsSchema,
@@ -291,6 +293,25 @@ program
       const validatedOptions = CheckCompletenessCommandOptionsSchema.parse(options);
       const deps = await initializeDependencies();
       await checkCompletenessCommand(repository, validatedOptions, deps);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  });
+
+// Repair command
+program
+  .command("repair")
+  .description(
+    "Repair an incomplete index by re-embedding only the missing files (or fixing drifted metadata)"
+  )
+  .argument("<repository>", "Repository name to repair")
+  .option("--dry-run", "Diagnose only; report missing files without making changes")
+  .option("-j, --json", "Output as JSON")
+  .action(async (repository: string, options: Record<string, unknown>) => {
+    try {
+      const validatedOptions = RepairCommandOptionsSchema.parse(options);
+      const deps = await initializeDependencies();
+      await repairCommand(repository, validatedOptions, deps);
     } catch (error) {
       handleCommandError(error);
     }

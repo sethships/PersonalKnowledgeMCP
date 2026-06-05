@@ -1151,33 +1151,35 @@ Development workflow:
 
 ## Code Statistics
 
-Generated with [cloc](https://github.com/AlDanial/cloc) v2.06 (excluding node_modules, dist, .bun-cache, coverage, data):
+Generated with [cloc](https://github.com/AlDanial/cloc) (tracked files only, via `git ls-files`):
 
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 500 | 27,034 | 45,373 | 122,663 |
-| Markdown | 72 | 9,422 | 9 | 29,588 |
+| TypeScript | 506 | 27,276 | 47,757 | 122,093 |
+| Markdown | 72 | 9,445 | 9 | 29,683 |
 | YAML | 68 | 332 | 588 | 3,185 |
-| JSON | 14 | 5 | 0 | 2,548 |
-| Bourne Shell | 10 | 479 | 527 | 1,958 |
+| Bourne Shell | 7 | 471 | 526 | 1,934 |
 | PowerShell | 4 | 399 | 281 | 1,232 |
-| C# | 9 | 219 | 315 | 1,022 |
+| C# | 6 | 219 | 312 | 1,009 |
+| JSON | 8 | 5 | 0 | 743 |
 | Go | 1 | 38 | 40 | 154 |
 | Rust | 1 | 42 | 47 | 150 |
 | Java | 3 | 28 | 58 | 104 |
 | SQL | 4 | 77 | 213 | 94 |
-| Text | 3 | 31 | 0 | 91 |
 | PHP | 1 | 22 | 70 | 87 |
 | C++ | 1 | 22 | 15 | 65 |
 | Python | 5 | 44 | 59 | 59 |
-| INI | 2 | 0 | 0 | 50 |
+| Text | 1 | 31 | 0 | 40 |
 | C | 1 | 12 | 20 | 38 |
 | Dockerfile | 1 | 22 | 38 | 36 |
 | Ruby | 1 | 10 | 20 | 35 |
 | JavaScript | 2 | 7 | 9 | 33 |
-| XML | 2 | 0 | 0 | 27 |
+| Visual Studio Solution | 1 | 0 | 1 | 31 |
 | TOML | 1 | 12 | 20 | 15 |
-| **SUM** | **710** | **38,268** | **47,721** | **163,297** |
+| MSBuild script | 1 | 3 | 0 | 14 |
+| **SUM** | **696** | **38,517** | **50,083** | **160,834** |
+
+*Generated with `cloc --vcs=git --md .` against `feature/587-incremental-update-reliability` on 2026-06-05.*
 
 ## License
 
