@@ -459,7 +459,12 @@ describe("ChangeDetectionService Integration", () => {
       await fs.promises.writeFile(path.join(testFolder.path, "error1.md"), "content1");
       await fs.promises.writeFile(path.join(testFolder.path, "error2.md"), "content2");
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Poll instead of a fixed sleep: watcher event latency varies with host
+      // load (a fixed 500ms wait intermittently missed the second event on CI)
+      const deadline = Date.now() + 5000;
+      while ((errorCount < 1 || successChanges.length < 1) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
 
       // First event threw, but subsequent events should still work
       // (The handler recovered after the first error)
