@@ -1175,9 +1175,10 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * List the distinct indexed file paths for a repository.
    *
    * Fetches metadata only (no document text or embeddings) and collects the
-   * unique `file_path` values, so it remains inexpensive even for large
-   * collections (tens of thousands of chunks). Used by index repair to diff
-   * the indexed set against the files present on disk.
+   * unique `file_path` values. Cost scales with chunk count (a single bulk
+   * `get`), which is acceptable for the operator-invoked repair path but is not
+   * free on very large collections. Used by index repair to diff the indexed
+   * set against the files present on disk.
    *
    * @param collectionName - Target collection name
    * @param repository - Repository name to filter chunks by

@@ -80,6 +80,7 @@ describe("IndexRepairService", () => {
 
     chromaClient = {
       listIndexedFilePaths: mock(async () => new Set(["a.ts", "b.ts"])),
+      deleteDocumentsByFilePrefix: mock(async () => 0),
     } as unknown as ChromaStorageClient;
 
     updatePipeline = {
@@ -227,6 +228,68 @@ describe("IndexRepairService", () => {
       expect(result.missingFiles).toEqual(["c.ts"]);
       expect(updatePipeline.processChanges).not.toHaveBeenCalled();
       expect(repositoryService.updateRepository).not.toHaveBeenCalled();
+    });
+
+    it("surfaces per-file errors and does not overstate filesBackfilled", async () => {
+      fileScanner.scanFiles = mock(async () => makeFiles(["a.ts", "b.ts", "c.ts"]));
+      let call = 0;
+      chromaClient.listIndexedFilePaths = mock(async () => {
+        call += 1;
+        // After backfill, c.ts still failed so it is not indexed.
+        return call === 1 ? new Set(["a.ts"]) : new Set(["a.ts", "b.ts"]);
+      });
+      // Pipeline reports b.ts succeeded but c.ts failed to embed.
+      updatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 1,
+          filesModified: 0,
+          filesDeleted: 0,
+          chunksUpserted: 3,
+          chunksDeleted: 0,
+          durationMs: 1,
+        },
+        errors: [{ path: "c.ts", error: "embedding failed" }],
+        filterStats: {
+          totalChanges: 2,
+          eligibleChanges: 2,
+          filteredChanges: 2,
+          skippedChanges: 0,
+        },
+      })) as unknown as typeof updatePipeline.processChanges;
+
+      const result = await makeService().repair(makeRepo({ fileCount: 1 }));
+
+      expect(result.action).toBe("backfilled");
+      expect(result.filesBackfilled).toBe(1); // not 2 — c.ts failed
+      expect(result.backfillErrors).toEqual(["c.ts"]);
+    });
+
+    it("deletes orphaned chunks for files removed from disk", async () => {
+      // a.ts on disk and indexed; deleted.ts only in the index (orphan).
+      fileScanner.scanFiles = mock(async () => makeFiles(["a.ts"]));
+      let call = 0;
+      chromaClient.listIndexedFilePaths = mock(async () => {
+        call += 1;
+        return call === 1 ? new Set(["a.ts", "deleted.ts"]) : new Set(["a.ts"]);
+      });
+      chromaClient.deleteDocumentsByFilePrefix = mock(async () => 4);
+
+      const result = await makeService().repair(makeRepo({ fileCount: 2, chunkCount: 10 }));
+
+      expect(result.status).toBe("missing_files");
+      expect(result.extraFiles).toEqual(["deleted.ts"]);
+      expect(chromaClient.deleteDocumentsByFilePrefix).toHaveBeenCalledWith(
+        "repo_test_repo",
+        "test-repo",
+        "deleted.ts"
+      );
+      // No missing files to embed in a purely-orphan repo.
+      expect(updatePipeline.processChanges).not.toHaveBeenCalled();
+      // chunkCount reduced by the 4 orphan chunks removed.
+      const saved = (repositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls[0]?.[0] as RepositoryInfo;
+      expect(saved.chunkCount).toBe(6);
+      expect(saved.fileCount).toBe(1);
     });
   });
 });

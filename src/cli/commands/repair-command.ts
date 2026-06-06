@@ -41,8 +41,12 @@ function formatResultJson(result: RepairResult): object {
     storedFileCount: result.storedFileCount,
     missingFileCount: result.missingFiles.length,
     missingFiles: result.missingFiles,
+    extraFileCount: result.extraFiles.length,
+    extraFiles: result.extraFiles,
     filesBackfilled: result.filesBackfilled,
     chunksUpserted: result.chunksUpserted,
+    backfillErrorCount: result.backfillErrors.length,
+    backfillErrors: result.backfillErrors,
     ...(result.completenessAfter && {
       completenessAfter: result.completenessAfter.status,
     }),
@@ -108,6 +112,15 @@ export async function repairCommand(
     spinner.succeed(chalk.green(`✓ ${repositoryName} index is complete`));
   } else if (dryRun) {
     spinner.warn(chalk.yellow(`⚠ ${repositoryName}: ${result.status.replace("_", " ")} detected`));
+  } else if (result.action === "backfilled" && result.backfillErrors.length > 0) {
+    // Partial success: some files failed to embed, so the index is not fully
+    // healed. Warn rather than report unqualified success.
+    spinner.warn(
+      chalk.yellow(
+        `⚠ ${repositoryName}: backfilled ${result.filesBackfilled} file(s), ` +
+          `but ${result.backfillErrors.length} failed to embed`
+      )
+    );
   } else if (result.action === "backfilled") {
     spinner.succeed(
       chalk.green(`✓ Backfilled ${result.filesBackfilled} file(s) in ${repositoryName}`)
@@ -140,8 +153,31 @@ export async function repairCommand(
     }
   }
 
+  if (result.extraFiles.length > 0) {
+    const verb = dryRun ? "Orphaned (to remove):" : "Orphans removed:";
+    console.log(`  ${chalk.gray(verb)} ${result.extraFiles.length}`);
+    const preview = result.extraFiles.slice(0, 10);
+    for (const f of preview) {
+      console.log(chalk.gray(`    • ${f}`));
+    }
+    if (result.extraFiles.length > preview.length) {
+      console.log(chalk.gray(`    ... and ${result.extraFiles.length - preview.length} more`));
+    }
+  }
+
   if (!dryRun && result.action === "backfilled") {
     console.log(`  ${chalk.gray("Chunks upserted:")} ${result.chunksUpserted}`);
+  }
+
+  if (result.backfillErrors.length > 0) {
+    console.log(chalk.yellow(`  Failed to embed: ${result.backfillErrors.length}`));
+    for (const f of result.backfillErrors.slice(0, 10)) {
+      console.log(chalk.yellow(`    • ${f}`));
+    }
+    console.log(
+      chalk.cyan(`  Index still incomplete — re-run `) +
+        chalk.bold(`pk-mcp repair ${repositoryName}`)
+    );
   }
 
   if (result.completenessAfter) {

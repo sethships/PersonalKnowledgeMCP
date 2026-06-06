@@ -36,9 +36,11 @@ import type { FileChange } from "./github-client-types.js";
  * Classification of a repository index's completeness.
  *
  * - `complete`: every eligible file on disk is indexed and `fileCount` matches.
- * - `missing_files`: one or more eligible files are not indexed.
- * - `metadata_drift`: all eligible files are indexed, but the stored `fileCount`
- *   does not match the actual eligible count (no re-embed needed to fix).
+ * - `missing_files`: one or more eligible files are not indexed, and/or the
+ *   index holds chunks for files no longer on disk (orphans). Both require a
+ *   write to reconcile.
+ * - `metadata_drift`: the indexed set exactly matches disk, but the stored
+ *   `fileCount` is wrong (no re-embed needed to fix).
  */
 export type RepairStatus = "complete" | "missing_files" | "metadata_drift";
 
@@ -56,6 +58,12 @@ export interface RepairDiagnosis {
   storedFileCount: number;
   /** Eligible files on disk that are not indexed (posix-relative, sorted). */
   missingFiles: string[];
+  /**
+   * Indexed files no longer present on disk — orphaned chunks left by deletions
+   * (posix-relative, sorted). Repair deletes these so search stops returning
+   * hits for removed files.
+   */
+  extraFiles: string[];
 }
 
 /**
@@ -70,10 +78,16 @@ export interface RepairResult extends RepairDiagnosis {
   action: RepairAction;
   /** Whether this was a diagnose-only (dry-run) invocation. */
   dryRun: boolean;
-  /** Number of files re-embedded (0 unless `action === "backfilled"`). */
+  /** Number of files that actually re-embedded (excludes per-file failures). */
   filesBackfilled: number;
   /** Chunks upserted during backfill (0 unless `action === "backfilled"`). */
   chunksUpserted: number;
+  /**
+   * Files that failed to embed during backfill (posix-relative paths reported
+   * by the pipeline). Non-empty means the index is still incomplete and the
+   * caller must not report unqualified success.
+   */
+  backfillErrors: string[];
   /** Completeness check re-run after a write repair, when a checker is configured. */
   completenessAfter?: CompletenessCheckResult;
 }
@@ -141,9 +155,11 @@ export class IndexRepairService {
     }
 
     const missingFiles = [...diskSet].filter((p) => !indexedSet.has(p)).sort();
+    const extraFiles = [...indexedSet].filter((p) => !diskSet.has(p)).sort();
 
     let status: RepairStatus;
-    if (missingFiles.length > 0) {
+    if (missingFiles.length > 0 || extraFiles.length > 0) {
+      // Content is out of sync with disk (missing files and/or orphaned chunks).
       status = "missing_files";
     } else if (repo.fileCount !== diskSet.size) {
       status = "metadata_drift";
@@ -158,6 +174,7 @@ export class IndexRepairService {
       indexedFileCount: indexedSet.size,
       storedFileCount: repo.fileCount,
       missingFiles,
+      extraFiles,
     };
 
     this.logger.info(
@@ -168,6 +185,7 @@ export class IndexRepairService {
         indexedFileCount: diagnosis.indexedFileCount,
         storedFileCount: diagnosis.storedFileCount,
         missingFileCount: missingFiles.length,
+        extraFileCount: extraFiles.length,
       },
       "Index repair diagnosis complete"
     );
@@ -192,6 +210,7 @@ export class IndexRepairService {
       dryRun,
       filesBackfilled: 0,
       chunksUpserted: 0,
+      backfillErrors: [],
     };
 
     if (dryRun || diagnosis.status === "complete") {
@@ -222,21 +241,43 @@ export class IndexRepairService {
       };
     }
 
-    // status === "missing_files": re-embed only the missing files.
+    // status === "missing_files": reconcile content with disk.
+
+    // 1. Drop chunks for files removed from disk so search stops returning
+    //    stale hits and the index no longer over-counts.
+    let orphanChunksDeleted = 0;
+    for (const path of diagnosis.extraFiles) {
+      orphanChunksDeleted += await this.chromaClient.deleteDocumentsByFilePrefix(
+        repo.collectionName,
+        repo.name,
+        path
+      );
+    }
+
+    // 2. Re-embed only the missing files (if any — a purely-orphan repo has none).
     const changes: FileChange[] = diagnosis.missingFiles.map((path) => ({
       path,
       status: "added",
     }));
 
-    const pipelineResult = await this.updatePipeline.processChanges(changes, {
-      repository: repo.name,
-      localPath: repo.localPath,
-      collectionName: repo.collectionName,
-      includeExtensions: repo.includeExtensions,
-      excludePatterns: repo.excludePatterns,
-    });
+    let chunksUpserted = 0;
+    let backfillErrors: string[] = [];
+    if (changes.length > 0) {
+      const pipelineResult = await this.updatePipeline.processChanges(changes, {
+        repository: repo.name,
+        localPath: repo.localPath,
+        collectionName: repo.collectionName,
+        includeExtensions: repo.includeExtensions,
+        excludePatterns: repo.excludePatterns,
+      });
+      chunksUpserted = pipelineResult.stats.chunksUpserted;
+      // FileProcessingError.path is the failed file (relative to repo root).
+      backfillErrors = pipelineResult.errors.map((e) => e.path);
+    }
+    const succeededCount = changes.length - backfillErrors.length;
 
-    // Recompute the indexed-eligible count after backfill and refresh metadata.
+    // 3. Recompute the indexed-eligible count after reconciliation and refresh
+    //    metadata (both fileCount and chunkCount, which the upsert/delete moved).
     const indexedAfter = await this.chromaClient.listIndexedFilePaths(
       repo.collectionName,
       repo.name
@@ -247,26 +288,35 @@ export class IndexRepairService {
     }
     const eligibleStillIndexed = diagnosis.eligibleFileCount; // disk set size is unchanged
     const newFileCount = Math.min(eligibleStillIndexed, indexedAfterSet.size);
+    const newChunkCount = Math.max(0, repo.chunkCount + chunksUpserted - orphanChunksDeleted);
 
-    const updatedRepo: RepositoryInfo = { ...repo, fileCount: newFileCount };
+    const updatedRepo: RepositoryInfo = {
+      ...repo,
+      fileCount: newFileCount,
+      chunkCount: newChunkCount,
+    };
     await this.repositoryService.updateRepository(updatedRepo);
 
     this.logger.info(
       {
         repository: repo.name,
-        filesBackfilled: changes.length,
-        chunksUpserted: pipelineResult.stats.chunksUpserted,
-        errorCount: pipelineResult.errors.length,
+        filesBackfilled: succeededCount,
+        backfillErrorCount: backfillErrors.length,
+        chunksUpserted,
+        orphanFilesDeleted: diagnosis.extraFiles.length,
+        orphanChunksDeleted,
         newFileCount,
+        newChunkCount,
       },
-      "Backfilled missing files via targeted re-embed"
+      "Reconciled index via targeted re-embed and orphan cleanup"
     );
 
     return {
       ...base,
       action: "backfilled",
-      filesBackfilled: changes.length,
-      chunksUpserted: pipelineResult.stats.chunksUpserted,
+      filesBackfilled: succeededCount,
+      chunksUpserted,
+      backfillErrors,
       completenessAfter: await this.runCompletenessCheck(updatedRepo),
     };
   }

@@ -12,7 +12,7 @@ import simpleGit from "simple-git";
 import type { SimpleGit } from "simple-git";
 import { parseGitUrl } from "../utils/git-url-parser.js";
 import { isLocalPath } from "../utils/path-utils.js";
-import { buildAuthenticatedGitUrl } from "../utils/git-auth-url.js";
+import { buildAuthenticatedGitUrl, sanitizeGitUrl } from "../utils/git-auth-url.js";
 import type { Logger } from "pino";
 import { getComponentLogger } from "../logging/index.js";
 import type {
@@ -918,6 +918,14 @@ export class IncrementalUpdateCoordinator {
       if (authenticatedUrl !== url) {
         await git.remote(["set-url", "origin", authenticatedUrl]);
         this.logger.debug({ localPath, branch }, "Refreshed authenticated origin URL");
+      } else if (this.githubPat || this.gitPat) {
+        // A token is configured but no credential was injected — the URL is an
+        // SSH remote or could not be parsed. Log sanitized so a subsequent
+        // stale-credential pull failure is diagnosable.
+        this.logger.debug(
+          { localPath, branch, url: sanitizeGitUrl(url) },
+          "Origin URL not rewritten despite configured token (SSH or unparseable URL)"
+        );
       }
 
       // Perform git pull origin <branch>
