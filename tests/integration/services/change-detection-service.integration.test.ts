@@ -459,7 +459,11 @@ describe("ChangeDetectionService Integration", () => {
       await fs.promises.writeFile(path.join(testFolder.path, "error1.md"), "content1");
       await fs.promises.writeFile(path.join(testFolder.path, "error2.md"), "content2");
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Poll until at least one post-error change is recorded rather than
+      // sleeping a fixed interval. Filesystem-watch events are delivered
+      // asynchronously and can lag under CI load, which made a fixed 500ms
+      // wait flaky (the second, successful event sometimes arrived later).
+      await waitForChange(successChanges, () => true, 2000);
 
       // First event threw, but subsequent events should still work
       // (The handler recovered after the first error)
