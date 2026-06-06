@@ -111,6 +111,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return 0;
   }
 
+  async listIndexedFilePaths(): Promise<Set<string>> {
+    return new Set();
+  }
+
   async getCollectionEmbeddingMetadata(): Promise<ParsedEmbeddingMetadata | null> {
     return null;
   }

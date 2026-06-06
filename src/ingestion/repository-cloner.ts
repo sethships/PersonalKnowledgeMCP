@@ -25,6 +25,7 @@ import {
   DEFAULT_RETRY_CONFIG,
   type RetryConfig,
 } from "../utils/retry.js";
+import { buildAuthenticatedGitUrl, sanitizeGitUrl } from "../utils/git-auth-url.js";
 
 /**
  * Git clone option flags and defaults.
@@ -508,38 +509,10 @@ export class RepositoryCloner {
    * @returns URL with authentication credentials if PAT is configured, otherwise original URL
    */
   private buildAuthenticatedUrl(url: string): string {
-    // SSH URLs use key-based auth — no PAT injection needed
-    if (url.startsWith("git@")) {
-      return url;
-    }
-
-    try {
-      const parsed = new URL(url);
-
-      if (parsed.hostname === "github.com" && this.config.githubPat) {
-        // GitHub: https://{PAT}:x-oauth-basic@github.com/owner/repo.git
-        parsed.username = this.config.githubPat;
-        parsed.password = "x-oauth-basic";
-      } else if (parsed.hostname !== "github.com" && this.config.gitPat) {
-        // Generic git host (GitLab, Gitea, etc.): https://{token}:@host/owner/repo.git
-        parsed.username = this.config.gitPat;
-        parsed.password = "";
-      } else {
-        return url;
-      }
-
-      // Return authenticated URL (never logged)
-      return parsed.toString();
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          url: this.sanitizeUrl(url),
-        },
-        "Failed to build authenticated URL, using original URL"
-      );
-      return url;
-    }
+    return buildAuthenticatedGitUrl(url, {
+      githubPat: this.config.githubPat,
+      gitPat: this.config.gitPat,
+    });
   }
 
   /**
@@ -549,16 +522,7 @@ export class RepositoryCloner {
    * @returns URL without credentials
    */
   private sanitizeUrl(url: string): string {
-    try {
-      const parsed = new URL(url);
-      // Remove username and password
-      parsed.username = "";
-      parsed.password = "";
-      return parsed.toString();
-    } catch {
-      // If URL parsing fails, return as-is (likely already sanitized)
-      return url;
-    }
+    return sanitizeGitUrl(url);
   }
 
   /**

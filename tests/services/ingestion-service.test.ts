@@ -269,6 +269,10 @@ class MockChromaStorageClient implements ChromaStorageClient {
     return 0;
   }
 
+  async listIndexedFilePaths(): Promise<Set<string>> {
+    return new Set();
+  }
+
   setShouldFailCreate(shouldFail: boolean) {
     this.shouldFailCreate = shouldFail;
   }

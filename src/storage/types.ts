@@ -466,6 +466,23 @@ export interface ChromaStorageClient {
   ): Promise<number>;
 
   /**
+   * List the distinct indexed file paths for a repository.
+   *
+   * Returns the set of unique `file_path` metadata values across all chunks of
+   * the given repository, fetching metadata only (no document bodies or
+   * embeddings) so it stays cheap even on large collections. Used by index
+   * repair to diff indexed content against files on disk.
+   *
+   * @param collectionName - Target collection name
+   * @param repository - Repository name to filter chunks by
+   * @returns Set of distinct file paths currently indexed for the repository
+   * @throws {CollectionNotFoundError} If collection doesn't exist
+   * @throws {SearchOperationError} If query operation fails
+   * @throws {StorageConnectionError} If not connected to ChromaDB
+   */
+  listIndexedFilePaths(collectionName: string, repository: string): Promise<Set<string>>;
+
+  /**
    * Get embedding provider metadata for a collection
    *
    * Retrieves the embedding provider, model, and dimensions that were used

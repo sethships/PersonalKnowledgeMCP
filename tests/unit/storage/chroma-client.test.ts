@@ -1361,4 +1361,41 @@ describe("ChromaStorageClientImpl", () => {
       expect(freshId).not.toBe(originalId);
     });
   });
+
+  describe("listIndexedFilePaths()", () => {
+    const collectionName = "repo_test";
+
+    test("returns distinct file paths across multiple chunks", async () => {
+      await client.addDocuments(collectionName, sampleDocuments);
+
+      const filePaths = await client.listIndexedFilePaths(collectionName, "test-repo");
+
+      // sampleDocuments has 3 chunks across 2 distinct files
+      expect(filePaths).toBeInstanceOf(Set);
+      expect(filePaths.size).toBe(2);
+      expect(filePaths.has("src/auth/login.ts")).toBe(true);
+      expect(filePaths.has("src/api/routes.ts")).toBe(true);
+    });
+
+    test("filters by repository", async () => {
+      await client.addDocuments(collectionName, sampleDocuments);
+
+      const filePaths = await client.listIndexedFilePaths(collectionName, "other-repo");
+      expect(filePaths.size).toBe(0);
+    });
+
+    test("returns an empty set for an empty collection", async () => {
+      await client.getOrCreateCollection(collectionName);
+
+      const filePaths = await client.listIndexedFilePaths(collectionName, "test-repo");
+      expect(filePaths.size).toBe(0);
+    });
+
+    test("throws CollectionNotFoundError when collection does not exist", async () => {
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(client.listIndexedFilePaths("missing_collection", "test-repo")).rejects.toThrow(
+        CollectionNotFoundError
+      );
+    });
+  });
 });
