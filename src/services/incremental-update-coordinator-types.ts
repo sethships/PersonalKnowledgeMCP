@@ -39,6 +39,23 @@ export interface CoordinatorConfig {
    * @default 20
    */
   updateHistoryLimit?: number;
+
+  /**
+   * GitHub Personal Access Token used to refresh the authenticated `origin`
+   * URL before pulling an existing clone.
+   *
+   * Without this, `git pull` reuses whatever credential was embedded in the
+   * clone's `origin` URL at clone time, which fails once that token expires.
+   * Providing the freshly resolved PAT here lets the coordinator self-heal
+   * after PAT rotation.
+   */
+  githubPat?: string;
+
+  /**
+   * Generic git token for non-github.com hosts (GitLab, Gitea, etc.), used the
+   * same way as {@link githubPat} when refreshing the `origin` URL.
+   */
+  gitPat?: string;
 }
 
 /**

@@ -612,6 +612,22 @@ export type ValidatedCheckCompletenessOptions = z.infer<
   typeof CheckCompletenessCommandOptionsSchema
 >;
 
+/**
+ * Schema for repair command options
+ *
+ * Validates options for diagnosing and repairing an incomplete index by
+ * re-embedding only the missing files (or correcting drifted metadata).
+ */
+export const RepairCommandOptionsSchema = z.object({
+  dryRun: z.boolean().optional(),
+  json: z.boolean().optional(),
+});
+
+/**
+ * Inferred TypeScript type for repair command
+ */
+export type ValidatedRepairOptions = z.infer<typeof RepairCommandOptionsSchema>;
+
 // ============================================================================
 // Tables Command Validation Schemas
 // ============================================================================

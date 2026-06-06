@@ -437,6 +437,15 @@ docker compose --profile default up -d     # Single instance (backwards compatib
 3. Select `repo` scope
 4. Add to `.env`: `GITHUB_PAT=ghp_...`
 
+**Rotating an expired PAT**: Simply replace `GITHUB_PAT` in `.env` with the new token. The
+next incremental update refreshes each existing clone's authenticated `origin` URL from the
+resolved token before pulling, so a previously embedded (now expired) credential no longer
+causes "Authentication failed". No re-clone is required.
+
+> **Note:** For private repositories the token is embedded in the clone's `origin` URL and
+> therefore written to that clone's local `.git/config` (under `data/repositories/<name>`).
+> This is local-only state, never committed; rotating the PAT overwrites it on the next pull.
+
 ---
 
 ## Related Documentation

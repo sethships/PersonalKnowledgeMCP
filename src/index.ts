@@ -488,12 +488,15 @@ async function main(): Promise<void> {
         const fileScanner = new FileScanner();
         const completenessChecker = new IndexCompletenessChecker(fileScanner);
 
-        // Create coordinator
+        // Create coordinator. Pass the resolved PAT (and any generic git token)
+        // so updateLocalClone refreshes the authenticated origin URL before
+        // pulling, surviving PAT rotation even when the clone has a stale
+        // embedded credential.
         updateCoordinator = new IncrementalUpdateCoordinator(
           githubClient,
           repositoryService,
           updatePipeline,
-          { completenessChecker }
+          { completenessChecker, githubPat, gitPat: Bun.env["GIT_PAT"] }
         );
 
         // Local-folder coordinator shares the metadata service + pipeline.

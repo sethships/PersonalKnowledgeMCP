@@ -56,6 +56,21 @@ function createTestFolder(overrides: Partial<WatchedFolder> = {}): WatchedFolder
   };
 }
 
+/**
+ * Poll until `predicate()` is true or the timeout elapses.
+ *
+ * Filesystem-watch events are delivered asynchronously and can lag under load
+ * (notably in CI), so assertions that depend on a specific number of events
+ * having been processed must wait for the condition rather than a fixed sleep.
+ */
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe("ChangeDetectionService", () => {
   let folderWatcher: FolderWatcherService;
   let changeDetection: ChangeDetectionService;
@@ -352,8 +367,8 @@ describe("ChangeDetectionService", () => {
       const initialContent = "initial content";
       await fs.promises.writeFile(testFilePath, initialContent);
 
-      // Wait for initial add to be processed and state captured
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Wait for the initial add to be processed and state captured.
+      await waitFor(() => changeDetection.getTrackedFileCount() > 0);
 
       // Verify state was captured
       expect(changeDetection.getTrackedFileCount()).toBeGreaterThan(0);
@@ -386,7 +401,9 @@ describe("ChangeDetectionService", () => {
       await fs.promises.writeFile(path.join(testFolder.path, "file1.md"), "content 1");
       await fs.promises.writeFile(path.join(testFolder.path, "file2.md"), "content 2");
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Poll for both add events to be tracked rather than sleeping a fixed
+      // interval — under CI load the second event can arrive after 300ms.
+      await waitFor(() => changeDetection.getTrackedFileCount() === 2);
 
       expect(changeDetection.getTrackedFileCount()).toBe(2);
     });
@@ -398,7 +415,7 @@ describe("ChangeDetectionService", () => {
 
       await folderWatcher.startWatching(testFolder);
       await fs.promises.writeFile(path.join(testFolder.path, "clear-test.md"), "content");
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitFor(() => changeDetection.getTrackedFileCount() > 0);
 
       expect(changeDetection.getTrackedFileCount()).toBeGreaterThan(0);
 

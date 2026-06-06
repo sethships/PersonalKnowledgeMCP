@@ -16,6 +16,8 @@
 export function buildDriftRecoveryHint(repository: string): string {
   return (
     `Index drift detected: HEAD SHA matches the tracked commit but the index is incomplete. ` +
-    `Run 'bun run cli update ${repository} --force' to re-index and recover.`
+    `Run 'bun run cli repair ${repository}' to re-embed only the missing files (use ` +
+    `'--dry-run' first to inspect them), or 'bun run cli update ${repository} --force' for a ` +
+    `full re-index when divergence is large.`
   );
 }

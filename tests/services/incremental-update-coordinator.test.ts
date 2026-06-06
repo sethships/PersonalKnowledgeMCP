@@ -1588,4 +1588,78 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(changes?.[0]?.previousPath).toBe("src/old-name.ts");
     });
   });
+
+  describe("updateLocalClone authenticated origin refresh (PAT rotation)", () => {
+    // Minimal SimpleGit mock recording call order so we can assert that the
+    // origin URL is refreshed with the resolved PAT *before* git pull runs.
+    function makeMockGit() {
+      const order: string[] = [];
+      const git = {
+        remote: mock(async (_args: string[]) => {
+          order.push("remote");
+          return "";
+        }),
+        pull: mock(async (_remote: string, _branch: string) => {
+          order.push("pull");
+          return { files: [], insertions: 0, deletions: 0, summary: {} };
+        }),
+      };
+      return { git, order };
+    }
+
+    it("refreshes origin with the resolved PAT before pulling, overriding a stale embedded token", async () => {
+      const { git, order } = makeMockGit();
+      const coord = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          githubPat: "ghp_freshtoken",
+          simpleGitFactory: () => git as unknown as import("simple-git").SimpleGit,
+        }
+      );
+
+      // Call the private method directly to isolate the clone-refresh behavior.
+      await (
+        coord as unknown as {
+          updateLocalClone: (localPath: string, branch: string, url: string) => Promise<void>;
+        }
+      ).updateLocalClone("/repos/test-repo", "main", "https://github.com/owner/test-repo.git");
+
+      // set-url called with an authenticated URL carrying the fresh PAT
+      expect(git.remote).toHaveBeenCalledTimes(1);
+      const remoteArgs = (git.remote as ReturnType<typeof mock>).mock.calls[0]?.[0] as string[];
+      expect(remoteArgs[0]).toBe("set-url");
+      expect(remoteArgs[1]).toBe("origin");
+      expect(remoteArgs[2]).toContain("ghp_freshtoken");
+      expect(remoteArgs[2]).toContain("x-oauth-basic");
+
+      // pull happened after the refresh
+      expect(git.pull).toHaveBeenCalledWith("origin", "main");
+      expect(order).toEqual(["remote", "pull"]);
+    });
+
+    it("does not rewrite origin when no PAT is configured (public/SSH repo)", async () => {
+      const { git, order } = makeMockGit();
+      const coord = new IncrementalUpdateCoordinator(
+        mockGitHubClient,
+        mockRepositoryService,
+        mockUpdatePipeline,
+        {
+          // no githubPat / gitPat
+          simpleGitFactory: () => git as unknown as import("simple-git").SimpleGit,
+        }
+      );
+
+      await (
+        coord as unknown as {
+          updateLocalClone: (localPath: string, branch: string, url: string) => Promise<void>;
+        }
+      ).updateLocalClone("/repos/test-repo", "main", "https://github.com/owner/test-repo.git");
+
+      expect(git.remote).not.toHaveBeenCalled();
+      expect(git.pull).toHaveBeenCalledWith("origin", "main");
+      expect(order).toEqual(["pull"]);
+    });
+  });
 });

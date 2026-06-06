@@ -1204,10 +1204,12 @@ Development workflow:
 
 ## Code Statistics
 
+Generated with [cloc](https://github.com/AlDanial/cloc) (tracked files only, via `git ls-files`):
+
 | Language | Files | Blank | Comment | Code |
 |:---------|------:|------:|--------:|-----:|
-| TypeScript | 536 | 28,099 | 47,525 | 130,407 |
-| Markdown | 82 | 10,478 | 9 | 32,928 |
+| TypeScript | 548 | 28,488 | 49,994 | 131,397 |
+| Markdown | 83 | 10,561 | 9 | 33,137 |
 | YAML | 68 | 332 | 597 | 3,185 |
 | Bourne Shell | 7 | 471 | 526 | 1,934 |
 | PowerShell | 4 | 399 | 281 | 1,232 |
@@ -1228,9 +1230,9 @@ Development workflow:
 | Visual Studio Solution | 1 | 0 | 1 | 31 |
 | TOML | 1 | 12 | 20 | 15 |
 | MSBuild script | 1 | 3 | 0 | 14 |
-| **SUM** | **736** | **40,373** | **49,860** | **172,393** |
+| **SUM** | **749** | **40,845** | **52,329** | **173,592** |
 
-*Generated with `cloc --vcs=git --md .` against `main @ 086043d` on 2026-05-06.*
+*Generated with `cloc --vcs=git --md .` against `feature/587-incremental-update-reliability` (merge of `main @ 039407f`) on 2026-06-05.*
 
 ## License
 

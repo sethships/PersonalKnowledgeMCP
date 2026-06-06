@@ -151,6 +151,9 @@ class MockChromaStorageClient implements ChromaStorageClient {
   async deleteDocumentsByFilePrefix() {
     return 0;
   }
+  async listIndexedFilePaths(): Promise<Set<string>> {
+    return new Set();
+  }
 }
 
 class MockRepositoryService implements RepositoryMetadataService {
