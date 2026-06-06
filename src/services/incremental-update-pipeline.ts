@@ -83,12 +83,20 @@ export class IncrementalUpdatePipeline {
    *
    * OpenAI's hard input limit is 8,192 tokens per text. `estimateTokens` uses a
    * chars/4 heuristic that can under-estimate for token-dense content (tables,
-   * code), so this is set well below 8,192. Correctly chunked content is at
-   * most ~500 estimated tokens; anything above this threshold is pathological
-   * (issue #589) and is skipped with an error rather than poisoning its whole
-   * embedding batch.
+   * code), so this ceiling is kept below 8,192. Correctly chunked content is at
+   * most ~`CHUNK_MAX_TOKENS` estimated tokens; anything above this threshold is
+   * pathological (issue #589) and is skipped with an error rather than poisoning
+   * its whole embedding batch.
+   *
+   * Derived from the operator's `CHUNK_MAX_TOKENS` override (the same env var the
+   * FileChunker/DocumentChunker honor) so that raising the chunk size does not
+   * silently cause every chunk to exceed a hard-coded skip threshold — that
+   * would turn a valid config into total data loss. The ceiling is `2x` the
+   * configured chunk size to leave headroom for the chars/4 estimator's
+   * under-counting, with a floor of 6,000 (the historical default) and a cap of
+   * 8,000 to stay below the provider's 8,192 hard limit.
    */
-  private readonly MAX_EMBEDDING_INPUT_TOKENS = 6000;
+  private readonly MAX_EMBEDDING_INPUT_TOKENS: number;
 
   /**
    * Doc-graph helper instance — stateless aside from cached extractor objects
@@ -116,7 +124,16 @@ export class IncrementalUpdatePipeline {
     private readonly graphIngestionService?: GraphIngestionService,
     private readonly documentTypeDetector?: DocumentTypeDetector,
     private readonly documentChunker?: DocumentChunker
-  ) {}
+  ) {
+    // Derive the per-chunk skip ceiling from the operator's CHUNK_MAX_TOKENS
+    // override so a larger configured chunk size doesn't cause every chunk to be
+    // skipped against a fixed limit. Floor at 6,000 (historical default), cap at
+    // 8,000 to stay under the provider's 8,192 hard input limit.
+    const envMax = process.env["CHUNK_MAX_TOKENS"];
+    const parsed = envMax ? parseInt(envMax, 10) : NaN;
+    const configured = !isNaN(parsed) && parsed > 0 ? parsed : 500;
+    this.MAX_EMBEDDING_INPUT_TOKENS = Math.min(8000, Math.max(6000, configured * 2));
+  }
 
   /**
    * Validate file path to prevent path traversal attacks.
@@ -204,6 +221,7 @@ export class IncrementalUpdatePipeline {
       filesDeleted: 0,
       chunksUpserted: 0,
       chunksDeleted: 0,
+      chunksSkipped: 0,
       durationMs: 0,
     };
 
@@ -964,6 +982,7 @@ export class IncrementalUpdatePipeline {
     for (const chunk of chunks) {
       const estimatedTokens = estimateTokens(chunk.content);
       if (estimatedTokens > this.MAX_EMBEDDING_INPUT_TOKENS) {
+        stats.chunksSkipped = (stats.chunksSkipped ?? 0) + 1;
         errors.push({
           path: chunk.filePath,
           error:

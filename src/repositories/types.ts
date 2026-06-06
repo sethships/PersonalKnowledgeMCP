@@ -476,6 +476,18 @@ export interface UpdateHistoryEntry {
   chunksDeleted: number;
 
   /**
+   * Number of chunks skipped because their estimated token count exceeded the
+   * embedding input ceiling (issue #589).
+   *
+   * Optional so legacy history entries (written before this field existed) and
+   * partial mocks remain valid. A non-zero value means pathological chunks were
+   * dropped before embedding rather than poisoning their batch.
+   *
+   * @example 1
+   */
+  chunksSkipped?: number;
+
+  /**
    * Duration of the pipeline processing in milliseconds
    *
    * Time spent processing file changes, excluding git operations

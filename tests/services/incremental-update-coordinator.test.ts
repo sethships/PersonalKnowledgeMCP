@@ -716,8 +716,16 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(historyEntry.status).toBe("partial");
     });
 
-    it("should record 'failed' status when all files fail", async () => {
-      // Mock pipeline with errors >= total files changed
+    it("should record 'incomplete' status (not 'failed') when changed files stored zero chunks with errors", async () => {
+      // Semantic change (issue #589, review H1): this shape — content-producing
+      // files changed (filesAdded+filesModified > 0), zero chunks upserted, and
+      // errors present — is a `zeroUpsertFailure`. It used to classify as
+      // "failed", which set the repo status to "error". An "error" repo is
+      // excluded from update-all-command.ts and graph-populate-all-command.ts
+      // (both filter on `status === "ready"`), so the repo would be silently
+      // dropped from every future bulk update — and because the SHA is held, it
+      // would never recover. Routing this shape to "incomplete" keeps the repo
+      // "ready" (searchable) and retryable on the next update.
       mockUpdatePipeline.processChanges = mock(async () => ({
         stats: {
           filesAdded: 1,
@@ -750,7 +758,63 @@ describe("IncrementalUpdateCoordinator", () => {
       if (!historyEntry) throw new Error("History entry not found");
 
       expect(historyEntry.errorCount).toBe(2);
-      expect(historyEntry.status).toBe("failed");
+      // Was "failed" before H1; now "incomplete" so the repo stays usable.
+      expect(historyEntry.status).toBe("incomplete");
+      // Repo status must stay "ready" so bulk update commands don't drop it.
+      expect(updatedRepo?.status).toBe("ready");
+      // SHA must NOT advance — next update retries these files.
+      expect(updatedRepo?.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+    });
+
+    it("should record 'incomplete' for a single-file all-oversized update (issue #589)", async () => {
+      // Real-world shape: one modified file whose chunks were all skipped as
+      // oversized. Its old chunks were already deleted (chunksDeleted > 0) and
+      // nothing new was stored (chunksUpserted === 0) with one per-chunk skip
+      // error. This is a zeroUpsertFailure (filesModified > 0) and must be
+      // "incomplete" (review H1) so the repo stays "ready" and retryable rather
+      // than being permanently dropped from bulk updates.
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 1,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 4,
+          chunksSkipped: 1,
+          durationMs: 250,
+        },
+        errors: [
+          {
+            path: "docs/huge.md",
+            error: "Chunk docs/huge.md:0 skipped: estimated 9000 tokens exceeds limit (8000)",
+          },
+        ],
+        filterStats: {
+          totalChanges: 1,
+          eligibleChanges: 1,
+          filteredChanges: 1,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("incomplete");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (!updatedRepo) throw new Error("Updated repo not found");
+
+      // Repo stays searchable and eligible for the next bulk update.
+      expect(updatedRepo.status).toBe("ready");
+      // SHA held at the previous commit so the next update retries the file.
+      expect(updatedRepo.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+
+      const historyEntry = updatedRepo.updateHistory?.[0];
+      expect(historyEntry?.status).toBe("incomplete");
+      expect(historyEntry?.newCommit).toBe(testRepo.lastIndexedCommitSha);
     });
 
     it("should append to existing history (newest first)", async () => {
@@ -1415,10 +1479,11 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(updatedRepo.status).toBe("ready");
         expect(updatedRepo.errorMessage).toContain("no chunks were stored");
 
-        // History records partial (graph work may have succeeded) but the
-        // commit pointer does not move
+        // History records "incomplete" (review H1): a zeroUpsertFailure now
+        // classifies as "incomplete" rather than "partial"/"failed" so the repo
+        // status stays "ready" and the commit pointer does not move.
         const historyEntry = updatedRepo.updateHistory?.[0];
-        expect(historyEntry?.status).toBe("partial");
+        expect(historyEntry?.status).toBe("incomplete");
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         expect(historyEntry?.newCommit).toBe(testRepo.lastIndexedCommitSha);
       }

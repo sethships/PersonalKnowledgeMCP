@@ -760,6 +760,9 @@ describe("IncrementalUpdatePipeline", () => {
       expect(result.errors[0]?.path).toBe("src/minified.ts");
       expect(result.errors[0]?.error).toContain("exceeds embedding input limit");
 
+      // The skip is surfaced in the stats (issue #589, review L1)
+      expect(result.stats.chunksSkipped).toBe(1);
+
       // The normal file's chunk was still embedded and stored
       expect(result.stats.chunksUpserted).toBeGreaterThan(0);
 
@@ -769,6 +772,51 @@ describe("IncrementalUpdatePipeline", () => {
       ).mock.calls.flatMap((c) => c[0] as string[]);
       for (const text of sentTexts) {
         expect(text.length).toBeLessThan(24000);
+      }
+    });
+
+    it("derives the embedding ceiling from CHUNK_MAX_TOKENS so a raised chunk size is not skipped (issue #589)", async () => {
+      // Regression for review M1: the per-chunk skip ceiling must scale with the
+      // operator's CHUNK_MAX_TOKENS override. With the historical hard-coded
+      // 6000 ceiling, raising CHUNK_MAX_TOKENS above 6000 would skip every chunk
+      // — valid config becomes total data loss. A ~26,000-char single line is
+      // ~6,500 estimated tokens (chars/4): above the old 6000 ceiling but below
+      // the derived 8000 ceiling (min(8000, max(6000, 7000 * 2))).
+      const savedChunkMaxTokens = process.env["CHUNK_MAX_TOKENS"];
+      process.env["CHUNK_MAX_TOKENS"] = "7000";
+      try {
+        // The shared beforeEach instances were built WITHOUT the env var, so
+        // construct fresh ones that pick up the override.
+        const envFileChunker = new FileChunker();
+        const envPipeline = new IncrementalUpdatePipeline(
+          envFileChunker,
+          mockEmbeddingProvider,
+          mockStorageClient,
+          logger
+        );
+
+        await mkdir(join(testDir, "src"), { recursive: true });
+        // ~26,000 chars on one line → ~6,500 estimated tokens, one chunk
+        // (line-based chunking cannot split a single line).
+        const bigLine = `export const blob = "${"a".repeat(26000)}";`;
+        await writeFile(join(testDir, "src/bigline.ts"), bigLine);
+
+        const changes: FileChange[] = [{ path: "src/bigline.ts", status: "added" }];
+        const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+        const result = await envPipeline.processChanges(changes, options);
+
+        // Chunk was embedded and stored, not skipped.
+        expect(result.errors).toHaveLength(0);
+        expect(result.stats.chunksSkipped).toBe(0);
+        expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+        expect(mockStorageClient.upsertDocuments).toHaveBeenCalled();
+      } finally {
+        if (savedChunkMaxTokens === undefined) {
+          delete process.env["CHUNK_MAX_TOKENS"];
+        } else {
+          process.env["CHUNK_MAX_TOKENS"] = savedChunkMaxTokens;
+        }
       }
     });
   });

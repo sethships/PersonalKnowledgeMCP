@@ -309,6 +309,10 @@ export class LocalFolderUpdateCoordinator {
         durationMs: pipelineResult.stats.durationMs,
         errorCount: pipelineResult.errors.length,
         status: historyStatus,
+        // Surface oversized-chunk skips (issue #589) when the pipeline reported any.
+        ...(pipelineResult.stats.chunksSkipped !== undefined && {
+          chunksSkipped: pipelineResult.stats.chunksSkipped,
+        }),
         skippedFileCount: pipelineResult.filterStats.skippedChanges,
         eligibleFileCount: pipelineResult.filterStats.eligibleChanges,
         ...(pipelineResult.stats.graph && {

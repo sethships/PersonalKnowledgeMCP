@@ -541,21 +541,36 @@ export class IncrementalUpdateCoordinator {
         );
       }
 
+      // Status taxonomy (issue #589, review H1):
+      //
+      // Both SHA-blocking guards (`allEligibleFiltered` and `zeroUpsertFailure`)
+      // MUST classify as "incomplete", NOT "failed". A "failed" historyStatus
+      // sets the repo `status` to "error" (see below), which excludes the repo
+      // from update-all-command.ts and graph-populate-all-command.ts (both filter
+      // on `status === "ready"`). For a zero-upsert failure the SHA is held, so an
+      // "error" status would drop the repo from every future bulk update —
+      // reintroducing the silent-permanent-loss failure mode this PR fixes. By
+      // routing both guards to "incomplete" the repo stays "ready" (searchable)
+      // and is retried on the next update. The zeroUpsertFailure-specific warn
+      // log is emitted separately above; the allEligibleFiltered branch keeps its
+      // own warn log here.
       let historyStatus: "success" | "partial" | "failed" | "incomplete";
-      if (allEligibleFiltered) {
+      if (allEligibleFiltered || zeroUpsertFailure) {
         historyStatus = "incomplete";
-        logger.warn(
-          {
-            operation: "coordinator_sha_guard",
-            repository: repositoryName,
-            eligibleChanges: pipelineResult.filterStats.eligibleChanges,
-            totalChanges: pipelineResult.filterStats.totalChanges,
-            filteredChanges: pipelineResult.filterStats.filteredChanges,
-          },
-          "SHA advancement blocked: eligible files existed but none were processed. " +
-            "This likely indicates a filtering misconfiguration. " +
-            "Index remains at previous commit to prevent data loss."
-        );
+        if (allEligibleFiltered) {
+          logger.warn(
+            {
+              operation: "coordinator_sha_guard",
+              repository: repositoryName,
+              eligibleChanges: pipelineResult.filterStats.eligibleChanges,
+              totalChanges: pipelineResult.filterStats.totalChanges,
+              filteredChanges: pipelineResult.filterStats.filteredChanges,
+            },
+            "SHA advancement blocked: eligible files existed but none were processed. " +
+              "This likely indicates a filtering misconfiguration. " +
+              "Index remains at previous commit to prevent data loss."
+          );
+        }
       } else if (pipelineResult.errors.length === 0) {
         historyStatus = "success";
       } else if (totalFilesProcessed === 0) {
@@ -582,6 +597,10 @@ export class IncrementalUpdateCoordinator {
         durationMs: pipelineResult.stats.durationMs,
         errorCount: pipelineResult.errors.length,
         status: historyStatus,
+        // Surface oversized-chunk skips (issue #589) when the pipeline reported any.
+        ...(pipelineResult.stats.chunksSkipped !== undefined && {
+          chunksSkipped: pipelineResult.stats.chunksSkipped,
+        }),
         skippedFileCount: pipelineResult.filterStats.skippedChanges,
         eligibleFileCount: pipelineResult.filterStats.eligibleChanges,
         // Include graph stats if graph service was configured
