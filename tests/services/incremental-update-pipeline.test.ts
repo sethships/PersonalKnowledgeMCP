@@ -981,6 +981,7 @@ describe("IncrementalUpdatePipeline", () => {
         logger
       );
 
+      // eslint-disable-next-line @typescript-eslint/await-thenable
       await expect(
         noResolverPipeline.processChanges([{ path: "src/d.ts", status: "modified" }], {
           ...baseOptions,
