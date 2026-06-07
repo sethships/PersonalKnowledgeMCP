@@ -344,6 +344,19 @@ export interface UpdateStats {
   durationMs: number;
 
   /**
+   * Number of chunks skipped because their estimated token count exceeded the
+   * embedding input ceiling (MAX_EMBEDDING_INPUT_TOKENS).
+   *
+   * Optional so existing partial-stats objects (mocks, the coordinator's
+   * zero-stats helpers) remain valid. A non-zero value indicates pathological
+   * chunks were dropped before embedding (issue #589) rather than poisoning
+   * their batch — the affected files also appear in `errors`.
+   *
+   * @example 1
+   */
+  chunksSkipped?: number;
+
+  /**
    * Graph database update statistics (optional).
    *
    * Only present when a GraphIngestionService is configured.

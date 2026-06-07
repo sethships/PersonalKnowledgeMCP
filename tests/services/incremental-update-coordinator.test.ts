@@ -716,8 +716,16 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(historyEntry.status).toBe("partial");
     });
 
-    it("should record 'failed' status when all files fail", async () => {
-      // Mock pipeline with errors >= total files changed
+    it("should record 'incomplete' status (not 'failed') when changed files stored zero chunks with errors", async () => {
+      // Semantic change (issue #589, review H1): this shape — content-producing
+      // files changed (filesAdded+filesModified > 0), zero chunks upserted, and
+      // errors present — is a `zeroUpsertFailure`. It used to classify as
+      // "failed", which set the repo status to "error". An "error" repo is
+      // excluded from update-all-command.ts and graph-populate-all-command.ts
+      // (both filter on `status === "ready"`), so the repo would be silently
+      // dropped from every future bulk update — and because the SHA is held, it
+      // would never recover. Routing this shape to "incomplete" keeps the repo
+      // "ready" (searchable) and retryable on the next update.
       mockUpdatePipeline.processChanges = mock(async () => ({
         stats: {
           filesAdded: 1,
@@ -750,7 +758,63 @@ describe("IncrementalUpdateCoordinator", () => {
       if (!historyEntry) throw new Error("History entry not found");
 
       expect(historyEntry.errorCount).toBe(2);
-      expect(historyEntry.status).toBe("failed");
+      // Was "failed" before H1; now "incomplete" so the repo stays usable.
+      expect(historyEntry.status).toBe("incomplete");
+      // Repo status must stay "ready" so bulk update commands don't drop it.
+      expect(updatedRepo?.status).toBe("ready");
+      // SHA must NOT advance — next update retries these files.
+      expect(updatedRepo?.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+    });
+
+    it("should record 'incomplete' for a single-file all-oversized update (issue #589)", async () => {
+      // Real-world shape: one modified file whose chunks were all skipped as
+      // oversized. Its old chunks were already deleted (chunksDeleted > 0) and
+      // nothing new was stored (chunksUpserted === 0) with one per-chunk skip
+      // error. This is a zeroUpsertFailure (filesModified > 0) and must be
+      // "incomplete" (review H1) so the repo stays "ready" and retryable rather
+      // than being permanently dropped from bulk updates.
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 1,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 4,
+          chunksSkipped: 1,
+          durationMs: 250,
+        },
+        errors: [
+          {
+            path: "docs/huge.md",
+            error: "Chunk docs/huge.md:0 skipped: estimated 9000 tokens exceeds limit (8000)",
+          },
+        ],
+        filterStats: {
+          totalChanges: 1,
+          eligibleChanges: 1,
+          filteredChanges: 1,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("incomplete");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (!updatedRepo) throw new Error("Updated repo not found");
+
+      // Repo stays searchable and eligible for the next bulk update.
+      expect(updatedRepo.status).toBe("ready");
+      // SHA held at the previous commit so the next update retries the file.
+      expect(updatedRepo.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+
+      const historyEntry = updatedRepo.updateHistory?.[0];
+      expect(historyEntry?.status).toBe("incomplete");
+      expect(historyEntry?.newCommit).toBe(testRepo.lastIndexedCommitSha);
     });
 
     it("should append to existing history (newest first)", async () => {
@@ -1372,6 +1436,120 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(historyEntry.eligibleFileCount).toBe(12);
         expect(historyEntry.skippedFileCount).toBe(15);
       }
+    });
+
+    it("should NOT advance SHA when changed files stored zero chunks with errors (issue #589)", async () => {
+      // Shape of the 2026-06-05 Muzehub-code incident: 139 files changed, the
+      // embed/store step failed wholesale, chunk deletes had already run.
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 9,
+          filesModified: 130,
+          filesDeleted: 0,
+          chunksUpserted: 0,
+          chunksDeleted: 945,
+          durationMs: 113808,
+        },
+        errors: [
+          {
+            path: "(embedding batch 1/18)",
+            error: "Client error: 400 Invalid 'input[8]': maximum input length is 8192 tokens.",
+          },
+        ],
+        filterStats: {
+          totalChanges: 139,
+          eligibleChanges: 139,
+          filteredChanges: 139,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("incomplete");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo).toBeDefined();
+      if (updatedRepo) {
+        // SHA must remain at the old value so the next update retries the diff
+        expect(updatedRepo.lastIndexedCommitSha).toBe(testRepo.lastIndexedCommitSha);
+        // Repo stays searchable - existing chunks are intact
+        expect(updatedRepo.status).toBe("ready");
+        expect(updatedRepo.errorMessage).toContain("no chunks were stored");
+
+        // History records "incomplete" (review H1): a zeroUpsertFailure now
+        // classifies as "incomplete" rather than "partial"/"failed" so the repo
+        // status stays "ready" and the commit pointer does not move.
+        const historyEntry = updatedRepo.updateHistory?.[0];
+        expect(historyEntry?.status).toBe("incomplete");
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        expect(historyEntry?.newCommit).toBe(testRepo.lastIndexedCommitSha);
+      }
+    });
+
+    it("should advance SHA for delete-only updates with zero upserts", async () => {
+      // Deletions legitimately store no chunks; errors elsewhere must not
+      // trigger the zero-upsert guard when no added/modified files exist.
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 0,
+          filesModified: 0,
+          filesDeleted: 3,
+          chunksUpserted: 0,
+          chunksDeleted: 12,
+          durationMs: 90,
+        },
+        errors: [{ path: "old/gone.ts", error: "Graph cleanup warning" }],
+        filterStats: {
+          totalChanges: 3,
+          eligibleChanges: 3,
+          filteredChanges: 3,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo?.lastIndexedCommitSha).toBe(headCommit.sha);
+    });
+
+    it("should advance SHA when some chunks were stored despite batch errors", async () => {
+      // Per-batch isolation: one failed batch, others stored. Progress was
+      // made, so the SHA advances and the run records partial status.
+      mockUpdatePipeline.processChanges = mock(async () => ({
+        stats: {
+          filesAdded: 5,
+          filesModified: 20,
+          filesDeleted: 0,
+          chunksUpserted: 150,
+          chunksDeleted: 130,
+          durationMs: 60000,
+        },
+        errors: [{ path: "(embedding batch 2/3)", error: "rate limit" }],
+        filterStats: {
+          totalChanges: 25,
+          eligibleChanges: 25,
+          filteredChanges: 25,
+          skippedChanges: 0,
+        },
+      }));
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+
+      const updateCalls = (mockRepositoryService.updateRepository as ReturnType<typeof mock>).mock
+        .calls;
+      const updatedRepo = updateCalls[updateCalls.length - 1]?.[0] as RepositoryInfo | undefined;
+      expect(updatedRepo?.lastIndexedCommitSha).toBe(headCommit.sha);
+      expect(updatedRepo?.status).toBe("ready");
     });
 
     it("should include skippedFileCount and eligibleFileCount in history entry", async () => {

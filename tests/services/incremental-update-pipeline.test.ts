@@ -686,10 +686,138 @@ describe("IncrementalUpdatePipeline", () => {
 
       // File was "added" in stats but embedding failed
       expect(result.stats.filesAdded).toBe(1);
-      // Error should be captured
+      // Error should be captured (per-batch since issue #589)
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.path).toBe("(batch embedding/storage)");
+      expect(result.errors[0]?.path).toBe("(embedding batch 1/1)");
       expect(result.errors[0]?.error).toContain("rate limit");
+      expect(result.stats.chunksUpserted).toBe(0);
+    });
+
+    it("should isolate embedding failures per batch (issue #589)", async () => {
+      // Generate enough chunks for two embedding batches (>100 chunks total).
+      // FileChunker caps a single file at MAX_CHUNKS_PER_FILE (100), so use two
+      // files. Each line is ~85 chars (~22 estimated tokens); 500-token chunks
+      // give ~70 chunks per 1700-line file → ~140 chunks across both files.
+      await mkdir(join(testDir, "src"), { recursive: true });
+      const makeLines = (tag: string): string =>
+        Array.from(
+          { length: 1700 },
+          (_, i) => `export const ${tag}${i} = "padding-padding-padding-padding-padding-${i}";`
+        ).join("\n");
+      await writeFile(join(testDir, "src/big1.ts"), makeLines("alpha"));
+      await writeFile(join(testDir, "src/big2.ts"), makeLines("beta"));
+
+      // First embedding call fails (e.g., oversized input rejected by the API),
+      // subsequent calls succeed.
+      let call = 0;
+      mockEmbeddingProvider.generateEmbeddings = mock(async (texts: string[]) => {
+        call++;
+        if (call === 1) {
+          throw new Error("Invalid 'input[8]': maximum input length is 8192 tokens.");
+        }
+        return texts.map(() => new Array(1536).fill(0.1) as number[]);
+      });
+
+      const changes: FileChange[] = [
+        { path: "src/big1.ts", status: "added" },
+        { path: "src/big2.ts", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // More than one batch must have been attempted
+      expect(call).toBeGreaterThan(1);
+
+      // Exactly one batch failed; its error is recorded with batch context
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.path).toMatch(/^\(embedding batch 1\/\d+\)$/);
+      expect(result.errors[0]?.error).toContain("maximum input length");
+
+      // Remaining batches were still embedded and stored
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+      expect(mockStorageClient.upsertDocuments).toHaveBeenCalled();
+    });
+
+    it("should skip oversized chunks instead of failing the batch (issue #589)", async () => {
+      // A single-line file produces a single chunk regardless of size (line-based
+      // chunking cannot split it), far above the embedding input limit.
+      await mkdir(join(testDir, "src"), { recursive: true });
+      const giantLine = `export const blob = "${"a".repeat(30000)}";`;
+      await writeFile(join(testDir, "src/minified.ts"), giantLine);
+      await writeFile(join(testDir, "src/normal.ts"), "export const ok = 1;");
+
+      const changes: FileChange[] = [
+        { path: "src/minified.ts", status: "added" },
+        { path: "src/normal.ts", status: "added" },
+      ];
+      const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+      const result = await pipeline.processChanges(changes, options);
+
+      // The oversized chunk is skipped with a per-chunk error
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.path).toBe("src/minified.ts");
+      expect(result.errors[0]?.error).toContain("exceeds embedding input limit");
+
+      // The skip is surfaced in the stats (issue #589, review L1)
+      expect(result.stats.chunksSkipped).toBe(1);
+
+      // The normal file's chunk was still embedded and stored
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+
+      // The oversized content was never sent to the embedding provider
+      const sentTexts = (
+        mockEmbeddingProvider.generateEmbeddings as ReturnType<typeof mock>
+      ).mock.calls.flatMap((c) => c[0] as string[]);
+      for (const text of sentTexts) {
+        expect(text.length).toBeLessThan(24000);
+      }
+    });
+
+    it("derives the embedding ceiling from CHUNK_MAX_TOKENS so a raised chunk size is not skipped (issue #589)", async () => {
+      // Regression for review M1: the per-chunk skip ceiling must scale with the
+      // operator's CHUNK_MAX_TOKENS override. With the historical hard-coded
+      // 6000 ceiling, raising CHUNK_MAX_TOKENS above 6000 would skip every chunk
+      // — valid config becomes total data loss. A ~26,000-char single line is
+      // ~6,500 estimated tokens (chars/4): above the old 6000 ceiling but below
+      // the derived 8000 ceiling (min(8000, max(6000, 7000 * 2))).
+      const savedChunkMaxTokens = process.env["CHUNK_MAX_TOKENS"];
+      process.env["CHUNK_MAX_TOKENS"] = "7000";
+      try {
+        // The shared beforeEach instances were built WITHOUT the env var, so
+        // construct fresh ones that pick up the override.
+        const envFileChunker = new FileChunker();
+        const envPipeline = new IncrementalUpdatePipeline(
+          envFileChunker,
+          mockEmbeddingProvider,
+          mockStorageClient,
+          logger
+        );
+
+        await mkdir(join(testDir, "src"), { recursive: true });
+        // ~26,000 chars on one line → ~6,500 estimated tokens, one chunk
+        // (line-based chunking cannot split a single line).
+        const bigLine = `export const blob = "${"a".repeat(26000)}";`;
+        await writeFile(join(testDir, "src/bigline.ts"), bigLine);
+
+        const changes: FileChange[] = [{ path: "src/bigline.ts", status: "added" }];
+        const options: UpdateOptions = { ...baseOptions, localPath: testDir };
+
+        const result = await envPipeline.processChanges(changes, options);
+
+        // Chunk was embedded and stored, not skipped.
+        expect(result.errors).toHaveLength(0);
+        expect(result.stats.chunksSkipped).toBe(0);
+        expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+        expect(mockStorageClient.upsertDocuments).toHaveBeenCalled();
+      } finally {
+        if (savedChunkMaxTokens === undefined) {
+          delete process.env["CHUNK_MAX_TOKENS"];
+        } else {
+          process.env["CHUNK_MAX_TOKENS"] = savedChunkMaxTokens;
+        }
+      }
     });
   });
 
