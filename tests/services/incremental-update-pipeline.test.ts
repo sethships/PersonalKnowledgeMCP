@@ -994,6 +994,45 @@ describe("IncrementalUpdatePipeline", () => {
       expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
     });
 
+    it("falls back to repoEmbedding dimensions for the guard when metadata read fails", async () => {
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/e.ts"), "export const e = 5;");
+
+      // getCollectionEmbeddingMetadata throws (transient ChromaDB error) so
+      // collectionMeta stays null. Without the repoEmbedding fallback the guard
+      // would be skipped and per-file deletes would run with the mismatched
+      // 1536-dim default (the #591 destructive sequence). The guard must instead
+      // derive its expected dimensions from options.repoEmbedding (384) and fail
+      // fast before any delete.
+      mockStorageClient.getCollectionEmbeddingMetadata = mock(async () => {
+        throw new Error("ChromaDB unavailable");
+      });
+
+      const noResolverPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider, // 1536-dim default
+        mockStorageClient,
+        logger
+      );
+
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        noResolverPipeline.processChanges([{ path: "src/e.ts", status: "modified" }], {
+          ...baseOptions,
+          localPath: testDir,
+          repoEmbedding: {
+            provider: "transformersjs",
+            model: "Xenova/all-MiniLM-L6-v2",
+            dimensions: 384,
+          },
+        })
+      ).rejects.toThrow(UpdateDimensionMismatchError);
+
+      // The guard tripped before processModifiedFile could delete old chunks
+      expect(mockStorageClient.deleteDocumentsByFilePrefix).not.toHaveBeenCalled();
+      expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
+    });
+
     it("does not consult collection metadata for delete-only updates", async () => {
       const metadataMock = mock(async () => null);
       mockStorageClient.getCollectionEmbeddingMetadata = metadataMock;

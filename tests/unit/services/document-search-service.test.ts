@@ -75,15 +75,27 @@ class MockEmbeddingProviderFactory {
   /** Count of createProvider invocations for caching verification */
   createProviderCallCount = 0;
 
+  /** Config passed to the most recent createProvider call (for #581 assertions) */
+  lastConfig: EmbeddingProviderConfig | null = null;
+
   /** When set, createProvider will throw this error */
   private errorToThrow: Error | null = null;
 
-  createProvider(_config: EmbeddingProviderConfig): EmbeddingProvider {
+  createProvider(config: EmbeddingProviderConfig): EmbeddingProvider {
     this.createProviderCallCount++;
+    this.lastConfig = config;
     if (this.errorToThrow) {
       throw this.errorToThrow;
     }
     return new MockEmbeddingProvider();
+  }
+
+  /**
+   * Resolve a provider id to its canonical type. Required for the resolver's
+   * provider-aware default lookup (#581) to engage instead of pass-through.
+   */
+  resolveProviderType(providerId: string): "transformersjs" | undefined {
+    return providerId === "transformersjs" ? "transformersjs" : undefined;
   }
 
   /** Configure factory to throw on next createProvider call */
@@ -94,6 +106,7 @@ class MockEmbeddingProviderFactory {
   /** Reset the factory to default behavior */
   reset(): void {
     this.createProviderCallCount = 0;
+    this.lastConfig = null;
     this.errorToThrow = null;
   }
 }
@@ -871,6 +884,30 @@ describe("DocumentSearchServiceImpl", () => {
       // Second search should use cached provider (factory not called again)
       await service.searchDocuments({ query: "second search" });
       expect(mockFactory.createProviderCallCount).toBe(1);
+    });
+
+    it("applies provider-aware defaults when repo records only embeddingProvider (#581)", async () => {
+      // Repo records the provider but no model/dimensions. After delegating to
+      // the shared resolver (#591), the missing fields are filled with the
+      // transformersjs provider-aware defaults (#581) — NOT the default
+      // provider's model name. Previously this repo would have been paired with
+      // the default provider's (e.g., OpenAI) model.
+      mockRepoService.setRepositories([
+        createMockRepo({
+          name: "provider-only-folder",
+          embeddingProvider: "transformersjs",
+          // no embeddingModel / embeddingDimensions
+        }),
+      ]);
+      mockStorage.setMockResults([]);
+
+      await service.searchDocuments({ query: "test provider-only repo" });
+
+      // Factory created the provider from defaulted config, not the default provider's
+      expect(mockFactory.createProviderCallCount).toBe(1);
+      expect(mockFactory.lastConfig?.provider).toBe("transformersjs");
+      expect(mockFactory.lastConfig?.model).toBe("Xenova/all-MiniLM-L6-v2");
+      expect(mockFactory.lastConfig?.dimensions).toBe(384);
     });
 
     it("should propagate factory errors as ProviderUnavailableError", async () => {

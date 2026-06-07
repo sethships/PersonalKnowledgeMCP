@@ -357,18 +357,32 @@ export class IncrementalUpdatePipeline {
             "Using repository-specific embedding provider"
           );
         }
+      } else if (providerMeta && !this.providerResolver) {
+        // Metadata records a specific provider but no resolver is wired, so we
+        // cannot honor it — the default provider is used and may mismatch.
+        logger.warn(
+          {
+            operation: "pipeline_provider_resolution",
+            repository: options.repository,
+            recordedProvider: providerMeta.provider,
+            defaultProvider: this.embeddingProvider.providerId,
+          },
+          "Repository records an embedding provider but no resolver is wired - " +
+            "embedding with the default provider"
+        );
       }
 
       // Fail fast on dimension mismatch BEFORE any chunk deletion. The
       // destructive failure mode this prevents: per-file deletes run first,
       // then every embed batch is rejected, leaving files unindexed (#591).
-      if (
-        collectionMeta?.dimensions !== undefined &&
-        embeddingProvider.dimensions !== collectionMeta.dimensions
-      ) {
+      // When the collection metadata read fails (collectionMeta stays null),
+      // fall back to options.repoEmbedding?.dimensions so a transient ChromaDB
+      // error can't silently skip the guard and let the destructive sequence run.
+      const guardDimensions = collectionMeta?.dimensions ?? options.repoEmbedding?.dimensions;
+      if (guardDimensions !== undefined && embeddingProvider.dimensions !== guardDimensions) {
         throw new UpdateDimensionMismatchError(
           options.repository,
-          collectionMeta.dimensions,
+          guardDimensions,
           embeddingProvider.dimensions,
           embeddingProvider.providerId
         );
