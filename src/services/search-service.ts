@@ -9,7 +9,9 @@
 
 import { z } from "zod";
 import type { Logger } from "pino";
-import type { EmbeddingProvider, EmbeddingProviderConfig } from "../providers/types.js";
+import type { EmbeddingProvider } from "../providers/types.js";
+import { RepositoryEmbeddingProviderResolver } from "../providers/repository-provider-resolver.js";
+import type { ProviderFactoryLike } from "../providers/repository-provider-resolver.js";
 import type { ChromaStorageClient, SimilarityResult } from "../storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
 import type {
@@ -56,14 +58,6 @@ const LANGUAGE_TO_EXTENSIONS: Record<string, string[]> = {
   html: [".html", ".htm"],
   css: [".css", ".scss", ".sass", ".less"],
 };
-
-/**
- * Interface for creating embedding providers on-demand
- * Used for multi-provider search to create providers dynamically
- */
-interface EmbeddingProviderFactory {
-  createProvider(config: EmbeddingProviderConfig): EmbeddingProvider;
-}
 
 /**
  * Group of repositories that share the same embedding provider
@@ -133,17 +127,23 @@ export class SearchServiceImpl implements SearchService {
   private _logger: Logger | null = null;
 
   /**
-   * Cache of created providers to avoid recreating for same provider/model combo
-   * Key format: "{providerId}:{modelId}:{dimensions}"
+   * Shared per-repository provider resolution (#591) — caches created
+   * providers by provider/model/dimensions and applies provider-aware
+   * defaults for incomplete metadata.
    */
-  private readonly providerCache = new Map<string, EmbeddingProvider>();
+  private readonly providerResolver: RepositoryEmbeddingProviderResolver;
 
   constructor(
     private readonly defaultEmbeddingProvider: EmbeddingProvider,
-    private readonly embeddingProviderFactory: EmbeddingProviderFactory,
+    embeddingProviderFactory: ProviderFactoryLike,
     private readonly storageClient: ChromaStorageClient,
     private readonly repositoryService: RepositoryMetadataService
-  ) {}
+  ) {
+    this.providerResolver = new RepositoryEmbeddingProviderResolver(
+      embeddingProviderFactory,
+      defaultEmbeddingProvider
+    );
+  }
 
   /**
    * Lazy-initialized logger
@@ -435,45 +435,16 @@ export class SearchServiceImpl implements SearchService {
    * @throws {ProviderUnavailableError} If provider cannot be created
    */
   private getOrCreateProvider(group: ProviderGroup): EmbeddingProvider {
-    const cacheKey = `${group.providerId}:${group.modelId}:${group.dimensions}`;
-
-    // Check cache first
-    const cached = this.providerCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    // Check if this matches the default provider
-    if (
-      group.providerId === this.defaultEmbeddingProvider.providerId &&
-      group.modelId === this.defaultEmbeddingProvider.modelId &&
-      group.dimensions === this.defaultEmbeddingProvider.dimensions
-    ) {
-      this.providerCache.set(cacheKey, this.defaultEmbeddingProvider);
-      return this.defaultEmbeddingProvider;
-    }
-
-    // Create new provider via factory
+    // Delegates to the shared RepositoryEmbeddingProviderResolver (#591),
+    // which owns the cache and the default-provider short-circuit. Group
+    // fields are always populated (filled from the default provider during
+    // grouping), so resolution is deterministic.
     try {
-      const config: EmbeddingProviderConfig = {
-        provider: group.providerId,
-        model: group.modelId,
-        dimensions: group.dimensions,
-        batchSize: 100, // Default batch size
-        maxRetries: 3,
-        timeoutMs: 30000,
-      };
-
-      const provider = this.embeddingProviderFactory.createProvider(config);
-      this.providerCache.set(cacheKey, provider);
-
-      this.logger.debug("Created new embedding provider", {
+      return this.providerResolver.resolve({
         provider: group.providerId,
         model: group.modelId,
         dimensions: group.dimensions,
       });
-
-      return provider;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new ProviderUnavailableError(group.providerId, message);

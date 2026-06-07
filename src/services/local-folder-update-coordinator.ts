@@ -243,6 +243,13 @@ export class LocalFolderUpdateCoordinator {
         collectionName: repo.collectionName,
         includeExtensions: repo.includeExtensions,
         excludePatterns: repo.excludePatterns,
+        // Per-repository provider fallback for legacy collections without
+        // embedding metadata (#591)
+        repoEmbedding: {
+          provider: repo.embeddingProvider,
+          model: repo.embeddingModel,
+          dimensions: repo.embeddingDimensions,
+        },
       });
 
       const totalFilesProcessed =

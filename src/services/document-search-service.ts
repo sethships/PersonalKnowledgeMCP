@@ -11,7 +11,9 @@
 
 import { z } from "zod";
 import type { Logger } from "pino";
-import type { EmbeddingProvider, EmbeddingProviderConfig } from "../providers/types.js";
+import type { EmbeddingProvider } from "../providers/types.js";
+import { RepositoryEmbeddingProviderResolver } from "../providers/repository-provider-resolver.js";
+import type { ProviderFactoryLike } from "../providers/repository-provider-resolver.js";
 import type { ChromaStorageClient, SimilarityResult, MetadataFilter } from "../storage/types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../repositories/types.js";
 import type {
@@ -89,13 +91,6 @@ const DocumentSearchQuerySchema = z
 type ValidatedDocumentSearchQuery = z.infer<typeof DocumentSearchQuerySchema>;
 
 /**
- * Interface for creating embedding providers on-demand
- */
-interface EmbeddingProviderFactory {
-  createProvider(config: EmbeddingProviderConfig): EmbeddingProvider;
-}
-
-/**
  * Implementation of DocumentSearchService using ChromaDB for vector similarity search
  *
  * Searches document collections in ChromaDB, filtering by document type and folder.
@@ -122,17 +117,23 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
   private _logger: Logger | null = null;
 
   /**
-   * Cache of created providers to avoid recreating for same provider/model combo
-   * Key format: "{providerId}:{modelId}:{dimensions}"
+   * Shared per-repository provider resolution (#591) — caches created
+   * providers by provider/model/dimensions and applies provider-aware
+   * defaults for incomplete metadata.
    */
-  private readonly providerCache = new Map<string, EmbeddingProvider>();
+  private readonly providerResolver: RepositoryEmbeddingProviderResolver;
 
   constructor(
     private readonly defaultEmbeddingProvider: EmbeddingProvider,
-    private readonly embeddingProviderFactory: EmbeddingProviderFactory,
+    embeddingProviderFactory: ProviderFactoryLike,
     private readonly storageClient: ChromaStorageClient,
     private readonly repositoryService: RepositoryMetadataService
-  ) {}
+  ) {
+    this.providerResolver = new RepositoryEmbeddingProviderResolver(
+      embeddingProviderFactory,
+      defaultEmbeddingProvider
+    );
+  }
 
   /**
    * Lazy-initialized logger
@@ -438,42 +439,25 @@ export class DocumentSearchServiceImpl implements DocumentSearchService {
   }
 
   /**
-   * Get or create the embedding provider for a repository
+   * Get or create the embedding provider for a repository.
+   *
+   * Delegates to the shared RepositoryEmbeddingProviderResolver (#591). Note:
+   * missing model/dimensions are now filled with provider-aware defaults
+   * (#581) instead of the default provider's model — previously a repo
+   * recording only `embeddingProvider: "transformersjs"` would have been
+   * paired with the default provider's (e.g., OpenAI) model name.
    */
   private getProviderForRepository(repo?: RepositoryInfo): EmbeddingProvider {
     if (!repo?.embeddingProvider) {
       return this.defaultEmbeddingProvider;
     }
 
-    const cacheKey = `${repo.embeddingProvider}:${repo.embeddingModel}:${repo.embeddingDimensions}`;
-    const cached = this.providerCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    // Check if it matches default
-    if (
-      repo.embeddingProvider === this.defaultEmbeddingProvider.providerId &&
-      repo.embeddingModel === this.defaultEmbeddingProvider.modelId
-    ) {
-      this.providerCache.set(cacheKey, this.defaultEmbeddingProvider);
-      return this.defaultEmbeddingProvider;
-    }
-
-    // Create new provider
     try {
-      const config: EmbeddingProviderConfig = {
+      return this.providerResolver.resolve({
         provider: repo.embeddingProvider,
-        model: repo.embeddingModel ?? this.defaultEmbeddingProvider.modelId,
-        dimensions: repo.embeddingDimensions ?? this.defaultEmbeddingProvider.dimensions,
-        batchSize: 100,
-        maxRetries: 3,
-        timeoutMs: 30000,
-      };
-
-      const provider = this.embeddingProviderFactory.createProvider(config);
-      this.providerCache.set(cacheKey, provider);
-      return provider;
+        model: repo.embeddingModel,
+        dimensions: repo.embeddingDimensions,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new ProviderUnavailableError(repo.embeddingProvider, message);
