@@ -1119,9 +1119,7 @@ export class IncrementalUpdatePipeline {
       );
 
       try {
-        const embeddings = await embeddingProvider.generateEmbeddings(
-          batch.map((c) => c.content)
-        );
+        const embeddings = await embeddingProvider.generateEmbeddings(batch.map((c) => c.content));
 
         // Create DocumentInput objects for this batch
         const documents: DocumentInput[] = batch.map((chunk, index) => {
