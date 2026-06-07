@@ -16,7 +16,7 @@ import type {
 } from "../../src/services/github-client-types.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../src/repositories/types.js";
 import type { IncrementalUpdatePipeline } from "../../src/services/incremental-update-pipeline.js";
-import type { UpdateResult } from "../../src/services/incremental-update-types.js";
+import type { UpdateResult, UpdateOptions } from "../../src/services/incremental-update-types.js";
 import { GitHubNotFoundError } from "../../src/services/github-client-errors.js";
 import {
   RepositoryNotFoundError,
@@ -320,6 +320,13 @@ describe("IncrementalUpdateCoordinator", () => {
         excludePatterns: testRepo.excludePatterns,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         correlationId: expect.any(String), // correlationId
+        // Repo-level embedding metadata fallback (#591); testRepo predates
+        // per-repository provider support so all fields are undefined
+        repoEmbedding: {
+          provider: undefined,
+          model: undefined,
+          dimensions: undefined,
+        },
       });
 
       // Verify metadata was updated
@@ -1838,6 +1845,43 @@ describe("IncrementalUpdateCoordinator", () => {
       expect(git.remote).not.toHaveBeenCalled();
       expect(git.pull).toHaveBeenCalledWith("origin", "main");
       expect(order).toEqual(["pull"]);
+    });
+  });
+
+  describe("per-repository embedding provider (issue #591)", () => {
+    it("passes the repository's embedding metadata to the pipeline as repoEmbedding", async () => {
+      // Repository indexed with a non-default provider — the pipeline needs
+      // this metadata as the fallback when the collection has no embedding
+      // metadata of its own (legacy collections).
+      mockRepositoryService.getRepository = mock(async () => ({
+        ...testRepo,
+        embeddingProvider: "transformersjs",
+        embeddingModel: "Xenova/all-MiniLM-L6-v2",
+        embeddingDimensions: 384,
+      }));
+
+      await coordinator.updateRepository("test-repo");
+
+      const callOptions = (mockUpdatePipeline.processChanges as ReturnType<typeof mock>).mock
+        .calls[0]?.[1] as UpdateOptions | undefined;
+      expect(callOptions?.repoEmbedding).toEqual({
+        provider: "transformersjs",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 384,
+      });
+    });
+
+    it("passes undefined embedding fields for repositories without provider metadata", async () => {
+      // testRepo predates per-repository provider support — fields absent
+      await coordinator.updateRepository("test-repo");
+
+      const callOptions = (mockUpdatePipeline.processChanges as ReturnType<typeof mock>).mock
+        .calls[0]?.[1] as UpdateOptions | undefined;
+      expect(callOptions?.repoEmbedding).toEqual({
+        provider: undefined,
+        model: undefined,
+        dimensions: undefined,
+      });
     });
   });
 });

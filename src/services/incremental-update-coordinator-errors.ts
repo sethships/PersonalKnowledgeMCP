@@ -191,3 +191,37 @@ export class ConcurrentUpdateError extends CoordinatorError {
     Object.setPrototypeOf(this, ConcurrentUpdateError.prototype);
   }
 }
+
+/**
+ * Error thrown when the resolved embedding provider's dimensions do not match
+ * the target collection's recorded dimensions.
+ *
+ * Raised by the update pipeline BEFORE any chunk deletion so a provider
+ * misconfiguration cannot destroy existing index data (issue #591: embedding
+ * with a 1536-dim provider against a 384-dim collection had every vector
+ * rejected after the per-file deletes already ran). Not retryable — the
+ * provider configuration or repository metadata must be corrected first.
+ *
+ * @example
+ * ```typescript
+ * throw new UpdateDimensionMismatchError("my-api", 384, 1536, "openai");
+ * ```
+ */
+export class UpdateDimensionMismatchError extends CoordinatorError {
+  constructor(
+    public readonly repositoryName: string,
+    public readonly collectionDimensions: number,
+    public readonly providerDimensions: number,
+    public readonly providerId: string
+  ) {
+    super(
+      `Embedding dimension mismatch for repository '${repositoryName}': ` +
+        `collection expects ${collectionDimensions} dimensions but provider ` +
+        `'${providerId}' produces ${providerDimensions}. No chunks were modified. ` +
+        `Verify the repository's embedding provider metadata or re-index with the intended provider.`,
+      false
+    );
+    this.name = "UpdateDimensionMismatchError";
+    Object.setPrototypeOf(this, UpdateDimensionMismatchError.prototype);
+  }
+}

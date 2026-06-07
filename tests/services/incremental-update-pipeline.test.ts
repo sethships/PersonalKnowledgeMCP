@@ -17,6 +17,7 @@ import type { EmbeddingProvider } from "../../src/providers/index.js";
 import type { ChromaStorageClient } from "../../src/storage/index.js";
 import type { FileChange, UpdateOptions } from "../../src/services/incremental-update-types.js";
 import type { GraphIngestionService } from "../../src/graph/ingestion/GraphIngestionService.js";
+import { UpdateDimensionMismatchError } from "../../src/services/incremental-update-coordinator-errors.js";
 
 describe("IncrementalUpdatePipeline", () => {
   let pipeline: IncrementalUpdatePipeline;
@@ -818,6 +819,191 @@ describe("IncrementalUpdatePipeline", () => {
           process.env["CHUNK_MAX_TOKENS"] = savedChunkMaxTokens;
         }
       }
+    });
+  });
+
+  describe("per-repository provider resolution (issue #591)", () => {
+    const baseOptions: UpdateOptions = {
+      repository: "test-repo",
+      localPath: "",
+      collectionName: "test_collection",
+      includeExtensions: [".ts", ".js", ".md"],
+      excludePatterns: ["node_modules/**", "dist/**"],
+    };
+
+    /** Build a fake provider with identity fields and call tracking. */
+    function fakeProvider(
+      providerId: string,
+      modelId: string,
+      dimensions: number
+    ): EmbeddingProvider {
+      return {
+        providerId,
+        modelId,
+        dimensions,
+        generateEmbedding: mock(async () => new Array(dimensions).fill(0.1) as number[]),
+        generateEmbeddings: mock(async (texts: string[]) =>
+          texts.map(() => new Array(dimensions).fill(0.1) as number[])
+        ),
+        healthCheck: mock(async () => true),
+        getCapabilities: () => ({
+          maxBatchSize: 100,
+          maxTokensPerText: 8191,
+          supportsGPU: false,
+          requiresNetwork: false,
+          estimatedLatencyMs: 1,
+        }),
+      };
+    }
+
+    it("embeds with the provider from collection metadata, not the default", async () => {
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/a.ts"), "export const a = 1;");
+
+      const repoProvider = fakeProvider("transformersjs", "Xenova/all-MiniLM-L6-v2", 384);
+      const resolver = {
+        resolve: mock(() => repoProvider),
+      };
+      mockStorageClient.getCollectionEmbeddingMetadata = mock(async () => ({
+        provider: "transformersjs",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 384,
+      }));
+
+      const resolvingPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        undefined,
+        undefined,
+        resolver as unknown as ConstructorParameters<typeof IncrementalUpdatePipeline>[7]
+      );
+
+      const result = await resolvingPipeline.processChanges(
+        [{ path: "src/a.ts", status: "added" }],
+        { ...baseOptions, localPath: testDir }
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.stats.chunksUpserted).toBeGreaterThan(0);
+      // Resolver consulted with the collection's metadata
+      expect(resolver.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "transformersjs", dimensions: 384 })
+      );
+      // The repository provider embedded the chunks; the default did not
+      expect(repoProvider.generateEmbeddings).toHaveBeenCalled();
+      expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("falls back to options.repoEmbedding when the collection has no metadata", async () => {
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/b.ts"), "export const b = 2;");
+
+      const repoProvider = fakeProvider("ollama", "nomic-embed-text", 768);
+      const resolver = { resolve: mock(() => repoProvider) };
+      mockStorageClient.getCollectionEmbeddingMetadata = mock(async () => null);
+
+      const resolvingPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        undefined,
+        undefined,
+        resolver as unknown as ConstructorParameters<typeof IncrementalUpdatePipeline>[7]
+      );
+
+      const result = await resolvingPipeline.processChanges(
+        [{ path: "src/b.ts", status: "added" }],
+        {
+          ...baseOptions,
+          localPath: testDir,
+          repoEmbedding: { provider: "ollama", model: "nomic-embed-text", dimensions: 768 },
+        }
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(resolver.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "ollama" })
+      );
+      expect(repoProvider.generateEmbeddings).toHaveBeenCalled();
+      expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("uses the default provider when neither collection nor repo metadata name one", async () => {
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/c.ts"), "export const c = 3;");
+
+      const resolver = { resolve: mock(() => fakeProvider("x", "y", 1)) };
+      mockStorageClient.getCollectionEmbeddingMetadata = mock(async () => null);
+
+      const resolvingPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider,
+        mockStorageClient,
+        logger,
+        undefined,
+        undefined,
+        undefined,
+        resolver as unknown as ConstructorParameters<typeof IncrementalUpdatePipeline>[7]
+      );
+
+      const result = await resolvingPipeline.processChanges(
+        [{ path: "src/c.ts", status: "added" }],
+        { ...baseOptions, localPath: testDir }
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(resolver.resolve).not.toHaveBeenCalled();
+      expect(mockEmbeddingProvider.generateEmbeddings).toHaveBeenCalled();
+    });
+
+    it("fails fast on dimension mismatch BEFORE deleting any chunks", async () => {
+      await mkdir(join(testDir, "src"), { recursive: true });
+      await writeFile(join(testDir, "src/d.ts"), "export const d = 4;");
+
+      // Collection is 384-dim but no resolver is wired, so the 1536-dim
+      // default would be used — the destructive pre-#591 scenario. The
+      // pipeline must throw before processModifiedFile deletes old chunks.
+      mockStorageClient.getCollectionEmbeddingMetadata = mock(async () => ({
+        provider: "transformersjs",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 384,
+      }));
+
+      const noResolverPipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        mockEmbeddingProvider, // 1536-dim default
+        mockStorageClient,
+        logger
+      );
+
+      await expect(
+        noResolverPipeline.processChanges([{ path: "src/d.ts", status: "modified" }], {
+          ...baseOptions,
+          localPath: testDir,
+        })
+      ).rejects.toThrow(UpdateDimensionMismatchError);
+
+      // Nothing was deleted and nothing was embedded
+      expect(mockStorageClient.deleteDocumentsByFilePrefix).not.toHaveBeenCalled();
+      expect(mockEmbeddingProvider.generateEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it("does not consult collection metadata for delete-only updates", async () => {
+      const metadataMock = mock(async () => null);
+      mockStorageClient.getCollectionEmbeddingMetadata = metadataMock;
+
+      const result = await pipeline.processChanges([{ path: "src/gone.ts", status: "deleted" }], {
+        ...baseOptions,
+        localPath: testDir,
+      });
+
+      expect(result.stats.filesDeleted).toBe(1);
+      expect(metadataMock).not.toHaveBeenCalled();
     });
   });
 

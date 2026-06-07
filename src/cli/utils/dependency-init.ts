@@ -19,6 +19,7 @@ import { IngestionService as IngestionServiceImpl } from "../../services/ingesti
 import { ChromaStorageClientImpl } from "../../storage/chroma-client.js";
 import { createEmbeddingProvider } from "../../providers/factory.js";
 import { embeddingProviderFactory } from "../../providers/EmbeddingProviderFactory.js";
+import { RepositoryEmbeddingProviderResolver } from "../../providers/repository-provider-resolver.js";
 import { resolveEmbeddingDefaults } from "../../providers/provider-defaults.js";
 import { RepositoryMetadataStoreImpl } from "../../repositories/metadata-store.js";
 import { RepositoryCloner } from "../../ingestion/repository-cloner.js";
@@ -250,6 +251,13 @@ export async function initializeDependencies(
       "Embedding provider initialized"
     );
 
+    // Per-repository provider resolution (#591): updates embed with the
+    // provider each repository was indexed with, not the CLI-resolved default.
+    const providerResolver = new RepositoryEmbeddingProviderResolver(
+      embeddingProviderFactory,
+      embeddingProvider
+    );
+
     // Step 4: Initialize ChromaDB storage client
     const chromaClient = new ChromaStorageClientImpl({
       host: config.chromadb.host,
@@ -446,7 +454,8 @@ export async function initializeDependencies(
       getComponentLogger("services:incremental-update-pipeline"),
       graphIngestionService,
       documentTypeDetector,
-      documentChunker
+      documentChunker,
+      providerResolver
     );
     logger.debug(
       { graphEnabled: !!graphIngestionService },

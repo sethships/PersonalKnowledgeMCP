@@ -41,6 +41,8 @@ export type {
   CollectionStats,
   MetadataFilter,
   DocumentQueryResult,
+  CollectionEmbeddingMetadata,
+  ParsedEmbeddingMetadata,
 } from "./types.js";
 
 // Export all error classes

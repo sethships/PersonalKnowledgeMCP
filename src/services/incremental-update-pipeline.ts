@@ -11,9 +11,11 @@
 import { join, resolve } from "node:path";
 import ignore from "ignore";
 import type { Logger } from "pino";
-import type { ChromaStorageClient } from "../storage/index.js";
+import type { ChromaStorageClient, ParsedEmbeddingMetadata } from "../storage/index.js";
 import type { FileChunker } from "../ingestion/file-chunker.js";
 import type { EmbeddingProvider } from "../providers/index.js";
+import type { RepositoryEmbeddingProviderResolver } from "../providers/index.js";
+import { UpdateDimensionMismatchError } from "./incremental-update-coordinator-errors.js";
 import type { FileInfo, FileChunk } from "../ingestion/types.js";
 import type { DocumentInput } from "../storage/index.js";
 import type {
@@ -109,12 +111,16 @@ export class IncrementalUpdatePipeline {
    * Create an incremental update pipeline.
    *
    * @param fileChunker - Service for splitting files into chunks
-   * @param embeddingProvider - Service for generating embeddings
+   * @param embeddingProvider - Default service for generating embeddings (used
+   *   when no per-repository provider can be resolved)
    * @param storageClient - ChromaDB client for vector storage
    * @param logger - Logger instance
    * @param graphIngestionService - Optional graph ingestion service for graph database updates
    * @param documentTypeDetector - Optional detector for routing document files to extractors
    * @param documentChunker - Optional document-aware chunker for PDF, DOCX, Markdown
+   * @param providerResolver - Optional per-repository provider resolver (#591).
+   *   When present, each update embeds with the provider recorded in the target
+   *   collection's metadata (or `options.repoEmbedding`) instead of the default.
    */
   constructor(
     private readonly fileChunker: FileChunker,
@@ -123,7 +129,8 @@ export class IncrementalUpdatePipeline {
     private readonly logger: Logger,
     private readonly graphIngestionService?: GraphIngestionService,
     private readonly documentTypeDetector?: DocumentTypeDetector,
-    private readonly documentChunker?: DocumentChunker
+    private readonly documentChunker?: DocumentChunker,
+    private readonly providerResolver?: RepositoryEmbeddingProviderResolver
   ) {
     // Derive the per-chunk skip ceiling from the operator's CHUNK_MAX_TOKENS
     // override so a larger configured chunk size doesn't cause every chunk to be
@@ -300,6 +307,74 @@ export class IncrementalUpdatePipeline {
       "Filtered changes by extension and exclusion patterns"
     );
 
+    // Per-repository embedding provider selection (#591). Updates must embed
+    // with the provider the collection was indexed with, not the process-global
+    // default — otherwise vectors with the wrong dimensions are rejected
+    // wholesale by ChromaDB. Selection order: collection embedding metadata
+    // (ground truth) → options.repoEmbedding (repository metadata, for legacy
+    // collections) → the pipeline's default provider. Resolved BEFORE the
+    // per-file loop so a dimension mismatch fails fast without deleting any
+    // existing chunks.
+    const hasContentChanges = filteredChanges.some((c) => c.status !== "deleted");
+    let embeddingProvider = this.embeddingProvider;
+    if (hasContentChanges) {
+      let collectionMeta: ParsedEmbeddingMetadata | null = null;
+      try {
+        collectionMeta = await this.storageClient.getCollectionEmbeddingMetadata(
+          options.collectionName
+        );
+      } catch (error) {
+        // Metadata lookup failures must not block the update — fall through to
+        // repo metadata / default provider (pre-#591 behavior).
+        logger.debug(
+          {
+            operation: "pipeline_provider_resolution",
+            collection: options.collectionName,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Could not read collection embedding metadata - using repo metadata or default provider"
+        );
+      }
+
+      const providerMeta = collectionMeta?.provider
+        ? collectionMeta
+        : options.repoEmbedding?.provider
+          ? options.repoEmbedding
+          : null;
+
+      if (providerMeta && this.providerResolver) {
+        embeddingProvider = this.providerResolver.resolve(providerMeta);
+        if (embeddingProvider !== this.embeddingProvider) {
+          logger.info(
+            {
+              operation: "pipeline_provider_resolution",
+              repository: options.repository,
+              provider: embeddingProvider.providerId,
+              model: embeddingProvider.modelId,
+              dimensions: embeddingProvider.dimensions,
+              source: collectionMeta?.provider ? "collection_metadata" : "repository_metadata",
+            },
+            "Using repository-specific embedding provider"
+          );
+        }
+      }
+
+      // Fail fast on dimension mismatch BEFORE any chunk deletion. The
+      // destructive failure mode this prevents: per-file deletes run first,
+      // then every embed batch is rejected, leaving files unindexed (#591).
+      if (
+        collectionMeta?.dimensions !== undefined &&
+        embeddingProvider.dimensions !== collectionMeta.dimensions
+      ) {
+        throw new UpdateDimensionMismatchError(
+          options.repository,
+          collectionMeta.dimensions,
+          embeddingProvider.dimensions,
+          embeddingProvider.providerId
+        );
+      }
+    }
+
     // Collect all chunks from added/modified/renamed files for batch embedding.
     // Uses InternalChunk to support both code files (via FileChunker) and
     // document files (via DocumentChunker) in a single accumulator.
@@ -383,7 +458,14 @@ export class IncrementalUpdatePipeline {
     // last resort for unexpected failures outside the batch loop.
     if (allChunks.length > 0) {
       try {
-        await this.embedAndStoreChunks(allChunks, options.collectionName, stats, errors, logger);
+        await this.embedAndStoreChunks(
+          allChunks,
+          options.collectionName,
+          stats,
+          errors,
+          logger,
+          embeddingProvider
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorType = error instanceof Error ? error.constructor.name : "Unknown";
@@ -965,13 +1047,16 @@ export class IncrementalUpdatePipeline {
    * @param stats - Statistics to update
    * @param errors - Error collector for skipped chunks and failed batches
    * @param logger - Correlation-aware logger
+   * @param embeddingProvider - Provider selected for this update (#591) — the
+   *   repository's recorded provider when resolvable, else the default
    */
   private async embedAndStoreChunks(
     chunks: InternalChunk[],
     collectionName: string,
     stats: UpdateStats,
     errors: FileProcessingError[],
-    logger: Logger
+    logger: Logger,
+    embeddingProvider: EmbeddingProvider
   ): Promise<void> {
     const startTime = Date.now();
 
@@ -1034,7 +1119,7 @@ export class IncrementalUpdatePipeline {
       );
 
       try {
-        const embeddings = await this.embeddingProvider.generateEmbeddings(
+        const embeddings = await embeddingProvider.generateEmbeddings(
           batch.map((c) => c.content)
         );
 

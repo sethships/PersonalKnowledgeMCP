@@ -13,6 +13,7 @@ import { PersonalKnowledgeMCPServer } from "./mcp/server.js";
 import { SearchServiceImpl } from "./services/search-service.js";
 import { createEmbeddingProvider } from "./providers/factory.js";
 import { embeddingProviderFactory } from "./providers/EmbeddingProviderFactory.js";
+import { RepositoryEmbeddingProviderResolver } from "./providers/repository-provider-resolver.js";
 import { resolveEmbeddingDefaults } from "./providers/provider-defaults.js";
 import { RepositoryMetadataStoreImpl } from "./repositories/metadata-store.js";
 import { initializeLogger, getComponentLogger, type LogLevel } from "./logging/index.js";
@@ -160,6 +161,14 @@ async function main(): Promise<void> {
         dimensions: embeddingProvider.dimensions,
       },
       "Embedding provider initialized"
+    );
+
+    // Per-repository provider resolution (#591): one shared resolver so update
+    // pipelines embed with the provider each repository was indexed with
+    // instead of the process-global default. Shares one provider cache.
+    const providerResolver = new RepositoryEmbeddingProviderResolver(
+      embeddingProviderFactory,
+      embeddingProvider
     );
 
     // Step 3: Initialize instance router and ChromaDB storage client
@@ -360,7 +369,8 @@ async function main(): Promise<void> {
       getComponentLogger("services:folder-update-pipeline"),
       undefined, // No graph ingestion for folder watching (can be added later)
       folderDocTypeDetector,
-      folderDocChunker
+      folderDocChunker,
+      providerResolver
     );
     const folderDocumentIndexingService = new FolderDocumentIndexingService(
       folderUpdatePipeline,
@@ -481,7 +491,8 @@ async function main(): Promise<void> {
           getComponentLogger("services:incremental-update-pipeline"),
           graphIngestionService,
           documentTypeDetector,
-          documentChunker
+          documentChunker,
+          providerResolver
         );
 
         // Create completeness checker

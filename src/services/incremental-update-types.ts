@@ -132,6 +132,31 @@ export interface UpdateOptions {
    * @example "update-1734367200-a3c9f"
    */
   correlationId?: string;
+
+  /**
+   * Embedding configuration recorded in the repository's metadata (#591).
+   *
+   * Used as the provider-selection fallback when the target collection has no
+   * embedding metadata of its own (collections created before per-repository
+   * provider support). The pipeline prefers the collection's `app:embedding_*`
+   * metadata as ground truth; this field covers legacy collections so updates
+   * still embed with the provider the repository was indexed with rather than
+   * the process-global default.
+   *
+   * Optional so existing callers and test mocks remain valid; when omitted and
+   * the collection has no metadata, the pipeline's default provider is used
+   * (pre-#591 behavior).
+   *
+   * @example { provider: "transformersjs", model: "Xenova/all-MiniLM-L6-v2", dimensions: 384 }
+   */
+  repoEmbedding?: {
+    /** Provider identifier (e.g., "openai", "transformersjs", "ollama"). */
+    provider?: string;
+    /** Model identifier the repository was indexed with. */
+    model?: string;
+    /** Embedding vector dimensions the repository was indexed with. */
+    dimensions?: number;
+  };
 }
 
 // =============================================================================

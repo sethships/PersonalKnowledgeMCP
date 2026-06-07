@@ -59,3 +59,7 @@ export { createEmbeddingProvider } from "./factory.js";
 // Factory class (for advanced usage and discovery)
 export { EmbeddingProviderFactory, embeddingProviderFactory } from "./EmbeddingProviderFactory.js";
 export type { ProviderInfo, ProviderType } from "./EmbeddingProviderFactory.js";
+
+// Per-repository provider resolution (#591)
+export { RepositoryEmbeddingProviderResolver } from "./repository-provider-resolver.js";
+export type { EmbeddingMetadataLike, ProviderFactoryLike } from "./repository-provider-resolver.js";
