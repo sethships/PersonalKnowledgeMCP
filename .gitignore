@@ -104,6 +104,9 @@ mcp_cache/
 mcp_sessions/
 *.mcp.log
 
+# Runtime-generated test fixtures (recreated by DocxTableExtractor's beforeAll)
+tests/fixtures/documents/docx-tables/
+
 # Temporary files
 tmp/
 temp/
