@@ -253,16 +253,16 @@ export class GraphIngestionService {
         await this.deleteRepositoryData(options.repository);
       }
 
-      // Phase 1: Extract entities from all files
+      // Phases 1 + 2: Extract entities and relationships. Both come from a
+      // single parse per file — parsing twice doubled the cost and leaked a
+      // second syntax tree per file (issue #596).
       this.reportProgress(options, "extracting_entities", 10, { totalFiles: files.length });
-      const entityResults = await this.extractAllEntities(files, errors);
+      const { entityResults, relationshipResults } = await this.extractAll(files, errors);
 
-      // Phase 2: Extract relationships from all files
       this.reportProgress(options, "extracting_relationships", 20, {
         totalFiles: files.length,
         entitiesExtracted: this.countTotalEntities(entityResults),
       });
-      const relationshipResults = await this.extractAllRelationships(files, errors);
 
       // Phase 3: Create Repository node
       this.reportProgress(options, "creating_repository_node", 25, {});
@@ -592,14 +592,10 @@ export class GraphIngestionService {
         };
       }
 
-      // Extract entities
-      const entityResult = await this.entityExtractor.extractFromContent(file.content, file.path);
-
-      // Extract relationships
-      const relationshipResult = await this.relationshipExtractor.extractFromContent(
-        file.content,
-        file.path
-      );
+      // Parse once, derive both entities and relationships from it (issue #596)
+      const parseResult = await this.entityExtractor.parseFile(file.content, file.path);
+      const entityResult = this.entityExtractor.extractFromParseResult(parseResult);
+      const relationshipResult = this.relationshipExtractor.extractFromParseResult(parseResult);
 
       // Create File node using runQuery for flexibility
       const fileNodeId = this.generateFileNodeId(repositoryName, file.path);
@@ -758,13 +754,21 @@ export class GraphIngestionService {
   }
 
   /**
-   * Extract entities from all files.
+   * Extract entities and relationships from all files.
+   *
+   * Each file is parsed exactly once and the resulting AST is handed to both
+   * extractors, which is both twice as fast as the previous two-pass version
+   * and half the peak memory (issue #596).
    */
-  private async extractAllEntities(
+  private async extractAll(
     files: FileInput[],
     errors: GraphIngestionError[]
-  ): Promise<Map<string, ExtractionResult>> {
-    const results = new Map<string, ExtractionResult>();
+  ): Promise<{
+    entityResults: Map<string, ExtractionResult>;
+    relationshipResults: Map<string, RelationshipExtractionResult>;
+  }> {
+    const entityResults = new Map<string, ExtractionResult>();
+    const relationshipResults = new Map<string, RelationshipExtractionResult>();
 
     for (const file of files) {
       if (!EntityExtractor.isSupported(file.path)) {
@@ -772,11 +776,15 @@ export class GraphIngestionService {
       }
 
       try {
-        const result = await this.entityExtractor.extractFromContent(file.content, file.path);
-        results.set(file.path, result);
+        const parseResult = await this.entityExtractor.parseFile(file.content, file.path);
+        entityResults.set(file.path, this.entityExtractor.extractFromParseResult(parseResult));
+        relationshipResults.set(
+          file.path,
+          this.relationshipExtractor.extractFromParseResult(parseResult)
+        );
 
-        if (!result.success) {
-          for (const parseError of result.errors) {
+        if (!parseResult.success) {
+          for (const parseError of parseResult.errors) {
             errors.push({
               type: "extraction_error",
               filePath: file.path,
@@ -799,52 +807,7 @@ export class GraphIngestionService {
       }
     }
 
-    return results;
-  }
-
-  /**
-   * Extract relationships from all files.
-   */
-  private async extractAllRelationships(
-    files: FileInput[],
-    errors: GraphIngestionError[]
-  ): Promise<Map<string, RelationshipExtractionResult>> {
-    const results = new Map<string, RelationshipExtractionResult>();
-
-    for (const file of files) {
-      if (!RelationshipExtractor.isSupported(file.path)) {
-        continue;
-      }
-
-      try {
-        const result = await this.relationshipExtractor.extractFromContent(file.content, file.path);
-        results.set(file.path, result);
-
-        if (!result.success) {
-          for (const parseError of result.errors) {
-            errors.push({
-              type: "extraction_error",
-              filePath: file.path,
-              message: parseError.message,
-            });
-          }
-        }
-      } catch (error) {
-        const extractionError = new IngestionExtractionError(
-          error instanceof Error ? error.message : String(error),
-          file.path,
-          { cause: error instanceof Error ? error : undefined }
-        );
-        errors.push({
-          type: "extraction_error",
-          filePath: file.path,
-          message: extractionError.message,
-          originalError: error,
-        });
-      }
-    }
-
-    return results;
+    return { entityResults, relationshipResults };
   }
 
   /**

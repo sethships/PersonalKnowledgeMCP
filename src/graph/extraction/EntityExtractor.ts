@@ -39,7 +39,7 @@
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
 import { CodeParser } from "../parsing/CodeParser.js";
-import type { CodeEntity, SupportedLanguage } from "../parsing/types.js";
+import type { CodeEntity, ParseResult, SupportedLanguage } from "../parsing/types.js";
 import type {
   EntityExtractorConfig,
   ExtractOptions,
@@ -124,14 +124,50 @@ export class EntityExtractor {
     this.logger.debug({ filePath, options }, "Extracting entities from content");
 
     const parseResult = await this.parser.parseFile(content, filePath);
+    const result = this.extractFromParseResult(parseResult, options);
 
-    // Apply filtering if options provided
-    let entities = parseResult.entities;
-    if (options) {
-      entities = this.filterEntities(entities, options);
-    }
+    this.logger.info(
+      {
+        metric: "extractor.extract_from_content_ms",
+        value: Math.round(performance.now() - startTime),
+        filePath,
+        entityCount: result.entities.length,
+        filteredCount: parseResult.entities.length - result.entities.length,
+      },
+      "Entity extraction completed"
+    );
 
-    const result: ExtractionResult = {
+    return result;
+  }
+
+  /**
+   * Parse a source file without extracting anything.
+   *
+   * Exposed so callers that need both entities and relationships can parse
+   * once and feed the same {@link ParseResult} to both extractors, instead of
+   * paying for (and leaking) a second syntax tree per file (issue #596).
+   *
+   * @param content - Source code content to parse
+   * @param filePath - File path (used for extension detection and in results)
+   * @returns Raw parse result
+   */
+  async parseFile(content: string, filePath: string): Promise<ParseResult> {
+    return this.parser.parseFile(content, filePath);
+  }
+
+  /**
+   * Build an extraction result from an already-parsed file.
+   *
+   * @param parseResult - Result of a previous {@link parseFile} call
+   * @param options - Optional filtering options
+   * @returns Extraction result with entities and metadata
+   */
+  extractFromParseResult(parseResult: ParseResult, options?: ExtractOptions): ExtractionResult {
+    const entities = options
+      ? this.filterEntities(parseResult.entities, options)
+      : parseResult.entities;
+
+    return {
       entities,
       filePath: parseResult.filePath,
       language: parseResult.language,
@@ -139,19 +175,6 @@ export class EntityExtractor {
       errors: parseResult.errors,
       success: parseResult.success,
     };
-
-    this.logger.info(
-      {
-        metric: "extractor.extract_from_content_ms",
-        value: Math.round(performance.now() - startTime),
-        filePath,
-        entityCount: entities.length,
-        filteredCount: parseResult.entities.length - entities.length,
-      },
-      "Entity extraction completed"
-    );
-
-    return result;
   }
 
   /**

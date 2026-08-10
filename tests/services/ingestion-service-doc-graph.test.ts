@@ -12,8 +12,9 @@
  * `graphIngestionService` and indexes a repository containing doc files,
  * the post-batch graph step fires with:
  *
- * 1. The right `FileInput[]` for `ingestFiles` (code files only, content
- *    captured during chunking — NOT re-read from disk),
+ * 1. The right `FileInput[]` for `ingestFiles` (code files only, queued by
+ *    path during chunking and re-read at the graph phase — see issue #596 for
+ *    why the content is no longer retained across the batch loop),
  * 2. The right `DocExtractionResult[]` for `ingestDocumentGraph` (one entry
  *    per markdown / pdf / docx / txt file, format & sections derived from
  *    the chunking-pipeline `ExtractionResult`),
@@ -464,7 +465,7 @@ describe("IngestionService - doc-graph wiring (#580)", () => {
     expect(graph.calls[1]!.kind).toBe("ingestDocumentGraph");
   });
 
-  it("forwards code files to ingestFiles using content captured during chunking", async () => {
+  it("forwards code files to ingestFiles with content re-read at the graph phase", async () => {
     const service = buildService(true);
     scanner.setMockFiles([file("src/a.ts", ".ts"), file("src/b.ts", ".ts")]);
 
@@ -476,8 +477,9 @@ describe("IngestionService - doc-graph wiring (#580)", () => {
       expect(ingestFilesCall.files).toHaveLength(2);
       const paths = ingestFilesCall.files.map((f) => f.path).sort();
       expect(paths).toEqual(["src/a.ts", "src/b.ts"]);
-      // Content was captured during chunking (not re-read from disk after the
-      // batch loop). All entries must have a non-empty content string.
+      // Only the paths are carried across the batch loop; the content is read
+      // back here. All entries must still arrive with a non-empty content
+      // string (issue #596).
       expect(ingestFilesCall.files.every((f) => f.content.length > 0)).toBe(true);
     }
   });

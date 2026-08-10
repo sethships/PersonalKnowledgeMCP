@@ -40,7 +40,7 @@ import path from "node:path";
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
 import { CodeParser } from "../parsing/CodeParser.js";
-import type { SupportedLanguage, ImportInfo, ExportInfo } from "../parsing/types.js";
+import type { SupportedLanguage, ImportInfo, ExportInfo, ParseResult } from "../parsing/types.js";
 import type {
   RelationshipExtractorConfig,
   RelationshipExtractOptions,
@@ -134,39 +134,58 @@ export class RelationshipExtractor {
     );
 
     const parseResult = await this.parser.parseFile(content, filePath);
-
-    // Transform imports to ImportRelationship objects
-    let imports = this.transformImports(parseResult.imports, filePath);
-
-    // Transform exports to ExportRelationship objects
-    let exports = this.transformExports(parseResult.exports, filePath);
-
-    // Apply filtering
-    imports = this.filterImports(imports, mergedOptions);
-    exports = this.filterExports(exports, mergedOptions);
-
-    const result: RelationshipExtractionResult = {
-      imports,
-      exports,
-      filePath: parseResult.filePath,
-      language: parseResult.language,
-      parseTimeMs: parseResult.parseTimeMs,
-      errors: parseResult.errors,
-      success: parseResult.success,
-    };
+    const result = this.extractFromParseResult(parseResult, mergedOptions);
 
     this.logger.info(
       {
         metric: "extractor.extract_relationships_ms",
         value: Math.round(performance.now() - startTime),
         filePath,
-        importCount: imports.length,
-        exportCount: exports.length,
+        importCount: result.imports.length,
+        exportCount: result.exports.length,
       },
       "Relationship extraction completed"
     );
 
     return result;
+  }
+
+  /**
+   * Build a relationship extraction result from an already-parsed file.
+   *
+   * Lets callers that need both entities and relationships parse once and
+   * feed the same {@link ParseResult} to both extractors, instead of paying
+   * for (and leaking) a second syntax tree per file (issue #596).
+   *
+   * @param parseResult - Result of a previous parse
+   * @param options - Optional filtering options
+   * @returns Extraction result with relationships and metadata
+   */
+  extractFromParseResult(
+    parseResult: ParseResult,
+    options?: RelationshipExtractOptions
+  ): RelationshipExtractionResult {
+    const mergedOptions = { ...DEFAULT_RELATIONSHIP_EXTRACT_OPTIONS, ...options };
+    const filePath = parseResult.filePath;
+
+    const imports = this.filterImports(
+      this.transformImports(parseResult.imports, filePath),
+      mergedOptions
+    );
+    const exports = this.filterExports(
+      this.transformExports(parseResult.exports, filePath),
+      mergedOptions
+    );
+
+    return {
+      imports,
+      exports,
+      filePath,
+      language: parseResult.language,
+      parseTimeMs: parseResult.parseTimeMs,
+      errors: parseResult.errors,
+      success: parseResult.success,
+    };
   }
 
   /**

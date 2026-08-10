@@ -48,6 +48,7 @@ import type {
   IngestionStatus,
   BatchResult,
   InternalChunk,
+  CodeFileRef,
 } from "./ingestion-types.js";
 import {
   IngestionError,
@@ -470,7 +471,7 @@ export class IngestionService {
       // Accumulators for the graph step that runs after the batch loop.
       // Populated only when `graphIngestionService` is configured — see
       // `processFileBatch` for the gating.
-      const codeFilesForGraph: FileInput[] = [];
+      const codeFilesForGraph: CodeFileRef[] = [];
       const docExtractionResults: DocExtractionResult[] = [];
 
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
@@ -894,13 +895,13 @@ export class IngestionService {
           result.filesProcessed++;
           result.chunksCreated += chunks.length;
           chunkedRelativePaths.push(fileInfo.relativePath);
-          // Capture for the post-batch graph step so it doesn't re-read disk.
-          // Only retained when the graph service is configured — otherwise the
-          // memory cost of holding every code file's content is wasted.
+          // Queue for the post-batch graph step. Paths only: holding every
+          // code file's content until then piles onto the batch loop's peak
+          // (issue #596). Only queued when the graph service is configured.
           if (this.graphIngestionService) {
             result.codeFilesForGraph.push({
-              path: fileInfo.relativePath,
-              content,
+              relativePath: fileInfo.relativePath,
+              absolutePath: fileInfo.absolutePath,
             });
           }
         }
@@ -1127,7 +1128,9 @@ export class IngestionService {
    * @param url - Repository URL or local path; required by `ingestFiles` for
    *              the Repository node. Empty strings are tolerated by the
    *              graph layer for local-folder sources.
-   * @param codeFiles - Code-file `FileInput`s captured during chunking.
+   * @param codeFiles - Code-file path pairs captured during chunking; their
+   *                    content is re-read here rather than retained across
+   *                    the batch loop.
    * @param docResults - Per-doc-file `DocExtractionResult`s captured during
    *                     chunking.
    * @param options - Indexing options (used to forward the progress callback
@@ -1137,7 +1140,7 @@ export class IngestionService {
   private async runGraphIngestion(
     repository: string,
     url: string,
-    codeFiles: readonly FileInput[],
+    codeFiles: readonly CodeFileRef[],
     docResults: readonly DocExtractionResult[],
     options: IndexOptions,
     errors: IndexError[]
@@ -1146,7 +1149,8 @@ export class IngestionService {
 
     if (codeFiles.length > 0) {
       try {
-        const ingestResult = await this.graphIngestionService.ingestFiles([...codeFiles], {
+        const fileInputs = await this.readCodeFilesForGraph(codeFiles);
+        const ingestResult = await this.graphIngestionService.ingestFiles(fileInputs, {
           repository,
           repositoryUrl: url,
           force: options.force ?? false,
@@ -1164,7 +1168,7 @@ export class IngestionService {
         }
         this.logger.info("Code graph ingestion completed", {
           repository,
-          fileCount: codeFiles.length,
+          fileCount: fileInputs.length,
           status: ingestResult.status,
         });
       } catch (error) {
@@ -1209,6 +1213,36 @@ export class IngestionService {
         });
       }
     }
+  }
+
+  /**
+   * Re-read the queued code files so the graph step gets `FileInput`s.
+   *
+   * A file that disappeared or became unreadable between chunking and the
+   * graph phase is skipped with a warning rather than failing the run — it is
+   * already indexed in ChromaDB, and the next incremental update will retry.
+   *
+   * @param codeFiles - Path pairs captured during chunking
+   * @returns `FileInput`s for every file that could still be read
+   */
+  private async readCodeFilesForGraph(codeFiles: readonly CodeFileRef[]): Promise<FileInput[]> {
+    const fileInputs: FileInput[] = [];
+
+    for (const codeFile of codeFiles) {
+      try {
+        fileInputs.push({
+          path: codeFile.relativePath,
+          content: await Bun.file(codeFile.absolutePath).text(),
+        });
+      } catch (error) {
+        this.logger.warn("Skipping file for graph ingestion; re-read failed", {
+          file: codeFile.relativePath,
+          error,
+        });
+      }
+    }
+
+    return fileInputs;
   }
 
   /**
@@ -1345,13 +1379,22 @@ export class IngestionService {
     timeoutMs: number,
     operationName: string
   ): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
 
-    return Promise.race([promise, timeoutPromise]);
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      // Always clear the timer; an uncleared one keeps its closure (and the
+      // event loop) alive for the full timeout after the race is settled.
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   /**

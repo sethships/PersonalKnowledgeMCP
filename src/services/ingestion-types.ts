@@ -8,7 +8,6 @@
  */
 
 import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
-import type { FileInput } from "../graph/ingestion/types.js";
 
 /**
  * Options for indexing a repository
@@ -365,6 +364,19 @@ export interface InternalChunk {
 }
 
 /**
+ * A code file queued for graph ingestion, identified by path only.
+ *
+ * The content is read back from `absolutePath` when the graph phase runs.
+ */
+export interface CodeFileRef {
+  /** Repository-relative path, used as the graph File node's path */
+  relativePath: string;
+
+  /** Absolute path on disk, used to re-read the content */
+  absolutePath: string;
+}
+
+/**
  * Internal type for batch processing results
  */
 export interface BatchResult {
@@ -414,9 +426,9 @@ export interface BatchResult {
   processedRelativePaths: string[];
 
   /**
-   * `FileInput`-shaped pairs for code files in this batch, captured during
-   * chunking so the post-batch graph step (`GraphIngestionService.ingestFiles`)
-   * doesn't have to re-read the same files from disk.
+   * Paths of the code files in this batch, captured during chunking so the
+   * post-batch graph step (`GraphIngestionService.ingestFiles`) knows which
+   * files to feed the graph.
    *
    * Document files (markdown / pdf / docx / txt) are excluded — they flow
    * through `docExtractionResults` instead.
@@ -426,15 +438,13 @@ export interface BatchResult {
    * code is gated on that field). Consumers should not infer "no code files"
    * from emptiness.
    *
-   * MEMORY: This holds full file content until the post-batch graph step
-   * completes. For repos with `graphIngestionService` configured and
-   * >10K code files, expect ~content_total_bytes of additional retained
-   * memory across the run. Standalone `cli graph populate` already has the
-   * same characteristic (it materializes the same list upfront via
-   * `scanDirectory`); the trade-off is identical. A future follow-up could
-   * stream `ingestFiles` per-batch to bound memory at one batch.
+   * MEMORY: paths only, deliberately. An earlier revision carried the full
+   * file content here to spare the graph step a re-read, which retained
+   * ~content_total_bytes for the whole run — on top of the chunks and
+   * embeddings the batch loop is already holding (issue #596). The content is
+   * re-read in the graph phase instead, by which point that peak has passed.
    */
-  codeFilesForGraph: FileInput[];
+  codeFilesForGraph: CodeFileRef[];
 
   /**
    * Per-document `DocExtractionResult` payloads collected while chunking.

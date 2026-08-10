@@ -317,50 +317,61 @@ export class TreeSitterParser {
         };
       }
 
-      // Check for syntax errors
-      if (tree.rootNode.hasError) {
-        errors.push(...this.collectSyntaxErrors(tree.rootNode));
-      }
+      try {
+        // Check for syntax errors
+        if (tree.rootNode.hasError) {
+          errors.push(...this.collectSyntaxErrors(tree.rootNode));
+        }
 
-      // Extract entities (language-aware)
-      const entities = this.extractEntities(tree.rootNode, filePath, language);
+        // Extract entities (language-aware)
+        const entities = this.extractEntities(tree.rootNode, filePath, language);
 
-      // Extract imports (language-aware)
-      const imports = this.extractImports(tree.rootNode, language);
+        // Extract imports (language-aware)
+        const imports = this.extractImports(tree.rootNode, language);
 
-      // Extract exports (language-aware - Python doesn't have explicit exports)
-      const exports = this.extractExports(tree.rootNode, language);
+        // Extract exports (language-aware - Python doesn't have explicit exports)
+        const exports = this.extractExports(tree.rootNode, language);
 
-      // Extract function calls (language-aware)
-      const calls = this.extractCalls(tree.rootNode, language);
+        // Extract function calls (language-aware)
+        const calls = this.extractCalls(tree.rootNode, language);
 
-      const parseTimeMs = performance.now() - startTime;
+        const parseTimeMs = performance.now() - startTime;
 
-      this.logger.info(
-        {
-          metric: "parser.parse_file_ms",
-          value: Math.round(parseTimeMs),
+        this.logger.info(
+          {
+            metric: "parser.parse_file_ms",
+            value: Math.round(parseTimeMs),
+            filePath,
+            entityCount: entities.length,
+            importCount: imports.length,
+            exportCount: exports.length,
+            callCount: calls.length,
+            errorCount: errors.length,
+          },
+          "File parsed successfully"
+        );
+
+        return {
           filePath,
-          entityCount: entities.length,
-          importCount: imports.length,
-          exportCount: exports.length,
-          callCount: calls.length,
-          errorCount: errors.length,
-        },
-        "File parsed successfully"
-      );
-
-      return {
-        filePath,
-        language,
-        entities,
-        imports,
-        exports,
-        calls,
-        parseTimeMs,
-        errors,
-        success: true,
-      };
+          language,
+          entities,
+          imports,
+          exports,
+          calls,
+          parseTimeMs,
+          errors,
+          success: true,
+        };
+      } finally {
+        // Syntax trees live on the WASM heap, which the JS GC cannot reclaim
+        // (web-tree-sitter 0.26.x registers no finalizer), so an unfreed tree
+        // is a hard leak of roughly 49x the source size (issue #596). Every
+        // extractor above copies plain values out synchronously via
+        // `node.text`, so nothing survives that still points into the tree.
+        // This also covers the detached case where the timeout race below
+        // already rejected: the parse continues and still frees its tree.
+        tree.delete();
+      }
     };
 
     try {
