@@ -26,6 +26,7 @@ import type {
   ExtractionResult,
   RelationshipExtractionResult,
 } from "../../../../src/graph/extraction/types.js";
+import type { ParseResult } from "../../../../src/graph/parsing/types.js";
 import { initializeLogger, resetLogger } from "../../../../src/logging/index.js";
 
 // Initialize logger for tests (silent mode)
@@ -162,6 +163,27 @@ function createSampleRelationshipResult(filePath: string): RelationshipExtractio
 }
 
 /**
+ * Sample parse result.
+ *
+ * The service parses each file once and feeds the result to both extractors
+ * (issue #596), so tests stub the parse and then stub what each extractor
+ * makes of it.
+ */
+function createSampleParseResult(filePath: string): ParseResult {
+  return {
+    success: true,
+    filePath,
+    language: "typescript",
+    parseTimeMs: 10,
+    entities: [],
+    imports: [],
+    exports: [],
+    calls: [],
+    errors: [],
+  };
+}
+
+/**
  * Sample file input
  */
 function createSampleFileInput(filePath: string, content?: string): FileInput {
@@ -176,11 +198,19 @@ describe("GraphIngestionService", () => {
   let mockNeo4jClient: Neo4jStorageClient;
   let mockEntityExtractor: EntityExtractor;
   let mockRelationshipExtractor: RelationshipExtractor;
+  let parseFileSpy: ReturnType<typeof spyOn<EntityExtractor, "parseFile">>;
 
   beforeEach(() => {
     mockNeo4jClient = createMockNeo4jClient();
     mockEntityExtractor = createMockEntityExtractor();
     mockRelationshipExtractor = createMockRelationshipExtractor();
+
+    // Stub the single parse the service performs per file, so tests that only
+    // care about extractor output don't run tree-sitter. Individual tests
+    // override this when they need to control parse timing or failures.
+    parseFileSpy = spyOn(mockEntityExtractor, "parseFile").mockImplementation(
+      (_content, filePath) => Promise.resolve(createSampleParseResult(filePath))
+    );
 
     service = new GraphIngestionService(
       mockNeo4jClient,
@@ -244,20 +274,21 @@ describe("GraphIngestionService", () => {
         repositoryUrl: "https://github.com/test/test-repo",
       };
 
-      // Use a deferred promise to control when extraction completes
-      let resolveExtraction: ((value: ExtractionResult) => void) | null = null;
-      const extractionPromise = new Promise<ExtractionResult>((resolve) => {
-        resolveExtraction = resolve;
+      // Use a deferred promise to control when the parse completes
+      let resolveParse: ((value: ParseResult) => void) | null = null;
+      const parsePromise = new Promise<ParseResult>((resolve) => {
+        resolveParse = resolve;
       });
 
       // Mock runQuery to return no existing repo
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
-      // Spy on entity extractor to block until we say so
-      const extractSpy = spyOn(mockEntityExtractor, "extractFromContent").mockReturnValue(
-        extractionPromise
+      // Spy on the parse to block until we say so
+      const extractSpy = spyOn(mockEntityExtractor, "parseFile").mockReturnValue(parsePromise);
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
+        createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -275,8 +306,8 @@ describe("GraphIngestionService", () => {
       // Try to start second ingestion - should fail immediately
       await expect(service.ingestFiles(files, options)).rejects.toThrow(IngestionInProgressError);
 
-      // Now resolve the extraction to let first ingestion complete
-      resolveExtraction!(createSampleExtractionResult("test.ts"));
+      // Now resolve the parse to let first ingestion complete
+      resolveParse!(createSampleParseResult("test.ts"));
 
       // Wait for first ingestion to complete
       try {
@@ -286,6 +317,7 @@ describe("GraphIngestionService", () => {
       }
 
       extractSpy.mockRestore();
+      entitySpy.mockRestore();
       relSpy.mockRestore();
     });
 
@@ -360,10 +392,10 @@ describe("GraphIngestionService", () => {
         (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
         // Spy on extractors
-        const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+        const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
           createSampleExtractionResult("test.ts")
         );
-        const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+        const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
           createSampleRelationshipResult("test.ts")
         );
 
@@ -392,10 +424,10 @@ describe("GraphIngestionService", () => {
         .mockResolvedValue([]); // all other queries
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -421,10 +453,10 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -456,10 +488,12 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on entity extractor to throw error
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockRejectedValue(
-        new Error("Parse error")
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockImplementation(
+        () => {
+          throw new Error("Parse error");
+        }
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -484,11 +518,11 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockImplementation(
-        (_, filePath) => Promise.resolve(createSampleExtractionResult(filePath))
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockImplementation(
+        (parseResult) => createSampleExtractionResult(parseResult.filePath)
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockImplementation(
-        (_, filePath) => Promise.resolve(createSampleRelationshipResult(filePath))
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockImplementation(
+        (parseResult) => createSampleRelationshipResult(parseResult.filePath)
       );
 
       const files = [
@@ -506,6 +540,38 @@ describe("GraphIngestionService", () => {
       relSpy.mockRestore();
     });
 
+    it("should parse each file exactly once (issue #596)", async () => {
+      const options: GraphIngestionOptions = {
+        repository: "test-repo",
+        repositoryUrl: "https://github.com/test/test-repo",
+      };
+
+      (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
+
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockImplementation(
+        (parseResult) => createSampleExtractionResult(parseResult.filePath)
+      );
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockImplementation(
+        (parseResult) => createSampleRelationshipResult(parseResult.filePath)
+      );
+
+      const files = [
+        createSampleFileInput("src/index.ts"),
+        createSampleFileInput("src/utils.ts"),
+        createSampleFileInput("src/helpers.ts"),
+      ];
+      await service.ingestFiles(files, options);
+
+      // Entities and relationships must both come from the same parse — the
+      // two-pass version parsed every file twice, leaking a second tree each.
+      expect(parseFileSpy).toHaveBeenCalledTimes(files.length);
+      expect(entitySpy).toHaveBeenCalledTimes(files.length);
+      expect(relSpy).toHaveBeenCalledTimes(files.length);
+
+      entitySpy.mockRestore();
+      relSpy.mockRestore();
+    });
+
     it("should skip unsupported file types", async () => {
       const options: GraphIngestionOptions = {
         repository: "test-repo",
@@ -516,10 +582,10 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -548,10 +614,10 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -573,10 +639,10 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -599,10 +665,10 @@ describe("GraphIngestionService", () => {
       );
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -741,10 +807,10 @@ describe("GraphIngestionService", () => {
       (mockNeo4jClient.runQuery as ReturnType<typeof mock>).mockResolvedValue([]);
 
       // Spy on extractors
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         createSampleExtractionResult("test.ts")
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 
@@ -847,10 +913,10 @@ describe("GraphIngestionService", () => {
         errors: [],
       };
 
-      const entitySpy = spyOn(mockEntityExtractor, "extractFromContent").mockResolvedValue(
+      const entitySpy = spyOn(mockEntityExtractor, "extractFromParseResult").mockReturnValue(
         manyEntitiesResult
       );
-      const relSpy = spyOn(mockRelationshipExtractor, "extractFromContent").mockResolvedValue(
+      const relSpy = spyOn(mockRelationshipExtractor, "extractFromParseResult").mockReturnValue(
         createSampleRelationshipResult("test.ts")
       );
 

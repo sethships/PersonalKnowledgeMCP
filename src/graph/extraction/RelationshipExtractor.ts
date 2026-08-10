@@ -40,7 +40,7 @@ import path from "node:path";
 import type pino from "pino";
 import { getComponentLogger } from "../../logging/index.js";
 import { CodeParser } from "../parsing/CodeParser.js";
-import type { SupportedLanguage, ImportInfo, ExportInfo } from "../parsing/types.js";
+import type { SupportedLanguage, ImportInfo, ExportInfo, ParseResult } from "../parsing/types.js";
 import type {
   RelationshipExtractorConfig,
   RelationshipExtractOptions,
@@ -125,7 +125,6 @@ export class RelationshipExtractor {
     filePath: string,
     options?: RelationshipExtractOptions
   ): Promise<RelationshipExtractionResult> {
-    const startTime = performance.now();
     const mergedOptions = { ...DEFAULT_RELATIONSHIP_EXTRACT_OPTIONS, ...options };
 
     this.logger.debug(
@@ -134,31 +133,46 @@ export class RelationshipExtractor {
     );
 
     const parseResult = await this.parser.parseFile(content, filePath);
+    return this.extractFromParseResult(parseResult, mergedOptions);
+  }
 
-    // Transform imports to ImportRelationship objects
-    let imports = this.transformImports(parseResult.imports, filePath);
+  /**
+   * Build a relationship extraction result from an already-parsed file.
+   *
+   * Lets callers that need both entities and relationships parse once and
+   * feed the same {@link ParseResult} to both extractors, instead of paying
+   * for (and leaking) a second syntax tree per file (issue #596).
+   *
+   * Emits the extraction timing metric, since this is the one step every
+   * caller shares — the ingestion path never goes through
+   * {@link extractFromContent}. The reported value covers the parse plus the
+   * transform/filter work done here.
+   *
+   * @param parseResult - Result of a previous parse
+   * @param options - Optional filtering options
+   * @returns Extraction result with relationships and metadata
+   */
+  extractFromParseResult(
+    parseResult: ParseResult,
+    options?: RelationshipExtractOptions
+  ): RelationshipExtractionResult {
+    const startTime = performance.now();
+    const mergedOptions = { ...DEFAULT_RELATIONSHIP_EXTRACT_OPTIONS, ...options };
+    const filePath = parseResult.filePath;
 
-    // Transform exports to ExportRelationship objects
-    let exports = this.transformExports(parseResult.exports, filePath);
-
-    // Apply filtering
-    imports = this.filterImports(imports, mergedOptions);
-    exports = this.filterExports(exports, mergedOptions);
-
-    const result: RelationshipExtractionResult = {
-      imports,
-      exports,
-      filePath: parseResult.filePath,
-      language: parseResult.language,
-      parseTimeMs: parseResult.parseTimeMs,
-      errors: parseResult.errors,
-      success: parseResult.success,
-    };
+    const imports = this.filterImports(
+      this.transformImports(parseResult.imports, filePath),
+      mergedOptions
+    );
+    const exports = this.filterExports(
+      this.transformExports(parseResult.exports, filePath),
+      mergedOptions
+    );
 
     this.logger.info(
       {
         metric: "extractor.extract_relationships_ms",
-        value: Math.round(performance.now() - startTime),
+        value: Math.round(parseResult.parseTimeMs + (performance.now() - startTime)),
         filePath,
         importCount: imports.length,
         exportCount: exports.length,
@@ -166,7 +180,15 @@ export class RelationshipExtractor {
       "Relationship extraction completed"
     );
 
-    return result;
+    return {
+      imports,
+      exports,
+      filePath,
+      language: parseResult.language,
+      parseTimeMs: parseResult.parseTimeMs,
+      errors: parseResult.errors,
+      success: parseResult.success,
+    };
   }
 
   /**
