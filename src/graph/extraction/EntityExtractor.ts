@@ -119,25 +119,10 @@ export class EntityExtractor {
     filePath: string,
     options?: ExtractOptions
   ): Promise<ExtractionResult> {
-    const startTime = performance.now();
-
     this.logger.debug({ filePath, options }, "Extracting entities from content");
 
     const parseResult = await this.parser.parseFile(content, filePath);
-    const result = this.extractFromParseResult(parseResult, options);
-
-    this.logger.info(
-      {
-        metric: "extractor.extract_from_content_ms",
-        value: Math.round(performance.now() - startTime),
-        filePath,
-        entityCount: result.entities.length,
-        filteredCount: parseResult.entities.length - result.entities.length,
-      },
-      "Entity extraction completed"
-    );
-
-    return result;
+    return this.extractFromParseResult(parseResult, options);
   }
 
   /**
@@ -158,14 +143,32 @@ export class EntityExtractor {
   /**
    * Build an extraction result from an already-parsed file.
    *
+   * Emits the extraction timing metric, since this is the one step every
+   * caller shares — the ingestion path parses via {@link parseFile} and never
+   * goes through {@link extractFromContent} (issue #596). The reported value
+   * covers the parse plus the filtering done here.
+   *
    * @param parseResult - Result of a previous {@link parseFile} call
    * @param options - Optional filtering options
    * @returns Extraction result with entities and metadata
    */
   extractFromParseResult(parseResult: ParseResult, options?: ExtractOptions): ExtractionResult {
+    const startTime = performance.now();
+
     const entities = options
       ? this.filterEntities(parseResult.entities, options)
       : parseResult.entities;
+
+    this.logger.info(
+      {
+        metric: "extractor.extract_from_content_ms",
+        value: Math.round(parseResult.parseTimeMs + (performance.now() - startTime)),
+        filePath: parseResult.filePath,
+        entityCount: entities.length,
+        filteredCount: parseResult.entities.length - entities.length,
+      },
+      "Entity extraction completed"
+    );
 
     return {
       entities,

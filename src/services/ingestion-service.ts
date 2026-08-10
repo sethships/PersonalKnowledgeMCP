@@ -66,6 +66,7 @@ import type { GraphIngestionService } from "../graph/ingestion/GraphIngestionSer
 import type { DocExtractionResult } from "../graph/extraction/doc-types.js";
 import type { FileInput } from "../graph/ingestion/types.js";
 import { DocGraphBatcher } from "../graph/extraction/doc-graph-batch.js";
+import { EntityExtractor } from "../graph/extraction/EntityExtractor.js";
 
 /**
  * Service for orchestrating repository indexing operations
@@ -1149,7 +1150,7 @@ export class IngestionService {
 
     if (codeFiles.length > 0) {
       try {
-        const fileInputs = await this.readCodeFilesForGraph(codeFiles);
+        const fileInputs = await this.readCodeFilesForGraph(codeFiles, errors);
         const ingestResult = await this.graphIngestionService.ingestFiles(fileInputs, {
           repository,
           repositoryUrl: url,
@@ -1218,17 +1219,36 @@ export class IngestionService {
   /**
    * Re-read the queued code files so the graph step gets `FileInput`s.
    *
+   * Only files the graph actually parses are read from disk. `createFileNodes`
+   * uses nothing but `path`/`hash`, and `extractAll` skips anything
+   * `EntityExtractor.isSupported` rejects, so reading (say) a multi-MB
+   * `package-lock.json` would reintroduce exactly the memory peak issue #596
+   * removes. Unsupported files are passed through with empty content so they
+   * still get a File node.
+   *
    * A file that disappeared or became unreadable between chunking and the
-   * graph phase is skipped with a warning rather than failing the run — it is
-   * already indexed in ChromaDB, and the next incremental update will retry.
+   * graph phase is skipped rather than failing the run — it is already indexed
+   * in ChromaDB. The skip is recorded as a non-fatal `IndexError` because the
+   * manifest has already fingerprinted the file as processed: no later
+   * incremental update will re-offer it until its content changes or the
+   * repository is force re-indexed, so the graph gap is otherwise invisible.
    *
    * @param codeFiles - Path pairs captured during chunking
+   * @param errors - Indexing error accumulator; mutated on a failed re-read
    * @returns `FileInput`s for every file that could still be read
    */
-  private async readCodeFilesForGraph(codeFiles: readonly CodeFileRef[]): Promise<FileInput[]> {
+  private async readCodeFilesForGraph(
+    codeFiles: readonly CodeFileRef[],
+    errors: IndexError[]
+  ): Promise<FileInput[]> {
     const fileInputs: FileInput[] = [];
 
     for (const codeFile of codeFiles) {
+      if (!EntityExtractor.isSupported(codeFile.relativePath)) {
+        fileInputs.push({ path: codeFile.relativePath, content: "" });
+        continue;
+      }
+
       try {
         fileInputs.push({
           path: codeFile.relativePath,
@@ -1238,6 +1258,14 @@ export class IngestionService {
         this.logger.warn("Skipping file for graph ingestion; re-read failed", {
           file: codeFile.relativePath,
           error,
+        });
+        errors.push({
+          type: "file_error",
+          filePath: codeFile.relativePath,
+          message: `Graph ingestion skipped file; re-read failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          originalError: error,
         });
       }
     }

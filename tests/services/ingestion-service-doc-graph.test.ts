@@ -552,4 +552,83 @@ describe("IngestionService - doc-graph wiring (#580)", () => {
     );
     expect(result.stats.filesProcessed).toBeGreaterThan(0);
   });
+
+  it("records a file_error when the graph-phase re-read fails and still ingests the readable files", async () => {
+    const service = buildService(true);
+    scanner.setMockFiles([file("src/a.ts", ".ts"), file("src/b.ts", ".ts")]);
+
+    // `src/b.ts` chunks fine but becomes unreadable before the graph phase
+    // re-reads it — the first `.text()` (chunking) succeeds, the second
+    // (graph re-read) throws EBUSY.
+    const reads = new Map<string, number>();
+    (Bun as any).file = (path: string) => ({
+      text: async () => {
+        const count = (reads.get(path) ?? 0) + 1;
+        reads.set(path, count);
+        if (path.endsWith("src/b.ts") && count > 1) {
+          throw new Error("EBUSY: resource busy or locked");
+        }
+        return "export function code() { return 1; }";
+      },
+      json: async () => ({}),
+      arrayBuffer: async () => new ArrayBuffer(0),
+      stream: () => null,
+      size: 36,
+      type: "text/plain",
+    });
+
+    const result = await service.indexRepository("https://github.com/test/repo.git");
+
+    const ingestFilesCall = graph.calls.find((c) => c.kind === "ingestFiles");
+    expect(ingestFilesCall).toBeDefined();
+    if (ingestFilesCall && ingestFilesCall.kind === "ingestFiles") {
+      expect(ingestFilesCall.files.map((f) => f.path)).toEqual(["src/a.ts"]);
+    }
+
+    // The skip is recorded: the manifest has already fingerprinted `src/b.ts`,
+    // so no later incremental update re-offers it.
+    const skipError = result.errors.find((e) => e.filePath === "src/b.ts");
+    expect(skipError).toBeDefined();
+    expect(skipError!.type).toBe("file_error");
+    expect(skipError!.message).toContain("Graph ingestion skipped file; re-read failed");
+    expect(skipError!.message).toContain("EBUSY");
+  });
+
+  it("does not read unsupported code files from disk at the graph phase", async () => {
+    const service = buildService(true);
+    scanner.setMockFiles([file("src/a.ts", ".ts"), file("package-lock.json", ".json")]);
+
+    const graphPhaseReads: string[] = [];
+    const reads = new Map<string, number>();
+    (Bun as any).file = (path: string) => ({
+      text: async () => {
+        const count = (reads.get(path) ?? 0) + 1;
+        reads.set(path, count);
+        if (count > 1) graphPhaseReads.push(path);
+        return "export function code() { return 1; }";
+      },
+      json: async () => ({}),
+      arrayBuffer: async () => new ArrayBuffer(0),
+      stream: () => null,
+      size: 36,
+      type: "text/plain",
+    });
+
+    await service.indexRepository("https://github.com/test/repo.git");
+
+    // Only the tree-sitter-parsable file is re-read; the lockfile still gets a
+    // File node, but with empty content (issue #596 peak-memory guard).
+    expect(graphPhaseReads.some((p) => p.endsWith("package-lock.json"))).toBe(false);
+
+    const ingestFilesCall = graph.calls.find((c) => c.kind === "ingestFiles");
+    expect(ingestFilesCall).toBeDefined();
+    if (ingestFilesCall && ingestFilesCall.kind === "ingestFiles") {
+      const lockfile = ingestFilesCall.files.find((f) => f.path === "package-lock.json");
+      expect(lockfile).toBeDefined();
+      expect(lockfile!.content).toBe("");
+      expect(
+        ingestFilesCall.files.find((f) => f.path === "src/a.ts")!.content.length
+      ).toBeGreaterThan(0);
+    }
+  });
 });

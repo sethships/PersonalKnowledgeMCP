@@ -125,7 +125,6 @@ export class RelationshipExtractor {
     filePath: string,
     options?: RelationshipExtractOptions
   ): Promise<RelationshipExtractionResult> {
-    const startTime = performance.now();
     const mergedOptions = { ...DEFAULT_RELATIONSHIP_EXTRACT_OPTIONS, ...options };
 
     this.logger.debug(
@@ -134,20 +133,7 @@ export class RelationshipExtractor {
     );
 
     const parseResult = await this.parser.parseFile(content, filePath);
-    const result = this.extractFromParseResult(parseResult, mergedOptions);
-
-    this.logger.info(
-      {
-        metric: "extractor.extract_relationships_ms",
-        value: Math.round(performance.now() - startTime),
-        filePath,
-        importCount: result.imports.length,
-        exportCount: result.exports.length,
-      },
-      "Relationship extraction completed"
-    );
-
-    return result;
+    return this.extractFromParseResult(parseResult, mergedOptions);
   }
 
   /**
@@ -157,6 +143,11 @@ export class RelationshipExtractor {
    * feed the same {@link ParseResult} to both extractors, instead of paying
    * for (and leaking) a second syntax tree per file (issue #596).
    *
+   * Emits the extraction timing metric, since this is the one step every
+   * caller shares — the ingestion path never goes through
+   * {@link extractFromContent}. The reported value covers the parse plus the
+   * transform/filter work done here.
+   *
    * @param parseResult - Result of a previous parse
    * @param options - Optional filtering options
    * @returns Extraction result with relationships and metadata
@@ -165,6 +156,7 @@ export class RelationshipExtractor {
     parseResult: ParseResult,
     options?: RelationshipExtractOptions
   ): RelationshipExtractionResult {
+    const startTime = performance.now();
     const mergedOptions = { ...DEFAULT_RELATIONSHIP_EXTRACT_OPTIONS, ...options };
     const filePath = parseResult.filePath;
 
@@ -175,6 +167,17 @@ export class RelationshipExtractor {
     const exports = this.filterExports(
       this.transformExports(parseResult.exports, filePath),
       mergedOptions
+    );
+
+    this.logger.info(
+      {
+        metric: "extractor.extract_relationships_ms",
+        value: Math.round(parseResult.parseTimeMs + (performance.now() - startTime)),
+        filePath,
+        importCount: imports.length,
+        exportCount: exports.length,
+      },
+      "Relationship extraction completed"
     );
 
     return {

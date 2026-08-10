@@ -83,6 +83,18 @@ export class GraphIngestionService {
   private _currentOperation: GraphIngestionServiceStatus["currentOperation"] = null;
   private readonly config: Required<GraphIngestionConfig>;
 
+  /**
+   * @param graphAdapter - Graph storage adapter used for all node/edge writes
+   * @param entityExtractor - Parses every file and extracts entities; its
+   *                          `CodeParser` limits (`maxFileSizeBytes`,
+   *                          `parseTimeoutMs`) govern the whole ingestion path
+   * @param relationshipExtractor - Used only for `extractFromParseResult`.
+   *                                Ingestion parses via
+   *                                `entityExtractor.parseFile` (issue #596),
+   *                                so this instance's own `CodeParser` config
+   *                                never applies here.
+   * @param config - Optional ingestion configuration (batch sizes, etc.)
+   */
   constructor(
     private readonly graphAdapter: GraphStorageAdapter,
     private readonly entityExtractor: EntityExtractor,
