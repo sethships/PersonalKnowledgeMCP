@@ -539,12 +539,23 @@ export class FolderDocumentIndexingService {
       const buffer = Buffer.from(await file.arrayBuffer());
       const computedHash = createHash("sha256").update(buffer).digest("hex");
 
-      // Step 3: Query ChromaDB for existing chunks
+      // Step 3: Query ChromaDB for existing chunks.
+      //
+      // Filter on `file_path` ALONE and match `repository` in memory. Adding a
+      // `repository` predicate makes ChromaDB pathologically slow, because it
+      // matches essentially every chunk in a per-repository collection and the
+      // whole matching set is materialised before intersecting. Measured on a
+      // 39,518-chunk collection (ChromaDB 1.x, identical result set): the
+      // compound `$and` form took ~124,000 ms against ~315 ms for `file_path`
+      // alone. This runs once per watcher event, so the compound form stalled
+      // folder re-indexing for minutes per file. Mirrors the same fix in
+      // `ChromaClient.deleteDocumentsByFilePrefix`.
       let storedHash: string | null = null;
       try {
-        const existingDocs = await this.storageClient.getDocumentsByMetadata(collectionName, {
-          $and: [{ file_path: relativePath }, { repository }],
+        const docsForPath = await this.storageClient.getDocumentsByMetadata(collectionName, {
+          file_path: relativePath,
         });
+        const existingDocs = docsForPath.filter((doc) => doc.metadata?.repository === repository);
 
         // Get content_hash from the first chunk (all chunks of the same file share the same hash)
         if (existingDocs.length > 0 && existingDocs[0]) {

@@ -154,10 +154,13 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should throw ConcurrentUpdateError when update is already in progress", async () => {
+      // The lock is a lease: only a lock that is still inside the lease counts
+      // as a live update, so this fixture must use a recent timestamp.
+      const freshStartedAt = new Date(Date.now() - 30_000).toISOString();
       const repoInProgress: RepositoryInfo = {
         ...testRepo,
         updateInProgress: true,
-        updateStartedAt: "2024-12-14T10:00:00.000Z",
+        updateStartedAt: freshStartedAt,
       };
       mockRepositoryService.getRepository = mock(async () => repoInProgress);
 
@@ -173,10 +176,29 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(error).toBeInstanceOf(ConcurrentUpdateError);
         const concurrentError = error as ConcurrentUpdateError;
         expect(concurrentError.repositoryName).toBe("test-repo");
-        expect(concurrentError.updateStartedAt).toBe("2024-12-14T10:00:00.000Z");
+        expect(concurrentError.updateStartedAt).toBe(freshStartedAt);
         expect(concurrentError.message).toContain("already in progress");
         expect(concurrentError.message).toContain("test-repo");
       }
+    });
+
+    it("should reclaim a stale in-progress lock and run the update instead of throwing", async () => {
+      // A flag left behind by a hard kill or an indefinitely hung run outlives
+      // its owner (both coordinators clear it in a `finally`). Without lease
+      // takeover it wedges the repository permanently: every later update
+      // throws and the MCP surface has no tool to clear it.
+      const staleStartedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      const repoWithStaleLock: RepositoryInfo = {
+        ...testRepo,
+        updateInProgress: true,
+        updateStartedAt: staleStartedAt,
+      };
+      mockRepositoryService.getRepository = mock(async () => repoWithStaleLock);
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      expect(mockUpdatePipeline.processChanges).toHaveBeenCalled();
     });
 
     it("should process update with exactly 500 files (at threshold boundary)", async () => {

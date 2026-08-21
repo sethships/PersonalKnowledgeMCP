@@ -151,6 +151,72 @@ export async function detectInterruptedUpdates(
 }
 
 /**
+ * Default lease duration for the `updateInProgress` lock, in milliseconds.
+ *
+ * The flag doubles as a concurrency lock and as a crash marker. Both
+ * coordinators clear it in a `finally` block, so it can only outlive its
+ * owner when the process is killed hard (SIGKILL, OOM, power loss) or hangs
+ * indefinitely on a storage call. Without a lease such a leftover blocks every
+ * subsequent update forever, and the MCP surface has no tool to clear it, so
+ * `trigger_incremental_update` becomes permanently unusable for that
+ * repository.
+ *
+ * One hour comfortably exceeds a healthy incremental update (target: under a
+ * minute) while still leaving room for a slow large-repository run, so a
+ * genuinely live update is very unlikely to be taken over.
+ */
+const DEFAULT_STALE_UPDATE_LOCK_MS = 60 * 60 * 1000;
+
+/**
+ * Resolve the stale-lock lease, honouring the `UPDATE_STALE_LOCK_MS` override.
+ *
+ * Read per call rather than cached at module load so tests (and operators
+ * tuning a slow environment) can change it without reloading the module.
+ * Non-numeric or non-positive values fall back to the default.
+ *
+ * @returns Lease duration in milliseconds
+ */
+export function getStaleUpdateLockMs(): number {
+  const raw = Bun.env["UPDATE_STALE_LOCK_MS"];
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_STALE_UPDATE_LOCK_MS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_STALE_UPDATE_LOCK_MS;
+  }
+  return parsed;
+}
+
+/**
+ * Decide whether an `updateInProgress` lock has outlived its lease and can be
+ * taken over by a new update.
+ *
+ * @param updateStartedAt - ISO 8601 timestamp recorded when the lock was taken
+ * @param now - Current time in epoch milliseconds (injectable for tests)
+ * @returns true when the lock is older than the lease and is safe to reclaim
+ *
+ * @example
+ * ```typescript
+ * if (repo.updateInProgress && repo.updateStartedAt) {
+ *   if (!isStaleUpdateLock(repo.updateStartedAt)) {
+ *     throw new ConcurrentUpdateError(name, repo.updateStartedAt);
+ *   }
+ *   // otherwise: log and take over
+ * }
+ * ```
+ */
+export function isStaleUpdateLock(updateStartedAt: string, now: number = Date.now()): boolean {
+  const startedAtMs = new Date(updateStartedAt).getTime();
+  // An unparseable timestamp cannot be trusted to represent a live update, and
+  // treating it as live would wedge the repository permanently. Reclaim it.
+  if (Number.isNaN(startedAtMs)) {
+    return true;
+  }
+  return now - startedAtMs > getStaleUpdateLockMs();
+}
+
+/**
  * Clear the interrupted update flag for a repository
  *
  * Resets the `updateInProgress` and `updateStartedAt` fields without

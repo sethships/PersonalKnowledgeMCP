@@ -29,6 +29,7 @@ import type {
 import type { IncrementalUpdatePipeline } from "./incremental-update-pipeline.js";
 import { addHistoryEntry } from "../repositories/metadata-store.js";
 import { GitHubNotFoundError } from "./github-client-errors.js";
+import { isStaleUpdateLock, formatElapsedTime } from "./interrupted-update-detector.js";
 import type {
   CoordinatorConfig,
   CoordinatorResult,
@@ -262,9 +263,26 @@ export class IncrementalUpdateCoordinator {
         throw new MissingCommitShaError(repositoryName);
       }
 
-      // Check if an update is already in progress (concurrent update prevention)
+      // Check if an update is already in progress (concurrent update prevention).
+      //
+      // The flag is a lease, not a permanent lock. Both this coordinator and
+      // LocalFolderUpdateCoordinator clear it in a `finally`, so it can only
+      // outlive its owner when the process is killed hard or hangs forever on
+      // a storage call. Treating such a leftover as a live update wedges the
+      // repository permanently: every later update throws, and the MCP surface
+      // has no tool to reset it. Past the lease we log and take over instead.
       if (repo.updateInProgress && repo.updateStartedAt) {
-        throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
+        if (!isStaleUpdateLock(repo.updateStartedAt)) {
+          throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
+        }
+        logger.warn(
+          {
+            repository: repositoryName,
+            updateStartedAt: repo.updateStartedAt,
+            elapsed: formatElapsedTime(Date.now() - new Date(repo.updateStartedAt).getTime()),
+          },
+          "Reclaiming stale in-progress lock from an interrupted update and continuing"
+        );
       }
 
       // Step 1b: Mark update as in-progress BEFORE doing any work

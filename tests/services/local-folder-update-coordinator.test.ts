@@ -350,4 +350,28 @@ describe("LocalFolderUpdateCoordinator", () => {
     expect((caught as Error).message).toMatch(/already in progress/i);
     expect(pipeline.processChanges).not.toHaveBeenCalled();
   });
+
+  it("reclaims a stale in-progress lock instead of refusing forever", async () => {
+    // The flag is a lease, not a permanent lock. A hard kill (or a run that
+    // hangs indefinitely on a storage call) leaves it set, and there is no MCP
+    // tool to clear it, so without takeover the repository can never update
+    // again. Past the lease the coordinator logs and continues.
+    await writeFile(join(testDir, "a.ts"), "export const a = 1;\n");
+    const repo: RepositoryInfo = {
+      ...makeRepo("staleLock", testDir),
+      updateInProgress: true,
+      updateStartedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    };
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => emptyUpdateResult()),
+    } as unknown as IncrementalUpdatePipeline;
+    const detector = new LocalFolderChangeDetector(store);
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    const result = await coord.updateRepository("staleLock");
+
+    expect(result.status).not.toBe("failed");
+    expect(pipeline.processChanges).toHaveBeenCalled();
+  });
 });

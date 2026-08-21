@@ -40,6 +40,7 @@ import {
   RepositoryNotFoundError,
   ConcurrentUpdateError,
 } from "./incremental-update-coordinator-errors.js";
+import { isStaleUpdateLock, formatElapsedTime } from "./interrupted-update-detector.js";
 import { FileManifestStoreImpl, FILE_MANIFEST_EMPTY_GENERATED_AT } from "./file-manifest-store.js";
 import { LocalFolderChangeDetector } from "./local-folder-change-detector.js";
 
@@ -182,8 +183,22 @@ export class LocalFolderUpdateCoordinator {
       // once the metadata store grows that primitive. Tracked as a follow-up
       // issue separate from this PR — the CLI risk is low (single-user
       // workflow) and the MCP path is already safe.
+      //
+      // Stale-lease takeover mirrors the git coordinator: a flag left behind
+      // by a hard kill or an indefinitely hung run would otherwise block every
+      // future update with no MCP-side way to clear it.
       if (repo.updateInProgress && repo.updateStartedAt) {
-        throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
+        if (!isStaleUpdateLock(repo.updateStartedAt)) {
+          throw new ConcurrentUpdateError(repositoryName, repo.updateStartedAt);
+        }
+        logger.warn(
+          {
+            repository: repositoryName,
+            updateStartedAt: repo.updateStartedAt,
+            elapsed: formatElapsedTime(Date.now() - new Date(repo.updateStartedAt).getTime()),
+          },
+          "Reclaiming stale in-progress lock from an interrupted update and continuing"
+        );
       }
 
       // Drift: the registered folder is gone (user moved, renamed, or deleted it).
