@@ -380,6 +380,7 @@ docker compose --profile default up -d     # Single instance (backwards compatib
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `UPDATE_HISTORY_LIMIT` | No | `20` | Maximum update history entries per repository |
+| `UPDATE_STALE_LOCK_MS` | No | `3600000` | Lease for the `updateInProgress` lock. A lock older than this is treated as abandoned (hard kill, hung run) and reclaimed by the next update. Non-numeric or non-positive values fall back to the default. Raise it if legitimate updates on a large repository run longer than one hour. |
 
 ---
 

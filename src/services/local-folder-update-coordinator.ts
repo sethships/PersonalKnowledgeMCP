@@ -145,6 +145,11 @@ export class LocalFolderUpdateCoordinator {
     const logger = this.logger.child({ repository: repositoryName });
 
     let inProgressFlagSet = false;
+    // The `updateStartedAt` THIS run wrote, doubling as the lock's owner token.
+    // Once the lock became a lease, another run can legitimately take it over
+    // mid-flight, and neither the final metadata write nor the `finally`
+    // cleanup may touch a lock that is no longer ours.
+    let ownedLockToken: string | undefined;
     let repo: RepositoryInfo | null = null;
 
     try {
@@ -175,14 +180,15 @@ export class LocalFolderUpdateCoordinator {
       // proceed to set it to `true`, and then race the metadata writes at
       // line ~273. Manifest writes are serialized per-repo via the
       // `FileManifestStoreImpl` write queue so the index itself stays
-      // consistent; the only observable effect is the LATER of the two
-      // metadata writes overwriting the earlier one.
+      // consistent.
       //
-      // TODO(local-folder-toctou): replace with an atomic
-      // `RepositoryMetadataService.compareAndSetUpdateInProgress(name, false)`
-      // once the metadata store grows that primitive. Tracked as a follow-up
-      // issue separate from this PR — the CLI risk is low (single-user
-      // workflow) and the MCP path is already safe.
+      // The write side is now owner-checked, which is what closes that gap: the
+      // `updateStartedAt` this run writes below doubles as an owner token, and
+      // both the final metadata write and the `finally` cleanup compare against
+      // it before touching the record. A run whose lease was taken over
+      // abandons its write instead of clobbering the current owner's, so the
+      // remaining race is limited to which run ends up owning the lock, not to
+      // losing a committed update.
       //
       // Stale-lease takeover mirrors the git coordinator: a flag left behind
       // by a hard kill or an indefinitely hung run would otherwise block every
@@ -225,6 +231,7 @@ export class LocalFolderUpdateCoordinator {
         updateStartedAt,
       });
       inProgressFlagSet = true;
+      ownedLockToken = updateStartedAt;
 
       // Detect changes against the prior manifest.
       const priorManifest = await this.manifestStore.loadManifest(repositoryName);
@@ -234,12 +241,32 @@ export class LocalFolderUpdateCoordinator {
         // No changes — clear in-progress and bail. We deliberately do NOT rewrite
         // the manifest here because nothing changed; keeping the prior generatedAt
         // makes "last update timestamp" diagnostics more meaningful.
-        await this.repositoryService.updateRepository({
-          ...repo,
-          updateInProgress: false,
-          updateStartedAt: undefined,
-        });
-        inProgressFlagSet = false;
+        //
+        // Owner-checked for the same reason as the final write below: this
+        // spreads `repo`, the snapshot taken at OUR start time. If the lease was
+        // reclaimed while change detection ran, committing it would both revert
+        // the current owner's record and clear a lock that is not ours. The
+        // window is small (the full lease has to elapse between acquiring the
+        // lock and finishing detection) but the failure mode is identical.
+        const lockHolder = await this.repositoryService.getRepository(repositoryName);
+        if (lockHolder && lockHolder.updateStartedAt !== ownedLockToken) {
+          inProgressFlagSet = false; // Not ours to clear.
+          logger.error(
+            {
+              ownedLockToken,
+              currentLock: lockHolder.updateStartedAt,
+            },
+            "Update lease was reclaimed by a concurrent run; abandoning the no-changes metadata " +
+              "write to avoid overwriting the current owner."
+          );
+        } else {
+          await this.repositoryService.updateRepository({
+            ...repo,
+            updateInProgress: false,
+            updateStartedAt: undefined,
+          });
+          inProgressFlagSet = false;
+        }
         logger.info("No changes detected — local folder is up to date");
         return {
           status: "no_changes",
@@ -374,8 +401,26 @@ export class LocalFolderUpdateCoordinator {
         updateStartedAt: undefined,
       };
 
-      await this.repositoryService.updateRepository(updatedMetadata);
-      inProgressFlagSet = false;
+      // Another run may have reclaimed the lease while we were working. Our
+      // `updatedMetadata` is spread from a snapshot taken at OUR start time, so
+      // committing it would overwrite everything the current owner has written.
+      const lockHolder = await this.repositoryService.getRepository(repositoryName);
+      if (lockHolder && lockHolder.updateStartedAt !== ownedLockToken) {
+        inProgressFlagSet = false; // Not ours to clear.
+        logger.error(
+          {
+            repository: repositoryName,
+            ownedLockToken,
+            currentLock: lockHolder.updateStartedAt,
+          },
+          "Update lease was reclaimed by a concurrent run; abandoning metadata write to avoid " +
+            "overwriting the current owner. The index changes made by this run remain in place " +
+            "and the next update will reconcile them."
+        );
+      } else {
+        await this.repositoryService.updateRepository(updatedMetadata);
+        inProgressFlagSet = false;
+      }
 
       const resultStatus: CoordinatorResult["status"] =
         historyStatus === "failed" ? "failed" : "updated";
@@ -409,8 +454,11 @@ export class LocalFolderUpdateCoordinator {
       // attempt isn't blocked by a stale lock.
       if (inProgressFlagSet && repo) {
         try {
+          // Only release a lock that is still ours: past the lease another run
+          // can have taken it over, and clearing that one would let a third run
+          // start while the current owner is still writing.
           const current = await this.repositoryService.getRepository(repositoryName);
-          if (current && current.updateInProgress) {
+          if (current && current.updateInProgress && current.updateStartedAt === ownedLockToken) {
             await this.repositoryService.updateRepository({
               ...current,
               updateInProgress: false,

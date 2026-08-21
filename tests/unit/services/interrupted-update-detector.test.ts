@@ -288,6 +288,10 @@ describe("formatElapsedTime", () => {
     expect(formatElapsedTime(999)).toBe("0s");
     expect(formatElapsedTime(59999)).toBe("59s");
   });
+
+  it("renders a non-finite elapsed time as text rather than NaN", () => {
+    expect(formatElapsedTime(NaN)).toBe("unknown (invalid timestamp)");
+  });
 });
 
 /**

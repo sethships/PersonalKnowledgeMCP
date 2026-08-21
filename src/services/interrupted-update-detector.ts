@@ -327,6 +327,12 @@ export async function markAsInterrupted(
  * ```
  */
 export function formatElapsedTime(elapsedMs: number): string {
+  // An unparseable `updateStartedAt` yields NaN here (see isStaleUpdateLock,
+  // which treats such a lock as reclaimable). Render it as text rather than
+  // letting "NaNs" reach the log line an operator is reading to diagnose it.
+  if (!Number.isFinite(elapsedMs)) {
+    return "unknown (invalid timestamp)";
+  }
   const seconds = Math.floor(elapsedMs / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);

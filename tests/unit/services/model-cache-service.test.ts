@@ -453,6 +453,10 @@ describe("ModelCacheService", () => {
       }
       // Should throw because path doesn't exist or isn't a valid model directory
       expect(thrownError).toBeDefined();
+      // Pin WHY it threw: the ".." segments must have collapsed against root,
+      // producing an absent path. A "must be a directory" message here would
+      // mean the traversal resolved onto something real (the old /etc bug).
+      expect((thrownError as Error).message).toContain("Source path does not exist");
     });
   });
 });

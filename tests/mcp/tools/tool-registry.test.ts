@@ -229,8 +229,13 @@ describe("Tool Registry", () => {
       const text = getTextContent(result.content);
       const parsed = JSON.parse(text);
 
-      expect(parsed.message).toContain("Required dependencies");
-      expect(parsed.message).toContain("not configured");
+      // The default reason names the dependencies that were actually missing.
+      // It must not blame GITHUB_PAT: after issue #598 the PAT can never be why
+      // the stub path was taken, and that misattribution is the exact dead end
+      // #598 was filed about.
+      expect(parsed.message).toContain("Incremental update dependencies");
+      expect(parsed.message).toContain("not supplied to the tool registry");
+      expect(parsed.message).toContain("unrelated to GITHUB_PAT");
     });
 
     it("legacy two-arg signature also registers stub update tools", () => {
@@ -290,7 +295,7 @@ describe("Tool Registry", () => {
         job_id: "update-does-not-exist",
       });
       const statusParsed = JSON.parse(getTextContent(statusResult.content));
-      expect(statusParsed.error).not.toBe("service_unavailable");
+      expect(statusParsed.error).toBe("job_not_found");
     });
   });
 });

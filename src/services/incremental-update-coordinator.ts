@@ -243,6 +243,11 @@ export class IncrementalUpdateCoordinator {
 
     // Track whether we've set the in-progress flag (for cleanup in finally)
     let inProgressFlagSet = false;
+    // The `updateStartedAt` THIS run wrote, doubling as the lock's owner token.
+    // Once the lock became a lease, another run can legitimately take it over
+    // mid-flight, and neither the final metadata write nor the `finally`
+    // cleanup may touch a lock that is no longer ours.
+    let ownedLockToken: string | undefined;
     // Keep reference to loaded repository for finally block
     let repo: RepositoryInfo | null = null;
 
@@ -294,6 +299,7 @@ export class IncrementalUpdateCoordinator {
         updateStartedAt,
       });
       inProgressFlagSet = true;
+      ownedLockToken = updateStartedAt;
 
       logger.debug(
         { operation: "coordinator_set_in_progress", repository: repositoryName, updateStartedAt },
@@ -680,16 +686,34 @@ export class IncrementalUpdateCoordinator {
         updateStartedAt: undefined,
       };
 
-      await this.repositoryService.updateRepository(updatedMetadata);
-      inProgressFlagSet = false; // Flag cleared in metadata
+      // Another run may have reclaimed the lease while we were working. Our
+      // `updatedMetadata` is spread from a snapshot taken at OUR start time, so
+      // committing it would overwrite everything the current owner has written.
+      const lockHolder = await this.repositoryService.getRepository(repositoryName);
+      if (lockHolder && lockHolder.updateStartedAt !== ownedLockToken) {
+        inProgressFlagSet = false; // Not ours to clear.
+        logger.error(
+          {
+            repository: repositoryName,
+            ownedLockToken,
+            currentLock: lockHolder.updateStartedAt,
+          },
+          "Update lease was reclaimed by a concurrent run; abandoning metadata write to avoid " +
+            "overwriting the current owner. The index changes made by this run remain in place " +
+            "and the next update will reconcile them."
+        );
+      } else {
+        await this.repositoryService.updateRepository(updatedMetadata);
+        inProgressFlagSet = false; // Flag cleared in metadata
 
-      logger.info(
-        {
-          repository: repositoryName,
-          newCommitSha: updatedMetadata.lastIndexedCommitSha?.substring(0, 7),
-        },
-        "Repository metadata updated"
-      );
+        logger.info(
+          {
+            repository: repositoryName,
+            newCommitSha: updatedMetadata.lastIndexedCommitSha?.substring(0, 7),
+          },
+          "Repository metadata updated"
+        );
+      }
 
       // Step 10: Run completeness check after update (skip on failed pipeline)
       const shouldRunCompleteness = pipelineResult.errors.length === 0;
@@ -753,8 +777,15 @@ export class IncrementalUpdateCoordinator {
           // Re-fetch current metadata to avoid overwriting any changes made during processing.
           // This is necessary because the main try block may have already updated metadata
           // (e.g., for successful updates), and we don't want to revert those changes.
+          // Only release a lock that is still ours: past the lease another run
+          // can have taken it over, and clearing that one would let a third run
+          // start while the current owner is still writing.
           const currentRepo = await this.repositoryService.getRepository(repositoryName);
-          if (currentRepo && currentRepo.updateInProgress) {
+          if (
+            currentRepo &&
+            currentRepo.updateInProgress &&
+            currentRepo.updateStartedAt === ownedLockToken
+          ) {
             await this.repositoryService.updateRepository({
               ...currentRepo,
               updateInProgress: false,

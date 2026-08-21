@@ -219,7 +219,8 @@ export function createToolRegistry(
   } else {
     const reason =
       deps.updateToolsUnavailableReason ||
-      "Required dependencies (GitHub PAT, update coordinator) are not configured";
+      "Incremental update dependencies (update coordinator, rate limiter, job tracker) were " +
+        "not supplied to the tool registry. This is unrelated to GITHUB_PAT (issue #598).";
 
     registry["trigger_incremental_update"] = {
       definition: triggerIncrementalUpdateToolDefinition,
