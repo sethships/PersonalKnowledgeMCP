@@ -145,6 +145,13 @@ export interface MCPServerOptionalDeps {
    */
   localFolderCoordinator?: LocalFolderUpdateCoordinator;
 
+  /**
+   * Whether a GitHub PAT was resolved at bootstrap (issue #598). Only
+   * repositories whose updates hit the GitHub API (github.com `git-remote`
+   * sources) need one; `local-git` and `local-folder` sources never do.
+   */
+  githubPatConfigured?: boolean;
+
   /** Rate limiter for administrative operations */
   rateLimiter?: MCPRateLimiter;
 

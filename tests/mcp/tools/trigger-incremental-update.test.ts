@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../../src/services/incremental-update-coordinator.js";
+import type { LocalFolderUpdateCoordinator } from "../../../src/services/local-folder-update-coordinator.js";
 import type { CoordinatorResult } from "../../../src/services/incremental-update-coordinator-types.js";
 import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
 import {
@@ -298,6 +299,104 @@ describe("createTriggerUpdateHandler", () => {
       expect(response.message).toContain("local-folder");
       // Coordinator must NOT have been invoked.
       expect(mockUpdateCoordinator.updateRepository).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("missing GITHUB_PAT (issue #598)", () => {
+    // The credential gate must be scoped to the repositories that actually
+    // reach the GitHub API. Local sources never do, so they must keep working
+    // with no PAT configured at all.
+    let mockLocalFolderCoordinator: LocalFolderUpdateCoordinator;
+
+    beforeEach(() => {
+      mockLocalFolderCoordinator = {
+        updateRepository: mock(() =>
+          Promise.resolve(createMockResult({ commitSha: "local-2026-08-21T00:00:00.000Z" }))
+        ),
+      } as unknown as LocalFolderUpdateCoordinator;
+    });
+
+    it("updates a local-folder repository without a PAT", async () => {
+      const localFolderRepo: RepositoryInfo = {
+        ...createMockRepo("notes-folder"),
+        source: "local-folder",
+        url: null,
+      };
+      mockRepositoryService.getRepository = mock(() => Promise.resolve(localFolderRepo));
+
+      const handlerNoPat = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockUpdateCoordinator,
+        localFolderCoordinator: mockLocalFolderCoordinator,
+        githubPatConfigured: false,
+        rateLimiter,
+        jobTracker,
+      });
+
+      const result = await handlerNoPat({ repository: "notes-folder" });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.success).toBe(true);
+      expect(mockLocalFolderCoordinator.updateRepository).toHaveBeenCalledWith("notes-folder");
+      expect(mockUpdateCoordinator.updateRepository).not.toHaveBeenCalled();
+    });
+
+    it("updates a local-git repository without a PAT", async () => {
+      const localGitRepo: RepositoryInfo = {
+        ...createMockRepo("demo"),
+        source: "local-git",
+        url: "C:\\src\\Demo",
+      };
+      mockRepositoryService.getRepository = mock(() => Promise.resolve(localGitRepo));
+
+      const handlerNoPat = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockUpdateCoordinator,
+        localFolderCoordinator: mockLocalFolderCoordinator,
+        githubPatConfigured: false,
+        rateLimiter,
+        jobTracker,
+      });
+
+      const result = await handlerNoPat({ repository: "demo" });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.success).toBe(true);
+      expect(mockUpdateCoordinator.updateRepository).toHaveBeenCalledWith("demo");
+    });
+
+    it("refuses a github.com remote with a credential-specific error", async () => {
+      // createMockRepo already produces a git-remote repo on github.com.
+      mockRepositoryService.getRepository = mock(() => Promise.resolve(createMockRepo("gh-repo")));
+
+      const handlerNoPat = createTriggerUpdateHandler({
+        repositoryService: mockRepositoryService,
+        updateCoordinator: mockUpdateCoordinator,
+        localFolderCoordinator: mockLocalFolderCoordinator,
+        githubPatConfigured: false,
+        rateLimiter,
+        jobTracker,
+      });
+
+      const result = await handlerNoPat({ repository: "gh-repo" });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(getTextContent(result.content)) as ErrorResponse;
+      expect(response.error).toBe("service_unavailable");
+      expect(response.message).toContain("GITHUB_PAT");
+      expect(response.message).toContain("local-folder");
+      expect(mockUpdateCoordinator.updateRepository).not.toHaveBeenCalled();
+    });
+
+    it("does not gate anything when githubPatConfigured is omitted", async () => {
+      mockRepositoryService.getRepository = mock(() => Promise.resolve(createMockRepo("gh-repo")));
+
+      const result = await handler({ repository: "gh-repo" });
+
+      expect(result.isError).toBe(false);
+      expect(mockUpdateCoordinator.updateRepository).toHaveBeenCalledWith("gh-repo");
     });
   });
 

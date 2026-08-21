@@ -105,6 +105,7 @@ function createMockUpdateDeps(): {
     jobTracker: {
       createJob: () => "job-1",
       getJob: () => undefined,
+      getJobResponse: () => undefined,
       updateJob: () => {},
     } as unknown as JobTracker,
   };
@@ -261,6 +262,35 @@ describe("Tool Registry", () => {
       const text = getTextContent(result.content);
       const parsed = JSON.parse(text);
       expect(parsed.error).not.toBe("service_unavailable");
+    });
+
+    it("registers the real update handlers with no PAT concept in the deps (issue #598)", async () => {
+      // Regression guard: the bootstrap no longer gates update-dependency
+      // construction on GITHUB_PAT, so a registry built from those deps alone
+      // must expose the REAL handlers. The stub is detectable behaviorally: it
+      // answers `service_unavailable` for ANY input, whereas the real handler
+      // resolves the repository first and answers `repository_not_found` for
+      // an unknown name.
+      const registry = createToolRegistry({
+        searchService: createMockSearchService(),
+        repositoryService: createMockRepositoryService(),
+        ...createMockUpdateDeps(),
+        // No githubPatConfigured, no updateToolsUnavailableReason.
+      });
+
+      const triggerResult = await getRegistryEntry(registry, "trigger_incremental_update").handler({
+        repository: "not-indexed",
+      });
+      const triggerParsed = JSON.parse(getTextContent(triggerResult.content));
+      expect(triggerParsed.error).toBe("repository_not_found");
+
+      // get_update_status must be real too: an unknown job is `job_not_found`,
+      // never `service_unavailable`.
+      const statusResult = await getRegistryEntry(registry, "get_update_status").handler({
+        job_id: "update-does-not-exist",
+      });
+      const statusParsed = JSON.parse(getTextContent(statusResult.content));
+      expect(statusParsed.error).not.toBe("service_unavailable");
     });
   });
 });

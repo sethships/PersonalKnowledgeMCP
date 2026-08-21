@@ -69,6 +69,13 @@ export interface ToolRegistryDependencies {
    * are registered; otherwise the git-flavored coordinator handles every repo.
    */
   localFolderCoordinator?: LocalFolderUpdateCoordinator;
+  /**
+   * Optional: whether a GitHub PAT was resolved at bootstrap (issue #598).
+   * Forwarded to trigger_incremental_update so github.com remotes get a
+   * credential-specific error instead of an opaque 404/401 from an
+   * unauthenticated API call. Local sources ignore it.
+   */
+  githubPatConfigured?: boolean;
   /** Optional: Rate limiter for trigger_incremental_update tool */
   rateLimiter?: MCPRateLimiter;
   /** Optional: Job tracker for async update operations */
@@ -179,10 +186,17 @@ export function createToolRegistry(
     },
   };
 
-  // Always register update tools — use real handlers when deps are available, stubs otherwise.
-  // The local-folder coordinator is optional: when missing, trigger_incremental_update
-  // returns a `service_unavailable` error for local-folder repos and continues to work
-  // for git-remote / local-git repos.
+  // Update tools are always registered. Real handlers are used whenever the
+  // update coordinator, rate limiter and job tracker were constructed. The
+  // server bootstrap builds all three unconditionally (issue #598: none of
+  // them require a GitHub PAT), so the stub path below is reached only when
+  // bootstrap initialization threw, or when a caller (a test, or the legacy
+  // two-argument signature) supplies no update dependencies at all.
+  //
+  // Per-source availability is decided inside the handler, not here: the
+  // handler resolves the repository first, then returns `service_unavailable`
+  // for a local-folder repo with no local-folder coordinator, or for a
+  // github.com remote when no PAT was configured.
   if (deps.updateCoordinator && deps.rateLimiter && deps.jobTracker) {
     registry["trigger_incremental_update"] = {
       definition: triggerIncrementalUpdateToolDefinition,
@@ -190,6 +204,7 @@ export function createToolRegistry(
         repositoryService: deps.repositoryService,
         updateCoordinator: deps.updateCoordinator,
         localFolderCoordinator: deps.localFolderCoordinator,
+        githubPatConfigured: deps.githubPatConfigured,
         rateLimiter: deps.rateLimiter,
         jobTracker: deps.jobTracker,
       }),
