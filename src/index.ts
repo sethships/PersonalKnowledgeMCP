@@ -351,8 +351,9 @@ async function main(): Promise<void> {
     }
 
     // Phase C (#566 / T5.3): the local-folder watcher restoration loop runs
-    // AFTER the GITHUB_PAT branch below, so the final `localFolderCoordinator`
-    // instance is chosen before any watcher attaches (review H-1).
+    // AFTER the update-dependency initialization block below, so
+    // `localFolderCoordinator` is finalized before any watcher attaches
+    // (review H-1).
 
     // Create change detection service wrapping folder watcher
     const changeDetectionService = new ChangeDetectionService(folderWatcherService);
@@ -402,11 +403,19 @@ async function main(): Promise<void> {
 
     logger.info("Folder watcher and document indexing services initialized");
 
-    // Step 5b: Initialize incremental update dependencies. Git-based update
-    // coordinator + rate limiter + job tracker are PAT-gated below; the
-    // local-folder coordinator (Phase C / #566) is NOT — local folders don't
-    // need GitHub. The PAT branch may overwrite `localFolderCoordinator` with
-    // a graph-aware variant when a graph adapter is configured.
+    // Step 5b: Initialize incremental update dependencies.
+    //
+    // Issue #598: none of these dependencies require a GitHub PAT. The GitHub
+    // client accepts an undefined token (its config schema marks `token`
+    // optional), and the only PAT consumer in the coordinator
+    // (`updateLocalClone`, which rewrites the authenticated origin URL) is
+    // skipped entirely for local paths. Gating construction on the PAT
+    // therefore disabled `trigger_incremental_update` / `get_update_status`
+    // for local-git and local-folder repositories that never touch GitHub.
+    // Everything below is now built unconditionally; the PAT, when present,
+    // only supplies the client token and the origin-refresh credentials used
+    // for GitHub-hosted remotes. The `catch` around the block is now the only
+    // thing that can mark the update tools unavailable.
     let updateCoordinator: IncrementalUpdateCoordinator | undefined;
     let localFolderCoordinator: LocalFolderUpdateCoordinator | undefined;
     let rateLimiter: MCPRateLimiter | undefined;
@@ -420,25 +429,11 @@ async function main(): Promise<void> {
     // and acts only on the namespace it owns.
     const localFolderWatchManager = new LocalFolderRepoWatchManager(folderWatcherService);
 
-    // Default local-folder coordinator (no graph ingestion) — used when no
-    // GITHUB_PAT is set. The PAT branch below replaces this with a
-    // graph-aware variant when both the PAT and a graph adapter are
-    // configured, preserving the prior Phase B behavior for paying users.
-    localFolderCoordinator = new LocalFolderUpdateCoordinator(
-      repositoryService,
-      folderUpdatePipeline,
-      undefined,
-      undefined,
-      {},
-      localFolderWatchManager
-    );
-
     // The router closure intentionally references `localFolderCoordinator`
-    // (the let-binding, not a snapshot) so the PAT branch below can replace
-    // the instance with a graph-aware variant and the watcher dispatch picks
-    // up the new coordinator on the next event without re-wiring. The guard
-    // (review M-2) handles the case where the PAT branch's catch sets the
-    // coordinator back to `undefined` mid-session.
+    // (the let-binding, not a snapshot) because the coordinator is constructed
+    // below, once the graph-aware update pipeline exists. The guard (review
+    // M-2) handles the case where the initialization block's catch leaves the
+    // coordinator `undefined`.
     const folderEventRouter = new FolderEventRouter(repositoryService, async (repo) => {
       if (!localFolderCoordinator) {
         logger.warn(
@@ -469,92 +464,97 @@ async function main(): Promise<void> {
     if (resolvedPat) {
       logger.info({ source: resolvedPat.source }, "GitHub PAT resolved");
     }
-    if (githubPat) {
-      try {
-        logger.info("Initializing incremental update dependencies");
+    if (!githubPat) {
+      logger.info(
+        "GITHUB_PAT not configured - GitHub-hosted remote repositories cannot be updated; local-git and local-folder incremental updates remain available"
+      );
+    }
 
-        // Create GitHub client
-        const githubClient = new GitHubClientImpl({ token: githubPat });
+    try {
+      logger.info("Initializing incremental update dependencies");
 
-        // Create file chunker with default config
-        const fileChunker = new FileChunker();
+      // Create GitHub client. `token` is optional on GitHubClientImpl's config
+      // schema: an unauthenticated client is only ever exercised for
+      // github.com remotes, which the tool handler refuses up-front when no
+      // PAT was resolved (see `githubPatConfigured` below).
+      const githubClient = new GitHubClientImpl({ token: githubPat });
 
-        // Create document processing dependencies for incremental pipeline
-        const documentTypeDetector = new DocumentTypeDetector();
-        const documentChunker = new DocumentChunker();
+      // Create file chunker with default config
+      const fileChunker = new FileChunker();
 
-        // Create incremental update pipeline (with document support)
-        const updatePipeline = new IncrementalUpdatePipeline(
-          fileChunker,
-          embeddingProvider,
-          chromaClient,
-          getComponentLogger("services:incremental-update-pipeline"),
-          graphIngestionService,
-          documentTypeDetector,
-          documentChunker,
-          providerResolver
-        );
+      // Create document processing dependencies for incremental pipeline
+      const documentTypeDetector = new DocumentTypeDetector();
+      const documentChunker = new DocumentChunker();
 
-        // Create completeness checker
-        const fileScanner = new FileScanner();
-        const completenessChecker = new IndexCompletenessChecker(fileScanner);
+      // Create incremental update pipeline (with document support)
+      const updatePipeline = new IncrementalUpdatePipeline(
+        fileChunker,
+        embeddingProvider,
+        chromaClient,
+        getComponentLogger("services:incremental-update-pipeline"),
+        graphIngestionService,
+        documentTypeDetector,
+        documentChunker,
+        providerResolver
+      );
 
-        // Create coordinator. Pass the resolved PAT (and any generic git token)
-        // so updateLocalClone refreshes the authenticated origin URL before
-        // pulling, surviving PAT rotation even when the clone has a stale
-        // embedded credential.
-        updateCoordinator = new IncrementalUpdateCoordinator(
-          githubClient,
-          repositoryService,
-          updatePipeline,
-          { completenessChecker, githubPat, gitPat: Bun.env["GIT_PAT"] }
-        );
+      // Create completeness checker
+      const fileScanner = new FileScanner();
+      const completenessChecker = new IndexCompletenessChecker(fileScanner);
 
-        // Local-folder coordinator shares the metadata service + pipeline.
-        // Phase C: replaces the no-graph default constructed above so that
-        // local-folder updates triggered via `trigger_incremental_update`
-        // populate the graph when a graph adapter is configured.
-        localFolderCoordinator = new LocalFolderUpdateCoordinator(
-          repositoryService,
-          updatePipeline,
-          undefined,
-          undefined,
-          {},
-          localFolderWatchManager
-        );
+      // Create coordinator. Pass the resolved PAT (and any generic git token)
+      // so updateLocalClone refreshes the authenticated origin URL before
+      // pulling, surviving PAT rotation even when the clone has a stale
+      // embedded credential.
+      updateCoordinator = new IncrementalUpdateCoordinator(
+        githubClient,
+        repositoryService,
+        updatePipeline,
+        { completenessChecker, githubPat, gitPat: Bun.env["GIT_PAT"] }
+      );
 
-        // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
-        rateLimiter = new MCPRateLimiter();
+      // Local-folder coordinator shares the metadata service + pipeline, so
+      // local-folder updates triggered via `trigger_incremental_update`
+      // populate the graph when a graph adapter is configured. Constructed
+      // here (the single instance) because it needs the graph-aware
+      // `updatePipeline` built a few lines above.
+      localFolderCoordinator = new LocalFolderUpdateCoordinator(
+        repositoryService,
+        updatePipeline,
+        undefined,
+        undefined,
+        {},
+        localFolderWatchManager
+      );
 
-        // Create job tracker (1-hour retention, 100 max jobs by default)
-        jobTracker = new JobTracker();
+      // Create rate limiter (2-second cooldown by default, configurable via UPDATE_RATE_LIMIT_MS)
+      rateLimiter = new MCPRateLimiter();
 
-        logger.info("Incremental update dependencies initialized - MCP update tools enabled");
-      } catch (error) {
-        // Incremental updates are optional - log warning but don't fail server startup
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.warn(
-          { error: errorMsg },
-          "Incremental update initialization failed - MCP update tools will be unavailable"
-        );
-        updateCoordinator = undefined;
-        localFolderCoordinator = undefined;
-        rateLimiter = undefined;
-        jobTracker = undefined;
-        updateToolsUnavailableReason = `Initialization failed: ${errorMsg}`;
-      }
-    } else {
-      logger.info("GITHUB_PAT not set - MCP incremental update tools disabled");
-      updateToolsUnavailableReason = "GITHUB_PAT is not configured";
+      // Create job tracker (1-hour retention, 100 max jobs by default)
+      jobTracker = new JobTracker();
+
+      logger.info("Incremental update dependencies initialized - MCP update tools enabled");
+    } catch (error) {
+      // Incremental updates are optional - log warning but don't fail server startup
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        { error: errorMsg },
+        "Incremental update initialization failed - MCP update tools will be unavailable"
+      );
+      updateCoordinator = undefined;
+      localFolderCoordinator = undefined;
+      rateLimiter = undefined;
+      jobTracker = undefined;
+      updateToolsUnavailableReason = `Initialization failed: ${errorMsg}`;
     }
 
     // Phase C (#566 / T5.3): restore watchers for local-folder repos that had
-    // `watchEnabled === true` when the server last ran. Runs AFTER the PAT
-    // branch (review H-1) so the final `localFolderCoordinator` instance is
-    // chosen before any watcher attaches — this preserves the invariant that
-    // a graph-aware coordinator (when the PAT branch upgraded it) handles
-    // every restored watcher's update calls. Failures are per-repo logged and
-    // skipped so a single broken path can't block startup.
+    // `watchEnabled === true` when the server last ran. Runs AFTER the
+    // initialization block (review H-1) so `localFolderCoordinator` is
+    // finalized before any watcher attaches, preserving the invariant that the
+    // graph-aware coordinator handles every restored watcher's update calls.
+    // Failures are per-repo logged and skipped so a single broken path can't
+    // block startup.
     if (localFolderCoordinator) {
       try {
         const allRepos = await repositoryService.listRepositories();
@@ -653,6 +653,7 @@ async function main(): Promise<void> {
         graphService,
         updateCoordinator,
         localFolderCoordinator,
+        githubPatConfigured: !!githubPat,
         rateLimiter,
         jobTracker,
         documentSearchService,

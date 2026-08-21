@@ -95,6 +95,7 @@ export class PersonalKnowledgeMCPServer {
         repositoryService,
         updateCoordinator: optionalDeps.updateCoordinator,
         localFolderCoordinator: optionalDeps.localFolderCoordinator,
+        githubPatConfigured: optionalDeps.githubPatConfigured,
         rateLimiter: optionalDeps.rateLimiter,
         jobTracker: optionalDeps.jobTracker,
         graphService: optionalDeps.graphService,
