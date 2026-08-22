@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { PassThrough } from "node:stream";
 import type {
   SearchService,
   SearchResponse,
@@ -567,6 +568,71 @@ describe("PersonalKnowledgeMCPServer", () => {
       expect(registry?.["search_documents"]).toBeDefined();
       expect(registry?.["search_images"]).toBeDefined();
       expect(registry?.["list_watched_folders"]).toBeDefined();
+    });
+  });
+  describe("client disconnect (orphaned process prevention)", () => {
+    // A stdio server's lifetime is bound to its stdin pipe, but nothing else
+    // notices that pipe closing: Windows delivers no signal to a child when
+    // its parent exits, and the SDK's StdioServerTransport subscribes only to
+    // stdin's `data` and `error` events, so `onclose` never fires on EOF.
+    // Without the `end` / `close` handlers these tests pin, every client that
+    // exits uncleanly leaves a server running forever holding its ChromaDB and
+    // FalkorDB connections.
+    //
+    // A PassThrough stands in for stdin: registering these handlers on the real
+    // `process.stdin` here would shut down the test runner itself the moment
+    // its own stdin closed.
+    it("shuts down when stdin emits end", async () => {
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      // Override before starting: the real shutdown() ends in process.exit(0),
+      // which would take the test runner with it.
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio(fakeStdin);
+      expect(shutdownCalls).toBe(0);
+
+      fakeStdin.emit("end");
+      await Promise.resolve();
+
+      expect(shutdownCalls).toBe(1);
+    });
+
+    it("shuts down when stdin emits close without a preceding end", async () => {
+      // An abruptly destroyed pipe emits `close` with no `end` beforehand.
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio(fakeStdin);
+      fakeStdin.emit("close");
+      await Promise.resolve();
+
+      expect(shutdownCalls).toBe(1);
+    });
+
+    it("shuts down only once when stdin emits both end and close", async () => {
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio(fakeStdin);
+      fakeStdin.emit("end");
+      fakeStdin.emit("close");
+      await Promise.resolve();
+
+      // `isShuttingDown` makes the handler idempotent, so a pipe that emits
+      // both must not run the shutdown sequence twice.
+      expect(shutdownCalls).toBe(1);
     });
   });
 });
