@@ -14,6 +14,7 @@ import {
 import {
   EmbeddingAuthenticationError,
   EmbeddingRateLimitError,
+  EmbeddingQuotaExceededError,
   EmbeddingNetworkError,
   EmbeddingTimeoutError,
   EmbeddingValidationError,
@@ -367,6 +368,22 @@ describe("OpenAIEmbeddingProvider", () => {
       await expect(provider.generateEmbedding(SAMPLE_TEXTS.SHORT)).rejects.toThrow(
         EmbeddingRateLimitError
       );
+    });
+
+    test("maps 429 insufficient_quota to non-retryable EmbeddingQuotaExceededError (#595)", async () => {
+      const provider = new OpenAIEmbeddingProvider(TEST_CONFIGS.noRetries);
+      const mockClient = new MockOpenAIClient();
+      mockClient.setFailure(MOCK_OPENAI_RESPONSE.insufficientQuotaError);
+
+      // @ts-expect-error - Accessing private property for testing
+      provider.client = mockClient;
+
+      const error: unknown = await provider
+        .generateEmbedding(SAMPLE_TEXTS.SHORT)
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(EmbeddingQuotaExceededError);
+      expect((error as EmbeddingQuotaExceededError).retryable).toBe(false);
+      expect((error as EmbeddingQuotaExceededError).message).toContain("insufficient_quota");
     });
 
     test("handles 408 timeout error", async () => {

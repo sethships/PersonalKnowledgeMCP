@@ -11,6 +11,8 @@ import {
   providersStatusCommand,
   type ProvidersStatusOptions,
 } from "../../../src/cli/commands/providers-command.js";
+import { OpenAIEmbeddingProvider } from "../../../src/providers/openai-embedding.js";
+import { EmbeddingQuotaExceededError } from "../../../src/providers/errors.js";
 import type { CliDependencies } from "../../../src/cli/utils/dependency-init.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/repositories/types.js";
 import {
@@ -75,7 +77,7 @@ function createMockDeps(repositoryService: RepositoryMetadataService): CliDepend
 }
 
 interface ParsedJsonOutput {
-  providers: Array<{ id: string; status: string }>;
+  providers: Array<{ id: string; status: string; statusMessage?: string; isDefault: boolean }>;
   repositories: Array<{ name: string; provider: string; model: string; chunkCount: number }>;
   summary: { totalProviders: number; readyProviders: number; totalRepositories: number };
 }
@@ -146,8 +148,9 @@ describe("Providers Commands", () => {
       expect(parsed).toHaveProperty("summary");
     });
 
-    it("should show OpenAI as ready when OPENAI_API_KEY is set", async () => {
-      Bun.env["OPENAI_API_KEY"] = "test-key";
+    it("should show OpenAI as ready when OPENAI_API_KEY is set and the probe succeeds", async () => {
+      Bun.env["OPENAI_API_KEY"] = "sk-test-key";
+      vi.spyOn(OpenAIEmbeddingProvider.prototype, "generateEmbedding").mockResolvedValue([0.1]);
       const mockRepoService = createMockRepositoryService([]);
       const deps = createMockDeps(mockRepoService);
       const options: ProvidersStatusOptions = { json: true };
@@ -159,6 +162,22 @@ describe("Providers Commands", () => {
       const openaiProvider = parsed.providers.find((p) => p.id === "openai");
       expect(openaiProvider).toBeDefined();
       expect(openaiProvider?.status).toBe("ready");
+    });
+
+    it("should show OpenAI as not-available with the probe error when quota is exhausted (#595)", async () => {
+      Bun.env["OPENAI_API_KEY"] = "sk-test-key";
+      vi.spyOn(OpenAIEmbeddingProvider.prototype, "generateEmbedding").mockRejectedValue(
+        new EmbeddingQuotaExceededError("OpenAI quota exceeded (insufficient_quota)")
+      );
+      const deps = createMockDeps(createMockRepositoryService([]));
+
+      await providersStatusCommand({ json: true }, deps);
+
+      const parsed = JSON.parse(capturedLogs.join("\n")) as ParsedJsonOutput;
+      const openaiProvider = parsed.providers.find((p) => p.id === "openai");
+      expect(openaiProvider?.status).toBe("not-available");
+      expect(openaiProvider?.statusMessage).toContain("insufficient_quota");
+      expect(openaiProvider?.isDefault).toBe(false);
     });
 
     it("should show OpenAI as not-configured when OPENAI_API_KEY is missing", async () => {
@@ -241,7 +260,8 @@ describe("Providers Commands", () => {
     });
 
     it("should include summary statistics", async () => {
-      Bun.env["OPENAI_API_KEY"] = "test-key";
+      Bun.env["OPENAI_API_KEY"] = "sk-test-key";
+      vi.spyOn(OpenAIEmbeddingProvider.prototype, "generateEmbedding").mockResolvedValue([0.1]);
       const mockRepoService = createMockRepositoryService([createTestRepository()]);
       const deps = createMockDeps(mockRepoService);
       const options: ProvidersStatusOptions = { json: true };

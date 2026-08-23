@@ -31,6 +31,10 @@ import {
 } from "../../src/services/ingestion-errors.js";
 import type { IndexProgress } from "../../src/services/ingestion-types.js";
 import type { EmbeddingProvider } from "../../src/providers/types.js";
+import {
+  EmbeddingAuthenticationError,
+  EmbeddingQuotaExceededError,
+} from "../../src/providers/errors.js";
 import type {
   ChromaStorageClient,
   DocumentInput,
@@ -657,6 +661,51 @@ describe("IngestionService", () => {
       if (batchUpdates.length > 0) {
         expect(batchUpdates[0]!.details.totalBatches).toBe(3);
       }
+    });
+
+    it("should keep the existing collection when --force probe finds the provider dead (#595)", async () => {
+      mockRepoService.setMockRepository({
+        name: testRepoName,
+        url: testUrl,
+        status: "ready",
+        collectionName: testCollectionName,
+      } as RepositoryInfo);
+      await mockStorage.getOrCreateCollection(testCollectionName);
+      mockScanner.setMockFiles([createMockFile("src/a.ts")]);
+      mockEmbedding.setShouldFail(
+        true,
+        new EmbeddingQuotaExceededError("OpenAI quota exceeded (insufficient_quota)")
+      );
+
+      const result = await service.indexRepository(testUrl, { force: true });
+
+      expect(result.status).toBe("failed");
+      expect(result.errors[0]!.message).toContain("insufficient_quota");
+      expect(result.errors[0]!.message).toContain("left intact");
+      expect(mockStorage.hasCollection(testCollectionName)).toBe(true);
+    });
+
+    it("should abort the run on a non-retryable provider error instead of failing every batch (#595)", async () => {
+      // 3 file batches of 50; the first one must be the last one attempted.
+      mockScanner.setMockFiles(
+        Array.from({ length: 150 }, (_, i) => createMockFile(`src/file${i}.ts`))
+      );
+      let embeddingCallCount = 0;
+      mockEmbedding.generateEmbeddings = async () => {
+        embeddingCallCount++;
+        throw new EmbeddingAuthenticationError("Invalid API key or insufficient permissions");
+      };
+      const originalBunFile = Bun.file;
+      (Bun as any).file = (_path: string) => ({ text: async () => "content" });
+
+      const result = await service.indexRepository(testUrl);
+
+      (Bun as any).file = originalBunFile;
+
+      expect(result.status).toBe("failed");
+      expect(embeddingCallCount).toBe(1);
+      expect(result.errors.at(-1)!.message).toContain("Invalid API key");
+      expect(result.errors.at(-1)!.message).toContain("aborting run");
     });
 
     it("should batch embeddings correctly (100 texts per API call)", async () => {

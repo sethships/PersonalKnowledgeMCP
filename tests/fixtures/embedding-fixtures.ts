@@ -91,6 +91,15 @@ export const MOCK_OPENAI_RESPONSE = {
   },
 
   /**
+   * Exhausted billing quota (429 with code insufficient_quota, #595)
+   */
+  insufficientQuotaError: {
+    status: 429,
+    code: "insufficient_quota",
+    message: "You exceeded your current quota, please check your plan and billing details.",
+  },
+
+  /**
    * Authentication error (401)
    */
   authError: {

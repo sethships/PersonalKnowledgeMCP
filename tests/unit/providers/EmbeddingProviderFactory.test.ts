@@ -352,13 +352,13 @@ describe("EmbeddingProviderFactory", () => {
   });
 
   describe("getDefaultProvider", () => {
-    test("returns 'openai' when OPENAI_API_KEY is set", () => {
+    test("returns 'transformersjs' even when OPENAI_API_KEY is set (#595)", () => {
       Bun.env["OPENAI_API_KEY"] = "sk-test-key";
 
       const factory = new EmbeddingProviderFactory();
       const defaultProvider = factory.getDefaultProvider();
 
-      expect(defaultProvider).toBe("openai");
+      expect(defaultProvider).toBe("transformersjs");
     });
 
     test("returns 'transformersjs' when OPENAI_API_KEY is not set", () => {
