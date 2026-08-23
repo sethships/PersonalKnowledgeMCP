@@ -350,4 +350,87 @@ describe("LocalFolderUpdateCoordinator", () => {
     expect((caught as Error).message).toMatch(/already in progress/i);
     expect(pipeline.processChanges).not.toHaveBeenCalled();
   });
+
+  it("reclaims a stale in-progress lock instead of refusing forever", async () => {
+    // The flag is a lease, not a permanent lock. A hard kill (or a run that
+    // hangs indefinitely on a storage call) leaves it set, and there is no MCP
+    // tool to clear it, so without takeover the repository can never update
+    // again. Past the lease the coordinator logs and continues.
+    await writeFile(join(testDir, "a.ts"), "export const a = 1;\n");
+    const repo: RepositoryInfo = {
+      ...makeRepo("staleLock", testDir),
+      updateInProgress: true,
+      updateStartedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    };
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => emptyUpdateResult()),
+    } as unknown as IncrementalUpdatePipeline;
+    const detector = new LocalFolderChangeDetector(store);
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    const result = await coord.updateRepository("staleLock");
+
+    expect(result.status).not.toBe("failed");
+    expect(pipeline.processChanges).toHaveBeenCalled();
+  });
+
+  it("does not overwrite metadata written by a run that reclaimed the lease", async () => {
+    // Run A loads its snapshot, then run B takes over the lease mid-flight
+    // (possible now the lock is a lease). A's final metadata is spread from a
+    // snapshot taken at A's start, so committing it would discard everything B
+    // recorded. A must abandon the write, and must not release B's lock.
+    await writeFile(join(testDir, "a.ts"), "export const a = 1;\n");
+    const repo = makeRepo("leaseTakeover", testDir);
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => {
+        // Simulate run B reclaiming the lease while run A is inside the pipeline.
+        metadata.current = {
+          ...(metadata.current as RepositoryInfo),
+          updateStartedAt: "2099-01-01T00:00:00.000Z",
+          chunkCount: 4242,
+        };
+        return emptyUpdateResult();
+      }),
+    } as unknown as IncrementalUpdatePipeline;
+    const detector = new LocalFolderChangeDetector(store);
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    await coord.updateRepository("leaseTakeover");
+
+    expect(metadata.current?.chunkCount).toBe(4242);
+    expect(metadata.current?.updateStartedAt).toBe("2099-01-01T00:00:00.000Z");
+    // B's lock must still be held: A may not release a lock it no longer owns.
+    expect(metadata.current?.updateInProgress).toBe(true);
+  });
+
+  it("does not overwrite a reclaimed lease on the no-changes path", async () => {
+    // Same gap as above, on the early return: that branch also commits a
+    // snapshot taken at run A's start, and also clears the lock. Run B reclaims
+    // while change detection runs, so A must leave both alone.
+    const repo = makeRepo("leaseTakeoverNoChanges", testDir);
+    const metadata = makeMetadataService(repo);
+    const pipeline = {
+      processChanges: mock(async () => emptyUpdateResult()),
+    } as unknown as IncrementalUpdatePipeline;
+    const detector = {
+      detect: mock(async () => {
+        metadata.current = {
+          ...(metadata.current as RepositoryInfo),
+          updateStartedAt: "2099-01-01T00:00:00.000Z",
+          chunkCount: 4242,
+        };
+        return { changes: [], nextManifestFiles: [] };
+      }),
+    } as unknown as LocalFolderChangeDetector;
+    const coord = new LocalFolderUpdateCoordinator(metadata, pipeline, detector, store);
+
+    const result = await coord.updateRepository("leaseTakeoverNoChanges");
+
+    expect(result.status).toBe("no_changes");
+    expect(metadata.current?.chunkCount).toBe(4242);
+    expect(metadata.current?.updateStartedAt).toBe("2099-01-01T00:00:00.000Z");
+    expect(metadata.current?.updateInProgress).toBe(true);
+  });
 });

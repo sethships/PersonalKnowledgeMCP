@@ -4,12 +4,14 @@
  * Tests detection of interrupted updates, flag clearing, and recovery helpers.
  */
 
-import { describe, it, expect, beforeAll, afterAll, mock } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from "bun:test";
 import {
   detectInterruptedUpdates,
   clearInterruptedUpdateFlag,
   markAsInterrupted,
   formatElapsedTime,
+  getStaleUpdateLockMs,
+  isStaleUpdateLock,
 } from "../../../src/services/interrupted-update-detector.js";
 import { initializeLogger, resetLogger } from "../../../src/logging/index.js";
 import type { RepositoryMetadataService, RepositoryInfo } from "../../../src/repositories/types.js";
@@ -285,5 +287,125 @@ describe("formatElapsedTime", () => {
     expect(formatElapsedTime(0)).toBe("0s");
     expect(formatElapsedTime(999)).toBe("0s");
     expect(formatElapsedTime(59999)).toBe("59s");
+  });
+
+  it("renders a non-finite elapsed time as text rather than NaN", () => {
+    expect(formatElapsedTime(NaN)).toBe("unknown (invalid timestamp)");
+  });
+});
+
+/**
+ * The `updateInProgress` flag is a lease, not a permanent lock. These tests pin
+ * the lease arithmetic that lets a new update take over a flag left behind by a
+ * hard kill or an indefinitely hung run. Without the lease, a leftover flag
+ * wedges the repository forever: every later update throws ConcurrentUpdateError
+ * and the MCP surface has no tool to clear it.
+ */
+describe("getStaleUpdateLockMs", () => {
+  const ENV_KEY = "UPDATE_STALE_LOCK_MS";
+  const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = Bun.env[ENV_KEY];
+    delete Bun.env[ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (savedEnv === undefined) {
+      delete Bun.env[ENV_KEY];
+    } else {
+      Bun.env[ENV_KEY] = savedEnv;
+    }
+  });
+
+  it("defaults to one hour when the override is unset", () => {
+    expect(getStaleUpdateLockMs()).toBe(DEFAULT_LEASE_MS);
+  });
+
+  it("honours a positive numeric UPDATE_STALE_LOCK_MS override", () => {
+    Bun.env[ENV_KEY] = "5000";
+    expect(getStaleUpdateLockMs()).toBe(5000);
+  });
+
+  it("falls back to the default for a non-numeric override", () => {
+    Bun.env[ENV_KEY] = "not-a-number";
+    expect(getStaleUpdateLockMs()).toBe(DEFAULT_LEASE_MS);
+  });
+
+  it("falls back to the default for a zero override", () => {
+    Bun.env[ENV_KEY] = "0";
+    expect(getStaleUpdateLockMs()).toBe(DEFAULT_LEASE_MS);
+  });
+
+  it("falls back to the default for a negative override", () => {
+    Bun.env[ENV_KEY] = "-1000";
+    expect(getStaleUpdateLockMs()).toBe(DEFAULT_LEASE_MS);
+  });
+
+  it("falls back to the default for an empty or whitespace override", () => {
+    Bun.env[ENV_KEY] = "   ";
+    expect(getStaleUpdateLockMs()).toBe(DEFAULT_LEASE_MS);
+  });
+});
+
+describe("isStaleUpdateLock", () => {
+  const ENV_KEY = "UPDATE_STALE_LOCK_MS";
+  const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = Bun.env[ENV_KEY];
+    delete Bun.env[ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (savedEnv === undefined) {
+      delete Bun.env[ENV_KEY];
+    } else {
+      Bun.env[ENV_KEY] = savedEnv;
+    }
+  });
+
+  it("treats a lock taken moments ago as live", () => {
+    const now = Date.now();
+    const startedAt = new Date(now - 30_000).toISOString();
+
+    expect(isStaleUpdateLock(startedAt, now)).toBe(false);
+  });
+
+  it("treats a lock just inside the lease as live", () => {
+    const now = Date.now();
+    const startedAt = new Date(now - (DEFAULT_LEASE_MS - 1_000)).toISOString();
+
+    expect(isStaleUpdateLock(startedAt, now)).toBe(false);
+  });
+
+  it("treats a lock older than the lease as stale", () => {
+    const now = Date.now();
+    const startedAt = new Date(now - (DEFAULT_LEASE_MS + 1_000)).toISOString();
+
+    expect(isStaleUpdateLock(startedAt, now)).toBe(true);
+  });
+
+  it("applies the UPDATE_STALE_LOCK_MS override to the staleness decision", () => {
+    Bun.env[ENV_KEY] = "1000";
+    const now = Date.now();
+    const startedAt = new Date(now - 5_000).toISOString();
+
+    // Stale under the 1s override, but well inside the one hour default.
+    expect(isStaleUpdateLock(startedAt, now)).toBe(true);
+  });
+
+  it("treats an unparseable timestamp as stale so a corrupt value cannot wedge the repository", () => {
+    expect(isStaleUpdateLock("not-a-timestamp", Date.now())).toBe(true);
+    expect(isStaleUpdateLock("", Date.now())).toBe(true);
+  });
+
+  it("defaults `now` to the current time when not supplied", () => {
+    expect(isStaleUpdateLock(new Date().toISOString())).toBe(false);
+    expect(isStaleUpdateLock(new Date(Date.now() - DEFAULT_LEASE_MS - 60_000).toISOString())).toBe(
+      true
+    );
   });
 });

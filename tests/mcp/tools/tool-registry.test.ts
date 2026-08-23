@@ -105,6 +105,7 @@ function createMockUpdateDeps(): {
     jobTracker: {
       createJob: () => "job-1",
       getJob: () => undefined,
+      getJobResponse: () => undefined,
       updateJob: () => {},
     } as unknown as JobTracker,
   };
@@ -228,8 +229,13 @@ describe("Tool Registry", () => {
       const text = getTextContent(result.content);
       const parsed = JSON.parse(text);
 
-      expect(parsed.message).toContain("Required dependencies");
-      expect(parsed.message).toContain("not configured");
+      // The default reason names the dependencies that were actually missing.
+      // It must not blame GITHUB_PAT: after issue #598 the PAT can never be why
+      // the stub path was taken, and that misattribution is the exact dead end
+      // #598 was filed about.
+      expect(parsed.message).toContain("Incremental update dependencies");
+      expect(parsed.message).toContain("not supplied to the tool registry");
+      expect(parsed.message).toContain("unrelated to GITHUB_PAT");
     });
 
     it("legacy two-arg signature also registers stub update tools", () => {
@@ -261,6 +267,35 @@ describe("Tool Registry", () => {
       const text = getTextContent(result.content);
       const parsed = JSON.parse(text);
       expect(parsed.error).not.toBe("service_unavailable");
+    });
+
+    it("registers the real update handlers with no PAT concept in the deps (issue #598)", async () => {
+      // Regression guard: the bootstrap no longer gates update-dependency
+      // construction on GITHUB_PAT, so a registry built from those deps alone
+      // must expose the REAL handlers. The stub is detectable behaviorally: it
+      // answers `service_unavailable` for ANY input, whereas the real handler
+      // resolves the repository first and answers `repository_not_found` for
+      // an unknown name.
+      const registry = createToolRegistry({
+        searchService: createMockSearchService(),
+        repositoryService: createMockRepositoryService(),
+        ...createMockUpdateDeps(),
+        // No githubPatConfigured, no updateToolsUnavailableReason.
+      });
+
+      const triggerResult = await getRegistryEntry(registry, "trigger_incremental_update").handler({
+        repository: "not-indexed",
+      });
+      const triggerParsed = JSON.parse(getTextContent(triggerResult.content));
+      expect(triggerParsed.error).toBe("repository_not_found");
+
+      // get_update_status must be real too: an unknown job is `job_not_found`,
+      // never `service_unavailable`.
+      const statusResult = await getRegistryEntry(registry, "get_update_status").handler({
+        job_id: "update-does-not-exist",
+      });
+      const statusParsed = JSON.parse(getTextContent(statusResult.content));
+      expect(statusParsed.error).toBe("job_not_found");
     });
   });
 });

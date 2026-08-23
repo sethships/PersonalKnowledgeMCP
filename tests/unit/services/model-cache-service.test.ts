@@ -424,8 +424,22 @@ describe("ModelCacheService", () => {
 
     it("should normalize path to prevent directory traversal", async () => {
       const service = createModelCacheService();
-      // Use a traversal path - should be normalized
-      const traversalPath = "/some/path/../../../etc";
+      // Traversal path whose resolved target is absent on EVERY platform.
+      //
+      // The previous fixture, "/some/path/../../../etc", passed on Windows
+      // only by accident: it resolves to "C:\etc", which does not exist, so
+      // `importModel` threw at its existence check. On Linux the same string
+      // resolves to the real "/etc", which exists and is a directory, so the
+      // call fell through into `importTransformersModel` and began copying
+      // the whole of /etc into the model cache. That is why this test timed
+      // out at exactly 30000ms on CI while passing locally on Windows.
+      //
+      // Anchoring the traversal at the filesystem root keeps the ".."
+      // normalization under test (the segments still collapse) while
+      // guaranteeing the resolved path is absent: "/" and "C:\" both clamp at
+      // root, so this becomes "/pk-mcp-nonexistent-model-dir" or
+      // "C:\pk-mcp-nonexistent-model-dir".
+      const traversalPath = "/some/path/../../../pk-mcp-nonexistent-model-dir";
 
       let thrownError: unknown;
       try {
@@ -439,6 +453,10 @@ describe("ModelCacheService", () => {
       }
       // Should throw because path doesn't exist or isn't a valid model directory
       expect(thrownError).toBeDefined();
+      // Pin WHY it threw: the ".." segments must have collapsed against root,
+      // producing an absent path. A "must be a directory" message here would
+      // mean the traversal resolved onto something real (the old /etc bug).
+      expect((thrownError as Error).message).toContain("Source path does not exist");
     });
   });
 });

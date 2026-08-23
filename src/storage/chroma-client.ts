@@ -1119,6 +1119,23 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
    * Helper method that queries for all chunks matching the repository and file path,
    * then deletes them. Useful for re-indexing updated files.
    *
+   * Performance: the filter deliberately queries on `file_path` ALONE and
+   * re-checks `repository` in memory, rather than sending ChromaDB an
+   * `$and: [{ repository }, { file_path }]` clause. The compound form is
+   * pathologically slow because `repository` matches essentially every chunk
+   * in a per-repository collection, and ChromaDB materialises the whole
+   * matching set before intersecting. Measured against a 39,518-chunk
+   * collection (ChromaDB 1.x, identical result set):
+   *
+   *   - `$and: [{ repository }, { file_path }]`  ~124,000 ms
+   *   - `{ file_path }` alone                         ~315 ms
+   *
+   * This runs once per changed file, so the compound form made a routine
+   * 100-file incremental update take hours instead of seconds. `file_path` is
+   * highly selective, so the in-memory `repository` re-check below costs
+   * nothing while preserving the exact original semantics for the (currently
+   * unused) case of a collection shared by several repositories.
+   *
    * @param collectionName - Target collection name
    * @param repository - Repository name
    * @param filePath - File path within the repository
@@ -1135,11 +1152,12 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
   ): Promise<number> {
     this.ensureConnected();
 
-    // Query for all chunks matching the file
-    // Use $and operator for multiple conditions (ChromaDB requirement)
-    const chunks = await this.getDocumentsByMetadata(collectionName, {
-      $and: [{ repository }, { file_path: filePath }],
+    // Query on the selective field only (see the performance note above), then
+    // narrow to the requested repository in memory.
+    const matchingPathChunks = await this.getDocumentsByMetadata(collectionName, {
+      file_path: filePath,
     });
+    const chunks = matchingPathChunks.filter((chunk) => chunk.metadata?.repository === repository);
 
     // If no chunks found, return 0
     if (chunks.length === 0) {
@@ -1199,10 +1217,18 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
       }
 
       // Metadata only — avoid pulling document bodies/embeddings.
+      //
+      // No `where` clause: a `repository` predicate matches essentially every
+      // chunk in a per-repository collection, and ChromaDB's filtered path is
+      // far slower than an unfiltered bulk scan of the same rows. Measured on
+      // a 39,518-chunk collection (ChromaDB 1.x, identical result set):
+      // `where: { repository }` took ~104,000 ms against ~9,300 ms for the
+      // unfiltered `get`. We scan and match `repository` in memory instead,
+      // which keeps the original semantics for a collection shared by several
+      // repositories. See the note on `deleteDocumentsByFilePrefix`.
       const result = await this.withRetryWrapper(
         () =>
           collection.get({
-            where: { repository } as Record<string, unknown>,
             // @ts-expect-error - String literals are compatible with IncludeEnum
             include: ["metadatas"],
           }),
@@ -1211,7 +1237,11 @@ export class ChromaStorageClientImpl implements ChromaStorageClient {
 
       const filePaths = new Set<string>();
       for (const meta of result.metadatas ?? []) {
-        const filePath = (meta as Record<string, unknown> | null)?.["file_path"];
+        const record = meta as Record<string, unknown> | null;
+        if (record?.["repository"] !== repository) {
+          continue;
+        }
+        const filePath = record["file_path"];
         if (typeof filePath === "string" && filePath.length > 0) {
           filePaths.add(filePath);
         }

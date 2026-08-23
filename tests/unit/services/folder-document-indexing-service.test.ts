@@ -364,6 +364,65 @@ describe("FolderDocumentIndexingService", () => {
       expect(result.storedHash).toBe(expectedHash);
     });
 
+    it("queries on file_path alone, never a compound repository filter (perf regression guard)", async () => {
+      // A `repository` predicate matches essentially every chunk in a
+      // per-repository collection, and ChromaDB's filtered path degrades badly
+      // on it. Measured on a 39,518-chunk collection (ChromaDB 1.x, identical
+      // result set): `$and: [{ file_path }, { repository }]` took ~124,000 ms
+      // against ~315 ms for `{ file_path }` alone. This runs once per watcher
+      // event, so the compound form stalled folder re-indexing per file.
+      const filePath = path.join(testDir, "test.md");
+      await fs.promises.writeFile(filePath, "Some content");
+
+      (mockStorage.getDocumentsByMetadata as ReturnType<typeof mock>).mockImplementation(() =>
+        Promise.resolve([])
+      );
+
+      await service.checkContentHash(filePath, "test-repo", "test_collection", "test.md");
+
+      const queryMock = mockStorage.getDocumentsByMetadata as ReturnType<typeof mock>;
+      expect(queryMock).toHaveBeenCalledTimes(1);
+      const where = queryMock.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(where).toEqual({ file_path: "test.md" });
+      expect(Object.keys(where)).toEqual(["file_path"]);
+      expect(where).not.toHaveProperty("$and");
+      expect(where).not.toHaveProperty("repository");
+    });
+
+    it("ignores chunks from another repository that share the file path", async () => {
+      // The `repository` narrowing moved from ChromaDB into memory. Dropping it
+      // would let another repository's hash mark this file as unchanged, so the
+      // file would silently never be re-indexed.
+      const content = "Hello, world!";
+      const filePath = path.join(testDir, "test.md");
+      await fs.promises.writeFile(filePath, content);
+
+      const foreignHash = createHash("sha256").update(content).digest("hex");
+      (mockStorage.getDocumentsByMetadata as ReturnType<typeof mock>).mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "other-repo:test.md:0",
+            content: "chunk content",
+            metadata: {
+              content_hash: foreignHash,
+              file_path: "test.md",
+              repository: "other-repo",
+            },
+          },
+        ])
+      );
+
+      const result = await service.checkContentHash(
+        filePath,
+        "test-repo",
+        "test_collection",
+        "test.md"
+      );
+
+      expect(result.storedHash).toBeNull();
+      expect(result.unchanged).toBe(false);
+    });
+
     it("should return unchanged=false when hashes differ", async () => {
       const content = "Updated content";
       const oldHash = createHash("sha256").update("Old content").digest("hex");

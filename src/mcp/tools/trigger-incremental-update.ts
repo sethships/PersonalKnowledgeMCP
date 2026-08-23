@@ -14,7 +14,7 @@
  */
 
 import type { Tool, CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
-import type { RepositoryMetadataService } from "../../repositories/types.js";
+import type { RepositoryMetadataService, RepositoryInfo } from "../../repositories/types.js";
 import type { IncrementalUpdateCoordinator } from "../../services/incremental-update-coordinator.js";
 import type { LocalFolderUpdateCoordinator } from "../../services/local-folder-update-coordinator.js";
 import type { CoordinatorResult } from "../../services/incremental-update-coordinator-types.js";
@@ -22,6 +22,7 @@ import {
   dispatchCoordinator,
   type UpdateCoordinatorLike,
 } from "../../services/update-coordinator-dispatch.js";
+import { parseGitUrl } from "../../utils/git-url-parser.js";
 import { mapToMCPError } from "../errors.js";
 import { getComponentLogger } from "../../logging/index.js";
 import type { ToolHandler } from "../types.js";
@@ -294,8 +295,31 @@ export interface TriggerUpdateDependencies {
    * error rather than misrouting through the git coordinator.
    */
   localFolderCoordinator?: LocalFolderUpdateCoordinator;
+  /**
+   * Whether a GitHub PAT was resolved at bootstrap. Only repositories whose
+   * updates hit the GitHub API (github.com `git-remote` sources) need one;
+   * `local-git` and `local-folder` sources never do. When false, those GitHub
+   * repos get a credential-specific `service_unavailable` instead of an opaque
+   * 404/401 from an unauthenticated API call.
+   */
+  githubPatConfigured?: boolean;
   rateLimiter: MCPRateLimiter;
   jobTracker: JobTracker;
+}
+
+/**
+ * Whether updating this repository requires a GitHub API call.
+ *
+ * Mirrors `IncrementalUpdateCoordinator.updateRepository`, which only reaches
+ * for the GitHub client when the repo's URL parses as a github.com remote.
+ * `local-git` repos carry a filesystem path in `url` (which `parseGitUrl`
+ * rejects) and `local-folder` repos have no URL at all, so both return false.
+ */
+function requiresGitHubCredentials(repo: RepositoryInfo): boolean {
+  if (repo.source !== "git-remote" || !repo.url) {
+    return false;
+  }
+  return parseGitUrl(repo.url)?.isGitHub === true;
 }
 
 /**
@@ -364,8 +388,14 @@ async function executeWithTimeout(
  * ```
  */
 export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): ToolHandler {
-  const { repositoryService, updateCoordinator, localFolderCoordinator, rateLimiter, jobTracker } =
-    deps;
+  const {
+    repositoryService,
+    updateCoordinator,
+    localFolderCoordinator,
+    githubPatConfigured,
+    rateLimiter,
+    jobTracker,
+  } = deps;
 
   return async (args: unknown): Promise<CallToolResult> => {
     const startTime = performance.now();
@@ -402,6 +432,27 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
             formatErrorResponse(
               "repository_not_found",
               `Repository '${repositoryName}' is not indexed. Use list_indexed_repositories to see available repositories.`
+            ),
+          ],
+          isError: true,
+        };
+      }
+
+      // Issue #598: refuse only the repositories that actually need the
+      // credential. A missing PAT does not affect local-git or local-folder
+      // sources, so the gate is scoped to github.com remotes and compared
+      // strictly against `false` (undefined means the caller did not report
+      // PAT state, in which case no gate applies).
+      if (githubPatConfigured === false && requiresGitHubCredentials(repo)) {
+        log.warn(
+          { repository: repositoryName, url: repo.url },
+          "trigger_incremental_update invoked for a github.com remote with no GITHUB_PAT configured"
+        );
+        return {
+          content: [
+            formatErrorResponse(
+              "service_unavailable",
+              `Repository '${repositoryName}' is hosted on github.com and updating it requires a GitHub token, but GITHUB_PAT is not configured on this server. Set GITHUB_PAT and restart the MCP server. Repositories with local-git and local-folder sources are unaffected and can still be updated.`
             ),
           ],
           isError: true,

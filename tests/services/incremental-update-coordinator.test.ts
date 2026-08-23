@@ -73,6 +73,27 @@ describe("IncrementalUpdateCoordinator", () => {
     ],
   };
 
+  // Backing store for the metadata-service mocks.
+  //
+  // The coordinator re-reads the repository record before its final write to
+  // confirm it still owns the update lease. A mock whose `getRepository`
+  // ignores prior writes therefore looks exactly like a lease that was
+  // reclaimed by another run, so these mocks need read-your-writes semantics.
+  let repoState: RepositoryInfo | null = null;
+
+  /**
+   * Point the metadata-service mocks at `fixture` with read-your-writes
+   * semantics. Name-agnostic, matching the per-test `getRepository` overrides
+   * it replaces.
+   */
+  function seedRepository(fixture: RepositoryInfo): void {
+    repoState = fixture;
+    mockRepositoryService.getRepository = mock(async () => repoState);
+    mockRepositoryService.updateRepository = mock(async (info: RepositoryInfo) => {
+      repoState = info;
+    });
+  }
+
   beforeEach(() => {
     // Initialize logger for tests
     initializeLogger({ level: "silent", format: "json" });
@@ -84,11 +105,15 @@ describe("IncrementalUpdateCoordinator", () => {
       healthCheck: mock(async () => true),
     };
 
-    // Create mock repository service
+    // Create mock repository service. `getRepository` / `updateRepository` are
+    // backed by `repoState` so reads observe earlier writes (see seedRepository).
+    repoState = testRepo;
     mockRepositoryService = {
       listRepositories: mock(async () => [testRepo]),
-      getRepository: mock(async (name) => (name === "test-repo" ? testRepo : null)),
-      updateRepository: mock(async (_repo) => {}),
+      getRepository: mock(async (name) => (name === "test-repo" ? repoState : null)),
+      updateRepository: mock(async (repo) => {
+        repoState = repo;
+      }),
       removeRepository: mock(async (_name) => {}),
     };
 
@@ -154,10 +179,13 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should throw ConcurrentUpdateError when update is already in progress", async () => {
+      // The lock is a lease: only a lock that is still inside the lease counts
+      // as a live update, so this fixture must use a recent timestamp.
+      const freshStartedAt = new Date(Date.now() - 30_000).toISOString();
       const repoInProgress: RepositoryInfo = {
         ...testRepo,
         updateInProgress: true,
-        updateStartedAt: "2024-12-14T10:00:00.000Z",
+        updateStartedAt: freshStartedAt,
       };
       mockRepositoryService.getRepository = mock(async () => repoInProgress);
 
@@ -173,10 +201,74 @@ describe("IncrementalUpdateCoordinator", () => {
         expect(error).toBeInstanceOf(ConcurrentUpdateError);
         const concurrentError = error as ConcurrentUpdateError;
         expect(concurrentError.repositoryName).toBe("test-repo");
-        expect(concurrentError.updateStartedAt).toBe("2024-12-14T10:00:00.000Z");
+        expect(concurrentError.updateStartedAt).toBe(freshStartedAt);
         expect(concurrentError.message).toContain("already in progress");
         expect(concurrentError.message).toContain("test-repo");
       }
+    });
+
+    it("should reclaim a stale in-progress lock and run the update instead of throwing", async () => {
+      // A flag left behind by a hard kill or an indefinitely hung run outlives
+      // its owner (both coordinators clear it in a `finally`). Without lease
+      // takeover it wedges the repository permanently: every later update
+      // throws and the MCP surface has no tool to clear it.
+      const staleStartedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      const repoWithStaleLock: RepositoryInfo = {
+        ...testRepo,
+        updateInProgress: true,
+        updateStartedAt: staleStartedAt,
+      };
+      mockRepositoryService.getRepository = mock(async () => repoWithStaleLock);
+
+      const result = await coordinator.updateRepository("test-repo");
+
+      expect(result.status).toBe("updated");
+      expect(mockUpdatePipeline.processChanges).toHaveBeenCalled();
+    });
+
+    it("does not overwrite metadata written by a run that reclaimed the lease", async () => {
+      // Run A loads its snapshot, then run B takes over the lease mid-flight
+      // (possible now the lock is a lease: A's in-process guards release after
+      // 11 minutes while A itself keeps running). A's final metadata is spread
+      // from a snapshot taken at A's start, so committing it would discard B's
+      // SHA and history wholesale. A must abandon the write instead.
+      let current: RepositoryInfo = { ...testRepo };
+      mockRepositoryService.getRepository = mock(async () => current);
+      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
+        current = repo;
+      });
+      mockUpdatePipeline.processChanges = mock(async () => {
+        // Simulate run B reclaiming the lease while run A is inside the pipeline.
+        current = {
+          ...current,
+          updateStartedAt: "2099-01-01T00:00:00.000Z",
+          lastIndexedCommitSha: "b-sha",
+        };
+        return {
+          stats: {
+            filesAdded: 1,
+            filesModified: 1,
+            filesDeleted: 1,
+            chunksUpserted: 15,
+            chunksDeleted: 5,
+            durationMs: 1500,
+          },
+          errors: [],
+          filterStats: {
+            totalChanges: 3,
+            eligibleChanges: 3,
+            filteredChanges: 3,
+            skippedChanges: 0,
+          },
+        } satisfies UpdateResult;
+      });
+
+      await coordinator.updateRepository("test-repo");
+
+      expect(current.lastIndexedCommitSha).toBe("b-sha");
+      expect(current.updateStartedAt).toBe("2099-01-01T00:00:00.000Z");
+      // B's lock must still be held: A may not release a lock it no longer owns.
+      expect(current.updateInProgress).toBe(true);
     });
 
     it("should process update with exactly 500 files (at threshold boundary)", async () => {
@@ -205,16 +297,6 @@ describe("IncrementalUpdateCoordinator", () => {
         sha: testRepo.lastIndexedCommitSha!,
       };
       mockGitHubClient.getHeadCommit = mock(async () => sameCommit);
-
-      // Track in-progress state for stateful mock behavior
-      let currentInProgressState = false;
-      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
-        currentInProgressState = repo.updateInProgress ?? false;
-      });
-      mockRepositoryService.getRepository = mock(async () => ({
-        ...testRepo,
-        updateInProgress: currentInProgressState,
-      }));
 
       const result = await coordinator.updateRepository("test-repo");
 
@@ -493,7 +575,7 @@ describe("IncrementalUpdateCoordinator", () => {
         incrementalUpdateCount: 1,
         lastIndexedCommitSha: headCommit.sha,
       };
-      mockRepositoryService.getRepository = mock(async () => repoAfterFirstUpdate);
+      seedRepository(repoAfterFirstUpdate);
 
       const newHeadCommit: CommitInfo = {
         ...headCommit,
@@ -522,7 +604,7 @@ describe("IncrementalUpdateCoordinator", () => {
         ...testRepo,
         incrementalUpdateCount: undefined,
       };
-      mockRepositoryService.getRepository = mock(async () => repoWithoutCount);
+      seedRepository(repoWithoutCount);
 
       await coordinator.updateRepository("test-repo");
 
@@ -925,8 +1007,8 @@ describe("IncrementalUpdateCoordinator", () => {
         ],
       };
 
-      // Track state updates to simulate real behavior
-      let currentInProgressState = false;
+      // Stateful record: the coordinator re-reads it to confirm lease ownership.
+      let currentRecord: RepositoryInfo = repoWithHistory;
 
       // Create new coordinator with mocks that return same commit
       const noChangeGitHubClient: GitHubClient = {
@@ -942,12 +1024,9 @@ describe("IncrementalUpdateCoordinator", () => {
 
       const noChangeRepositoryService: RepositoryMetadataService = {
         listRepositories: mock(async () => [repoWithHistory]),
-        getRepository: mock(async () => ({
-          ...repoWithHistory,
-          updateInProgress: currentInProgressState,
-        })),
+        getRepository: mock(async () => currentRecord),
         updateRepository: mock(async (repo: RepositoryInfo) => {
-          currentInProgressState = repo.updateInProgress ?? false;
+          currentRecord = repo;
         }),
         removeRepository: mock(async () => {}),
       };
@@ -1073,16 +1152,6 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should clear updateInProgress=false in finally block after error", async () => {
-      // Track state updates to simulate real behavior
-      let currentInProgressState = false;
-      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
-        currentInProgressState = repo.updateInProgress ?? false;
-      });
-      mockRepositoryService.getRepository = mock(async () => ({
-        ...testRepo,
-        updateInProgress: currentInProgressState,
-      }));
-
       // Mock git pull to throw an error
       const errorCoordinator = new IncrementalUpdateCoordinator(
         mockGitHubClient,
@@ -1115,16 +1184,13 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should set and clear updateInProgress for 'no_changes' result", async () => {
-      // Track state updates to simulate real behavior
-      let currentInProgressState = false;
+      // Stateful record: the coordinator re-reads it to confirm lease ownership.
+      let currentRecord: RepositoryInfo = testRepo;
       const noChangeMockRepositoryService: RepositoryMetadataService = {
         listRepositories: mock(async () => [testRepo]),
-        getRepository: mock(async () => ({
-          ...testRepo,
-          updateInProgress: currentInProgressState,
-        })),
+        getRepository: mock(async () => currentRecord),
         updateRepository: mock(async (repo: RepositoryInfo) => {
-          currentInProgressState = repo.updateInProgress ?? false;
+          currentRecord = repo;
         }),
         removeRepository: mock(async () => {}),
       };
@@ -1172,16 +1238,6 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should clear updateInProgress=false when ForcePushDetectedError occurs", async () => {
-      // Track state updates to simulate real behavior
-      let currentInProgressState = false;
-      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
-        currentInProgressState = repo.updateInProgress ?? false;
-      });
-      mockRepositoryService.getRepository = mock(async () => ({
-        ...testRepo,
-        updateInProgress: currentInProgressState,
-      }));
-
       mockGitHubClient.compareCommits = mock(async () => {
         throw new GitHubNotFoundError("Commit not found", "https://api.github.com/...");
       });
@@ -1207,16 +1263,6 @@ describe("IncrementalUpdateCoordinator", () => {
     });
 
     it("should clear updateInProgress=false when ChangeThresholdExceededError occurs", async () => {
-      // Track state updates to simulate real behavior
-      let currentInProgressState = false;
-      mockRepositoryService.updateRepository = mock(async (repo: RepositoryInfo) => {
-        currentInProgressState = repo.updateInProgress ?? false;
-      });
-      mockRepositoryService.getRepository = mock(async () => ({
-        ...testRepo,
-        updateInProgress: currentInProgressState,
-      }));
-
       const largeComparison: CommitComparison = {
         ...comparison,
         files: Array.from({ length: 501 }, (_, i) => ({

@@ -57,18 +57,40 @@ function createTestFolder(overrides: Partial<WatchedFolder> = {}): WatchedFolder
 }
 
 /**
- * Poll until `predicate()` is true or the timeout elapses.
+ * Poll until `predicate()` is true, or throw once the deadline elapses.
  *
  * Filesystem-watch events are delivered asynchronously and can lag under load
  * (notably in CI), so assertions that depend on a specific number of events
  * having been processed must wait for the condition rather than a fixed sleep.
+ *
+ * Two properties matter here, both learned the hard way (this test has been
+ * de-flaked twice before, see #587):
+ *
+ * 1. It THROWS on timeout. The earlier version fell through silently, so a
+ *    late event surfaced as `expect(count).toBe(2)` reporting "Expected: 2",
+ *    which reads as a logic error rather than the timeout it actually was.
+ *    Every recurrence therefore had to be re-diagnosed from scratch.
+ * 2. The deadline is generous. Because this polls and returns the instant the
+ *    predicate holds, a healthy run still completes in milliseconds and pays
+ *    nothing for a large cap. The cap only bounds the failure case, so sizing
+ *    it for a heavily loaded CI runner does not slow the suite down and does
+ *    not weaken any assertion.
+ *
+ * @param predicate - Condition to poll
+ * @param label - Description of what is being awaited, used in the timeout message
+ * @param timeoutMs - Failure deadline, not a sleep duration
+ * @throws {Error} If the predicate is still false at the deadline
  */
-async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean, label: string, timeoutMs = 15000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for: ${label}. ` +
+      `Filesystem-watch events did not arrive in time.`
+  );
 }
 
 describe("ChangeDetectionService", () => {
@@ -368,7 +390,10 @@ describe("ChangeDetectionService", () => {
       await fs.promises.writeFile(testFilePath, initialContent);
 
       // Wait for the initial add to be processed and state captured.
-      await waitFor(() => changeDetection.getTrackedFileCount() > 0);
+      await waitFor(
+        () => changeDetection.getTrackedFileCount() > 0,
+        "the initial add event to be tracked"
+      );
 
       // Verify state was captured
       expect(changeDetection.getTrackedFileCount()).toBeGreaterThan(0);
@@ -403,7 +428,10 @@ describe("ChangeDetectionService", () => {
 
       // Poll for both add events to be tracked rather than sleeping a fixed
       // interval — under CI load the second event can arrive after 300ms.
-      await waitFor(() => changeDetection.getTrackedFileCount() === 2);
+      await waitFor(
+        () => changeDetection.getTrackedFileCount() === 2,
+        "both add events to be tracked (expected 2 files)"
+      );
 
       expect(changeDetection.getTrackedFileCount()).toBe(2);
     });
@@ -415,7 +443,10 @@ describe("ChangeDetectionService", () => {
 
       await folderWatcher.startWatching(testFolder);
       await fs.promises.writeFile(path.join(testFolder.path, "clear-test.md"), "content");
-      await waitFor(() => changeDetection.getTrackedFileCount() > 0);
+      await waitFor(
+        () => changeDetection.getTrackedFileCount() > 0,
+        "the add event to be tracked before clearState()"
+      );
 
       expect(changeDetection.getTrackedFileCount()).toBeGreaterThan(0);
 

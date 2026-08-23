@@ -5,7 +5,7 @@
  * to ensure 90%+ code coverage and correct behavior.
  */
 
-import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, spyOn } from "bun:test";
 import { ChromaStorageClientImpl } from "../../../src/storage/chroma-client.js";
 import {
   StorageConnectionError,
@@ -974,6 +974,104 @@ describe("ChromaStorageClientImpl", () => {
         disconnectedClient.deleteDocumentsByFilePrefix(collectionName, "repo", "file.ts")
       ).rejects.toThrow(StorageConnectionError);
     });
+
+    test("queries on file_path alone, never a compound repository filter (perf regression guard)", async () => {
+      // A `repository` predicate matches essentially every chunk in a
+      // per-repository collection, and ChromaDB's filtered path degrades
+      // badly on it. Measured on a 39,518-chunk collection (ChromaDB 1.x,
+      // identical result set): `$and: [{ repository }, { file_path }]` took
+      // ~124,000 ms against ~315 ms for `{ file_path }` alone. This runs once
+      // per changed file, so the compound form turned a routine 100-file
+      // incremental update into hours of work.
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+      const getSpy = spyOn(collection!, "get");
+
+      await client.deleteDocumentsByFilePrefix(collectionName, "test-repo", "src/auth/login.ts");
+
+      const whereClauses = getSpy.mock.calls
+        .map((call) => call[0]?.where)
+        .filter((where): where is Record<string, unknown> => where !== undefined);
+
+      expect(whereClauses).toHaveLength(1);
+      const where = whereClauses[0]!;
+      expect(where).toEqual({ file_path: "src/auth/login.ts" });
+      expect(Object.keys(where)).toEqual(["file_path"]);
+      expect(where).not.toHaveProperty("$and");
+      expect(where).not.toHaveProperty("repository");
+
+      getSpy.mockRestore();
+    });
+
+    test("deletes only the requested repository's chunks when a path exists in two repositories", async () => {
+      // The `repository` narrowing moved from ChromaDB into memory. If that
+      // in-memory filter were dropped, the faster query would start deleting
+      // another repository's chunks for the same path.
+      const sharedPath = "src/shared/util.ts";
+      await client.addDocuments(collectionName, [
+        {
+          id: "test-repo:src/shared/util.ts:0",
+          content: "export const mine = 1;",
+          embedding: createTestEmbedding(7),
+          metadata: createTestMetadata({ file_path: sharedPath, repository: "test-repo" }),
+        },
+        {
+          id: "other-repo:src/shared/util.ts:0",
+          content: "export const theirs = 2;",
+          embedding: createTestEmbedding(8),
+          metadata: createTestMetadata({ file_path: sharedPath, repository: "other-repo" }),
+        },
+      ]);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+      const deleteSpy = spyOn(collection!, "delete");
+
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        collectionName,
+        "test-repo",
+        sharedPath
+      );
+
+      expect(deletedCount).toBe(1);
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy.mock.calls[0]?.[0]?.ids).toEqual(["test-repo:src/shared/util.ts:0"]);
+
+      // The other repository's chunk survives.
+      const survivors = await client.getDocumentsByMetadata(collectionName, {
+        file_path: sharedPath,
+      });
+      expect(survivors.map((chunk) => chunk.id)).toEqual(["other-repo:src/shared/util.ts:0"]);
+
+      deleteSpy.mockRestore();
+    });
+
+    test("returns 0 and deletes nothing when the path belongs only to another repository", async () => {
+      const foreignPath = "src/foreign/only.ts";
+      await client.addDocuments(collectionName, [
+        {
+          id: "other-repo:src/foreign/only.ts:0",
+          content: "export const theirs = 2;",
+          embedding: createTestEmbedding(9),
+          metadata: createTestMetadata({ file_path: foreignPath, repository: "other-repo" }),
+        },
+      ]);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+      const deleteSpy = spyOn(collection!, "delete");
+
+      const deletedCount = await client.deleteDocumentsByFilePrefix(
+        collectionName,
+        "test-repo",
+        foreignPath
+      );
+
+      expect(deletedCount).toBe(0);
+      expect(deleteSpy).not.toHaveBeenCalled();
+
+      deleteSpy.mockRestore();
+    });
   });
 
   describe("Error Classes", () => {
@@ -1382,6 +1480,44 @@ describe("ChromaStorageClientImpl", () => {
 
       const filePaths = await client.listIndexedFilePaths(collectionName, "other-repo");
       expect(filePaths.size).toBe(0);
+    });
+
+    test("scans without a where clause and filters by repository in memory (perf regression guard)", async () => {
+      // Measured on a 39,518-chunk collection (ChromaDB 1.x, identical result
+      // set): `where: { repository }` took ~104,000 ms against ~9,300 ms for
+      // the unfiltered `get`. The predicate matches nearly every row in a
+      // per-repository collection, so filtering costs far more than scanning.
+      await client.addDocuments(collectionName, sampleDocuments);
+      await client.addDocuments(collectionName, [
+        {
+          id: "other-repo:src/other/thing.ts:0",
+          content: "export const theirs = 2;",
+          embedding: createTestEmbedding(11),
+          metadata: createTestMetadata({
+            file_path: "src/other/thing.ts",
+            repository: "other-repo",
+          }),
+        },
+      ]);
+
+      const collection = mockChromaClient.getCollectionSync(collectionName);
+      expect(collection).toBeDefined();
+      const getSpy = spyOn(collection!, "get");
+
+      const filePaths = await client.listIndexedFilePaths(collectionName, "test-repo");
+
+      expect(getSpy).toHaveBeenCalledTimes(1);
+      const params = getSpy.mock.calls[0]?.[0];
+      expect(params).toBeDefined();
+      expect(params).not.toHaveProperty("where");
+      expect(params?.include).toEqual(["metadatas"]);
+
+      // The in-memory narrowing keeps the original per-repository semantics.
+      expect(filePaths.has("src/auth/login.ts")).toBe(true);
+      expect(filePaths.has("src/api/routes.ts")).toBe(true);
+      expect(filePaths.has("src/other/thing.ts")).toBe(false);
+
+      getSpy.mockRestore();
     });
 
     test("returns an empty set for an empty collection", async () => {
