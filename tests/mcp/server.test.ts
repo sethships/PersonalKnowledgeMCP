@@ -582,6 +582,30 @@ describe("PersonalKnowledgeMCPServer", () => {
     // A PassThrough stands in for stdin: registering these handlers on the real
     // `process.stdin` here would shut down the test runner itself the moment
     // its own stdin closed.
+
+    // startStdio() also registers process-global SIGINT/SIGTERM handlers. They
+    // never fire here, but each test would otherwise leave two live listeners
+    // (and the server instance they close over) attached to `process` for the
+    // rest of the run, eventually tripping MaxListenersExceededWarning.
+    let signalsBefore: Record<"SIGINT" | "SIGTERM", NodeJS.SignalsListener[]>;
+
+    beforeEach(() => {
+      signalsBefore = {
+        SIGINT: process.listeners("SIGINT"),
+        SIGTERM: process.listeners("SIGTERM"),
+      };
+    });
+
+    afterEach(() => {
+      for (const signal of ["SIGINT", "SIGTERM"] as const) {
+        for (const listener of process.listeners(signal)) {
+          if (!signalsBefore[signal].includes(listener)) {
+            process.removeListener(signal, listener);
+          }
+        }
+      }
+    });
+
     it("shuts down when stdin emits end", async () => {
       const fakeStdin = new PassThrough();
       const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
@@ -592,11 +616,14 @@ describe("PersonalKnowledgeMCPServer", () => {
         shutdownCalls += 1;
       };
 
-      await server.startStdio(fakeStdin);
+      await server.startStdio({ stdin: fakeStdin });
       expect(shutdownCalls).toBe(0);
 
-      fakeStdin.emit("end");
-      await Promise.resolve();
+      // A real EOF, not a synthesized event: this also pins the fix's core
+      // assumption that the transport's `data` listener has put the stream in
+      // flowing mode. A paused stream that is ended never emits `end` at all.
+      fakeStdin.end();
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(shutdownCalls).toBe(1);
     });
@@ -610,7 +637,7 @@ describe("PersonalKnowledgeMCPServer", () => {
         shutdownCalls += 1;
       };
 
-      await server.startStdio(fakeStdin);
+      await server.startStdio({ stdin: fakeStdin });
       fakeStdin.emit("close");
       await Promise.resolve();
 
@@ -625,7 +652,7 @@ describe("PersonalKnowledgeMCPServer", () => {
         shutdownCalls += 1;
       };
 
-      await server.startStdio(fakeStdin);
+      await server.startStdio({ stdin: fakeStdin });
       fakeStdin.emit("end");
       fakeStdin.emit("close");
       await Promise.resolve();
@@ -633,6 +660,26 @@ describe("PersonalKnowledgeMCPServer", () => {
       // `isShuttingDown` makes the handler idempotent, so a pipe that emits
       // both must not run the shutdown sequence twice.
       expect(shutdownCalls).toBe(1);
+    });
+
+    it("does not shut down on stdin EOF when exitOnStdinClose is false", async () => {
+      // Container and Kubernetes runtimes give the process a closed stdin,
+      // which reaches EOF at startup. A process also serving HTTP/SSE must
+      // survive that, so `src/index.ts` passes exitOnStdinClose: false when the
+      // HTTP transport is enabled.
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio({ stdin: fakeStdin, exitOnStdinClose: false });
+      fakeStdin.end();
+      fakeStdin.destroy();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(shutdownCalls).toBe(0);
     });
   });
 });

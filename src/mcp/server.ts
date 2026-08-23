@@ -9,6 +9,7 @@
  * - Streamable HTTP: For modern MCP clients (2025-03-26 specification)
  */
 
+import type { Readable } from "node:stream";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -46,6 +47,32 @@ const DEFAULT_CONFIG: MCPServerConfig = {
  * Pre-shutdown hook type for coordinating multi-transport shutdown
  */
 export type PreShutdownHook = () => Promise<void>;
+
+/**
+ * Options for {@link PersonalKnowledgeMCPServer.startStdio}
+ */
+export interface StartStdioOptions {
+  /**
+   * Stream to read MCP requests from. Defaults to `process.stdin`.
+   *
+   * Injectable so tests can drive the client-disconnect path with a fake
+   * stream. Attaching the EOF handlers to the real `process.stdin` inside a
+   * test would exit the test runner the moment its own stdin closed. Mirrors
+   * the injectable stdin on the SDK's own `StdioServerTransport` constructor.
+   */
+  stdin?: Readable;
+
+  /**
+   * Exit the process when `stdin` reaches EOF. Defaults to true.
+   *
+   * True is correct for a stdio-only server, whose lifetime is bound to its
+   * client's pipe. It must be false when another transport (HTTP/SSE) is also
+   * serving: container and Kubernetes runtimes start the process with stdin at
+   * /dev/null, which reaches EOF the instant the transport puts it in flowing
+   * mode, and would otherwise kill a healthy HTTP server at startup.
+   */
+  exitOnStdinClose?: boolean;
+}
 
 export class PersonalKnowledgeMCPServer {
   private server: Server;
@@ -289,26 +316,25 @@ export class PersonalKnowledgeMCPServer {
    *
    * @throws {Error} If server fails to start or connect
    */
-  async startStdio(stdinStream: NodeJS.ReadableStream = process.stdin): Promise<void> {
+  async startStdio(options: StartStdioOptions = {}): Promise<void> {
+    const stdin = options.stdin ?? process.stdin;
+    const exitOnStdinClose = options.exitOnStdinClose ?? true;
+
     this.logger.info("Starting MCP server with stdio transport");
 
-    // `stdinStream` defaults to the real stdin and exists so tests can drive
-    // the client-disconnect path below with a fake stream. Attaching those
-    // handlers to the real `process.stdin` inside a test would exit the test
-    // runner the moment its own stdin closed. Mirrors the injectable stdin on
-    // the SDK's own `StdioServerTransport` constructor.
-    const transport = new StdioServerTransport(stdinStream as NodeJS.ReadStream);
+    const transport = new StdioServerTransport(stdin);
 
-    // Handle graceful shutdown signals (register only once)
+    const shutdown = async (): Promise<void> => {
+      if (this.isShuttingDown) {
+        return; // Shutdown already in progress
+      }
+      this.isShuttingDown = true;
+      await this.shutdown();
+    };
+
+    // Handle graceful shutdown signals (register only once, they attach to the
+    // process itself rather than to any one transport)
     if (!this.shutdownHandlersRegistered) {
-      const shutdown = async (): Promise<void> => {
-        if (this.isShuttingDown) {
-          return; // Shutdown already in progress
-        }
-        this.isShuttingDown = true;
-        await this.shutdown();
-      };
-
       process.once("SIGINT", () => {
         this.logger.info("Received SIGINT, initiating shutdown");
         void shutdown();
@@ -319,36 +345,44 @@ export class PersonalKnowledgeMCPServer {
         void shutdown();
       });
 
-      // Exit when the client goes away.
-      //
-      // A stdio server's lifetime is bound to its stdin pipe, but neither of
-      // the paths above notices it closing:
-      //
-      //   - Windows does not deliver a signal to a child when its parent
-      //     exits, so the SIGINT/SIGTERM handlers never fire when the MCP
-      //     client is closed or killed.
-      //   - The SDK's `StdioServerTransport.start()` subscribes only to
-      //     stdin's `data` and `error` events, so it never surfaces EOF and
-      //     `transport.onclose` stays silent.
-      //
-      // Without this, every client that exits without a clean signal leaves a
-      // server running forever, each holding its ChromaDB and FalkorDB
-      // connections. Observed in practice: 20 orphaned servers accumulated
-      // over two days, 14 of them with no surviving parent process.
-      //
-      // Reading EOF is reliable here because the transport has already put
-      // stdin into flowing mode by attaching its `data` listener. `close` is
-      // registered alongside `end` to cover an abruptly destroyed pipe, which
-      // emits `close` without a preceding `end`; `shutdown` is idempotent via
-      // `isShuttingDown`, so both firing is harmless.
+      this.shutdownHandlersRegistered = true;
+    }
+
+    // Exit when the client goes away.
+    //
+    // A stdio server's lifetime is bound to its stdin pipe, but neither of
+    // the signal paths above notices it closing:
+    //
+    //   - Windows does not deliver a signal to a child when its parent
+    //     exits, so the SIGINT/SIGTERM handlers never fire when the MCP
+    //     client is closed or killed.
+    //   - The SDK's `StdioServerTransport.start()` subscribes only to
+    //     stdin's `data` and `error` events, so it never surfaces EOF and
+    //     `transport.onclose` stays silent.
+    //
+    // Without this, every client that exits without a clean signal leaves a
+    // server running forever, each holding its ChromaDB and FalkorDB
+    // connections. Observed in practice: 20 orphaned servers accumulated
+    // over two days, 14 of them with no surviving parent process.
+    //
+    // Reading EOF is reliable here because the transport has already put
+    // stdin into flowing mode by attaching its `data` listener. `close` is
+    // registered alongside `end` to cover an abruptly destroyed pipe, which
+    // emits `close` without a preceding `end`; `shutdown` is idempotent via
+    // `isShuttingDown`, so both firing is harmless.
+    //
+    // These listeners belong to `stdin`, which is a per-call value, so they
+    // are registered on every call rather than under
+    // `shutdownHandlersRegistered`. `once` already makes them idempotent per
+    // stream. `exitOnStdinClose` is false when another transport is serving:
+    // see `StartStdioOptions`.
+    if (exitOnStdinClose) {
       const onStdinClosed = (): void => {
         this.logger.info("stdin closed (client disconnected), initiating shutdown");
         void shutdown();
       };
-      stdinStream.once("end", onStdinClosed);
-      stdinStream.once("close", onStdinClosed);
-
-      this.shutdownHandlersRegistered = true;
+      stdin.once("end", onStdinClosed);
+      stdin.once("close", onStdinClosed);
     }
 
     try {

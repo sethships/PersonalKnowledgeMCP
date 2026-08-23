@@ -729,7 +729,11 @@ async function main(): Promise<void> {
 
     // Step 7b: Start stdio transport (always enabled for Claude Code)
     logger.info("Starting stdio transport");
-    await mcpServer.startStdio();
+    // Bind the process lifetime to stdin only when stdio is the sole transport.
+    // Container and Kubernetes runtimes start the process with a closed stdin,
+    // which reaches EOF the instant the transport puts it in flowing mode; that
+    // would tear down an HTTP-serving pod immediately after startup.
+    await mcpServer.startStdio({ exitOnStdinClose: !httpConfig.enabled });
 
     // Server is now running and will block until shutdown signal
     logger.info("Personal Knowledge MCP Server is running");
