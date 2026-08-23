@@ -135,14 +135,25 @@ describe("ChangeDetectionService", () => {
       changeDetection.dispose();
     }
 
-    // Stop all watchers with timeout
+    // Stop all watchers with timeout.
+    //
+    // A failure here is reported rather than swallowed: if shutdown times out
+    // the chokidar watcher survives into subsequent tests, holding filesystem
+    // watches on a directory this block is about to delete. That is a leak
+    // capable of corrupting later tests, and a silent `catch {}` is precisely
+    // why it would be invisible when it happens (see #601). Cleanup still must
+    // not fail the test that just passed, so this warns instead of throwing.
     try {
       await Promise.race([
         folderWatcher.stopAllWatchers(),
         new Promise((_, reject) => setTimeout(() => reject(new Error("Cleanup timeout")), 3000)),
       ]);
-    } catch {
-      // Ignore cleanup errors
+    } catch (error) {
+      console.warn(
+        `[change-detection-service.test] watcher cleanup failed for ${testFolder.path}: ` +
+          `${error instanceof Error ? error.message : String(error)}. ` +
+          `A leaked watcher may affect subsequent tests in this file.`
+      );
     }
 
     // Clean up test directory
