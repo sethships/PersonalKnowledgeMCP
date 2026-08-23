@@ -309,7 +309,7 @@ OpenAI provides the highest quality embeddings through their cloud API. **This i
 # Explicitly use OpenAI
 bun run cli index --provider openai https://github.com/user/repo
 
-# OpenAI is auto-selected if OPENAI_API_KEY is set and no EMBEDDING_PROVIDER is specified
+# OpenAI is only used when EMBEDDING_PROVIDER=openai is set explicitly; a key alone does not select it
 ```
 
 #### Cost Estimation

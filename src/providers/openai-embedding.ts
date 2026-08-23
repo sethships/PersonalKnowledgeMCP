@@ -11,6 +11,7 @@ import {
   EmbeddingError,
   EmbeddingAuthenticationError,
   EmbeddingRateLimitError,
+  EmbeddingQuotaExceededError,
   EmbeddingNetworkError,
   EmbeddingTimeoutError,
   EmbeddingValidationError,
@@ -311,6 +312,14 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
           );
 
         case 429: {
+          // Exhausted billing quota masquerades as 429 but never clears (#595)
+          const code = (error as { code?: string }).code;
+          if (code === "insufficient_quota" || message.includes("insufficient_quota")) {
+            return new EmbeddingQuotaExceededError(
+              "OpenAI quota exceeded (insufficient_quota); add billing credit or switch EMBEDDING_PROVIDER",
+              cause
+            );
+          }
           // Rate limit - check for retry-after header
           const retryAfter = this.extractRetryAfter(error);
           return new EmbeddingRateLimitError("Rate limit exceeded", retryAfter, cause);

@@ -143,7 +143,7 @@ export function createGraphShutdownHandler(adapter: GraphStorageAdapter): () => 
  * Provider resolution priority:
  * 1. CLI flag (options.provider)
  * 2. Environment variable (EMBEDDING_PROVIDER)
- * 3. Factory default (openai if API key set, else transformersjs)
+ * 3. Factory default (transformersjs; OpenAI is never auto-selected, #595)
  *
  * @param options - Optional configuration including provider override
  * @throws {Error} If required environment variables are missing

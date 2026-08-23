@@ -752,12 +752,12 @@ The system defaults to local embedding providers that require no configuration, 
 
 - **Default (no configuration)**: Uses Transformers.js - works immediately
 - **With `EMBEDDING_PROVIDER=ollama`**: Uses Ollama for GPU acceleration
-- **With `OPENAI_API_KEY` set**: Uses OpenAI (backwards compatible)
+- **With `EMBEDDING_PROVIDER=openai`**: Uses OpenAI (an `OPENAI_API_KEY` alone does not select it; opting into per-token cost is explicit)
 
 ### Usage
 
 ```bash
-# Automatic selection (OpenAI if API key set, otherwise Transformers.js)
+# Default selection (Transformers.js unless EMBEDDING_PROVIDER is set)
 bun run cli index https://github.com/user/repo
 
 # Explicit provider selection

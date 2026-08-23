@@ -35,6 +35,7 @@ export {
   EmbeddingError,
   EmbeddingAuthenticationError,
   EmbeddingRateLimitError,
+  EmbeddingQuotaExceededError,
   EmbeddingNetworkError,
   EmbeddingTimeoutError,
   EmbeddingValidationError,
