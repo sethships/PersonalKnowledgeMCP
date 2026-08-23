@@ -14,6 +14,7 @@ import type { Logger } from "pino";
 import type { ChromaStorageClient, ParsedEmbeddingMetadata } from "../storage/index.js";
 import type { FileChunker } from "../ingestion/file-chunker.js";
 import type { EmbeddingProvider } from "../providers/index.js";
+import { EmbeddingError } from "../providers/index.js";
 import type { RepositoryEmbeddingProviderResolver } from "../providers/index.js";
 import { UpdateDimensionMismatchError } from "./incremental-update-coordinator-errors.js";
 import type { FileInfo, FileChunk } from "../ingestion/types.js";
@@ -1209,6 +1210,18 @@ export class IncrementalUpdatePipeline {
           },
           "Embedding batch failed - continuing with remaining batches"
         );
+        // Bad key / exhausted quota fails every remaining batch identically;
+        // stop here so the run reports one cause instead of N (#595).
+        if (error instanceof EmbeddingError && !error.retryable) {
+          const remaining = batchCount - batchIndex;
+          if (remaining > 0) {
+            errors.push({
+              path: `(embedding batches ${batchIndex + 1}-${batchCount})`,
+              error: `Skipped ${remaining} remaining batch(es) after non-retryable provider error: ${errorMessage}`,
+            });
+          }
+          break;
+        }
       }
     }
 
