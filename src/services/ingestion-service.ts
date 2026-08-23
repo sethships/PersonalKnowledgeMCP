@@ -430,7 +430,11 @@ export class IngestionService {
         // so a dead API key / exhausted quota cannot turn a re-index into data
         // loss (#595). Cheap: one tiny embed call.
         try {
-          await this.embeddingProvider.generateEmbedding("provider liveness probe");
+          await this.withTimeout(
+            this.embeddingProvider.generateEmbedding("provider liveness probe"),
+            this.EMBEDDING_TIMEOUT_MS,
+            "Embedding provider liveness probe"
+          );
         } catch (probeError) {
           throw new IngestionError(
             `Embedding provider '${this.embeddingProvider.providerId}' is unusable; existing collection left intact: ${
@@ -695,6 +699,24 @@ export class IngestionService {
         message: error instanceof Error ? error.message : String(error),
         originalError: error,
       };
+
+      // A force run may already have deleted the collection; keep the registry
+      // honest so status/search don't report a repo that no longer has data (#595).
+      if (repositoryName) {
+        const existing = await this.repositoryService
+          .getRepository(repositoryName)
+          .catch(() => null);
+        if (existing) {
+          await this.repositoryService
+            .updateRepository({ ...existing, status: "error", errorMessage: fatalError.message })
+            .catch((updateError: unknown) =>
+              this.logger.warn("Failed to record error status after fatal indexing error", {
+                repository: repositoryName,
+                error: updateError,
+              })
+            );
+        }
+      }
 
       // If error is one of our custom errors, rethrow it. The path-collision
       // error (Phase C) joins this list because the user-corrective fix —

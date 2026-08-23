@@ -84,6 +84,15 @@ describe("error-guidance", () => {
     });
 
     describe("embedding and API errors", () => {
+      test("quota exhaustion points at billing, not the key (#595)", () => {
+        const guidance = getErrorGuidance(
+          "OpenAI quota exceeded (insufficient_quota); add billing credit or switch EMBEDDING_PROVIDER"
+        );
+        expect(guidance).toBe(
+          "OpenAI billing quota exhausted. Add credit or set EMBEDDING_PROVIDER=transformers."
+        );
+      });
+
       test("matches embedding failed errors", () => {
         const guidance = getErrorGuidance("Embedding generation failed for batch");
         expect(guidance).toBe("Embedding API error. Check OPENAI_API_KEY and API status.");

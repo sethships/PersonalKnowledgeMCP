@@ -112,13 +112,13 @@ POSTGRES_PORT=5432
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `EMBEDDING_PROVIDER` | No | Auto-detect | Force provider: `openai`, `transformersjs`, `ollama` |
+| `EMBEDDING_PROVIDER` | No | `transformersjs` | Select provider: `openai`, `transformersjs`, `ollama` |
 | `EMBEDDING_MODEL` | No | Provider-specific | Model to use for embeddings |
 | `EMBEDDING_DIMENSIONS` | No | Model-specific | Embedding vector dimensions |
 
-**Auto-Detection Logic**:
-1. If `OPENAI_API_KEY` is set → Use OpenAI
-2. Otherwise → Use Transformers.js (zero-config local)
+**Selection Logic**:
+1. If `EMBEDDING_PROVIDER` is set → Use that provider
+2. Otherwise → Use Transformers.js (zero-config local). A present `OPENAI_API_KEY` does not select OpenAI on its own.
 
 ### OpenAI Provider
 

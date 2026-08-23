@@ -121,7 +121,7 @@ Transformers.js runs HuggingFace models directly in JavaScript using ONNX Runtim
 No setup required. Transformers.js works immediately after `bun install`.
 
 ```bash
-# Uses Transformers.js automatically when no OPENAI_API_KEY
+# Uses Transformers.js unless EMBEDDING_PROVIDER says otherwise
 bun run cli index https://github.com/user/repo
 
 # Explicitly specify Transformers.js
@@ -330,7 +330,7 @@ bun run cli index --provider openai https://github.com/user/repo
 
 | Variable | Provider | Default | Description |
 |----------|----------|---------|-------------|
-| `EMBEDDING_PROVIDER` | All | Auto-detect | Force provider: `openai`, `transformersjs`, `ollama` |
+| `EMBEDDING_PROVIDER` | All | `transformersjs` | Select provider: `openai`, `transformersjs`, `ollama` |
 | `OPENAI_API_KEY` | OpenAI | - | OpenAI API key (required for OpenAI) |
 | `OPENAI_ORGANIZATION` | OpenAI | - | OpenAI organization ID |
 | `OPENAI_BASE_URL` | OpenAI | api.openai.com | API base URL (for Azure/proxies) |
@@ -339,13 +339,13 @@ bun run cli index --provider openai https://github.com/user/repo
 | `OLLAMA_HOST` | Ollama | localhost | Ollama host (alternative) |
 | `OLLAMA_PORT` | Ollama | 11434 | Ollama port (alternative) |
 
-### Provider Auto-Detection
-
-The system auto-detects the best provider based on available configuration:
+### Provider Selection
 
 1. If `EMBEDDING_PROVIDER` is explicitly set → Use that provider
-2. If `OPENAI_API_KEY` is set → Use OpenAI (backwards compatibility)
-3. **Otherwise → Use Transformers.js** (local, zero-config default)
+2. **Otherwise → Use Transformers.js** (local, zero-config default)
+
+A present `OPENAI_API_KEY` never selects OpenAI by itself; opting into per-token cost (and
+quota failures) is deliberate via `EMBEDDING_PROVIDER=openai`.
 
 **Recommendation**: For local-first operation, explicitly set:
 ```bash

@@ -92,6 +92,8 @@ describe("Providers Commands", () => {
     originalEnv = {
       OPENAI_API_KEY: Bun.env["OPENAI_API_KEY"],
     };
+    // Default to "no key" so no test reaches the live OpenAI probe unless it opts in.
+    delete Bun.env["OPENAI_API_KEY"];
     // Use fresh spy for each test
     vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       capturedLogs.push(args.map((a) => String(a)).join(" "));
@@ -178,6 +180,24 @@ describe("Providers Commands", () => {
       expect(openaiProvider?.status).toBe("not-available");
       expect(openaiProvider?.statusMessage).toContain("insufficient_quota");
       expect(openaiProvider?.isDefault).toBe(false);
+    });
+
+    it("should mark the EMBEDDING_PROVIDER override as default (#595)", async () => {
+      Bun.env["OPENAI_API_KEY"] = "sk-test-key";
+      Bun.env["EMBEDDING_PROVIDER"] = "openai";
+      vi.spyOn(OpenAIEmbeddingProvider.prototype, "generateEmbedding").mockResolvedValue([0.1]);
+      try {
+        await providersStatusCommand(
+          { json: true },
+          createMockDeps(createMockRepositoryService([]))
+        );
+      } finally {
+        delete Bun.env["EMBEDDING_PROVIDER"];
+      }
+
+      const parsed = JSON.parse(capturedLogs.join("\n")) as ParsedJsonOutput;
+      expect(parsed.providers.find((p) => p.id === "openai")?.isDefault).toBe(true);
+      expect(parsed.providers.find((p) => p.id === "transformersjs")?.isDefault).toBe(false);
     });
 
     it("should show OpenAI as not-configured when OPENAI_API_KEY is missing", async () => {

@@ -762,15 +762,13 @@ describe("IncrementalUpdatePipeline", () => {
         { path: "src/big1.ts", status: "added" },
         { path: "src/big2.ts", status: "added" },
       ];
-      const result = await pipeline.processChanges(changes, { ...baseOptions, localPath: testDir });
-
-      // Only the first batch was attempted; the rest are reported as skipped.
+      // Only the first batch is attempted and the error propagates so the
+      // coordinator cannot classify the run as partial and advance the SHA.
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        pipeline.processChanges(changes, { ...baseOptions, localPath: testDir })
+      ).rejects.toThrow(EmbeddingQuotaExceededError);
       expect(call).toBe(1);
-      expect(result.errors).toHaveLength(2);
-      expect(result.errors[0]?.error).toContain("insufficient_quota");
-      expect(result.errors[1]?.path).toMatch(/^\(embedding batches 2-\d+\)$/);
-      expect(result.errors[1]?.error).toContain("Skipped");
-      expect(result.stats.chunksUpserted).toBe(0);
     });
 
     it("should skip oversized chunks instead of failing the batch (issue #589)", async () => {

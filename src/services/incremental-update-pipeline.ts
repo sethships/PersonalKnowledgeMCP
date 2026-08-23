@@ -482,6 +482,9 @@ export class IncrementalUpdatePipeline {
           embeddingProvider
         );
       } catch (error) {
+        if (error instanceof EmbeddingError && !error.retryable) {
+          throw error; // propagate: coordinator must not advance the SHA (#595)
+        }
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorType = error instanceof Error ? error.constructor.name : "Unknown";
         logger.error(
@@ -1210,17 +1213,11 @@ export class IncrementalUpdatePipeline {
           },
           "Embedding batch failed - continuing with remaining batches"
         );
-        // Bad key / exhausted quota fails every remaining batch identically;
-        // stop here so the run reports one cause instead of N (#595).
+        // Bad key / exhausted quota fails every remaining batch identically and
+        // must not be downgraded to a "partial" update that advances the commit
+        // SHA; propagate so the coordinator aborts the run (#595).
         if (error instanceof EmbeddingError && !error.retryable) {
-          const remaining = batchCount - batchIndex;
-          if (remaining > 0) {
-            errors.push({
-              path: `(embedding batches ${batchIndex + 1}-${batchCount})`,
-              error: `Skipped ${remaining} remaining batch(es) after non-retryable provider error: ${errorMessage}`,
-            });
-          }
-          break;
+          throw error;
         }
       }
     }

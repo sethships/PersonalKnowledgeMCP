@@ -683,6 +683,10 @@ describe("IngestionService", () => {
       expect(result.errors[0]!.message).toContain("insufficient_quota");
       expect(result.errors[0]!.message).toContain("left intact");
       expect(mockStorage.hasCollection(testCollectionName)).toBe(true);
+      // Registry records the failure instead of still claiming "ready"
+      const repo = await mockRepoService.getRepository(testRepoName);
+      expect(repo?.status).toBe("error");
+      expect(repo?.errorMessage).toContain("insufficient_quota");
     });
 
     it("should abort the run on a non-retryable provider error instead of failing every batch (#595)", async () => {

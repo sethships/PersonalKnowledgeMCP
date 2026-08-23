@@ -754,6 +754,8 @@ The system defaults to local embedding providers that require no configuration, 
 - **With `EMBEDDING_PROVIDER=ollama`**: Uses Ollama for GPU acceleration
 - **With `EMBEDDING_PROVIDER=openai`**: Uses OpenAI (an `OPENAI_API_KEY` alone does not select it; opting into per-token cost is explicit)
 
+> **Upgrading from the old auto-detection** (where a set `OPENAI_API_KEY` implied OpenAI): repositories already indexed with OpenAI keep querying through OpenAI via the provider recorded in their metadata, so existing search keeps working. Indexing *new* repositories with OpenAI now requires `EMBEDDING_PROVIDER=openai`.
+
 ### Usage
 
 ```bash

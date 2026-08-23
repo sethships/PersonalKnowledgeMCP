@@ -386,6 +386,19 @@ describe("OpenAIEmbeddingProvider", () => {
       expect((error as EmbeddingQuotaExceededError).message).toContain("insufficient_quota");
     });
 
+    test("detects insufficient_quota from the nested SDK error body (#595)", async () => {
+      const provider = new OpenAIEmbeddingProvider(TEST_CONFIGS.noRetries);
+      const mockClient = new MockOpenAIClient();
+      mockClient.setFailure(MOCK_OPENAI_RESPONSE.insufficientQuotaNestedError);
+
+      // @ts-expect-error - Accessing private property for testing
+      provider.client = mockClient;
+
+      await expect(provider.generateEmbedding(SAMPLE_TEXTS.SHORT)).rejects.toThrow(
+        EmbeddingQuotaExceededError
+      );
+    });
+
     test("handles 408 timeout error", async () => {
       const provider = new OpenAIEmbeddingProvider(TEST_CONFIGS.noRetries);
       const mockClient = new MockOpenAIClient();

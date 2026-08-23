@@ -313,7 +313,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
         case 429: {
           // Exhausted billing quota masquerades as 429 but never clears (#595)
-          const code = (error as { code?: string }).code;
+          // The SDK exposes the body code both at top level and under `error`.
+          const err = error as { code?: string; error?: { code?: string; type?: string } };
+          const code = err.code ?? err.error?.code ?? err.error?.type;
           if (code === "insufficient_quota" || message.includes("insufficient_quota")) {
             return new EmbeddingQuotaExceededError(
               "OpenAI quota exceeded (insufficient_quota); add billing credit or switch EMBEDDING_PROVIDER",

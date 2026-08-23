@@ -99,6 +99,17 @@ export interface ProvidersSetupOptions {
 // ============================================================================
 
 /**
+ * The provider indexing will actually use: EMBEDDING_PROVIDER if set, else the
+ * factory default. Mirrors the resolution in dependency-init.ts (#595).
+ */
+function getActiveProvider(factory: EmbeddingProviderFactory): string {
+  return (
+    factory.resolveProviderType(Bun.env["EMBEDDING_PROVIDER"] ?? factory.getDefaultProvider()) ??
+    factory.getDefaultProvider()
+  );
+}
+
+/**
  * Determine the status of the OpenAI provider
  *
  * @param info - Provider info from factory
@@ -141,7 +152,7 @@ async function getOpenAIStatus(
     status,
     model: status === "ready" ? DEFAULT_OPENAI_MODEL : undefined,
     dimensions: status === "ready" ? DEFAULT_OPENAI_DIMENSIONS : undefined,
-    isDefault: factory.getDefaultProvider() === "openai",
+    isDefault: getActiveProvider(factory) === "openai",
     statusMessage,
   };
 }
@@ -169,7 +180,7 @@ function getTransformersJsStatus(
     status: "ready",
     model: DEFAULT_TRANSFORMERSJS_MODEL,
     dimensions: DEFAULT_TRANSFORMERSJS_DIMENSIONS,
-    isDefault: factory.getDefaultProvider() === "transformersjs",
+    isDefault: getActiveProvider(factory) === "transformersjs",
   };
 }
 
@@ -215,7 +226,7 @@ async function getOllamaStatus(
     status,
     model: status === "ready" ? DEFAULT_OLLAMA_MODEL : undefined,
     dimensions: status === "ready" ? DEFAULT_OLLAMA_DIMENSIONS : undefined,
-    isDefault: factory.getDefaultProvider() === "ollama",
+    isDefault: getActiveProvider(factory) === "ollama",
     statusMessage,
   };
 }
