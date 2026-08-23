@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { PassThrough } from "node:stream";
 import type {
   SearchService,
   SearchResponse,
@@ -567,6 +568,118 @@ describe("PersonalKnowledgeMCPServer", () => {
       expect(registry?.["search_documents"]).toBeDefined();
       expect(registry?.["search_images"]).toBeDefined();
       expect(registry?.["list_watched_folders"]).toBeDefined();
+    });
+  });
+  describe("client disconnect (orphaned process prevention)", () => {
+    // A stdio server's lifetime is bound to its stdin pipe, but nothing else
+    // notices that pipe closing: Windows delivers no signal to a child when
+    // its parent exits, and the SDK's StdioServerTransport subscribes only to
+    // stdin's `data` and `error` events, so `onclose` never fires on EOF.
+    // Without the `end` / `close` handlers these tests pin, every client that
+    // exits uncleanly leaves a server running forever holding its ChromaDB and
+    // FalkorDB connections.
+    //
+    // A PassThrough stands in for stdin: registering these handlers on the real
+    // `process.stdin` here would shut down the test runner itself the moment
+    // its own stdin closed.
+
+    // startStdio() also registers process-global SIGINT/SIGTERM handlers. They
+    // never fire here, but each test would otherwise leave two live listeners
+    // (and the server instance they close over) attached to `process` for the
+    // rest of the run, eventually tripping MaxListenersExceededWarning.
+    let signalsBefore: Record<"SIGINT" | "SIGTERM", NodeJS.SignalsListener[]>;
+
+    beforeEach(() => {
+      signalsBefore = {
+        SIGINT: process.listeners("SIGINT"),
+        SIGTERM: process.listeners("SIGTERM"),
+      };
+    });
+
+    afterEach(() => {
+      for (const signal of ["SIGINT", "SIGTERM"] as const) {
+        for (const listener of process.listeners(signal)) {
+          if (!signalsBefore[signal].includes(listener)) {
+            process.removeListener(signal, listener);
+          }
+        }
+      }
+    });
+
+    it("shuts down when stdin emits end", async () => {
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      // Override before starting: the real shutdown() ends in process.exit(0),
+      // which would take the test runner with it.
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio({ stdin: fakeStdin });
+      expect(shutdownCalls).toBe(0);
+
+      // A real EOF, not a synthesized event: this also pins the fix's core
+      // assumption that the transport's `data` listener has put the stream in
+      // flowing mode. A paused stream that is ended never emits `end` at all.
+      fakeStdin.end();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(shutdownCalls).toBe(1);
+    });
+
+    it("shuts down when stdin emits close without a preceding end", async () => {
+      // An abruptly destroyed pipe emits `close` with no `end` beforehand.
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio({ stdin: fakeStdin });
+      fakeStdin.emit("close");
+      await Promise.resolve();
+
+      expect(shutdownCalls).toBe(1);
+    });
+
+    it("shuts down only once when stdin emits both end and close", async () => {
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio({ stdin: fakeStdin });
+      fakeStdin.emit("end");
+      fakeStdin.emit("close");
+      await Promise.resolve();
+
+      // `isShuttingDown` makes the handler idempotent, so a pipe that emits
+      // both must not run the shutdown sequence twice.
+      expect(shutdownCalls).toBe(1);
+    });
+
+    it("does not shut down on stdin EOF when exitOnStdinClose is false", async () => {
+      // Container and Kubernetes runtimes give the process a closed stdin,
+      // which reaches EOF at startup. A process also serving HTTP/SSE must
+      // survive that, so `src/index.ts` passes exitOnStdinClose: false when the
+      // HTTP transport is enabled.
+      const fakeStdin = new PassThrough();
+      const server = new PersonalKnowledgeMCPServer(mockService, mockRepositoryService);
+      let shutdownCalls = 0;
+      server.shutdown = async (): Promise<void> => {
+        shutdownCalls += 1;
+      };
+
+      await server.startStdio({ stdin: fakeStdin, exitOnStdinClose: false });
+      fakeStdin.end();
+      fakeStdin.destroy();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(shutdownCalls).toBe(0);
     });
   });
 });
