@@ -573,7 +573,12 @@ export class FolderWatcherService {
           ignoreInitial: !this.config.emitExistingFiles,
           awaitWriteFinish: {
             stabilityThreshold: debounceMs,
-            pollInterval: 100,
+            // chokidar schedules its first size-stability poll pollInterval ms
+            // after the raw event, so a pollInterval coarser than the stability
+            // window makes pollInterval, not debounceMs, the real floor on
+            // detection latency. Clamping keeps the configured debounce
+            // meaningful for sub-100ms folders and is a no-op above 100ms.
+            pollInterval: Math.min(100, debounceMs),
           },
           usePolling: this.config.usePolling,
           interval: this.config.pollInterval,
