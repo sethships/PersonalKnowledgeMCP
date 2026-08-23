@@ -603,12 +603,14 @@ describe("Update Repository Command", () => {
       mockGetRepository.mockResolvedValue(sampleRepo);
       mockIndexRepository.mockResolvedValue({
         status: "failed",
+        errors: [{ type: "fatal_error", message: "OpenAI quota exceeded (insufficient_quota)" }],
       });
 
       const options: UpdateCommandOptions = { force: true };
 
+      // The underlying provider error must reach the user (#595)
       await expect(updateRepositoryCommand("test-repo", options, mockDeps)).rejects.toThrow(
-        "Re-index failed"
+        "Re-index failed: OpenAI quota exceeded (insufficient_quota)"
       );
     });
 
