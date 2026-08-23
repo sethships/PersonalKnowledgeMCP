@@ -223,7 +223,10 @@ export { GRAPH_QUERY_TYPES } from "./graph-metrics-types.js";
 export { GraphMetricsCollector, graphMetricsCollector } from "./graph-metrics-collector.js";
 
 // FolderWatcherService exports
-export { FolderWatcherService } from "./folder-watcher-service.js";
+export {
+  FolderWatcherService,
+  clampAwaitWriteFinishPollInterval,
+} from "./folder-watcher-service.js";
 export type {
   WatchedFolder,
   WatchedFolderDetail,

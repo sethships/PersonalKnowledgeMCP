@@ -15,6 +15,7 @@ import {
   FolderAlreadyWatchedError,
   FolderNotWatchedError,
   MaxWatchersExceededError,
+  clampAwaitWriteFinishPollInterval,
 } from "../../../src/services/index.js";
 import type { WatchedFolder, FileEvent } from "../../../src/services/folder-watcher-types.js";
 import { createTestFolder } from "../../helpers/folder-fixtures.js";
@@ -545,5 +546,30 @@ describe.skipIf(isCI)("FolderWatcherService", () => {
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryDelayMs).toBe(1000);
       expect(DEFAULT_FOLDER_WATCHER_CONFIG.retryMaxDelayMs).toBe(30000);
     });
+  });
+});
+
+// Deliberately outside the `describe.skipIf(isCI)` block above: this is a pure
+// function with no filesystem involvement, so it is the one part of the watcher
+// configuration that can be covered in CI.
+describe("clampAwaitWriteFinishPollInterval", () => {
+  it("clamps the poll interval down to the stability window below 100ms", () => {
+    // Without this, pollInterval rather than debounceMs is the real floor on
+    // detection latency (measured on Linux: p50 104ms at 100, 52ms at 50).
+    expect(clampAwaitWriteFinishPollInterval(50)).toBe(50);
+    expect(clampAwaitWriteFinishPollInterval(75)).toBe(75);
+  });
+
+  it("is a no-op at or above 100ms", () => {
+    expect(clampAwaitWriteFinishPollInterval(100)).toBe(100);
+    expect(clampAwaitWriteFinishPollInterval(2000)).toBe(100);
+  });
+
+  it("floors pathological values so they cannot become a stat loop", () => {
+    // debounceMs is unvalidated on this path, and a negative setTimeout delay
+    // fires on the next tick, which would poll unthrottled.
+    expect(clampAwaitWriteFinishPollInterval(1)).toBe(10);
+    expect(clampAwaitWriteFinishPollInterval(0)).toBe(10);
+    expect(clampAwaitWriteFinishPollInterval(-5)).toBe(10);
   });
 });
