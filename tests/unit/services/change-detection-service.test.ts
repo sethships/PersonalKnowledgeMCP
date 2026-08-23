@@ -24,7 +24,7 @@ import {
   isChangeDetectionError,
   isRetryableChangeDetectionError,
 } from "../../../src/services/index.js";
-import type { WatchedFolder } from "../../../src/services/folder-watcher-types.js";
+import type { WatchedFolder, FileEvent } from "../../../src/services/folder-watcher-types.js";
 import type { DetectedChange } from "../../../src/services/change-detection-types.js";
 
 // Initialize logger for tests
@@ -448,7 +448,9 @@ describe("ChangeDetectionService", () => {
       // Wait for the initial add to be processed and state captured.
       await waitFor(
         () => changeDetection.getTrackedFileCount() > 0,
-        "the initial add event to be tracked"
+        () =>
+          `the initial add event to be tracked ` +
+          `(tracked ${changeDetection.getTrackedFileCount()} file(s))`
       );
 
       // Verify state was captured
@@ -507,7 +509,9 @@ describe("ChangeDetectionService", () => {
       await fs.promises.writeFile(path.join(testFolder.path, "clear-test.md"), "content");
       await waitFor(
         () => changeDetection.getTrackedFileCount() > 0,
-        "the add event to be tracked before clearState()"
+        () =>
+          `the add event to be tracked before clearState() ` +
+          `(tracked ${changeDetection.getTrackedFileCount()} file(s))`
       );
 
       expect(changeDetection.getTrackedFileCount()).toBeGreaterThan(0);
@@ -609,31 +613,46 @@ describe("ChangeDetectionService", () => {
         changes.push(change);
       });
 
+      // Observe raw watcher events too. ChangeDetectionService registered its
+      // own handler in its constructor, above, and FolderWatcherService awaits
+      // handlers in registration order, so by the time this one sees the unlink
+      // the service has already stored it as a pending unlink. That makes it an
+      // exact signal for "safe to dispose", where file state is not: the file
+      // is created before startWatching and `ignoreInitial` is true, so it is
+      // never tracked in the first place.
+      const watcherEvents: FileEvent[] = [];
+      folderWatcher.onFileEvent((event) => {
+        watcherEvents.push(event);
+      });
+
       await folderWatcher.startWatching(testFolder);
-      // Wait for initial scan and file to be tracked
-      await new Promise((resolve) => setTimeout(resolve, 300));
       changes.length = 0;
 
       // Delete file (creates pending unlink)
       await fs.promises.unlink(testFilePath);
 
-      // Wait for unlink event to propagate through FolderWatcher debounce
-      // FolderWatcher has a 50ms debounce configured in tests
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // renameWindowMs is 10s here, so the window cannot expire on its own and
+      // only dispose() can flush the pending unlink. That is what makes the
+      // assertion below strong rather than racy.
+      await waitFor(
+        () => watcherEvents.some((e) => e.type === "unlink"),
+        () =>
+          `the unlink for dispose-test.md to reach the service ` +
+          `(saw: ${watcherEvents.map((e) => `${e.type}:${e.relativePath}`).join(", ") || "no events"})`
+      );
 
-      // At this point unlink should be pending in ChangeDetectionService
-      // Dispose should flush it as delete
       changeDetection.dispose();
 
-      // Give handlers time to be called (async)
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(
+        () => changes.some((c) => c.category === "deleted"),
+        () =>
+          `dispose() to flush the pending unlink as a delete ` +
+          `(saw: ${describeChanges(changes)})`
+      );
 
-      // Check for delete - either from pending flush or natural expiry
       const deleteChange = changes.find((c) => c.category === "deleted");
-      // On some systems, the event may not have arrived yet or be flushed
-      // This test verifies dispose doesn't throw and handles cleanup
-      // The delete might have been emitted or still be pending
-      expect(deleteChange !== undefined || changes.length === 0).toBe(true);
+      expect(deleteChange).toBeDefined();
+      expect(deleteChange?.relativePath).toBe("dispose-test.md");
     });
 
     it("should remove event handler from folder watcher on dispose", async () => {
@@ -690,7 +709,9 @@ describe("ChangeDetectionService", () => {
       await fs.promises.writeFile(testFilePath, "content");
       await waitFor(
         () => changeDetection.getFileState(testFilePath) !== null,
-        "get-state-test.md to be tracked"
+        () =>
+          `get-state-test.md to be tracked ` +
+          `(tracked ${changeDetection.getTrackedFileCount()} file(s))`
       );
 
       const state = changeDetection.getFileState(testFilePath);
@@ -782,7 +803,7 @@ describe("ChangeDetectionService", () => {
       expect(addChange?.extension).toBe("");
     });
 
-    it("should not correlate renames across different folders", async () => {
+    it("should correlate renames across subfolders of the same watched folder", async () => {
       // Create two subfolders
       const subfolder1 = path.join(testFolder.path, "sub1");
       const subfolder2 = path.join(testFolder.path, "sub2");
@@ -804,17 +825,38 @@ describe("ChangeDetectionService", () => {
       const file2 = path.join(subfolder2, "same-name.md");
 
       await fs.promises.writeFile(file1, "content in folder 1");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitFor(
+        () => changeDetection.getFileState(file1) !== null,
+        "sub1/same-name.md to be tracked before the rename"
+      );
       changes.length = 0;
 
       await fs.promises.unlink(file1);
       await fs.promises.writeFile(file2, "content in folder 2");
 
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // relativePath comes from path.relative, so it uses native separators.
+      const expectedNew = path.join("sub2", "same-name.md");
+      const expectedOld = path.join("sub1", "same-name.md");
 
-      // Should detect as rename because they have same filename within same watched folder
-      // (the folderId check is at the watched folder level, not subfolder level)
-      // This is expected behavior - rename detection works within a watched folder
+      await waitFor(
+        () => changes.some((c) => c.relativePath === expectedNew),
+        () => `a change for ${expectedNew} (saw: ${describeChanges(changes)})`
+      );
+
+      // Correlation is keyed on `${folderId}:${basename}`, so a same-named file
+      // recreated in a sibling subfolder of the SAME watched folder correlates
+      // as a rename: the folderId guard is at the watched-folder level, not the
+      // subfolder level. Emission order of unlink/add is not guaranteed across
+      // platforms, so a bare add is accepted, but when it IS a rename the
+      // previous path must be the sub1 file.
+      const change = changes.find((c) => c.relativePath === expectedNew);
+      if (change === undefined) {
+        throw new Error(`no change for ${expectedNew} (saw: ${describeChanges(changes)})`);
+      }
+      expect(["renamed", "added"]).toContain(change.category);
+      if (change.category === "renamed") {
+        expect(change.previousRelativePath).toBe(expectedOld);
+      }
     });
   });
 });

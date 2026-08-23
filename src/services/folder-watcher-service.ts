@@ -85,6 +85,46 @@ interface WatcherState {
  * });
  * ```
  */
+
+/**
+ * Lower bound on chokidar's `awaitWriteFinish.pollInterval`, in milliseconds.
+ *
+ * Below roughly this period the polling cost stops buying any useful precision
+ * and starts to matter, since chokidar issues one `stat` per in-flight file per
+ * tick.
+ */
+const MIN_AWAIT_WRITE_FINISH_POLL_MS = 10;
+
+/** Upper bound on the poll interval: chokidar's own documented default. */
+const MAX_AWAIT_WRITE_FINISH_POLL_MS = 100;
+
+/**
+ * Clamp chokidar's `awaitWriteFinish.pollInterval` to the stability window.
+ *
+ * Upper bound: chokidar schedules its first size-stability poll `pollInterval`
+ * ms after the raw event, so a `pollInterval` coarser than the stability window
+ * makes `pollInterval`, not `debounceMs`, the real floor on detection latency.
+ * Clamping keeps a configured sub-100ms debounce meaningful and is a no-op at
+ * or above 100ms.
+ *
+ * Lower bound: `debounceMs` is not validated on the path that reaches here.
+ * `WatchedFolderSerializedSchema` accepts any number from persisted JSON, and
+ * `LocalFolderRepository.watchDebounceMs` is an unvalidated `number?`. The
+ * `|| defaultDebounceMs` fallback rescues `0` and `NaN` because they are falsy,
+ * but not `1` and not `-5`. Without a floor those would become the poll period,
+ * and a negative `setTimeout` delay fires on the next tick, turning a config
+ * typo into an unthrottled `stat` loop per in-flight file.
+ *
+ * @param debounceMs - Configured debounce for the folder, used as the stability threshold
+ * @returns Poll interval bounded to [10, 100] milliseconds
+ */
+export function clampAwaitWriteFinishPollInterval(debounceMs: number): number {
+  return Math.max(
+    MIN_AWAIT_WRITE_FINISH_POLL_MS,
+    Math.min(MAX_AWAIT_WRITE_FINISH_POLL_MS, debounceMs)
+  );
+}
+
 export class FolderWatcherService {
   /**
    * Lazy-initialized logger
@@ -573,12 +613,7 @@ export class FolderWatcherService {
           ignoreInitial: !this.config.emitExistingFiles,
           awaitWriteFinish: {
             stabilityThreshold: debounceMs,
-            // chokidar schedules its first size-stability poll pollInterval ms
-            // after the raw event, so a pollInterval coarser than the stability
-            // window makes pollInterval, not debounceMs, the real floor on
-            // detection latency. Clamping keeps the configured debounce
-            // meaningful for sub-100ms folders and is a no-op above 100ms.
-            pollInterval: Math.min(100, debounceMs),
+            pollInterval: clampAwaitWriteFinishPollInterval(debounceMs),
           },
           usePolling: this.config.usePolling,
           interval: this.config.pollInterval,
