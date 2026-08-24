@@ -62,7 +62,11 @@ export const ERROR_GUIDANCE: ErrorGuidanceEntry[] = [
     guidance: "Security issue detected. Investigate repository for malicious paths.",
   },
 
-  // Embedding/OpenAI errors
+  // Embedding/OpenAI errors (quota rule must precede the generic key rule, #595)
+  {
+    pattern: /insufficient_quota|quota exceeded/i,
+    guidance: "OpenAI billing quota exhausted. Add credit or set EMBEDDING_PROVIDER=transformers.",
+  },
   {
     pattern: /embedding.*failed|openai.*error|OPENAI/i,
     guidance: "Embedding API error. Check OPENAI_API_KEY and API status.",

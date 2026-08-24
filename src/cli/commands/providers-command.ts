@@ -99,27 +99,61 @@ export interface ProvidersSetupOptions {
 // ============================================================================
 
 /**
+ * The provider indexing will actually use: EMBEDDING_PROVIDER if set, else the
+ * factory default. Mirrors the resolution in dependency-init.ts (#595).
+ */
+function getActiveProvider(factory: EmbeddingProviderFactory): string {
+  return (
+    factory.resolveProviderType(Bun.env["EMBEDDING_PROVIDER"] ?? factory.getDefaultProvider()) ??
+    factory.getDefaultProvider()
+  );
+}
+
+/**
  * Determine the status of the OpenAI provider
  *
  * @param info - Provider info from factory
  * @param factory - Embedding provider factory
  * @returns Provider display information
  */
-function getOpenAIStatus(
+async function getOpenAIStatus(
   info: ProviderInfo,
   factory: EmbeddingProviderFactory
-): ProviderDisplayInfo {
+): Promise<ProviderDisplayInfo> {
   const isAvailable = factory.isProviderAvailable("openai");
+  let status: ProviderStatus = isAvailable ? "ready" : "not-configured";
+  let statusMessage: string | undefined = isAvailable
+    ? undefined
+    : "OPENAI_API_KEY environment variable not set";
+
+  // A configured key is not a working key: probe with one tiny embed so a
+  // revoked key or exhausted quota shows as not-available (#595).
+  if (isAvailable) {
+    try {
+      const provider = factory.createProvider({
+        provider: "openai",
+        model: DEFAULT_OPENAI_MODEL,
+        dimensions: DEFAULT_OPENAI_DIMENSIONS,
+        batchSize: 1,
+        maxRetries: 0,
+        timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
+      });
+      await provider.generateEmbedding("ping");
+    } catch (error) {
+      status = "not-available";
+      statusMessage = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   return {
     id: info.id,
     name: info.name,
     description: info.description,
-    status: isAvailable ? "ready" : "not-configured",
-    model: isAvailable ? DEFAULT_OPENAI_MODEL : undefined,
-    dimensions: isAvailable ? DEFAULT_OPENAI_DIMENSIONS : undefined,
-    isDefault: factory.getDefaultProvider() === "openai",
-    statusMessage: isAvailable ? undefined : "OPENAI_API_KEY environment variable not set",
+    status,
+    model: status === "ready" ? DEFAULT_OPENAI_MODEL : undefined,
+    dimensions: status === "ready" ? DEFAULT_OPENAI_DIMENSIONS : undefined,
+    isDefault: getActiveProvider(factory) === "openai",
+    statusMessage,
   };
 }
 
@@ -146,7 +180,7 @@ function getTransformersJsStatus(
     status: "ready",
     model: DEFAULT_TRANSFORMERSJS_MODEL,
     dimensions: DEFAULT_TRANSFORMERSJS_DIMENSIONS,
-    isDefault: factory.getDefaultProvider() === "transformersjs",
+    isDefault: getActiveProvider(factory) === "transformersjs",
   };
 }
 
@@ -192,7 +226,7 @@ async function getOllamaStatus(
     status,
     model: status === "ready" ? DEFAULT_OLLAMA_MODEL : undefined,
     dimensions: status === "ready" ? DEFAULT_OLLAMA_DIMENSIONS : undefined,
-    isDefault: factory.getDefaultProvider() === "ollama",
+    isDefault: getActiveProvider(factory) === "ollama",
     statusMessage,
   };
 }
@@ -212,7 +246,7 @@ async function getAllProviderStatuses(
   for (const info of providers) {
     switch (info.id) {
       case "openai":
-        statuses.push(getOpenAIStatus(info, factory));
+        statuses.push(await getOpenAIStatus(info, factory));
         break;
       case "transformersjs":
         statuses.push(getTransformersJsStatus(info, factory));

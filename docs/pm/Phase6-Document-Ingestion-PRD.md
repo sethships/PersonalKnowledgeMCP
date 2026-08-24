@@ -51,11 +51,10 @@ Document ingestion can involve large volumes of content (PDFs, DOCX files, image
 
 ### Default Provider Selection
 
-The system auto-detects providers in this priority order:
+The system selects a provider in this order:
 
 1. If `EMBEDDING_PROVIDER` is explicitly set, use that provider
-2. If `OPENAI_API_KEY` is set, use OpenAI (for backwards compatibility)
-3. **Otherwise, use Transformers.js** (zero-config local provider)
+2. **Otherwise, use Transformers.js** (zero-config local provider). `OPENAI_API_KEY` alone does not select OpenAI.
 
 For Phase 6 document ingestion, we strongly recommend:
 

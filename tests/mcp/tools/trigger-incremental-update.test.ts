@@ -32,6 +32,8 @@ interface SyncSuccessResponse {
   success: true;
   repository: string;
   status: "updated" | "no_changes" | "incomplete";
+  error_count?: number;
+  errors?: string[];
   files_added: number;
   files_modified: number;
   files_deleted: number;
@@ -469,6 +471,31 @@ describe("createTriggerUpdateHandler", () => {
       expect(result.isError).toBe(true);
       const response = JSON.parse(getTextContent(result.content)) as ErrorResponse;
       expect(response.error).toBe("update_failed");
+      // The underlying cause must reach the caller (#595)
+      expect(response.message).toContain("test.ts: Parse error");
+    });
+
+    it("should surface batch errors on an updated result (#595)", async () => {
+      mockUpdateCoordinator.updateRepository = mock(() =>
+        Promise.resolve(
+          createMockResult({
+            status: "updated",
+            errors: [
+              {
+                path: "(embedding batch 2/3)",
+                error: "OpenAI quota exceeded (insufficient_quota)",
+              },
+            ],
+          })
+        )
+      );
+
+      const result = await handler({ repository: "test-repo" });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(getTextContent(result.content)) as SyncSuccessResponse;
+      expect(response.error_count).toBe(1);
+      expect(response.errors?.[0]).toContain("insufficient_quota");
     });
 
     it("should handle incomplete status as success (not error)", async () => {

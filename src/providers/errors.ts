@@ -141,6 +141,19 @@ export class EmbeddingRateLimitError extends EmbeddingError {
 }
 
 /**
+ * Error thrown when the embedding provider's billing quota is exhausted
+ *
+ * OpenAI reports this as HTTP 429 with `code: "insufficient_quota"`. Unlike a
+ * true rate limit it will NOT clear by waiting, so it is NOT retryable (#595).
+ */
+export class EmbeddingQuotaExceededError extends EmbeddingError {
+  constructor(message: string, cause?: Error) {
+    super(message, "QUOTA_EXCEEDED", false, cause);
+    this.name = "EmbeddingQuotaExceededError";
+  }
+}
+
+/**
  * Error thrown when network connectivity issues prevent embedding generation
  *
  * This error indicates transient network failures.

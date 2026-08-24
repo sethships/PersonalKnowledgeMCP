@@ -32,6 +32,7 @@ import type { CloneResult, FileInfo, FileChunk } from "../ingestion/types.js";
 import type { FileScanner } from "../ingestion/file-scanner.js";
 import type { FileChunker } from "../ingestion/file-chunker.js";
 import type { EmbeddingProvider } from "../providers/types.js";
+import { EmbeddingError } from "../providers/errors.js";
 import type {
   ChromaStorageClient,
   DocumentInput,
@@ -425,6 +426,24 @@ export class IngestionService {
 
       // Phase 3: Create collection (delete if reindexing)
       if (options.force) {
+        // Prove the embedding provider works BEFORE wiping the old collection,
+        // so a dead API key / exhausted quota cannot turn a re-index into data
+        // loss (#595). Cheap: one tiny embed call.
+        try {
+          await this.withTimeout(
+            this.embeddingProvider.generateEmbedding("provider liveness probe"),
+            this.EMBEDDING_TIMEOUT_MS,
+            "Embedding provider liveness probe"
+          );
+        } catch (probeError) {
+          throw new IngestionError(
+            `Embedding provider '${this.embeddingProvider.providerId}' is unusable; existing collection left intact: ${
+              probeError instanceof Error ? probeError.message : String(probeError)
+            }`,
+            false,
+            probeError
+          );
+        }
         try {
           await this.storageClient.deleteCollection(collectionName);
           this.logger.info("Deleted existing collection for reindexing", {
@@ -519,9 +538,24 @@ export class IngestionService {
           codeFilesForGraph.push(...batchResult.codeFilesForGraph);
           docExtractionResults.push(...batchResult.docExtractionResults);
         } catch (batchError) {
+          const batchMessage =
+            batchError instanceof Error ? batchError.message : String(batchError);
+          // A non-retryable provider error (bad key, exhausted quota) will fail
+          // every remaining batch identically; abort instead of grinding
+          // through N failures with the cause hidden (#595).
+          if (batchError instanceof EmbeddingError && !batchError.retryable) {
+            throw new IngestionError(
+              `Embedding provider '${this.embeddingProvider.providerId}' failed on batch ${
+                batchIndex + 1
+              }/${totalBatches}; aborting run: ${batchMessage}`,
+              false,
+              batchError
+            );
+          }
           // Log batch error but continue with next batch
           this.logger.error(`Batch ${batchIndex + 1}/${totalBatches} failed, continuing...`, {
             error: batchError,
+            message: batchMessage,
             batchIndex,
           });
           errors.push({
@@ -665,6 +699,24 @@ export class IngestionService {
         message: error instanceof Error ? error.message : String(error),
         originalError: error,
       };
+
+      // A force run may already have deleted the collection; keep the registry
+      // honest so status/search don't report a repo that no longer has data (#595).
+      if (repositoryName) {
+        const existing = await this.repositoryService
+          .getRepository(repositoryName)
+          .catch(() => null);
+        if (existing) {
+          await this.repositoryService
+            .updateRepository({ ...existing, status: "error", errorMessage: fatalError.message })
+            .catch((updateError: unknown) =>
+              this.logger.warn("Failed to record error status after fatal indexing error", {
+                repository: repositoryName,
+                error: updateError,
+              })
+            );
+        }
+      }
 
       // If error is one of our custom errors, rethrow it. The path-collision
       // error (Phase C) joins this list because the user-corrective fix —

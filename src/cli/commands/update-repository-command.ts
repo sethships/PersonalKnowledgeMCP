@@ -213,8 +213,9 @@ export async function updateRepositoryCommand(
           console.log(`  ${chalk.gray("Duration:")} ${result.stats.durationMs}ms`);
         }
       } else {
-        spinner.fail(chalk.red(`✗ Re-index failed for ${repositoryName}`));
-        throw new Error("Re-index failed");
+        const firstError = result.errors?.[0]?.message ?? "Unknown error";
+        spinner.fail(chalk.red(`✗ Re-index failed for ${repositoryName}: ${firstError}`));
+        throw new Error(`Re-index failed: ${firstError}`);
       }
     } catch (error) {
       if (spinner.isSpinning) {

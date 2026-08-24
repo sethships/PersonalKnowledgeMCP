@@ -7,6 +7,7 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+import { EmbeddingQuotaExceededError } from "../../src/providers/errors.js";
 import { join } from "node:path";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import pino from "pino";
@@ -738,6 +739,36 @@ describe("IncrementalUpdatePipeline", () => {
       // Remaining batches were still embedded and stored
       expect(result.stats.chunksUpserted).toBeGreaterThan(0);
       expect(mockStorageClient.upsertDocuments).toHaveBeenCalled();
+    });
+
+    it("should stop after the first non-retryable provider error (issue #595)", async () => {
+      // Same two-batch setup as the #589 isolation test above.
+      await mkdir(join(testDir, "src"), { recursive: true });
+      const makeLines = (tag: string): string =>
+        Array.from(
+          { length: 1700 },
+          (_, i) => `export const ${tag}${i} = "padding-padding-padding-padding-padding-${i}";`
+        ).join("\n");
+      await writeFile(join(testDir, "src/big1.ts"), makeLines("alpha"));
+      await writeFile(join(testDir, "src/big2.ts"), makeLines("beta"));
+
+      let call = 0;
+      mockEmbeddingProvider.generateEmbeddings = mock(async () => {
+        call++;
+        throw new EmbeddingQuotaExceededError("OpenAI quota exceeded (insufficient_quota)");
+      });
+
+      const changes: FileChange[] = [
+        { path: "src/big1.ts", status: "added" },
+        { path: "src/big2.ts", status: "added" },
+      ];
+      // Only the first batch is attempted and the error propagates so the
+      // coordinator cannot classify the run as partial and advance the SHA.
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await expect(
+        pipeline.processChanges(changes, { ...baseOptions, localPath: testDir })
+      ).rejects.toThrow(EmbeddingQuotaExceededError);
+      expect(call).toBe(1);
     });
 
     it("should skip oversized chunks instead of failing the batch (issue #589)", async () => {

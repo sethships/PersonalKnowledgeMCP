@@ -82,6 +82,9 @@ interface SyncSuccessResponse {
   duration_ms: number;
   commit_sha?: string;
   commit_message?: string;
+  // Per-file / per-batch errors from a run that still upserted something (#595)
+  error_count?: number;
+  errors?: string[];
   // Graph database statistics (present when graph service is configured)
   graph_nodes_created?: number;
   graph_nodes_deleted?: number;
@@ -196,6 +199,11 @@ function formatErrorResponse(
   };
 }
 
+/** First few errors as "path: message" strings so the cause reaches the caller (#595). */
+function summarizeErrors(errors: CoordinatorResult["errors"]): string[] {
+  return errors.slice(0, 3).map((e) => `${e.path}: ${e.error}`);
+}
+
 /**
  * Format sync success response as TextContent
  */
@@ -233,6 +241,11 @@ function formatSyncSuccessResponse(repository: string, result: CoordinatorResult
 
   if (result.status === "drift_detected") {
     response.recovery_hint = buildDriftRecoveryHint(repository);
+  }
+
+  if (result.errors.length > 0) {
+    response.error_count = result.errors.length;
+    response.errors = summarizeErrors(result.errors);
   }
 
   // Include graph statistics if available
@@ -626,7 +639,7 @@ export function createTriggerUpdateHandler(deps: TriggerUpdateDependencies): Too
             content: [
               formatErrorResponse(
                 "update_failed",
-                `Update completed with ${result.errors.length} error(s). Some files may not have been indexed.`
+                `Update failed with ${result.errors.length} error(s): ${summarizeErrors(result.errors).join("; ")}`
               ),
             ],
             isError: true,

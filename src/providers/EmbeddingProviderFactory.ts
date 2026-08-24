@@ -181,19 +181,13 @@ export class EmbeddingProviderFactory {
   /**
    * Get the default embedding provider
    *
-   * Returns the recommended default provider based on environment.
-   * If OPENAI_API_KEY is set, returns "openai".
-   * Otherwise returns "transformersjs" for offline operation.
+   * Always "transformersjs": free, offline, and immune to API quota failures.
+   * OpenAI/Ollama must be opted into explicitly via EMBEDDING_PROVIDER (#595);
+   * a present OPENAI_API_KEY no longer implies the OpenAI provider.
    *
    * @returns Default provider identifier
    */
   getDefaultProvider(): string {
-    // If OpenAI API key is available, prefer OpenAI for highest quality
-    if (Bun.env["OPENAI_API_KEY"]) {
-      return "openai";
-    }
-
-    // Otherwise, use Transformers.js for zero-config local operation
     return "transformersjs";
   }
 
